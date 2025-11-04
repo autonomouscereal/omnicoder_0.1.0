@@ -1,0 +1,75 @@
+{
+  "default": {
+    "text": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    "code": "bigcode/starcoder2-3b",
+    "vl": "google/siglip-base-patch16-224",
+    "vision": "dinov3", 
+    "asr": "Systran/faster-whisper-medium",
+    "tts": "coqui/xtts-v2",
+    "math": "deepseek-ai/DeepSeek-Math-7B",
+    "reason": "meta-llama/Meta-Llama-3.1-8B-Instruct"
+  },
+  "draft_presets": {
+    "draft_1b": {
+      "text": "Qwen/Qwen2.5-1.5B-Instruct"
+    },
+    "draft_2b": {
+      "text": "Qwen/Qwen2.5-3B-Instruct"
+    },
+    "draft_3b": {
+      "text": "Qwen/Qwen2.5-3B-Instruct"
+    }
+  },
+  "mobile_presets": {
+    "mobile_2gb": {
+      "text": "microsoft/phi-2",
+      "code": "bigcode/starcoder2-1b",
+      "vl": "laion/CLIP-ViT-B-32-laion2B-s34B-b79K",
+      "asr": "Systran/faster-whisper-small",
+      "tts": "piper-onnx/en_US-amy-low"
+    },
+    "mobile_4gb": {
+      "text": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+      "code": "bigcode/starcoder2-3b",
+      "vl": "google/siglip-base-patch16-224",
+      "vision": "dinov3",
+      "asr": "Systran/faster-whisper-medium",
+      "tts": "coqui/xtts-v2"
+    },
+    "mobile_2gb_moe16": {
+      "text": "microsoft/phi-2",
+      "code": "bigcode/starcoder2-1b",
+      "vl": "laion/CLIP-ViT-B-32-laion2B-s34B-b79K",
+      "asr": "Systran/faster-whisper-small",
+      "tts": "piper-onnx/en_US-amy-low"
+    },
+    "mobile_4gb_moe16": {
+      "text": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+      "code": "bigcode/starcoder2-3b",
+      "vl": "google/siglip-base-patch16-224",
+      "vision": "dinov3",
+      "asr": "Systran/faster-whisper-medium",
+      "tts": "coqui/xtts-v2"
+    }
+  }
+  ,
+  "host_examples": {
+    "windows_dev": {
+      "hf_home": "D:/PycharmProjects/omnicoder_0.1.0/models/hf",
+      "text": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+      "code": "bigcode/starcoder2-3b",
+      "vl":   "google/siglip-base-patch16-224",
+      "asr":  "Systran/faster-whisper-medium",
+      "tts":  "piper-onnx/en_US-amy-low"
+    },
+    "linux_train": {
+      "hf_home": "/models/hf",
+      "text": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+      "code": "bigcode/starcoder2-7b",
+      "vl":   "laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
+      "asr":  "Systran/faster-whisper-large-v3",
+      "tts":  "coqui/xtts-v2"
+    }
+  }
+}
+

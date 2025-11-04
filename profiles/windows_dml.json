@@ -1,0 +1,10 @@
+{
+  "provider": "DmlExecutionProvider",
+  "provider_options": {
+    "arena_extend_strategy": "kSameAsRequested",
+    "cudnn_conv1d_pad_alignment": 16
+  },
+  "intra_op_num_threads": 2,
+  "graph_optimization_level": "ORT_ENABLE_ALL"
+}
+

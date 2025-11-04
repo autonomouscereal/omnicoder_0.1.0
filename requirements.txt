@@ -1,0 +1,58 @@
+# Core
+numpy
+transformers
+tokenizers
+accelerate
+peft
+safetensors
+datasets
+
+# Diffusion / image generation
+diffusers[torch]
+
+# ONNX / optimization (GPU)
+optimum
+# Latest stack compatible with ONNX >=1.17 and protobuf >=5
+protobuf>=5
+onnx>=1.17
+onnxruntime-gpu
+onnxruntime-tools
+onnxscript>=0.2.3
+
+# Vision backbones and image utils
+timm
+pillow
+opencv-python
+scikit-image
+
+# Retrieval / evaluation
+faiss-cpu
+open-clip-torch
+clean-fid
+jiwer
+# FVD: pytorch-fvd wheels are frequently unavailable; include torch-fidelity as a fallback for FID/IS
+torch-fidelity
+
+# Audio / ASR / TTS
+encodec
+TTS
+faster-whisper
+soundfile
+librosa
+
+# Logic / solver
+z3-solver
+
+# Serving / tooling
+fastapi
+uvicorn
+pytest
+pytest-timeout
+torchmetrics
+
+# SFB heavy deps handled via isolated runtime (installed in container venv)
+penman
+
+# SRL backend for SFB (explicitly requested)
+allennlp
+allennlp-models

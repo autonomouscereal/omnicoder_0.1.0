@@ -1,0 +1,10 @@
+^D:\PYCHARMPROJECTS\OMNICODER_0.1.0\BUILD_DML\CMAKEFILES\4A518C2D18DA8B8C4B4ED9BC9232B061\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/PycharmProjects/omnicoder_0.1.0/src/omnicoder/modeling/kernels -BD:/PycharmProjects/omnicoder_0.1.0/build_dml --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/PycharmProjects/omnicoder_0.1.0/build_dml/omnicoder_dml_native.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

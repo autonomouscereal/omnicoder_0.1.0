@@ -1,0 +1,3 @@
+{"prompt": "Explain binary search.", "chosen": "Binary search halves the range each step, O(log n).", "rejected": "Binary search adds elements until found."}
+{"prompt": "What is 2+2?", "chosen": "4", "rejected": "5"}
+

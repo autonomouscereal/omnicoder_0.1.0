@@ -1,0 +1,101 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnicoder"
+version = "0.1.9"
+description = "Edge-first multimodal model skeleton for Android/iOS"
+authors = [{name="OmniCoder Contributors"}]
+license = {text="Apache-2.0"}
+dependencies = [
+    "numpy",
+    "torch; platform_system!='Darwin' or platform_machine!='arm64'",
+    "tokenizers",
+    "transformers>=4.40",
+    "accelerate",
+    "peft",
+    "bitsandbytes; platform_system=='Linux'",
+    "soundfile",
+    "librosa",
+    "opencv-python",
+    "scikit-image",
+]
+
+[project.scripts]
+press-play = "omnicoder.tools.press_play:main"
+run-training = "omnicoder.tools.run_training:main"
+export-to-phone = "omnicoder.tools.export_to_phone:main"
+lets-gooooo = "omnicoder.tools.lets_gooooo:main"
+app-assets = "omnicoder.tools.app_assets:main"
+package-app-assets = "omnicoder.tools.package_app_assets:main"
+code-verifier = "omnicoder.tools.code_verifier:main"
+auto-tune = "omnicoder.tools.auto_tune:main"
+kv-dump = "omnicoder.tools.kv_dump:main"
+kv-autoencoder-train = "omnicoder.tools.kv_autoencoder_train:main"
+pref-expert-train = "omnicoder.tools.preference_expert_train:main"
+mla-microbench = "omnicoder.tools.mla_microbench:main"
+kv-prefetch-write = "omnicoder.tools.kv_prefetch_write:main"
+rm-train = "omnicoder.training.rm_train:main"
+env-audit = "omnicoder.tools.env_audit:main"
+refiner-train = "omnicoder.tools.refiner_train:main"
+write-policy-acceptance = "omnicoder.tools.write_policy_acceptance:main"
+draft-train = "omnicoder.training.draft_train:main"
+speculative-train = "omnicoder.training.speculative_train:main"
+bench-acceptance = "omnicoder.tools.bench_acceptance:main"
+router-ablate = "omnicoder.tools.router_ablate:main"
+sfb-setup = "omnicoder.tools.sfb_setup:main"
+sfb-sidecars-demo = "omnicoder.tools.sfb_sidecars_demo:main"
+
+[project.optional-dependencies]
+onnx = [
+  "onnx>=1.17",
+  "onnxruntime>=1.17",
+  "onnxruntime-tools>=1.7",
+  "protobuf>=5",
+  "onnxscript>=0.2.3",
+]
+mlc = [
+  "tvmc",
+]
+execu = [
+  "executorch; python_version>='3.10'",
+]
+bench = [
+  "faiss-cpu; platform_system=='Linux' or platform_system=='Windows'",
+]
+vision = [
+  "timm",
+  "pillow>=10.1",
+]
+audio = [
+  # EnCodec: wheels are commonly available on Linux/macOS; Windows support is limited
+  "encodec; platform_system!='Windows'",
+  # Coqui TTS: gate where wheels are commonly available; avoid Windows/Python>=3.12 which frequently lacks wheels
+  "TTS; platform_system!='Windows' and python_version < '3.12'",
+  # ASR options: prefer faster-whisper on non-Windows; fallback to whisper on Windows/Linux
+  "faster-whisper; platform_system!='Windows'",
+  "whisper; platform_system=='Windows' or platform_system=='Linux'",
+]
+eval = [
+  "open-clip-torch",
+  "clean-fid",
+  "jiwer",
+  # Gate pytorch-fvd on non-Windows due to wheel availability
+  "pytorch-fvd; platform_system!='Windows'",
+]
+sfb = [
+  "amrlib",
+  "penman",
+  "allennlp",
+  "allennlp_models",
+  "torchvision",
+  "pillow>=10.1",
+  "z3-solver",
+]
+gen = [
+  "diffusers>=0.24",
+  "accelerate",
+  "safetensors",
+  "optimum[onnxruntime]",
+]

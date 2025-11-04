@@ -1,0 +1,63 @@
+numpy
+tokenizers
+transformers>=4.40
+accelerate
+peft
+soundfile
+librosa
+opencv-python
+scikit-image
+
+[:platform_system != "Darwin" or platform_machine != "arm64"]
+torch
+
+[:platform_system == "Linux"]
+bitsandbytes
+
+[audio]
+
+[audio:platform_system != "Windows"]
+encodec
+faster-whisper
+
+[audio:platform_system != "Windows" and python_version < "3.12"]
+TTS
+
+[audio:platform_system == "Windows" or platform_system == "Linux"]
+whisper
+
+[bench]
+
+[bench:platform_system == "Linux" or platform_system == "Windows"]
+faiss-cpu
+
+[eval]
+open-clip-torch
+clean-fid
+jiwer
+
+[eval:platform_system != "Windows"]
+pytorch-fvd
+
+[execu]
+
+[execu:python_version >= "3.10"]
+executorch
+
+[gen]
+diffusers>=0.24
+accelerate
+safetensors
+optimum[onnxruntime]
+
+[mlc]
+tvmc
+
+[onnx]
+onnx>=1.15
+onnxruntime>=1.17
+onnxruntime-tools>=1.7
+
+[vision]
+timm
+pillow>=10.1

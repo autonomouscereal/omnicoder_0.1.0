@@ -1,0 +1,15 @@
+{
+  "provider": "NNAPIExecutionProvider",
+  "session_options": {
+    "intra_op_num_threads": 1,
+    "inter_op_num_threads": 1,
+    "graph_optimization_level": 99
+  },
+  "provider_options": {
+    "use_nchw": false,
+    "execution_mode": "sequential",
+    "nnapi_execution_preference": "sustained_speed"
+  }
+}
+
+

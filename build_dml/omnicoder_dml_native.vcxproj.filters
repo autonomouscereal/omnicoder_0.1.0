@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\PycharmProjects\omnicoder_0.1.0\src\omnicoder\modeling\kernels\dml_fused_attention.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\PycharmProjects\omnicoder_0.1.0\src\omnicoder\modeling\kernels\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{E9D52506-B473-3F0E-954B-1376C0D0ACD7}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

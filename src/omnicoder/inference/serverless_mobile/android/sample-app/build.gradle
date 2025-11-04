@@ -1,0 +1,29 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android' version '1.9.0'
+}
+
+android {
+    namespace 'ai.omnicoder.sample'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'ai.omnicoder.sample'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '0.1'
+    }
+    buildTypes { release { minifyEnabled false } }
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.0'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.0'
+}
+

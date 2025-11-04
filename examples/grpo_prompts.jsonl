@@ -1,0 +1,4 @@
+{"prompt": "Write a function to compute Fibonacci(n).", "targets": ["def fib(n):\n a,b=0,1\n for _ in range(n):\n  a,b=b,a+b\n return a"]}
+{"prompt": "Sort this list: [3,1,2]", "targets": ["[1, 2, 3]"]}
+{"prompt": "Simplify the expression: (x^2 - 1)/(x - 1)", "targets": ["x+1"]}
+

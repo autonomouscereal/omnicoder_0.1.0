@@ -1,0 +1,10 @@
+^D:\PYCHARMPROJECTS\OMNICODER_0.1.0\SRC\OMNICODER\MODELING\KERNELS\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/PycharmProjects/omnicoder_0.1.0/src/omnicoder/modeling/kernels -BD:/PycharmProjects/omnicoder_0.1.0/build_dml --check-stamp-file D:/PycharmProjects/omnicoder_0.1.0/build_dml/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

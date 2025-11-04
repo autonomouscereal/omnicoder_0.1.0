@@ -1,0 +1,2 @@
+{"candidates": ["def add(a,b):\n    return a+b\n"], "tests": "assert add(2,2)==4"}
+{"candidates": ["def mul(a,b):\n    return a*b\n"], "tests": "assert mul(3,4)==12"}

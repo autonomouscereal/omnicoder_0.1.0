@@ -1,0 +1,273 @@
+{
+  "text": {
+    "path": "data/text",
+    "format": "txt_glob",
+    "glob": "**/*.txt"
+  },
+  "math": {
+    "path": "examples/math.jsonl",
+    "format": "jsonl",
+    "schema": {"prompt": "str", "solution": "str"}
+  },
+  "code": {
+    "path": "examples/code_eval",
+    "format": "jsonl",
+    "schema": {"prompt": "str", "solution?": "str"}
+  },
+  "vl": {
+    "path": "examples/vl_auto.jsonl",
+    "format": "jsonl",
+    "schema": {"image": "path", "text": "str"}
+  },
+  "vqa": {
+    "path": "examples/vl_auto.jsonl",
+    "format": "jsonl",
+    "schema": {"image": "path", "question": "str", "answer": "str"}
+  },
+  "asr": {
+    "path": "examples/data/vq/audio",
+    "format": "wav_dir"
+  },
+  "tts": {
+    "path": "examples/data/vq/audio",
+    "format": "wav_dir"
+  },
+  "audio": {
+    "path": "examples/data/vq/audio",
+    "format": "wav_dir"
+  },
+  "video": {
+    "path": "examples/data/vq/video",
+    "format": "frames_dir",
+    "pred_dir": "weights/video/pred",
+    "ref_dir": "examples/data/vq/video"
+  },
+  "retrieval_multi_index": {
+    "path": "weights/retrieval_multi_index",
+    "format": "emb_index",
+    "schema": {"embeddings": "embeddings.npy", "ids": "ids.txt"}
+  }
+  ,
+  "external_sources": {
+    "wit_train_shard_0": {
+      "url": "https://storage.googleapis.com/gresearch/wit/wit_v1.train.all-00000-of-00010.tsv.gz",
+      "dest": "data/wit/wit_v1.train.all-00000-of-00010.tsv.gz",
+      "extract": false
+    },
+    "coco2017_train_images": {
+      "url": "http://images.cocodataset.org/zips/train2017.zip",
+      "dest": "data/coco2017/train2017.zip",
+      "extract": true
+    },
+    "coco2017_annotations": {
+      "url": "http://images.cocodataset.org/annotations/annotations_trainval2017.zip",
+      "dest": "data/coco2017/annotations_trainval2017.zip",
+      "extract": true
+    },
+    "hotpotqa_full_wiki": {
+      "url": "https://hotpotqa.github.io/wiki/enwiki-20171001-pages-meta-current-withlinks-abstracts.tar.bz2",
+      "dest": "data/hotpotqa/enwiki-20171001-pages-meta-current-withlinks-abstracts.tar.bz2",
+      "extract": true
+    },
+    "hotpotqa_train_dev": {
+      "url": "https://hotpotqa.github.io/dataset/hotpot_train_v1.1.json",
+      "dest": "data/hotpotqa/hotpot_train_v1.1.json",
+      "extract": false
+    },
+    "hotpotqa_dev": {
+      "url": "https://hotpotqa.github.io/dataset/hotpot_dev_fullwiki_v1.json",
+      "dest": "data/hotpotqa/hotpot_dev_fullwiki_v1.json",
+      "extract": false
+    },
+    "strategyqa_train": {
+      "url": "https://raw.githubusercontent.com/allenai/strategyqa/master/dataset/strategyqa_train.json",
+      "dest": "data/strategyqa/strategyqa_train.json",
+      "extract": false
+    },
+    "strategyqa_test": {
+      "url": "https://raw.githubusercontent.com/allenai/strategyqa/master/dataset/strategyqa_test.json",
+      "dest": "data/strategyqa/strategyqa_test.json",
+      "extract": false
+    },
+    "gsm8k_main": {
+      "url": "https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/train.jsonl",
+      "dest": "data/gsm8k/train.jsonl",
+      "extract": false
+    },
+    "gsm8k_test": {
+      "url": "https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/test.jsonl",
+      "dest": "data/gsm8k/test.jsonl",
+      "extract": false
+    },
+    "vqa_v2_questions_train": {
+      "url": "https://visualqa.org/data/mscoco/vqa/v2_Questions_Train_mscoco.zip",
+      "dest": "data/vqa/v2_Questions_Train_mscoco.zip",
+      "extract": true
+    },
+    "vqa_v2_annotations_train": {
+      "url": "https://visualqa.org/data/mscoco/vqa/v2_Annotations_Train_mscoco.zip",
+      "dest": "data/vqa/v2_Annotations_Train_mscoco.zip",
+      "extract": true
+    },
+    "commonsenseqa_train": {
+      "url": "https://s3.amazonaws.com/commensenseqa/qa-train.jsonl",
+      "dest": "data/commonsenseqa/qa-train.jsonl",
+      "extract": false
+    },
+    "wikipedia_en_pages_articles": {
+      "url": "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2",
+      "dest": "data/wiki/enwiki-latest-pages-articles.xml.bz2",
+      "extract": false
+    },
+    "ljspeech_1_1": {
+      "url": "https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
+      "dest": "data/tts/LJSpeech-1.1.tar.bz2",
+      "extract": true
+    },
+    "librispeech_train_clean_100": {
+      "url": "https://www.openslr.org/resources/12/train-clean-100.tar.gz",
+      "dest": "data/librispeech/train-clean-100.tar.gz",
+      "extract": true
+    },
+    "librispeech_train_clean_360": {
+      "url": "https://www.openslr.org/resources/12/train-clean-360.tar.gz",
+      "dest": "data/librispeech/train-clean-360.tar.gz",
+      "extract": true
+    },
+    "librispeech_train_other_500": {
+      "url": "https://www.openslr.org/resources/12/train-other-500.tar.gz",
+      "dest": "data/librispeech/train-other-500.tar.gz",
+      "extract": true
+    },
+    "librispeech_dev_clean": {
+      "url": "https://www.openslr.org/resources/12/dev-clean.tar.gz",
+      "dest": "data/librispeech/dev-clean.tar.gz",
+      "extract": true
+    },
+    "codesearchnet_python": {
+      "url": "https://s3.amazonaws.com/code-search-net/CodeSearchNet/v2/python.zip",
+      "dest": "data/codesearchnet/python.zip",
+      "extract": true
+    },
+    "codesearchnet_java": {
+      "url": "https://s3.amazonaws.com/code-search-net/CodeSearchNet/v2/java.zip",
+      "dest": "data/codesearchnet/java.zip",
+      "extract": true
+    },
+    "codesearchnet_javascript": {
+      "url": "https://s3.amazonaws.com/code-search-net/CodeSearchNet/v2/javascript.zip",
+      "dest": "data/codesearchnet/javascript.zip",
+      "extract": true
+    },
+    "codesearchnet_go": {
+      "url": "https://s3.amazonaws.com/code-search-net/CodeSearchNet/v2/go.zip",
+      "dest": "data/codesearchnet/go.zip",
+      "extract": true
+    },
+    "codesearchnet_ruby": {
+      "url": "https://s3.amazonaws.com/code-search-net/CodeSearchNet/v2/ruby.zip",
+      "dest": "data/codesearchnet/ruby.zip",
+      "extract": true
+    },
+    "codesearchnet_php": {
+      "url": "https://s3.amazonaws.com/code-search-net/CodeSearchNet/v2/php.zip",
+      "dest": "data/codesearchnet/php.zip",
+      "extract": true
+    },
+    "humaneval": {
+      "url": "https://raw.githubusercontent.com/openai/human-eval/master/data/HumanEval.jsonl",
+      "dest": "data/code/humaneval.jsonl",
+      "extract": false
+    },
+    "mbpp": {
+      "url": "https://raw.githubusercontent.com/google-research/google-research/master/mbpp/mbpp.jsonl",
+      "dest": "data/code/mbpp.jsonl",
+      "extract": false
+    },
+    "vqa2_questions_train_alt": {
+      "url": "https://visualqa.org/data2/mscoco/vqa/v2_Questions_Train_mscoco.zip",
+      "dest": "data/vqa/v2_Questions_Train_mscoco.zip",
+      "extract": true
+    },
+    "vqa2_annotations_train_alt": {
+      "url": "https://visualqa.org/data2/mscoco/vqa/v2_Annotations_Train_mscoco.zip",
+      "dest": "data/vqa/v2_Annotations_Train_mscoco.zip",
+      "extract": true
+    },
+    "openimages_v7_train_annotations": {
+      "url": "https://storage.googleapis.com/openimages/2018_04/train/train-annotations-bbox.csv",
+      "dest": "data/openimages/train-annotations-bbox.csv",
+      "extract": false
+    },
+    "openimages_v7_class_descriptions": {
+      "url": "https://storage.googleapis.com/openimages/2018_04/class-descriptions-boxable.csv",
+      "dest": "data/openimages/class-descriptions-boxable.csv",
+      "extract": false
+    },
+    "openimages_v7_train_images_part_0": {
+      "url": "https://storage.googleapis.com/openimages/web/download.html",
+      "dest": "data/openimages/README.txt",
+      "extract": false
+    },
+    "webvid10m_meta": {
+      "url": "https://storage.googleapis.com/webvid-dataset/metadata/webvid_train.csv",
+      "dest": "data/webvid/webvid_train.csv",
+      "extract": false
+    },
+    "kinetics_700_2020_train": {
+      "url": "https://storage.googleapis.com/deepmind-media/Datasets/kinetics700_2020/kinetics700_2020_train.csv",
+      "dest": "data/kinetics/kinetics700_2020_train.csv",
+      "extract": false
+    }
+  },
+  
+  "host_examples": {
+    "windows_dev": {
+      "text": {"path": "D:/datasets/text", "format": "txt_glob", "glob": "**/*.txt"},
+      "code": {"path": "D:/datasets/code.jsonl", "format": "jsonl", "schema": {"prompt": "str", "solution?": "str"}},
+      "vl":   {"path": "D:/datasets/vl.jsonl", "format": "jsonl", "schema": {"image": "path", "text": "str"}},
+      "asr":  {"path": "D:/datasets/asr_wavs", "format": "wav_dir"},
+      "tts":  {"path": "D:/datasets/tts_wavs", "format": "wav_dir"},
+      "video": {"path": "D:/datasets/video_frames", "format": "frames_dir", "ref_dir": "D:/datasets/video_frames"},
+      "vqav2": {"path": "D:/datasets/vqa/vqav2.jsonl", "format": "jsonl"},
+      "okvqa": {"path": "D:/datasets/vqa/okvqa.jsonl", "format": "jsonl"},
+      "coco_captions": {"path": "D:/datasets/coco/coco_captions.jsonl", "format": "jsonl"},
+      "msrvtt_vqa": {"path": "D:/datasets/video/msrvtt_vqa.jsonl", "format": "jsonl"},
+      "common_voice": {"path": "D:/datasets/audio/common_voice", "format": "wav_dir"},
+      "librilight": {"path": "D:/datasets/audio/LibriLight", "format": "wav_dir"},
+      "ljspeech": {"path": "D:/datasets/audio/LJSpeech-1.1", "format": "wav_dir"},
+      "audiocaps": {"path": "D:/datasets/audio/AudioCaps", "format": "wav_dir"},
+      "clotho": {"path": "D:/datasets/audio/ClothoV2", "format": "wav_dir"},
+      "webvid10m": {"path": "D:/datasets/video/WebVid10M", "format": "frames_dir"},
+      "howto100m": {"path": "D:/datasets/video/HowTo100M", "format": "frames_dir"},
+      "stack_v2": {"path": "D:/datasets/code/stack_v2_filtered.jsonl", "format": "jsonl"},
+      "flan_mixtures": {"path": "D:/datasets/text/flan_mixtures.jsonl", "format": "jsonl"},
+      "sharegpt": {"path": "D:/datasets/text/sharegpt.jsonl", "format": "jsonl"},
+      "dolma": {"path": "D:/datasets/text/dolma", "format": "txt_glob", "glob": "**/*.txt"}
+    },
+    "linux_train": {
+      "text": {"path": "/data/text", "format": "txt_glob", "glob": "**/*.txt"},
+      "code": {"path": "/data/code.jsonl", "format": "jsonl", "schema": {"prompt": "str", "solution?": "str"}},
+      "vl":   {"path": "/data/vl.jsonl", "format": "jsonl", "schema": {"image": "path", "text": "str"}},
+      "asr":  {"path": "/data/asr", "format": "wav_dir"},
+      "tts":  {"path": "/data/tts", "format": "wav_dir"},
+      "video": {"path": "/data/video_frames", "format": "frames_dir", "ref_dir": "/data/video_frames"},
+      "vqav2": {"path": "/data/vqa/vqav2.jsonl", "format": "jsonl"},
+      "okvqa": {"path": "/data/vqa/okvqa.jsonl", "format": "jsonl"},
+      "coco_captions": {"path": "/data/coco/coco_captions.jsonl", "format": "jsonl"},
+      "msrvtt_vqa": {"path": "/data/video/msrvtt_vqa.jsonl", "format": "jsonl"},
+      "common_voice": {"path": "/data/audio/common_voice", "format": "wav_dir"},
+      "librilight": {"path": "/data/audio/LibriLight", "format": "wav_dir"},
+      "ljspeech": {"path": "/data/audio/LJSpeech-1.1", "format": "wav_dir"},
+      "audiocaps": {"path": "/data/audio/AudioCaps", "format": "wav_dir"},
+      "clotho": {"path": "/data/audio/ClothoV2", "format": "wav_dir"},
+      "webvid10m": {"path": "/data/video/WebVid10M", "format": "frames_dir"},
+      "howto100m": {"path": "/data/video/HowTo100M", "format": "frames_dir"},
+      "stack_v2": {"path": "/data/code/stack_v2_filtered.jsonl", "format": "jsonl"},
+      "flan_mixtures": {"path": "/data/text/flan_mixtures.jsonl", "format": "jsonl"},
+      "sharegpt": {"path": "/data/text/sharegpt.jsonl", "format": "jsonl"},
+      "dolma": {"path": "/data/text/dolma", "format": "txt_glob", "glob": "**/*.txt"}
+    }
+  }
+}
+

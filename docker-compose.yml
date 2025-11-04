@@ -1,0 +1,470 @@
+﻿x-common: &common
+  image: omnicoder:cuda
+  working_dir: /workspace
+  volumes:
+    - ./:/workspace
+    - ./weights:/workspace/weights
+    - ./models:/models
+  environment:
+    - HF_HOME=/models/hf
+    # TRANSFORMERS_CACHE deprecated; rely on HF_HOME
+    - OMNICODER_DATA_PROFILE=windows_dev
+    - OMNICODER_OUT_ROOT=/workspace/weights/release
+    - OMNICODER_AUTO_RESOURCES=1
+    # Dual substrate defaults
+    - OMNICODER_DUAL_SUBSTRATE=0
+    - OMNICODER_DUAL_ALPHA=1.0
+    - OMNICODER_DUAL_BETA=0.0
+    # Perceiver-IO prior and Algorithmic Core
+    - OMNICODER_PERCEIVER_ENABLE=1
+    - OMNICODER_ALG_CORE=1
+    # Enable Ω-Reasoner and GraphRAG by default
+    - OMNICODER_REASONER=omega
+    - OMNI_REASONER=omega
+    - OMNICODER_GRAPHRAG_ENABLE=1
+    - OMNICODER_ALLOW_EXTERNAL_RETRIEVAL=1
+    - OMNICODER_GRAPHRAG_ROOT=/workspace/weights/unified_index
+    # Enable internal KV caches and Mixture-of-Depths defaults
+    - OMNICODER_INTERNAL_KV_CACHE=1
+    - OMNICODER_MOD_ENABLE=1
+    # Conservative defaults for router temperature schedule (can be tuned)
+    - OMNICODER_ROUTER_TMIN=0.8
+    - OMNICODER_ROUTER_TMAX=1.2
+    - OMNICODER_ROUTER_TEMP_LAMBDA=3.0
+    # --- SFB defaults enabled globally ---
+    - SFB_ENABLE=1
+    - SFB_FACTORIZER=amr,srl
+    - SFB_BP_ITERS=10
+    - SFB_BP_ITERS_SEM=3
+    - SFB_COMPILE_SPN=1
+    - SFB_BLOCK_VERIFY=1
+    - SFB_BLOCK_VERIFY_SIZE=4
+    - SFB_BIAS_ALPHA=0.2
+    - SFB_SEM_WEIGHT=1.0
+    - SFB_ALLOW_NET=0
+    - SFB_HEAVY=0
+    - SFB_LOGIC_Z3=1
+    # Sidecars for metrics/solvers (present in repo examples)
+    - SFB_CLIP_JSONL=/workspace/examples/sidecars/clip_pairs.jsonl
+    - SFB_ASR_JSONL=/workspace/examples/sidecars/asr_pairs.jsonl
+    - SFB_CODE_TASKS_JSONL=/workspace/examples/sidecars/code_tasks.jsonl
+
+services:
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: omnicoder:cuda
+
+  shell:
+    <<: *common
+    command: bash -lc "bash"
+    tty: true
+    stdin_open: true
+
+  prep_data:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.tools.prepare_multimodal_data | cat"
+
+  fetch_datasets:
+    <<: *common
+    environment:
+      - HF_HOME=/models/hf
+      # TRANSFORMERS_CACHE deprecated; rely on HF_HOME
+      - TRANSFORMERS_OFFLINE=0
+      - HF_DATASETS_OFFLINE=0
+      - HF_HUB_OFFLINE=0
+      - OMNICODER_FETCH_LIMIT=200000
+      - HF_TOKEN=${HF_TOKEN}
+    command: >-
+      bash -lc "apt-get update && apt-get install -y --no-install-recommends aria2 unzip p7zip-full unrar ffmpeg libsndfile1 || true && \
+      python3 -m pip install --no-cache-dir datasets torchcodec 'imageio[ffmpeg]' pandas pyarrow && \
+      python3 -m omnicoder.tools.autofetch_datasets --limit ${OMNICODER_FETCH_LIMIT:-2000} | tee /workspace/tests_logs/autofetch.json"
+
+  fetch_nonhf:
+    <<: *common
+    command: >-
+      bash -lc "set -euo pipefail 
+      ; apt-get update && apt-get install -y --no-install-recommends aria2 unzip p7zip-full unrar || true 
+      ; python3 -m omnicoder.tools.autofetch_external --profiles /workspace/profiles/datasets.json 2>&1 | tee /workspace/tests_logs/autofetch_external.log"
+
+  tests:
+    <<: *common
+    gpus: all
+    # Fail on test errors; do not mask failures
+    depends_on:
+      - sandbox
+    # Run tests on CPU to avoid provider-order flakes (force CPUExecutionProvider)
+    # and keep CI deterministic across hosts
+    # (we also drop GPU reservation here)
+    environment:
+      - OMNICODER_LOG_LEVEL=DEBUG
+      - TORCH_INDUCTOR_INSTALL_GXX=1
+      - OMNICODER_TORCH_COMPILE=1
+      - OMNICODER_LOG_FILE=
+      - OMNICODER_MOE_LOG_EVERY=256
+      - OMNICODER_MOE_DEBUG=0
+      - OMNICODER_AUTO_RESOURCES=1
+      - OMNICODER_TIMING=1
+      - OMNICODER_TIMING_LOG_PER_LAYER=1
+      - OMNICODER_BENCH_DIAG=1
+      - OMNICODER_BENCH_PERF_EVERY=16
+      - OMNICODER_BENCH_LOG_STEPS=1
+      - OMNICODER_DECODE_HRM=1
+      - OMNICODER_DECODE_AUX=1
+      - OMNICODER_THREADS=1
+      - OMNICODER_THREADS_FACTOR=1.0
+      - CUDA_VISIBLE_DEVICES=
+      - OMNICODER_ONNX_PROVIDERS=CPUExecutionProvider
+      - OMNICODER_USE_SDPA=1
+      - OMNICODER_MLA_BACKEND=
+      - OMNICODER_COMPILE=1
+      - SANDBOX_REMOTE_URL=http://sandbox:8088
+      - SFB_ENABLE=1
+      - SFB_FACTORIZER=amr,srl
+      - SFB_BLOCK_VERIFY=1
+      - SFB_BLOCK_VERIFY_SIZE=4
+      - SFB_BIAS_ALPHA=0.2
+    command: >-
+      bash -lc "set -euo pipefail
+      ; export OMNICODER_LOG_LEVEL=\"${OMNICODER_LOG_LEVEL:-DEBUG}\"
+      ; export OMNICODER_MOE_DEBUG=\"${OMNICODER_MOE_DEBUG:-0}\"
+      ; export OMNICODER_BENCH_TINY=0
+      ; echo 'ENV:' && env | sort | grep -E 'OMNICODER_|SFB_|SANDBOX|HF_HOME|TRANSFORMERS_CACHE'
+      ; export OMNICODER_COMPILE=1
+      ; pytest -vv -rA --maxfail=0 --timeout=1800 --durations=50 --log-cli-level=INFO | tee tests_logs/pytest_full.log"
+
+  press_play:
+    <<: *common
+    depends_on:
+      - sandbox
+    gpus: all
+    command: >-
+      bash -lc "python3 -m omnicoder.tools.press_play --out_root /workspace/weights/release
+      --quantize_onnx --onnx_preset generic"
+    environment:
+      - SANDBOX_REMOTE_URL=http://sandbox:8088
+      - SFB_CODE_SANDBOX=1
+      - OMNICODER_DUAL_SUBSTRATE=1
+      - OMNICODER_PERCEIVER_ENABLE=1
+      - OMNICODER_ALG_CORE=1
+      - SFB_ENABLE=1
+      - SFB_FACTORIZER=amr,srl
+      - SFB_BP_ITERS=10
+      - SFB_BP_ITERS_SEM=3
+      - SFB_COMPILE_SPN=1
+      - SFB_BLOCK_VERIFY=1
+      - SFB_BLOCK_VERIFY_SIZE=4
+      - SFB_BIAS_ALPHA=0.2
+      - SFB_SEM_WEIGHT=1.0
+      - SFB_ALLOW_NET=1
+      - SFB_LOGIC_Z3=1
+      - SFB_BIAS_DECAY=0.05
+      - SFB_CLIP_JSONL=/workspace/examples/sidecars/clip_pairs.jsonl
+      - SFB_ASR_JSONL=/workspace/examples/sidecars/asr_pairs.jsonl
+      - SFB_CODE_TASKS_JSONL=/workspace/examples/sidecars/code_tasks.jsonl
+
+  lets_gooooo:
+    <<: *common
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: omnicoder:cuda
+    depends_on:
+      - sandbox
+      - prep_data
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    gpus: all
+    command: >-
+      bash -lc "python3 -m omnicoder.tools.lets_gooooo --budget_hours 1 --device cuda --out_root /workspace/weights 2>&1 | tee /workspace/tests_logs/lets_gooooo.log"
+    environment:
+      - OMNICODER_LOG_LEVEL=INFO
+      - SANDBOX_REMOTE_URL=http://sandbox:8088
+      - SFB_CODE_SANDBOX=1
+      # Skip re-running tests inside lets_gooooo (we run them via the tests service)
+      - EXECUTE_TESTS=0
+      - OMNICODER_DUAL_SUBSTRATE=1
+      - OMNICODER_PERCEIVER_ENABLE=1
+      - OMNICODER_ALG_CORE=1
+      - SFB_ENABLE=1
+      - SFB_FACTORIZER=amr,srl
+      - SFB_BP_ITERS=10
+      - SFB_BP_ITERS_SEM=3
+      - SFB_COMPILE_SPN=1
+      - SFB_BLOCK_VERIFY=1
+      - SFB_BLOCK_VERIFY_SIZE=4
+      - SFB_BIAS_ALPHA=0.2
+      - SFB_SEM_WEIGHT=1.0
+      - SFB_ALLOW_NET=1
+      - SFB_LOGIC_Z3=1
+      - SFB_BIAS_DECAY=0.05
+      - SFB_CLIP_JSONL=/workspace/examples/sidecars/clip_pairs.jsonl
+      - SFB_ASR_JSONL=/workspace/examples/sidecars/asr_pairs.jsonl
+      - SFB_CODE_TASKS_JSONL=/workspace/examples/sidecars/code_tasks.jsonl
+      - OMNICODER_DEVICE=cuda
+      - OMNICODER_TRAIN_DEVICE=cuda
+      - OMNICODER_COMPILE=1
+      - OMNICODER_USE_DYNAMO=1
+      - OMNICODER_SDP_PREF=flash
+      - OMNICODER_DECODE_WINDOW=256
+      - OMNICODER_STATIC_DECODE_WINDOW=1
+      - OMNICODER_DECODE_AUX=1
+      - OMNICODER_BLOCK_VERIFY=1
+      - OMNICODER_SPEC_DRAFT_LEN=4
+      - OMNICODER_VERIFY_THRESHOLD=0.0
+      - OMNICODER_DRAFT_PRESET=draft_2b
+      - OMNICODER_DRAFT_CKPT=/workspace/weights/omnicoder_draft_kd.pt
+      - OMNICODER_USE_ONNX=1
+      - OMNICODER_API_ONNX_DECODE=/workspace/weights/text/draft_decode_step.onnx
+      - HF_HOME=/models/hf
+      # TRANSFORMERS_CACHE deprecated; rely on HF_HOME
+      - TRANSFORMERS_OFFLINE=0
+      - HF_DATASETS_OFFLINE=0
+      - HF_HUB_OFFLINE=0
+
+  ios_smoke:
+    <<: *common
+    # Intended for macOS hosts with an attached iOS device and Xcode toolchain
+    command: >-
+      bash -lc "python3 -m omnicoder.tools.ios_coreml_smoke \
+      --mlmodel /workspace/weights/release/text/omnicoder_decode_step.mlmodel \
+      --tps_threshold ${OMNICODER_IOS_TPS_THRESHOLD:-6.0}"
+
+  onnx_smoke:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.inference.runtimes.onnx_mobile_infer
+      --model /workspace/weights/release/text/omnicoder_decode_step.onnx
+      --provider CPUExecutionProvider --prompt Hello | cat"
+    environment:
+      - OMNICODER_ONNX_USE_HF_TOKENIZER=1
+      - OMNICODER_HF_TOKENIZER=hf-internal-testing/llama-tokenizer
+
+  provider_bench:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.inference.runtimes.provider_bench
+      --model /workspace/weights/release/text/omnicoder_decode_step.onnx
+      --providers CPUExecutionProvider
+      --prompt_len 128 --gen_tokens 128 --check_fusions 
+      --threshold_json /workspace/profiles/provider_thresholds.json 
+      --out_json /workspace/weights/release/text/provider_bench.json"
+
+  provider_bench_dml:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.inference.runtimes.provider_bench
+      --model /workspace/weights/release/text/omnicoder_decode_step.onnx
+      --providers DmlExecutionProvider CPUExecutionProvider
+      --prompt_len 128 --gen_tokens 128 --check_fusions --require_attention
+      --threshold_json /workspace/profiles/provider_thresholds.json
+      --out_json /workspace/weights/release/text/provider_bench_dml.json"
+
+  provider_bench_coreml:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.inference.runtimes.provider_bench
+      --model /workspace/weights/release/text/omnicoder_decode_step.onnx
+      --providers CoreMLExecutionProvider CPUExecutionProvider
+      --prompt_len 128 --gen_tokens 128 --check_fusions --require_attention
+      --threshold_json /workspace/profiles/provider_thresholds.json
+      --out_json /workspace/weights/release/text/provider_bench_coreml.json"
+
+  provider_bench_nnapi:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.inference.runtimes.provider_bench
+      --model /workspace/weights/release/text/omnicoder_decode_step.onnx
+      --providers NNAPIExecutionProvider CPUExecutionProvider
+      --prompt_len 128 --gen_tokens 128 --check_fusions --require_attention
+      --threshold_json /workspace/profiles/provider_thresholds.json
+      --out_json /workspace/weights/release/text/provider_bench_nnapi.json"
+
+  kv_budget:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.tools.kv_budget_enforce --sidecar /workspace/weights/release/text/omnicoder_decode_step.kvq.json --out /workspace/weights/release/text/kv_budget_summary.json || true"
+
+  metrics_canaries:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.tools.metrics_canaries --max_new_tokens 64
+      && python3 -m omnicoder.tools.threshold_check --metrics_json /workspace/weights/metrics_canaries.json --min_tps 15.0"
+
+  kd_train:
+    <<: *common
+    depends_on:
+      - sandbox
+    command: >-
+      bash -lc "python3 -m omnicoder.training.distill --data /workspace/examples/code_eval
+      --batch_size 2 --seq_len 512 --steps 2000 --device cuda --teacher microsoft/phi-2
+      --teacher_device_map auto --teacher_dtype auto
+      --student_mobile_preset mobile_4gb --lora --lora_r 16 --lora_alpha 32 --lora_dropout 0.05
+      --gradient_checkpointing --out /workspace/weights/omnicoder_student_kd.pt"
+    environment:
+      - SANDBOX_REMOTE_URL=http://sandbox:8088
+      - SFB_CODE_SANDBOX=1
+
+  lora_finetune:
+    <<: *common
+    depends_on:
+      - sandbox
+    command: >-
+      bash -lc "python3 -m omnicoder.training.finetune_lora --data /workspace/examples
+      --seq_len 256 --steps 1000 --device cuda --lora_r 16 --lora_alpha 32 --lora_dropout 0.05
+      --out /workspace/weights/omnicoder_lora.pt"
+
+  export_mobile:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.tools.build_mobile_release --out_root /workspace/weights/release
+      --quantize_onnx --onnx_preset generic --sd_model runwayml/stable-diffusion-v1-5 --sd_export_onnx"
+
+  train_probe:
+    <<: *common
+    command: >-
+      bash -lc "python3 -m omnicoder.tools.train_probe --budget_minutes 120 --device cuda | cat"
+
+  draft_train:
+    <<: *common
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    command: >-
+      bash -lc "python3 -m omnicoder.training.draft_train 
+      --data /workspace/examples/code_eval --seq_len 512 --steps 20000 --batch_size 2
+      --device cuda --teacher microsoft/phi-2 --teacher_device_map auto --teacher_dtype auto
+      --student_mobile_preset mobile_2gb --lora --lora_r 16 --lora_alpha 32 --lora_dropout 0.05
+      --out_ckpt /workspace/weights/omnicoder_draft_kd.pt
+      --out_onnx /workspace/weights/text/draft_decode_step.onnx
+      --bench_accept --bench_out /workspace/weights/draft_acceptance.json"
+
+  train_ep_2gpu:
+    <<: *common
+    gpus: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    command: >-
+      bash -lc "python3 -m omnicoder.tools.torchrun_ep --script omnicoder.training.pretrain --script_args '--data /workspace/examples --seq_len 128 --steps 100 --device cuda' --devices cuda:0,cuda:1 | cat"
+
+  sandbox:
+    <<: *common
+    gpus: all
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+    command: >-
+      bash -lc "python3 -m omnicoder.sfb.runtime.sandbox_server | cat"
+    environment:
+      - SANDBOX_HOST=0.0.0.0
+      - SANDBOX_PORT=8088
+    ports:
+      - "8088:8088"
+
+  api:
+    <<: *common
+    depends_on:
+      - sandbox
+    gpus: all
+    command: >-
+      bash -lc "python3 -c \"import torch, os; print({'cuda': torch.cuda.is_available(), 'device_count': torch.cuda.device_count(), 'ld_path': os.getenv('LD_LIBRARY_PATH','')})\" \
+      ; python3 -m omnicoder.tools.http_server"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - OMNICODER_LOG_LEVEL=DEBUG
+      - OMNICODER_LOG_FILE=tests_logs/omnicoder_api.log
+      - OMNICODER_TRAIN_DEVICE=cuda
+      - OMNICODER_OUT_ROOT=/workspace/weights
+      - HF_TOKEN=${HF_TOKEN}
+      - OMNICODER_API_TEXT_BACKEND=student
+      # Ensure HRM is enabled by default at runtime
+      - OMNICODER_HRM_ENABLE=1
+      # Enable super-verbose token-by-token logging (can be noisy)
+      - OMNICODER_GEN_SUPER_VERBOSE=0
+      - OMNICODER_GEN_VERBOSE_STEPS=0
+      - OMNICODER_MOE_DEBUG=0
+      - OMNICODER_MOE_LOG_SUMMARY=1
+      - OMNICODER_ATT_LOG_SHAPES=0
+      - OMNICODER_TIMING=1
+      - OMNICODER_TIMING_LOG_PER_LAYER=0
+      - OMNICODER_API_PREFER_HF_TOKENIZER=1
+      - OMNICODER_API_FORCE_HF=1
+      - OMNICODER_TOKENIZER_DIAG=1
+      - OMNICODER_AUTO_SELECT_TOKENIZER=1
+      - OMNICODER_TOKENIZER_CANDIDATES=hf-internal-testing/llama-tokenizer,openlm-research/open_llama_3b,openlm-research/open_llama_7b,openlm-research/open_llama_13b,openlm-research/open_llama_7b_v2,openlm-research/open_llama_13b_v2,NousResearch/Llama-2-7b-hf,meta-llama/Llama-2-7b-hf,mistralai/Mistral-7B-v0.1,tiiuae/falcon-7b,TheBloke/OpenLlama-7B-GGUF,decapoda-research/llama-7b-hf,openaccess-ai-collective/open_llama_7b_v2,Weyaxi/LLaMA-7B-Tokenizer,bigscience/bloom-560m,meta-llama/Meta-Llama-3-8B-Instruct,openlm-research/open_llama_3b_v2,Weyaxi/LLaMA-13B-Tokenizer,TinyLlama/TinyLlama-1.1B-Chat-v1.0,Qwen/Qwen1.5-7B-Chat
+      - OMNICODER_TOKENIZER_SWEEP_ENABLE=0
+      # Prefer Llama3 base tokenizer locally and wrap to 32k subset if needed
+      - OMNICODER_LLAMA3_SUBSET=1
+      - OMNICODER_HF_TOKENIZER=meta-llama/Meta-Llama-3-8B-Instruct
+      - OMNICODER_DISABLE_TOKENIZER_REMAP=0
+      - OMNICODER_FORBID_GPT2=1
+      # Anti-repetition and sampling knobs
+      - OMNICODER_REP_PENALTY=1.2
+      - OMNICODER_REP_WINDOW=128
+      - OMNICODER_FREQ_PENALTY=0.4
+      - OMNICODER_PRESENCE_PENALTY=0.2
+      - OMNICODER_BAN_REPEAT_RUN=4
+      - OMNICODER_BAN_LAST_TOKEN=1
+      # Stronger hard constraints (enabled for API only)
+      - OMNICODER_NO_REPEAT_NGRAM=3
+      - OMNICODER_NO_REPEAT_WINDOW=256
+      - OMNICODER_MIN_P=0.08
+      - OMNICODER_MASK_NON_TEXT=1
+      # Disable optional biasers for stability
+      # Align runtime toggles with training-time configuration to avoid behavior drift
+      - OMNICODER_DUAL_SUBSTRATE=1
+      - OMNICODER_PERCEIVER_ENABLE=1
+      - OMNICODER_ALG_CORE=1
+      - SFB_ENABLE=1
+      - SFB_ALLOW_NET=1
+      - SFB_HEAVY=1
+      - OMNICODER_GEN_TEMPERATURE=0.9
+      - OMNICODER_GEN_TOP_K=60
+      - OMNICODER_GEN_TOP_P=0.95
+      - OMNICODER_USE_ONNX=0
+      - OMNICODER_ONNX_OK=0
+      - OMNICODER_ONNX_USE_HF_TOKENIZER=1
+      - OMNICODER_USE_IOBIND=1
+      - OMNICODER_MIN_CKPT_COVERAGE=85.0
+      - TRANSFORMERS_OFFLINE=0
+      - HF_DATASETS_OFFLINE=0
+      - HF_HUB_OFFLINE=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda-12.1/lib64:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+      - OMNICODER_API_CKPT=/workspace/weights/omnicoder_ppo.pt
+      - OMNICODER_API_CKPT_CHAIN=/workspace/weights/omnicoder_align.pt,/workspace/weights/omnicoder_ppo.pt
+      - OMNICODER_MIN_CKPT_COVERAGE=80.0
+      - OMNICODER_ALLOW_LOW_COVERAGE=1
+      - OMNICODER_API_TEACHER_PATH=/models/teachers/llama3-8b-instruct
+      - OMNICODER_API_TEACHER_ID=meta-llama/Meta-Llama-3-8B-Instruct
+      - OMNICODER_API_ONNX_DECODE=/workspace/weights/release/text/omnicoder_decode_step.onnx
+      - OMNICODER_ORT_PROVIDER=CUDAExecutionProvider
+      - OMNICODER_DUAL_FORCE=1
+      - OMNICODER_MOE_FALLBACK_TO_DENSE=0
+      # Allow full MoE; do not force dense MLP at runtime so trained MoE weights can load
+      - OMNICODER_FORCE_DENSE_MLP=0
+      - OMNICODER_COMPILE=1
+      - OMNICODER_ALLOW_INDUCTOR=0
+      - OMNICODER_SDP_PREF=flash
+      - OMNICODER_DECODE_WINDOW=256
+      - OMNICODER_STATIC_DECODE_WINDOW=1
+      # Make SFB venv visible to runtime for heavy deps
+      - SFB_VENV=/opt/sfb_venv
+    ports:
+      - "8000:8000"

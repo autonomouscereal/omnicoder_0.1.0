@@ -1,0 +1,23 @@
+{
+  "CPUExecutionProvider": 2.0,
+  "DmlExecutionProvider": 15.0,
+  "CoreMLExecutionProvider": 8.0,
+  "NNAPIExecutionProvider": 15.0,
+  "notes": "Thresholds are min tokens/sec for text decode-step; enforce attention/QLinear fusions when applicable.",
+  "profiles": {
+    "windows_dml": {
+      "DmlExecutionProvider": 12.0,
+      "CPUExecutionProvider": 2.0
+    },
+    "ios_coreml_a17": {
+      "CoreMLExecutionProvider": 7.0,
+      "CPUExecutionProvider": 2.0
+    },
+    "android_nnapi_mid": {
+      "NNAPIExecutionProvider": 10.0,
+      "CPUExecutionProvider": 2.0
+    }
+  }
+}
+
+

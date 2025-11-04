@@ -1,0 +1,42 @@
+{
+  "tokens_per_second_min": {
+    "mobile_2gb": 10.0,
+    "mobile_4gb": 12.0,
+    "mobile_2gb_moe16": 12.0,
+    "mobile_4gb_moe16": 12.0,
+    "draft_2b": 20.0,
+    "draft_3b": 24.0
+  },
+  "verifier": {
+    "mobile_2gb": {
+      "verify_threshold": 0.35,
+      "verifier_steps": 1
+    },
+    "mobile_4gb": {
+      "verify_threshold": 0.3,
+      "verifier_steps": 1
+    },
+    "mobile_2gb_moe16": {
+      "verify_threshold": 0.3,
+      "verifier_steps": 1
+    },
+    "mobile_4gb_moe16": {
+      "verify_threshold": 0.25,
+      "verifier_steps": 1
+    },
+    "draft_2b": {
+      "verify_threshold": 0.2,
+      "verifier_steps": 1
+    },
+    "draft_3b": {
+      "verify_threshold": 0.18,
+      "verifier_steps": 1
+    },
+    "default": {
+      "verify_threshold": 0.3,
+      "verifier_steps": 1
+    }
+  },
+  "draft_2b": 0.05,
+  "mobile_4gb": 0.05
+}

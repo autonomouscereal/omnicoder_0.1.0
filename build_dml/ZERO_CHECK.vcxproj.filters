@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\PycharmProjects\omnicoder_0.1.0\build_dml\CMakeFiles\4a518c2d18da8b8c4b4ed9bc9232b061\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{9658A594-28ED-380D-AEDF-923F1B89EB5F}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

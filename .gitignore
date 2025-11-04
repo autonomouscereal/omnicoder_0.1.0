@@ -1,0 +1,45 @@
+/.github
+/.venv
+/data
+/inception-2015-12-05.pt
+/models
+/models--google--siglip-base-patch16-224
+/# Exclude large/local artifacts
+/build_dml
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE/editor
+.idea/
+.vscode/
+
+# Test logs and local logs
+tests_logs/
+*.log
+
+# Local artifacts and datasets
+weights/
+examples/data/
+examples/sidecars/
+
+# Python/mypy/pytest caches
+.pytest_cache/
+.mypy_cache/
+.cache/
+
+# Packaging/build
+dist/
+build/
+*.egg-info/
+
+# Environment files
+.env
+*.env

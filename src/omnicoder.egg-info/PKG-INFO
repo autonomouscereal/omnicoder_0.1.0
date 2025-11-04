@@ -1,0 +1,47 @@
+Metadata-Version: 2.4
+Name: omnicoder
+Version: 0.1.9
+Summary: Edge-first multimodal model skeleton for Android/iOS
+Author: OmniCoder Contributors
+License: Apache-2.0
+License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: torch; platform_system != "Darwin" or platform_machine != "arm64"
+Requires-Dist: tokenizers
+Requires-Dist: transformers>=4.40
+Requires-Dist: accelerate
+Requires-Dist: peft
+Requires-Dist: bitsandbytes; platform_system == "Linux"
+Requires-Dist: soundfile
+Requires-Dist: librosa
+Requires-Dist: opencv-python
+Requires-Dist: scikit-image
+Provides-Extra: onnx
+Requires-Dist: onnx>=1.15; extra == "onnx"
+Requires-Dist: onnxruntime>=1.17; extra == "onnx"
+Requires-Dist: onnxruntime-tools>=1.7; extra == "onnx"
+Provides-Extra: mlc
+Requires-Dist: tvmc; extra == "mlc"
+Provides-Extra: execu
+Requires-Dist: executorch; python_version >= "3.10" and extra == "execu"
+Provides-Extra: bench
+Requires-Dist: faiss-cpu; (platform_system == "Linux" or platform_system == "Windows") and extra == "bench"
+Provides-Extra: vision
+Requires-Dist: timm; extra == "vision"
+Requires-Dist: pillow>=10.1; extra == "vision"
+Provides-Extra: audio
+Requires-Dist: encodec; platform_system != "Windows" and extra == "audio"
+Requires-Dist: TTS; (platform_system != "Windows" and python_version < "3.12") and extra == "audio"
+Requires-Dist: faster-whisper; platform_system != "Windows" and extra == "audio"
+Requires-Dist: whisper; (platform_system == "Windows" or platform_system == "Linux") and extra == "audio"
+Provides-Extra: eval
+Requires-Dist: open-clip-torch; extra == "eval"
+Requires-Dist: clean-fid; extra == "eval"
+Requires-Dist: jiwer; extra == "eval"
+Requires-Dist: pytorch-fvd; platform_system != "Windows" and extra == "eval"
+Provides-Extra: gen
+Requires-Dist: diffusers>=0.24; extra == "gen"
+Requires-Dist: accelerate; extra == "gen"
+Requires-Dist: safetensors; extra == "gen"
+Requires-Dist: optimum[onnxruntime]; extra == "gen"
+Dynamic: license-file

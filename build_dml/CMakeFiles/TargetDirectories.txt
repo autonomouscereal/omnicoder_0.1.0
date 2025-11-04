@@ -1,0 +1,3 @@
+D:/PycharmProjects/omnicoder_0.1.0/build_dml/CMakeFiles/omnicoder_dml_native.dir
+D:/PycharmProjects/omnicoder_0.1.0/build_dml/CMakeFiles/ALL_BUILD.dir
+D:/PycharmProjects/omnicoder_0.1.0/build_dml/CMakeFiles/ZERO_CHECK.dir

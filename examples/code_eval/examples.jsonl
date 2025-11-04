@@ -1,0 +1,10 @@
+[
+  {
+    "prompt": "Write a function add(a, b) that returns their sum.",
+    "tests": "from sol import add\nassert add(1,2)==3\nassert add(-1,5)==4",
+    "candidates": [
+      "def add(a,b):\n    return a+b",
+      "def add(a,b):\n    return a-b"
+    ]
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "provider": "CoreMLExecutionProvider",
+  "provider_options": {
+    "enable_on_subgraph": true,
+    "coreml_enable_ane": true
+  },
+  "intra_op_num_threads": 2,
+  "graph_optimization_level": "ORT_ENABLE_ALL"
+}
+
