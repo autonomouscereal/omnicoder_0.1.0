@@ -6,6 +6,24 @@
 /models--google--siglip-base-patch16-224
 /# Exclude large/local artifacts
 /build_dml
+# CMake/VS build artifacts
+build_dml/
+cmake-build*/
+CMakeFiles/
+CMakeCache.txt
+*.obj
+*.tlog
+*.exp
+*.lib
+*.pdb
+*.dll
+*.exe
+*.sln
+*.vcxproj*
+.vs/
+x64/
+Release/
+Debug/
 
 # Python caches
 __pycache__/

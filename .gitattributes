@@ -1,0 +1,21 @@
+* text=auto
+
+# Treat common ML artifacts as binary to avoid diffs
+*.pt binary
+*.onnx binary
+*.npy binary
+*.npz binary
+*.bin binary
+*.ckpt binary
+*.tflite binary
+*.gguf binary
+
+# Media
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.mp4 binary
+*.wav binary
+
