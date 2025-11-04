@@ -2,29 +2,85 @@
 
 > Archived notice: This README has been condensed. See links below. Historical notes remain below for reference.
 
-## Short Index
+## At a glance
 
-- Quickstart: `docs/Quickstart.md`
-- Architecture & details: `docs/Architecture.md`
-- Datasets: `docs/Datasets.md`
-- Teacher models: `docs/Teachers.md`
-- Project plan (where we were/are/going): `docs/ProjectPlan.md`
-- Agile backlog:
+- Quickstart: `docs/legacy/Quickstart.md`
+- Architecture: `docs/legacy/Architecture.md`
+- Datasets: `docs/legacy/Datasets.md`
+- Teachers: `docs/legacy/Teachers.md`
+- Project plan (historical): `docs/legacy/ProjectPlan.md`
+- Backlog:
   - Bugs: `todo/bugs.md`
   - Features: `todo/features.md`
   - Milestones: `todo/milestones.md`
-  - Labels (priority/severity/types): `todo/labels.md`
-- Environment configuration template: `env.example.txt` (copy to `.env`)
-  - Drift guard: run `python -m omnicoder.tools.env_audit --root . --env env.example.txt --out weights/env_audit.json` to detect env keys used in code but missing in the template (and vice versa). Add `--fail_on_drift` to make CI fail on drift.
-  - Test gating for one-button runs: set `EXECUTE_TESTS=false` to skip `pytest -vv -rA` in `lets-gooooo` when another process is running tests/training; optional `ENV=development|staging|production` only affects logs.
- - Audio tokenizer backends: EnCodec (preferred), DAC (best-effort), or a small dependency-light fallback (`OMNICODER_AUDIO_TOKENIZER=small` to force)
- - INT4 packing knobs: `OMNICODER_INT4_ALIGN` (e.g., 64) and `OMNICODER_INT4_NIBBLE_ORDER` (`low_first|high_first`) align pack/unpack across providers (CPU/DML/MPS).
- - ONNX exporter: prefers `torch.onnx.dynamo_export` by default for opset>=18; disable with `--no_dynamo` or `OMNICODER_USE_DYNAMO=0`.
- - Expert paging: set `OMNICODER_EXPERT_PAGING=1` to enable on‑demand expert LRU paging at runtime; tune resident capacity with `OMNICODER_EXPERT_PAGING_CAP` or set `OMNICODER_EXPERT_PAGING_BUDGET_MB` to derive capacity from a memory budget; router‑probability prefetch with `OMNICODER_EXPERT_PREFETCH_N`.
- - Infinite-context decode: default `--mem_slots=4` in generator; presets set window caps; enable landmarks automatically for longctx/windowed.
- - Speculative/env knobs: `OMNICODER_VERIFY_THRESHOLD`, `OMNICODER_SPEC_DRAFT_LEN`, `OMNICODER_BLOCK_VERIFY`/`OMNICODER_BLOCK_VERIFY_SIZE`, tree search `OMNICODER_TREE_WIDTH`/`OMNICODER_TREE_DEPTH`, and ONNX draft acceptance `OMNICODER_DRAFT_VERIFY_THRESHOLD`.
- - Routers: set `OMNICODER_ROUTER=interaction` to enable an interaction-aware router (I2MoE-like). When modality conditioning (from `PreAligner`) is provided, routing is biased accordingly; default routing remains unchanged. The orchestrator now probes `llm` and `interaction` routers late in training (`--router_eval` default on). If tokens/s improves by ≥5% vs baseline, the choice is written to `.env.tuned` as `OMNICODER_ROUTER_KIND`.
- - Retention + paging: training can emit a KV retention sidecar via `retention_train`; ONNX runner and PyTorch generator consume retention/compress hints alongside KV paging. Export writes a small prefetch predictor sidecar to improve KV cache hit rates.
+  - Labels: `todo/labels.md`
+- Env template: `env.example.txt` (copy to `.env`)
+  - Drift guard: `python -m omnicoder.tools.env_audit --root . --env env.example.txt --out weights/env_audit.json`
+
+### Install (minimal)
+
+```bash
+python -m venv .venv && . .venv/bin/activate  # Windows: .\.venv\Scripts\activate
+pip install -U pip
+pip install -r requirements.txt
+pip install -e .
+cp env.example.txt .env  # fill in tokens locally (do not commit)
+```
+
+### Quickstart
+
+```bash
+# Text generation (toy weights-free path)
+python -m omnicoder.inference.generate --prompt "Hello OmniCoder" --device cpu
+
+# One-button flow (tests → export → benches; see weights/release)
+python -m omnicoder.tools.press_play --device cpu --out_root weights
+```
+
+Key runtime knobs: expert paging (`OMNICODER_EXPERT_PAGING=1`), long-context (`--mem_slots`, `--window_size`), and exporters (ONNX/Core ML/ExecuTorch) under `src/omnicoder/export/`.
+
+---
+
+## Overview
+
+OmniCoder is an edge-first, unified multimodal MoE stack targeting fast, small-memory inference on Android/iOS while remaining trainable and testable on a single machine. It includes:
+
+- Sparse MoE Transformer core with hierarchical routing and compressed attention for long context
+- Unified text/code/vision/video/audio I/O (VQ + continuous latents) and small refiners
+- One-button flows for tests, export, and lightweight training/benchmarking
+- Mobile exporters (ONNX/Core ML/ExecuTorch) with provider microbenches and gating thresholds
+
+What you can do quickly:
+- Run a CPU-only text demo, or a short, budgeted training flow
+- Export a decode-step ONNX and benchmark providers, or pack mobile assets for a sample app
+- Iterate on research: variable‑K, speculative decoding, expert paging, and memory retention
+
+## Repo map (high level)
+
+```text
+src/omnicoder/
+  inference/         # generation loops, runtimes (ONNX, Core ML, ExecuTorch, llama.cpp)
+  modeling/          # Transformer MoE core, attention, memory, multimodal modules, kernels
+  training/          # pretrain, KD, LoRA/QLoRA, RL (GRPO/PPO/RLHF)
+  export/            # exporters and mobile packager (ONNX/Core ML/ExecuTorch/GGUF)
+  tools/             # orchestration CLI (press_play, run_training, benches, packaging)
+  eval/              # evaluation harnesses (text/code/VL/audio/video)
+profiles/            # datasets/teachers/provider thresholds and mobile presets
+examples/            # tiny runnable JSONL, prompts, sidecars for smokes
+docs/legacy/         # archived docs (historical deep dives)
+```
+
+## Common tasks
+
+- Quick CPU demo:
+  - `python -m omnicoder.inference.generate --prompt "Hello" --device cpu`
+- Budgeted end-to-end flow (tests → export → benches):
+  - `python -m omnicoder.tools.press_play --device cpu --out_root weights`
+- ONNX export + provider bench:
+  - `python -m omnicoder.export.onnx_export --out weights/release/text/omnicoder_decode_step.onnx`
+  - `python -m omnicoder.inference.runtimes.provider_bench --model weights/release/text/omnicoder_decode_step.onnx --providers CPUExecutionProvider DmlExecutionProvider --out_json weights/release/text/provider_bench.json`
+
+For more, scan `src/omnicoder/tools/` and `src/omnicoder/export/`.
 
 
 ## For Dummies: One Button
