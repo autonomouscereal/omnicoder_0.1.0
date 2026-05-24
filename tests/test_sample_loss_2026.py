@@ -52,6 +52,21 @@ def test_load_native_checkpoint_accepts_config_key(tmp_path):
     assert loaded.max_seq_len == 32
 
 
+def test_load_native_checkpoint_reshapes_legacy_scalar_residual_scales(tmp_path):
+    cfg = OmniCoder2026Config(**_tiny_config())
+    model = OmniCoder2026(cfg)
+    state = model.state_dict()
+    for name, value in list(state.items()):
+        if name.endswith("_residual.scale") and value.numel() == 1:
+            state[name] = value.reshape(())
+    checkpoint = tmp_path / "tiny_legacy_residual.pt"
+    torch.save({"config": _tiny_config(), "model_state_dict": state}, checkpoint)
+
+    loaded = load_native_checkpoint(checkpoint, "ledger_probe", torch.device("cpu"))
+
+    assert loaded.vocab_size == 64
+
+
 def test_load_native_checkpoint_supports_weighted_placement_on_cpu(tmp_path):
     config = {**_tiny_config(), "n_layers": 2, "layer_pattern": ("kda", "csa")}
     cfg = OmniCoder2026Config(**config)

@@ -358,7 +358,15 @@ def load_native_checkpoint(
             checkpoint_blocks=bool(activation_checkpointing),
         )
         placement_summary["requested_counts"] = requested_counts
-    model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+    state_dict = checkpoint["model_state_dict"]
+    model_state = model.state_dict()
+    for name, value in list(state_dict.items()):
+        target = model_state.get(name)
+        if target is None or not hasattr(value, "shape"):
+            continue
+        if tuple(value.shape) != tuple(target.shape) and value.numel() == target.numel():
+            state_dict[name] = value.reshape_as(target)
+    model.load_state_dict(state_dict, strict=True)
     if not weighted_placement:
         model.to(device)
     if placement_summary is not None:
