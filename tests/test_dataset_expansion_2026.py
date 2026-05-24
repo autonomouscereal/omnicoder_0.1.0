@@ -107,3 +107,25 @@ def test_dataset_expansion_falls_back_to_distillation_seeds_after_hf_failure(tmp
     )
     assert manifest["records"]["research_internal"] == 1
     assert manifest["modalities"]["image"] == 1
+
+
+def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+
+    for name in [
+        "OpenThoughts2-1M",
+        "DeepCoder-Preview-Dataset",
+        "NVIDIA Nemotron-Terminal-Corpus",
+        "Hermes Function Calling V1",
+        "MultiEdit",
+        "NVIDIA Granary",
+        "AR-Omni-Instruct-v0.1",
+    ]:
+        assert name in by_name
+
+    assert by_name["NVIDIA Nemotron-Terminal-Corpus"]["use_policy"] == "train"
+    assert by_name["AR-Omni-Instruct-v0.1"]["use_policy"] == "research_internal"
+    assert by_name["Open-MM-RL"]["use_policy"] == "blocked_until_review"

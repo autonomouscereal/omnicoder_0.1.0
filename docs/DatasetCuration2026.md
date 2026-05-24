@@ -83,16 +83,31 @@ Current high-value registry families:
 
 - Math/reasoning: OpenR1-Math-220k, DAPO-Math-17k-Processed,
   DeepScaleR-Preview, NVIDIA OpenMathReasoning, MathNet,
-  NVIDIA AceReason-Math, and OpenThoughts3.
+  NVIDIA AceReason-Math, OpenThoughts2/3, OpenThoughts-114k, LIMO, and
+  Bespoke-Stratos quarantine rows.
 - Coding/SWE/terminal/tool: NVIDIA OpenCodeReasoning-2, SWE-smith, SWE-Gym,
-  OpenHands SFT trajectories, Toucan-1.5M, ToolOmni-Data, and
+  SWE-smith trajectories, OpenHands SFT trajectories, DeepCoder,
+  Nemotron-Terminal-Corpus, Nemotron-Terminal-Synthetic-Tasks, Toucan-1.5M,
+  Hermes function calling, Hermes agent traces, ToolOmni-Data, xLAM,
+  DeepResearchGym search logs, AgentTrove/WebWorldData review rows, and
   Terminal-Bench heldout metadata.
-- Multimodal generation: OpenGPT-4o-Image, ShareGPT-4o-Image, VideoUFO,
-  OpenVid-1M, Emilia-YODAS, AudioSkills, JamendoMaxCaps, and MusicBench.
+- Multimodal generation: OpenGPT-4o-Image, ShareGPT-4o-Image, Pico-Banana,
+  MultiEdit, OpenSubject, VideoUFO, OpenVid-1M, CI-VID, TIP-I2V, VPData,
+  Emilia-YODAS, Granary, CapSpeech, AudioSkills, JamendoMaxCaps, MusicBench,
+  Music Arena, AR-Omni-Instruct, and Open-MM-RL review rows.
 
 Rows from external sources are not merged into the 20B target lane merely
 because they exist. They must survive redaction, dedupe, benchmark
 decontamination, license tiering, and heldout sample-loss checks.
+
+The AI-server sidecar exports agent-memory audit rows before the trace
+orchestrator runs, then collects Codex, Claude, and ComfyUI rows. ComfyUI JSONL
+manifests and media directories both flow through the trace orchestrator, so
+generated image, video, music, and audio artifacts can feed multimodal SFT,
+reward-labeling, and teacher-job generation with provenance intact. On the AI
+server the trace orchestrator writes to a run-scoped
+`weights/data_factory/runs/trace_orchestrator/<run_id>` directory so stale
+root-owned artifacts cannot block fresh curation passes.
 
 ## Quality And Safety
 

@@ -177,13 +177,32 @@ def source_inventory_entry(path: Path, kind: str, label: str) -> dict[str, Any]:
     }
 
 
+def agent_memory_script_path(cfg: dict[str, Any], root: Path) -> Path | None:
+    candidates: list[Any] = []
+    if cfg.get("script"):
+        candidates.append(cfg.get("script"))
+    configured = cfg.get("script_candidates")
+    if isinstance(configured, list):
+        candidates.extend(configured)
+    for raw in candidates:
+        if not raw:
+            continue
+        path = Path(str(raw)).expanduser()
+        if not path.is_absolute():
+            path = root / path
+        if path.exists():
+            return path
+    return None
+
+
 def run_agent_memory_cli_export(profile: dict[str, Any], root: Path, out_dir: Path) -> dict[str, Any]:
     cfg = builder_cfg(profile).get("agent_memory_cli_export")
     if not isinstance(cfg, dict) or not cfg.get("enabled", False):
         return {"status": "skipped", "reason": "disabled"}
-    script = Path(str(cfg.get("script") or "")).expanduser()
-    if not script.exists():
-        return {"status": "skipped", "reason": "script_not_found", "script": str(script)}
+    script = agent_memory_script_path(cfg, root)
+    if script is None:
+        candidates = [cfg.get("script"), *(cfg.get("script_candidates") if isinstance(cfg.get("script_candidates"), list) else [])]
+        return {"status": "skipped", "reason": "script_not_found", "candidates": [str(item) for item in candidates if item]}
     out_path = resolve_path(str(cfg.get("out") or out_dir / "raw" / "agent_memory_audit.jsonl"), root)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     limit = int(cfg.get("limit") or 5000)
@@ -193,6 +212,9 @@ def run_agent_memory_cli_export(profile: dict[str, Any], root: Path, out_dir: Pa
     if cfg.get("space"):
         cmd.extend(["--space", str(cfg["space"])])
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=float(cfg.get("timeout_seconds") or 120), check=False)
+    if result.returncode != 0 and "--all-spaces" in cmd and "unrecognized arguments" in result.stderr:
+        retry_cmd = [part for part in cmd if part != "--all-spaces"]
+        result = subprocess.run(retry_cmd, capture_output=True, text=True, timeout=float(cfg.get("timeout_seconds") or 120), check=False)
     if result.returncode != 0:
         return {
             "status": "failed",
@@ -916,20 +938,31 @@ def build_dataset(profile_path: Path, out_dir: Path | None = None) -> dict[str, 
     )
 
 
+def export_agent_memory_only(profile_path: Path, out_dir: Path | None = None) -> dict[str, Any]:
+    root = repo_root()
+    profile = read_json(profile_path)
+    target_dir = out_dir or resolve_path(str(builder_cfg(profile).get("out_dir") or DEFAULT_OUT_DIR), root)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return run_agent_memory_cli_export(profile, root, target_dir)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build cleaned 2026 all-modality training datasets from traces, local corpora, and media artifacts")
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
     parser.add_argument("--out-dir", default="")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("build")
+    sub.add_parser("export-agent-memory")
     args = parser.parse_args(argv)
     out_dir = Path(args.out_dir) if args.out_dir else None
     if args.command == "build":
         manifest = build_dataset(resolve_path(args.profile, repo_root()), out_dir)
+    elif args.command == "export-agent-memory":
+        manifest = export_agent_memory_only(resolve_path(args.profile, repo_root()), out_dir)
     else:
         raise SystemExit(f"unknown command: {args.command}")
     print(json.dumps(manifest, ensure_ascii=True, sort_keys=True))
-    return 0 if manifest.get("status") in {"passed", "needs_attention"} else 1
+    return 0 if manifest.get("status") in {"passed", "needs_attention", "ok", "skipped"} else 1
 
 
 if __name__ == "__main__":

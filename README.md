@@ -44,9 +44,11 @@ The data lane now has a license-aware external dataset registry and a
 nonblocking AI-server sidecar runner. The registry covers current math,
 coding/SWE, terminal/browser/tool, image/editing, video, speech/audio, and
 music sources such as OpenR1-Math, DAPO, DeepScaleR, OpenMathReasoning,
-OpenCodeReasoning, SWE-smith, SWE-Gym, Toucan, OpenGPT-4o-Image,
-ShareGPT-4o-Image, VideoUFO, OpenVid-1M, Emilia-YODAS, AudioSkills,
-JamendoMaxCaps, and MusicBench. Each source is tagged as `train`,
+OpenThoughts2/3, LIMO, DeepCoder, OpenCodeReasoning, SWE-smith, SWE-smith
+trajectories, SWE-Gym, Toucan, Nemotron Terminal, Hermes function-calling,
+OpenGPT-4o-Image, ShareGPT-4o-Image, MultiEdit, VideoUFO, OpenVid-1M,
+Emilia-YODAS, Granary, AudioSkills, MusicBench, Music Arena, and
+AR-Omni-Instruct. Each source is tagged as `train`,
 `research_internal`, `eval_holdout`, or `blocked_until_review` before any row is
 eligible for training.
 
@@ -66,7 +68,10 @@ scripts/ai_server_dataset_training_sidecars_2026.sh all
 
 The sidecar script keeps the 20B target lane on fast GPUs `0,4,6` and uses CPU
 plus P40s for trace collection, dataset expansion, teacher-job sharding, and
-Qwen3.6 P40 rollouts. Official/protected benchmark rows remain release-gate
+Qwen3.6 P40 rollouts. It exports agent-memory audit rows before the trace
+orchestrator, collects Codex/Claude traces, consumes ComfyUI manifests as
+first-class multimodal trace sources, and writes trace-orchestrator outputs to
+run-scoped writable directories. Official/protected benchmark rows remain release-gate
 evidence only; missing official metadata now produces `local_only` benchmark
 results instead of being misreported as public leaderboard quality.
 

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import importlib
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -11,18 +12,25 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from omnicoder.data_factory import contamination, export_sft_jsonl, quality_scoring, teacher_jobs_2026
-from omnicoder.data_factory import ingest_2026, ingest_agent_memory, ingest_codex_transcripts
+from omnicoder.data_factory import ingest_2026, ingest_agent_memory, ingest_codex_transcripts, ingest_comfyui_outputs
 
 
 HARNESS_MODULES = {
     "agent_memory": "omnicoder.data_factory.ingest_agent_memory",
     "codex": "omnicoder.data_factory.ingest_codex_transcripts",
     "claude": "omnicoder.data_factory.ingest_2026",
+    "comfyui": "omnicoder.data_factory.ingest_comfyui_outputs",
     "hermes": "omnicoder.data_factory.ingest_2026",
+    "local_agent": "omnicoder.data_factory.ingest_2026",
     "generic": "omnicoder.data_factory.ingest_2026",
 }
 
 DATE_PREFIXES = ("2025", "2026")
+COMFYUI_MEDIA_SUFFIXES = set(ingest_comfyui_outputs.MEDIA_SUFFIXES)
+MATH_HINTS = ("\\boxed", "aime", "equation", "final answer", "latex", "math", "olympiad", "proof", "solve")
+CODE_HINTS = ("class ", "compiler", "def ", "diff --git", "patch", "pytest", "traceback", "unit test")
+TERMINAL_HINTS = ("bash", "cmd.exe", "docker", "exit_code", "powershell", "shell", "stderr", "stdout", "terminal")
+BROWSER_HINTS = ("browser", "citation", "click", "http://", "https://", "playwright", "screenshot", "url", "web_research")
 
 
 def repo_root() -> Path:
@@ -123,6 +131,146 @@ def record_text(record: dict[str, Any]) -> str:
     return "\n".join(part for part in parts if part)
 
 
+def _as_list_of_dicts(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _json_text(value: Any) -> str:
+    if value in (None, "", {}, []):
+        return ""
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
+
+
+def _string_set(value: Any) -> set[str]:
+    if isinstance(value, str):
+        return {value} if value else set()
+    if isinstance(value, list):
+        return {str(item) for item in value if item}
+    return set()
+
+
+def extract_trace_features(record: dict[str, Any], harness: str) -> dict[str, Any]:
+    input_json = record.get("input_json") if isinstance(record.get("input_json"), dict) else {}
+    target_json = record.get("target_json") if isinstance(record.get("target_json"), dict) else {}
+    lineage = record.get("lineage") if isinstance(record.get("lineage"), dict) else {}
+    text = "\n".join(part for part in (record_text(record), _json_text(input_json), _json_text(target_json)) if part)
+    lowered = text.lower()
+
+    tool_calls = _as_list_of_dicts(record.get("tool_calls"))
+    tool_results = _as_list_of_dicts(record.get("tool_results"))
+    tool_name = input_json.get("tool_name") or target_json.get("tool_name")
+    tool_input = input_json.get("tool_input")
+    tool_output = target_json.get("tool_output")
+    if tool_name or tool_input not in (None, {}, []) or "tool" in str(input_json.get("event_type") or "").lower():
+        tool_calls.append({"tool": tool_name or "unknown_tool", "arguments": tool_input or {}, "event_type": input_json.get("event_type")})
+    if tool_output not in (None, {}, []):
+        tool_results.append(tool_output if isinstance(tool_output, dict) else {"content": tool_output})
+
+    media_refs = _as_list_of_dicts(record.get("media_refs"))
+    artifact_path = target_json.get("artifact_path") or target_json.get("path")
+    media_type = target_json.get("media_type") or input_json.get("media_type")
+    if artifact_path:
+        media_refs.append(
+            {
+                "path": str(artifact_path),
+                "media_type": str(media_type or "application/octet-stream"),
+                "sha256": target_json.get("sha256"),
+            }
+        )
+
+    modalities: set[str] = set()
+    for ref in media_refs:
+        kind = str(ref.get("media_type") or "").split("/", 1)[0]
+        if kind:
+            modalities.add("music" if kind == "audio" and "music" in str(ref.get("path") or "").lower() else kind)
+    explicit_modality = input_json.get("modality") or target_json.get("modality") or record.get("modality")
+    if explicit_modality:
+        modalities.add(str(explicit_modality).split("/", 1)[0])
+    if harness == "comfyui":
+        modalities.add("multimodal")
+    if tool_calls or tool_results:
+        modalities.add("tool")
+
+    domains: set[str] = set()
+    if any(hint in lowered for hint in MATH_HINTS):
+        domains.add("math")
+    if any(hint in lowered for hint in CODE_HINTS):
+        domains.add("code")
+    if any(hint in lowered for hint in TERMINAL_HINTS):
+        domains.add("terminal")
+    if any(hint in lowered for hint in BROWSER_HINTS):
+        domains.add("browser")
+    if tool_calls or tool_results:
+        domains.add("tool")
+    if modalities.intersection({"image", "video", "audio", "music", "multimodal"}):
+        domains.add("multimodal")
+
+    return {
+        "source_harness": harness,
+        "trace_id": lineage.get("trace_id") or record.get("trace_id"),
+        "domains": sorted(domains),
+        "modalities": sorted(modalities),
+        "has_tool_call": bool(tool_calls),
+        "has_tool_result": bool(tool_results),
+        "tool_call_count": len(tool_calls),
+        "tool_result_count": len(tool_results),
+        "media_ref_count": len(media_refs),
+        "has_math": "math" in domains,
+        "has_code": "code" in domains,
+        "has_multimodal": "multimodal" in domains,
+        "text_chars": len(text),
+    }
+
+
+def enrich_trace_row(row: dict[str, Any], harness: str, path: Path) -> dict[str, Any]:
+    input_json = row.get("input_json") if isinstance(row.get("input_json"), dict) else {}
+    target_json = row.get("target_json") if isinstance(row.get("target_json"), dict) else {}
+    features = extract_trace_features(row, harness)
+
+    tool_calls = _as_list_of_dicts(row.get("tool_calls"))
+    tool_results = _as_list_of_dicts(row.get("tool_results"))
+    if features["has_tool_call"] and not tool_calls:
+        tool_calls.append(
+            {
+                "tool": input_json.get("tool_name") or "unknown_tool",
+                "arguments": input_json.get("tool_input") or {},
+                "event_type": input_json.get("event_type"),
+            }
+        )
+    if features["has_tool_result"] and not tool_results:
+        output = target_json.get("tool_output")
+        tool_results.append(output if isinstance(output, dict) else {"content": _json_text(output)})
+
+    media_refs = _as_list_of_dicts(row.get("media_refs"))
+    if target_json.get("artifact_path") and not media_refs:
+        media_refs.append(
+            {
+                "path": str(target_json.get("artifact_path")),
+                "media_type": str(target_json.get("media_type") or "application/octet-stream"),
+                "sha256": target_json.get("sha256"),
+            }
+        )
+
+    row["domains"] = sorted(_string_set(row.get("domains")) | set(features["domains"]))
+    row["modalities"] = sorted(_string_set(row.get("modalities")) | set(features["modalities"]))
+    row["trace_features"] = features
+    if tool_calls:
+        row["tool_calls"] = tool_calls
+    if tool_results:
+        row["tool_results"] = tool_results
+    if media_refs:
+        row["media_refs"] = media_refs
+    lineage = row.setdefault("lineage", {})
+    if isinstance(lineage, dict):
+        lineage["source_file"] = str(path)
+        lineage["feature_hash"] = stable_hash(features)
+    return row
+
+
 def normalize_harness(value: str | None) -> str:
     harness = (value or "generic").strip().lower().replace("-", "_")
     if harness in {"agentmemory", "agent_memory_pg", "memory"}:
@@ -131,8 +279,12 @@ def normalize_harness(value: str | None) -> str:
         return "codex"
     if harness in {"claude_code", "anthropic_claude"}:
         return "claude"
+    if harness in {"comfy", "comfy_ui", "comfyui_outputs"}:
+        return "comfyui"
     if harness in {"hermes_agent"}:
         return "hermes"
+    if harness in {"local", "local_agent_trace", "lmstudio", "lm_studio"}:
+        return "local_agent"
     return harness if harness in HARNESS_MODULES else "generic"
 
 
@@ -140,9 +292,11 @@ def sniff_harness(path: Path, explicit: str | None = None) -> str:
     if explicit:
         return normalize_harness(explicit)
     name = str(path).lower().replace("-", "_")
-    for harness in ("agent_memory", "codex", "claude", "hermes"):
+    for harness in ("agent_memory", "codex", "claude", "comfyui", "hermes", "local_agent"):
         if harness in name:
             return harness
+    if path.is_file() and path.suffix.lower() in COMFYUI_MEDIA_SUFFIXES:
+        return "comfyui"
     for record in iter_jsonl(path):
         text = json.dumps(record, ensure_ascii=True, sort_keys=True, default=str).lower()
         if "userpromptsubmit" in text or "posttooluse" in text or "agent_memory" in text:
@@ -151,8 +305,12 @@ def sniff_harness(path: Path, explicit: str | None = None) -> str:
             return "codex"
         if "claude" in text:
             return "claude"
+        if "comfyui" in text or ("workflow" in text and "artifact_path" in text):
+            return "comfyui"
         if "hermes" in text:
             return "hermes"
+        if "lmstudio" in text or "local_agent" in text:
+            return "local_agent"
         break
     return "generic"
 
@@ -197,8 +355,16 @@ def collect_jsonl(profile: dict[str, Any], root: Path, out_path: Path) -> list[d
     seen: set[str] = set()
     for entry in source_entries(profile, root):
         source_path = Path(str(entry["path"]))
+        harness = sniff_harness(source_path, entry.get("harness"))
         candidate_paths: list[Path] = []
-        if source_path.is_file() and source_path.suffix.lower() == ".jsonl":
+        if harness == "comfyui" and source_path.is_dir():
+            for pattern in patterns:
+                candidate_paths.extend(source_path.rglob(pattern))
+            if any(item.is_file() and item.suffix.lower() in COMFYUI_MEDIA_SUFFIXES for item in source_path.rglob("*")):
+                candidate_paths.append(source_path)
+        elif harness == "comfyui" and source_path.is_file() and source_path.suffix.lower() in COMFYUI_MEDIA_SUFFIXES:
+            candidate_paths = [source_path]
+        elif source_path.is_file() and source_path.suffix.lower() == ".jsonl":
             candidate_paths = [source_path]
         elif source_path.is_dir():
             for pattern in patterns:
@@ -212,7 +378,7 @@ def collect_jsonl(profile: dict[str, Any], root: Path, out_path: Path) -> list[d
             files.append(
                 {
                     "path": resolved,
-                    "harness": sniff_harness(path, entry.get("harness")),
+                    "harness": harness if harness != "generic" else sniff_harness(path, entry.get("harness")),
                     "bytes": path.stat().st_size,
                     "sha256": file_sha256(path),
                 }
@@ -238,20 +404,23 @@ def normalize_file(path: Path, harness: str, profile: dict[str, Any]) -> list[di
 
     direct_rows: list[dict[str, Any]] = []
     checked = False
-    for record in iter_jsonl(path):
-        checked = True
-        if not (isinstance(record.get("input_json"), dict) and isinstance(record.get("target_json"), dict)):
-            direct_rows = []
-            break
-        direct_rows.append(record)
-        if per_file_limit and len(direct_rows) >= per_file_limit:
-            break
+    if path.is_file() and path.suffix.lower() == ".jsonl":
+        for record in iter_jsonl(path):
+            checked = True
+            if not (isinstance(record.get("input_json"), dict) and isinstance(record.get("target_json"), dict)):
+                direct_rows = []
+                break
+            direct_rows.append(record)
+            if per_file_limit and len(direct_rows) >= per_file_limit:
+                break
     if checked and direct_rows:
         rows = direct_rows
     elif harness == "codex":
         rows = ingest_codex_transcripts.build_records(path, bucket, split, source_date, per_file_limit)
     elif harness == "agent_memory":
         rows = ingest_agent_memory.build_records(path, bucket, split, source_date, per_file_limit)
+    elif harness == "comfyui":
+        rows = ingest_comfyui_outputs.build_records(path, bucket, split, source_date, per_file_limit)
     else:
         rows = ingest_2026.build_training_records(path, bucket, split, source_date)
         if per_file_limit:
@@ -271,6 +440,7 @@ def normalize_file(path: Path, harness: str, profile: dict[str, Any]) -> list[di
             "jsonl_fallback_first": True,
             "normalized_at": now_iso(),
         }
+        enrich_trace_row(row, harness, path)
     return rows
 
 
@@ -566,7 +736,8 @@ def write_smoke_input(work_dir: Path) -> Path:
 def run_pipeline(profile_path: Path, smoke: bool = False, postgres: bool = False) -> dict[str, Any]:
     root = repo_root()
     profile = read_json(profile_path)
-    work_dir = resolve_path(str(profile.get("work_dir") or "weights/data_factory/trace_orchestrator_2026"), root)
+    work_dir_override = os.environ.get("OMNICODER_TRACE_WORK_DIR")
+    work_dir = resolve_path(str(work_dir_override or profile.get("work_dir") or "weights/data_factory/trace_orchestrator_2026"), root)
     if work_dir is None:
         raise ValueError("work_dir could not be resolved")
     if smoke:
@@ -578,8 +749,9 @@ def run_pipeline(profile_path: Path, smoke: bool = False, postgres: bool = False
     if postgres:
         profile.setdefault("postgres", {})["enabled"] = True
     paths = stage_paths(work_dir)
-    paths["sft"] = resolve_path((profile.get("export_sft") or {}).get("out") if isinstance(profile.get("export_sft"), dict) else None, root) or paths["sft"]
-    paths["teacher_jobs"] = resolve_path((profile.get("teacher_jobs") or {}).get("out") if isinstance(profile.get("teacher_jobs"), dict) else None, root) or paths["teacher_jobs"]
+    if not work_dir_override:
+        paths["sft"] = resolve_path((profile.get("export_sft") or {}).get("out") if isinstance(profile.get("export_sft"), dict) else None, root) or paths["sft"]
+        paths["teacher_jobs"] = resolve_path((profile.get("teacher_jobs") or {}).get("out") if isinstance(profile.get("teacher_jobs"), dict) else None, root) or paths["teacher_jobs"]
     sources = collect_jsonl(profile, root, paths["collected_files"])
     stages: dict[str, Any] = {"collect": {"files": len(sources)}}
     stages["normalize"] = normalize_traces(sources, profile, paths["normalized"])

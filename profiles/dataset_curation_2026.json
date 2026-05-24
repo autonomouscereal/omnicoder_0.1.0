@@ -22,6 +22,11 @@
       {
         "path": "data/raw/hermes_traces_2026",
         "harness": "hermes"
+      },
+      {
+        "path": "data/raw/comfyui_outputs_2026",
+        "harness": "comfyui",
+        "label": "comfyui_output_manifests"
       }
     ],
     "patterns": [
@@ -268,6 +273,12 @@
     "agent_memory_cli_export": {
       "enabled": true,
       "script": "C:/Users/cereal/.claude/memory_backend/agent_memory.py",
+      "script_candidates": [
+        "/home/cereal/.claude/memory_backend/agent_memory.py",
+        "/home/cereal/.agents/skills/agent-memory/scripts/agent_memory.py",
+        "/home/cereal/.claude/skills/agent-memory/scripts/agent_memory.py",
+        "C:/Users/cereal/.claude/memory_backend/agent_memory.py"
+      ],
       "out": "data/raw/agent_memory_events_2026.jsonl",
       "limit": 12000,
       "all_spaces": true,
@@ -577,6 +588,134 @@
         ]
       },
       {
+        "name": "OpenThoughts2-1M",
+        "hf_id": "open-thoughts/OpenThoughts2-1M",
+        "url": "https://huggingface.co/datasets/open-thoughts/OpenThoughts2-1M",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "conversations"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "conversations"
+          ]
+        },
+        "curriculum_axes": [
+          "math",
+          "science",
+          "code",
+          "reasoning_sft"
+        ]
+      },
+      {
+        "name": "OpenThoughts-114k",
+        "hf_id": "open-thoughts/OpenThoughts-114k",
+        "url": "https://huggingface.co/datasets/open-thoughts/OpenThoughts-114k",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "config": "metadata",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "conversations"
+          ],
+          "target": [
+            "deepseek_reasoning",
+            "deepseek_solution",
+            "ground_truth_solution",
+            "conversations"
+          ]
+        },
+        "curriculum_axes": [
+          "reasoning_sft",
+          "quality_anchor",
+          "metadata_rich"
+        ]
+      },
+      {
+        "name": "LIMO",
+        "hf_id": "GAIR/LIMO",
+        "url": "https://huggingface.co/datasets/GAIR/LIMO",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "problem",
+            "prompt"
+          ],
+          "target": [
+            "solution",
+            "answer"
+          ]
+        },
+        "curriculum_axes": [
+          "math",
+          "minimal_reasoning_sft",
+          "quality_anchor"
+        ]
+      },
+      {
+        "name": "Bespoke-Stratos-17k",
+        "hf_id": "bespokelabs/Bespoke-Stratos-17k",
+        "url": "https://huggingface.co/datasets/bespokelabs/Bespoke-Stratos-17k",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_with_teacher_provenance",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "conversations",
+            "prompt",
+            "question"
+          ],
+          "target": [
+            "conversations",
+            "answer",
+            "solution"
+          ]
+        },
+        "curriculum_axes": [
+          "reasoning_distillation",
+          "deepseek_teacher",
+          "math_code_science"
+        ]
+      },
+      {
         "name": "NVIDIA OpenCodeReasoning-2",
         "hf_id": "nvidia/OpenCodeReasoning-2",
         "url": "https://huggingface.co/datasets/nvidia/OpenCodeReasoning-2",
@@ -612,6 +751,39 @@
         ]
       },
       {
+        "name": "DeepCoder-Preview-Dataset",
+        "hf_id": "agentica-org/DeepCoder-Preview-Dataset",
+        "url": "https://huggingface.co/datasets/agentica-org/DeepCoder-Preview-Dataset",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "tests",
+            "test_cases"
+          ]
+        },
+        "curriculum_axes": [
+          "code",
+          "rlvr",
+          "executable_tests",
+          "competitive_programming"
+        ]
+      },
+      {
         "name": "SWE-smith",
         "hf_id": "SWE-bench/SWE-smith",
         "url": "https://huggingface.co/datasets/SWE-bench/SWE-smith",
@@ -643,6 +815,42 @@
           "swe",
           "repo_repair",
           "tests"
+        ]
+      },
+      {
+        "name": "SWE-smith-trajectories",
+        "hf_id": "SWE-bench/SWE-smith-trajectories",
+        "url": "https://huggingface.co/datasets/SWE-bench/SWE-smith-trajectories",
+        "family": "coding_agentic",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "messages"
+          ],
+          "target": [
+            "trajectory",
+            "messages",
+            "patch",
+            "resolved"
+          ],
+          "id": [
+            "instance_id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe",
+          "agent_trajectory",
+          "tool_trace",
+          "patch_repair"
         ]
       },
       {
@@ -780,6 +988,264 @@
         ]
       },
       {
+        "name": "NVIDIA Nemotron-Terminal-Corpus",
+        "hf_id": "nvidia/Nemotron-Terminal-Corpus",
+        "url": "https://huggingface.co/datasets/nvidia/Nemotron-Terminal-Corpus",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "task",
+            "prompt",
+            "messages"
+          ],
+          "target": [
+            "trajectory",
+            "commands",
+            "messages",
+            "answer"
+          ]
+        },
+        "curriculum_axes": [
+          "terminal",
+          "execution_trace",
+          "agent_sft",
+          "rlvr"
+        ]
+      },
+      {
+        "name": "NVIDIA Nemotron-Terminal-Synthetic-Tasks",
+        "hf_id": "nvidia/Nemotron-Terminal-Synthetic-Tasks",
+        "url": "https://huggingface.co/datasets/nvidia/Nemotron-Terminal-Synthetic-Tasks",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "task",
+            "prompt"
+          ],
+          "target": [
+            "solution",
+            "tests",
+            "pytest",
+            "docker"
+          ]
+        },
+        "curriculum_axes": [
+          "terminal",
+          "docker_task",
+          "pytest_verifier",
+          "synthetic_task"
+        ]
+      },
+      {
+        "name": "Hermes Function Calling V1",
+        "hf_id": "NousResearch/hermes-function-calling-v1",
+        "url": "https://huggingface.co/datasets/NousResearch/hermes-function-calling-v1",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "conversations",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "messages",
+            "conversations",
+            "tools",
+            "answer"
+          ]
+        },
+        "curriculum_axes": [
+          "function_calling",
+          "json_mode",
+          "structured_output"
+        ]
+      },
+      {
+        "name": "Hermes Agent Reasoning Traces",
+        "hf_id": "lambda/hermes-agent-reasoning-traces",
+        "url": "https://huggingface.co/datasets/lambda/hermes-agent-reasoning-traces",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_with_cot_policy_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "conversations",
+            "instruction"
+          ],
+          "target": [
+            "messages",
+            "tool_calls",
+            "tool_responses",
+            "answer"
+          ]
+        },
+        "curriculum_axes": [
+          "agent_trace",
+          "tool_calling",
+          "reasoning_trace_review"
+        ]
+      },
+      {
+        "name": "xLAM Function Calling 60k",
+        "hf_id": "Salesforce/xlam-function-calling-60k",
+        "url": "https://huggingface.co/datasets/Salesforce/xlam-function-calling-60k",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0 gated",
+        "license_tier": "gated_attribution_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "query",
+            "instruction",
+            "messages"
+          ],
+          "target": [
+            "answers",
+            "tools",
+            "messages"
+          ]
+        },
+        "curriculum_axes": [
+          "function_calling",
+          "tool_selection",
+          "schema_following"
+        ]
+      },
+      {
+        "name": "DeepResearchGym Agentic Search Logs",
+        "hf_id": "cx-cmu/deepresearchgym-agentic-search-logs",
+        "url": "https://huggingface.co/datasets/cx-cmu/deepresearchgym-agentic-search-logs",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_privacy_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "query",
+            "instruction",
+            "question"
+          ],
+          "target": [
+            "search_log",
+            "trajectory",
+            "answer",
+            "session"
+          ]
+        },
+        "curriculum_axes": [
+          "browser_research",
+          "query_planning",
+          "search_trace"
+        ]
+      },
+      {
+        "name": "AgentTrove",
+        "hf_id": "open-thoughts/AgentTrove",
+        "url": "https://huggingface.co/datasets/open-thoughts/AgentTrove",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "license pending source review",
+        "license_tier": "unknown",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "instruction",
+            "question"
+          ],
+          "target": [
+            "messages",
+            "trajectory",
+            "tool_calls",
+            "answer"
+          ]
+        },
+        "curriculum_axes": [
+          "agent_trace",
+          "tool_calling",
+          "blocked_license_review"
+        ]
+      },
+      {
+        "name": "Qwen WebWorldData",
+        "hf_id": "Qwen/WebWorldData",
+        "url": "https://huggingface.co/datasets/Qwen/WebWorldData",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "license pending source review",
+        "license_tier": "unknown",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "query",
+            "messages"
+          ],
+          "target": [
+            "trajectory",
+            "answer",
+            "messages"
+          ]
+        },
+        "curriculum_axes": [
+          "browser",
+          "web_agent",
+          "blocked_license_review"
+        ]
+      },
+      {
         "name": "Terminal-Bench 2.0",
         "hf_id": "harborframework/terminal-bench-2.0",
         "url": "https://huggingface.co/datasets/harborframework/terminal-bench-2.0",
@@ -884,6 +1350,91 @@
         ]
       },
       {
+        "name": "Pico-Banana-400K",
+        "url": "https://github.com/apple/pico-banana-400k",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "CC-BY-NC-ND-4.0",
+        "license_tier": "non_commercial_no_derivatives",
+        "use_policy": "research_internal",
+        "max_records": 512,
+        "distillation_prompts": [
+          {
+            "instruction": "Create an image-editing training row inspired by multi-turn Pico-Banana-style edits: include source image constraints, edit instruction, preservation constraints, preference labels, and non-commercial provenance.",
+            "target": "multi-turn image edit plan with preservation/change regions, preference rubric, and license quarantine metadata"
+          }
+        ],
+        "curriculum_axes": [
+          "image_editing",
+          "multi_turn_editing",
+          "preference_learning",
+          "non_commercial_quarantine"
+        ]
+      },
+      {
+        "name": "MultiEdit",
+        "hf_id": "inclusionAI/MultiEdit",
+        "url": "https://huggingface.co/datasets/inclusionAI/MultiEdit",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0 gated synthetic",
+        "license_tier": "permissive_with_teacher_provenance",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "edit_instruction"
+          ],
+          "target": [
+            "target",
+            "output",
+            "image",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "image_editing",
+          "instruction_editing",
+          "gated_review"
+        ]
+      },
+      {
+        "name": "OpenSubject",
+        "hf_id": "AIPeanutman/OpenSubject",
+        "url": "https://huggingface.co/datasets/AIPeanutman/OpenSubject",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_with_identity_provenance_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "caption",
+            "prompt",
+            "subject"
+          ],
+          "target": [
+            "images",
+            "image",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "subject_consistency",
+          "image_generation",
+          "identity_review"
+        ]
+      },
+      {
         "name": "VideoUFO",
         "hf_id": "WenhaoWang/VideoUFO",
         "url": "https://huggingface.co/datasets/WenhaoWang/VideoUFO",
@@ -946,6 +1497,100 @@
         ]
       },
       {
+        "name": "CI-VID",
+        "hf_id": "BAAI/CI-VID",
+        "url": "https://huggingface.co/datasets/BAAI/CI-VID",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "non-commercial research",
+        "license_tier": "non_commercial",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "caption",
+            "story"
+          ],
+          "target": [
+            "video",
+            "videos",
+            "sequence",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "interleaved_video",
+          "story_coherence",
+          "non_commercial_quarantine"
+        ]
+      },
+      {
+        "name": "TIP-I2V",
+        "hf_id": "WenhaoWang/TIP-I2V",
+        "url": "https://huggingface.co/datasets/WenhaoWang/TIP-I2V",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "non_commercial",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "text_prompt",
+            "caption"
+          ],
+          "target": [
+            "video",
+            "generated_video",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "image_to_video",
+          "prompt_alignment",
+          "generated_video_review"
+        ]
+      },
+      {
+        "name": "VPData",
+        "hf_id": "TencentARC/VPData",
+        "url": "https://huggingface.co/datasets/TencentARC/VPData",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "terms require source review",
+        "license_tier": "unknown",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "caption",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "video",
+            "mask",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "video_inpainting",
+          "mask_sequence",
+          "blocked_license_review"
+        ]
+      },
+      {
         "name": "Emilia-YODAS",
         "hf_id": "TTS-AGI/emilia-yodas",
         "url": "https://huggingface.co/datasets/TTS-AGI/emilia-yodas",
@@ -974,6 +1619,61 @@
           "speech",
           "tts",
           "asr"
+        ]
+      },
+      {
+        "name": "NVIDIA Granary",
+        "hf_id": "nvidia/Granary",
+        "url": "https://huggingface.co/datasets/nvidia/Granary",
+        "family": "speech_audio",
+        "target_modality": "audio",
+        "license": "mixed CC-BY source licenses",
+        "license_tier": "source_license_varies",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "text",
+            "transcript",
+            "source_text",
+            "prompt"
+          ],
+          "target": [
+            "audio",
+            "translation",
+            "target_text",
+            "duration"
+          ]
+        },
+        "curriculum_axes": [
+          "speech",
+          "asr",
+          "speech_translation",
+          "source_license_review"
+        ]
+      },
+      {
+        "name": "CapSpeech",
+        "url": "https://huggingface.co/OpenSound/CapSpeech-models",
+        "family": "speech_audio",
+        "target_modality": "audio",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "non_commercial",
+        "use_policy": "research_internal",
+        "max_records": 512,
+        "distillation_prompts": [
+          {
+            "instruction": "Create a speech-style-caption training row: transcript, speaker style, accent, emotion, prosody, quality axes, and non-commercial quarantine metadata.",
+            "target": "captioned TTS supervision row with style/prosody labels and speech artifact reward axes"
+          }
+        ],
+        "curriculum_axes": [
+          "speech_style_caption",
+          "tts",
+          "non_commercial_quarantine"
         ]
       },
       {
@@ -1068,6 +1768,100 @@
           "music",
           "control_tags",
           "tempo_key_structure"
+        ]
+      },
+      {
+        "name": "Music Arena Dataset",
+        "hf_id": "music-arena/music-arena-dataset",
+        "url": "https://huggingface.co/datasets/music-arena/music-arena-dataset",
+        "family": "music_generation",
+        "target_modality": "music",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_generated_music_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "preference",
+            "winner",
+            "audio",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "music_preference",
+          "reward_model",
+          "generated_music_review"
+        ]
+      },
+      {
+        "name": "AR-Omni-Instruct-v0.1",
+        "hf_id": "ModalityDance/AR-Omni-Instruct-v0.1",
+        "url": "https://huggingface.co/datasets/ModalityDance/AR-Omni-Instruct-v0.1",
+        "family": "omnimodal_understanding",
+        "target_modality": "multimodal",
+        "license": "MIT with third-party token/model license dependencies",
+        "license_tier": "permissive_review_upstream",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "messages",
+            "tokens",
+            "response"
+          ]
+        },
+        "curriculum_axes": [
+          "omnimodal_instruction",
+          "audio_image_text_tokens",
+          "unified_tokenspace"
+        ]
+      },
+      {
+        "name": "Open-MM-RL",
+        "hf_id": "TuringEnterprises/Open-MM-RL",
+        "url": "https://huggingface.co/datasets/TuringEnterprises/Open-MM-RL",
+        "family": "omnimodal_understanding",
+        "target_modality": "multimodal",
+        "license": "license pending source review",
+        "license_tier": "unknown",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "messages",
+            "answer",
+            "reward"
+          ]
+        },
+        "curriculum_axes": [
+          "multimodal_rl",
+          "omnimodal_reward",
+          "blocked_license_review"
         ]
       }
     ]
