@@ -20,6 +20,9 @@ DATASET_INCLUDE_WAVES="${OMNICODER_DATASET_INCLUDE_WAVES:-}"
 TRACE_LIMIT="${OMNICODER_TRACE_LIMIT:-0}"
 LMSTUDIO_TRACE_LIMIT="${OMNICODER_LMSTUDIO_TRACE_LIMIT:-100000}"
 LOCAL_TRACE_SOURCE="${OMNICODER_LOCAL_TRACE_SOURCE:-weights/curated_datasets_2026/runs/${RUN_ID}_local_traces}"
+COVERAGE_STRICT="${OMNICODER_COVERAGE_STRICT:-0}"
+REQUIRE_MEDIA_TEACHER_ROLLOUTS="${OMNICODER_REQUIRE_MEDIA_TEACHER_ROLLOUTS:-1}"
+REQUIRE_REPORTABLE_TASKS="${OMNICODER_REQUIRE_REPORTABLE_TASKS:-0}"
 ACTION="${1:-all}"
 
 cd "$ROOT"
@@ -520,6 +523,23 @@ PY
   find "${TEACHER_JOB_ROOT}/latest/modality" -maxdepth 1 -name '*.jsonl' -print -exec wc -l {} \; 2>/dev/null || true
 }
 
+coverage_report() {
+  local out_dir="weights/data_factory/runs/${RUN_ID}"
+  local report="$out_dir/coverage_report.json"
+  local args=(--root "$ROOT" --run-id "$RUN_ID" --out "$report")
+  if truthy "$COVERAGE_STRICT"; then
+    args+=(--strict)
+  fi
+  if truthy "$REQUIRE_MEDIA_TEACHER_ROLLOUTS"; then
+    args+=(--require-media-teacher-rollouts)
+  fi
+  if truthy "$REQUIRE_REPORTABLE_TASKS"; then
+    args+=(--require-reportable-tasks)
+  fi
+  log "validate run-scoped materialized coverage"
+  "$PYTHON_BIN" -m omnicoder.data_factory.coverage_validator_2026 "${args[@]}" | tee "$out_dir/coverage_report.stdout.json"
+}
+
 case "$ACTION" in
   preflight) preflight ;;
   collect-curate) collect_curate ;;
@@ -530,6 +550,7 @@ case "$ACTION" in
   modality-teacher-jobs) modality_teacher_jobs ;;
   mix-plan) mix_plan ;;
   p40-teacher) p40_teacher_rollouts ;;
+  coverage-report) coverage_report ;;
   status) status ;;
   all)
     preflight
@@ -541,6 +562,7 @@ case "$ACTION" in
     modality_teacher_jobs
     mix_plan
     p40_teacher_rollouts
+    coverage_report
     status
     ;;
   *)

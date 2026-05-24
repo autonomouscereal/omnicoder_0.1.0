@@ -179,9 +179,11 @@ posttraining lane. Production eval knobs are passed through:
 
 Pipeline-sharded checkpoints run distributed sample-loss gates immediately.
 Reportable prediction scoring remains `pending` for those directories until a
-serving/export bridge or prediction artifact is provided; set
-`OMNICODER_REQUIRE_REPORTABLE_GATE=1` only when a run should fail closed on
-missing reportable predictions.
+serving/export bridge or prediction artifact is provided. When
+`OMNICODER_BENCHMARK_PREDICTIONS` points at a real generated prediction JSONL,
+the sharded checkpoint gate runs `run-reportable` directly with those
+predictions. Set `OMNICODER_REQUIRE_REPORTABLE_GATE=1` only when a run should
+fail closed on missing reportable predictions.
 
 For posttraining-only recovery, do not bend `run-real` or `run-full` into
 rerunning dense stages. Use the dedicated `run-posttraining` path after the
@@ -244,6 +246,11 @@ scripts/ai_server_dataset_training_sidecars_2026.sh external-expansion
 # and omni/audio teachers.
 scripts/ai_server_dataset_training_sidecars_2026.sh modality-teacher-jobs
 
+# Read-only proof that artifacts are materialized, not just declared.
+OMNICODER_REQUIRE_MEDIA_TEACHER_ROLLOUTS=1 \
+OMNICODER_REQUIRE_REPORTABLE_TASKS=1 \
+scripts/ai_server_dataset_training_sidecars_2026.sh coverage-report
+
 # Adaptive sample weights and native-1M context ladder for the next train pass.
 scripts/ai_server_dataset_training_sidecars_2026.sh mix-plan
 
@@ -268,6 +275,15 @@ Dataset expansion also rejects synthetic-only train promotion and fail-closes
 review, pending, unknown, noncommercial, no-derivatives, holdout, gated,
 research, or blocked license markers into non-train buckets. That rule applies
 even when a profile entry was accidentally tagged `use_policy: train`.
+
+`coverage-report` runs `omnicoder.data_factory.coverage_validator_2026` and
+writes `weights/data_factory/runs/<run_id>/coverage_report.json`. It checks the
+actual row counts for all train modality files, strict local traces, external
+train rows, agentic SFT/reward/preference/RLVR exports, teacher jobs, modality
+teacher jobs, Qwen/P40 rollout outputs, optional Qwen/LTX/ACE media rollout
+outputs, mixture plans, and reportable eval task roots. Set
+`OMNICODER_COVERAGE_STRICT=1` when missing materialized coverage should stop a
+promotion or next-stage launch.
 
 ## Adaptive Mixture Controller
 

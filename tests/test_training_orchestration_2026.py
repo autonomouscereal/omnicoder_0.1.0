@@ -406,6 +406,100 @@ def test_pipeline_checkpoint_benchmark_gate_does_not_fail_on_prediction_pending(
     assert result["reportable_gate"]["status"] == "pending"
 
 
+def test_pipeline_checkpoint_benchmark_gate_scores_generated_predictions(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    eval_path = tmp_path / "eval.jsonl"
+    tasks_path = tmp_path / "reportable_tasks.jsonl"
+    predictions_path = tmp_path / "predictions.jsonl"
+    _write_jsonl(eval_path, [{"text": "hello world", "modality": "text"}])
+    _write_jsonl(
+        tasks_path,
+        [
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "arc-1",
+                "reportable": True,
+                "official": True,
+                "source": "authorized_fixture",
+                "snapshot_id": "arcagi3-2026-fixture",
+                "snapshot_hash": "abc123",
+                "authorization": "unit-test-authorized",
+                "gold": "A",
+            }
+        ],
+    )
+    _write_jsonl(
+        predictions_path,
+        [
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "arc-1",
+                "prediction": "A",
+            }
+        ],
+    )
+    profile = _profile(tmp_path)
+    profile["reportable_task_roots"] = [str(tasks_path)]
+    profile["benchmark_gates"] = {"benchmark_cycle": "release", "benchmark_min_tasks": 1}
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+    }
+    manifest = {"eval_all_jsonl": str(eval_path)}
+    commands: list[list[str]] = []
+
+    def fake_run_command(cmd: list[str], log_path: Path, timeout_seconds: int = 0) -> int:
+        commands.append(cmd)
+        if "omnicoder.eval.pipeline_sample_loss_2026" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0}}), encoding="utf-8")
+        elif "run-reportable" in cmd:
+            assert "--predictions" in cmd
+            assert cmd[cmd.index("--predictions") + 1] == str(predictions_path)
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "gate_policy": "fail_closed",
+                        "gate_decision": "passed",
+                        "reportable": 1,
+                        "failed": 0,
+                        "skipped": 0,
+                        "local_only": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        elif "summarize" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps({"reportable_results": 1}), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    result = orch.run_checkpoint_benchmark_gate(
+        profile,
+        manifest,
+        tmp_path,
+        checkpoint,
+        "pipeline",
+        _runtime_args(benchmark_cycle="release", benchmark_predictions=str(predictions_path)),
+    )
+
+    assert result["status"] == "passed"
+    assert result["contract_benchmark_gate"]["status"] == "skipped"
+    assert result["reportable_gate"]["predictions"]["source"] == "model_generated_predictions"
+    assert result["reportable_gate"]["reportable"] == 1
+    assert any("run-reportable" in cmd for cmd in commands)
+
+
 def test_live_posttraining_runs_native_reward_replay_not_dry_run(tmp_path, monkeypatch):
     profile = _profile(tmp_path)
     profile["reinforcement_learning"] = {

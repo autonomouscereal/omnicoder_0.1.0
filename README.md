@@ -36,10 +36,11 @@ The canonical fast-card launcher now defaults to `run-full`, not the narrower
 coverage with `OMNICODER_HELDOUT_MAX_RECORDS_PER_FILE` and
 `OMNICODER_BENCHMARK_MAX_RECORDS_PER_FILE`; setting either to `0` means all
 records rather than the profile's bounded default. Sharded pipeline checkpoint
-gates run real distributed sample-loss immediately and mark reportable
-prediction scoring as pending until a serving/export path produces model
-generated predictions, so long 20B training does not fail on a missing
-interactive generation bridge.
+gates run real distributed sample-loss immediately. They leave reportable
+prediction scoring pending when no generated prediction artifact exists, but
+consume `OMNICODER_BENCHMARK_PREDICTIONS` once a serving/export path produces
+real model outputs for authorized tasks. That lets release gates score sharded
+20B checkpoints directly without pretending smoke fixtures are reportable.
 
 The posttraining orchestrator is fail-closed for 20B pipeline replay: a failed
 or incomplete sharded optimizer stage stops the remaining replay stack instead
@@ -185,8 +186,17 @@ distill-curriculum-2026 validate --profile profiles/distillation_curriculum_2026
 python -m omnicoder.training.training_orchestration_2026 \
   --profile profiles/training_orchestration_2026.json mix-plan
 
+python -m omnicoder.data_factory.coverage_validator_2026 \
+  --run-id <run_id> --require-media-teacher-rollouts --require-reportable-tasks
+
 scripts/ai_server_dataset_training_sidecars_2026.sh all
 ```
+
+The coverage validator is read-only. It reports the actual row counts for
+curated modality JSONLs, strict local traces, external expansion, agentic
+SFT/reward/preference/RLVR exports, teacher jobs, Qwen/P40 rollouts, media
+teacher rollout artifacts, mixture plans, and reportable eval task roots. Use
+`--strict` only when the run should fail closed instead of producing a report.
 
 The sidecar runner now emits `mixture_plan.json`, a bounded adaptive sampling
 plan with native `8K -> 1M` context ladder targets, modality-gap flags, q4

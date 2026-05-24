@@ -3322,6 +3322,141 @@ def run_checkpoint_benchmark_gate(
         "status": "passed",
         "created_at": now_iso(),
     }
+
+    def run_reportable_gate(benchmark_profile: str, run_id: str) -> tuple[dict[str, Any], bool]:
+        gates_cfg = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
+        reportable_roots, reportable_sources = configured_reportable_roots(cfg, benchmark_profile)
+        reportable_paths = existing_paths(reportable_roots, repo_root())
+        missing_policy = str(
+            cfg.get("missing_reportable_policy")
+            or gates_cfg.get("missing_reportable_policy")
+            or "fail"
+        ).lower()
+        benchmark_cycle = str(arg_value(args, "benchmark_cycle", "") or gates_cfg.get("benchmark_cycle") or "smoke")
+        benchmark_min_tasks = int(arg_value(args, "benchmark_min_tasks", 0) or gates_cfg.get("benchmark_min_tasks") or 1)
+        require_reportable_gate = truthy_value(arg_value(args, "require_reportable_gate", False))
+        benchmark_predictions_raw = str(arg_value(args, "benchmark_predictions", "") or "").strip()
+        benchmark_predictions = resolve_path(benchmark_predictions_raw, repo_root()) if benchmark_predictions_raw else None
+        if not reportable_paths:
+            gate = {
+                "status": "needs_data",
+                "reason": "no_official_or_authorized_reportable_tasks_found",
+                "configured_task_roots": [str(path) for path in reportable_roots],
+                "root_sources": reportable_sources,
+                "missing_policy": missing_policy,
+                "gate_policy": "fail_open" if missing_policy in {"allow", "warn", "skip"} else "fail_closed",
+                "gate_decision": "allowed_needs_data" if missing_policy in {"allow", "warn", "skip"} else "blocked_needs_data",
+            }
+            if checkpoint_path.is_dir() and not require_reportable_gate:
+                gate["status"] = "pending"
+                gate["gate_decision"] = "pending_needs_data"
+                return gate, False
+            return gate, missing_policy not in {"allow", "warn", "skip"}
+
+        reportable_dir = gate_dir / "reportable"
+        reportable_summary_path = reportable_dir / "reportable_summary.json"
+        prediction_seed: dict[str, Any]
+        if benchmark_predictions is not None and benchmark_predictions.exists():
+            prediction_seed = {
+                "path": str(benchmark_predictions),
+                "records": count_jsonl_rows(benchmark_predictions),
+                "source": "model_generated_predictions",
+            }
+        elif benchmark_cycle == "smoke" and not checkpoint_path.is_dir():
+            prediction_seed = write_reportable_prediction_seed(reportable_paths, reportable_dir / "checkpoint_predictions.jsonl")
+        else:
+            prediction_seed = {
+                "path": benchmark_predictions_raw,
+                "records": 0,
+                "source": "missing_model_generated_predictions",
+            }
+            gate = {
+                "status": "pending" if not require_reportable_gate else "failed",
+                "reason": "model_generated_predictions_required_for_non_smoke_reportable_gate",
+                "cycle": benchmark_cycle,
+                "configured_predictions": benchmark_predictions_raw,
+                "task_roots": [str(path) for path in reportable_paths],
+                "configured_task_roots": [str(path) for path in reportable_roots],
+                "root_sources": reportable_sources,
+                "required": require_reportable_gate,
+            }
+            return gate, require_reportable_gate
+
+        reportable_cmd = [
+            sys.executable,
+            "-m",
+            "omnicoder.eval.benchmark_suite_2026",
+            "--profile",
+            benchmark_profile,
+            "--out-dir",
+            str(reportable_dir),
+            "--model",
+            str(checkpoint_path),
+            "--out",
+            str(reportable_summary_path),
+            "run-reportable",
+            "--cycle",
+            benchmark_cycle,
+            "--run-id",
+            run_id,
+            "--min-tasks",
+            str(benchmark_min_tasks),
+            "--missing-reportable-policy",
+            missing_policy,
+        ]
+        for path in reportable_paths:
+            reportable_cmd.extend(["--tasks", str(path)])
+        if int(prediction_seed.get("records") or 0) > 0:
+            reportable_cmd.extend(["--predictions", str(prediction_seed["path"])])
+        reportable_code = run_command(reportable_cmd, out_dir / "logs" / f"benchmark_{safe_filename(phase)}_reportable.log")
+        reportable_summary_cmd = [
+            sys.executable,
+            "-m",
+            "omnicoder.eval.benchmark_suite_2026",
+            "--profile",
+            benchmark_profile,
+            "--out-dir",
+            str(reportable_dir),
+            "--model",
+            str(checkpoint_path),
+            "--out",
+            str(reportable_dir / "summary.json"),
+            "summarize",
+            "--results",
+            "reportable_results.jsonl",
+        ]
+        reportable_summary_code = run_command(
+            reportable_summary_cmd,
+            out_dir / "logs" / f"benchmark_{safe_filename(phase)}_reportable_summarize.log",
+        )
+        reportable_summary = read_json(reportable_summary_path) if reportable_summary_path.exists() else {}
+        gate = {
+            "returncode": reportable_code,
+            "summarize_returncode": reportable_summary_code,
+            "out_dir": str(reportable_dir),
+            "summary": str(reportable_dir / "summary.json"),
+            "reportable_summary": str(reportable_summary_path),
+            "task_roots": [str(path) for path in reportable_paths],
+            "configured_task_roots": [str(path) for path in reportable_roots],
+            "root_sources": reportable_sources,
+            "predictions": prediction_seed,
+            "status": reportable_summary.get("status"),
+            "cycle": benchmark_cycle,
+            "min_tasks": benchmark_min_tasks,
+            "gate_policy": reportable_summary.get("gate_policy"),
+            "gate_decision": reportable_summary.get("gate_decision"),
+            "reportable": reportable_summary.get("reportable"),
+            "failed": reportable_summary.get("failed"),
+            "skipped": reportable_summary.get("skipped"),
+            "local_only": reportable_summary.get("local_only"),
+        }
+        should_fail = (
+            reportable_code != 0
+            or reportable_summary_code != 0
+            or reportable_summary.get("gate_decision") == "blocked_needs_data"
+        )
+        return gate, should_fail
+
     if checkpoint_path.is_dir():
         eval_paths = checkpoint_eval_paths(manifest)
         if eval_paths:
@@ -3355,14 +3490,13 @@ def run_checkpoint_benchmark_gate(
             "reason": "pipeline_checkpoint_text_generation_pending",
             "sample_loss_gate": "completed",
         }
-        report["reportable_gate"] = {
-            "status": "pending",
-            "reason": "pipeline_checkpoint_requires_generated_predictions_or_serving_route",
-            "required": require_reportable_gate,
-        }
-        if require_reportable_gate and report.get("status") != "failed":
+        gates_cfg = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
+        benchmark_profile = str(cfg.get("benchmark_profile") or gates_cfg.get("benchmark_profile") or "profiles/benchmark_suite_2026.json")
+        reportable_gate, reportable_failed = run_reportable_gate(benchmark_profile, f"{safe_filename(phase)}_{int(time.time())}")
+        report["reportable_gate"] = reportable_gate
+        if reportable_failed and report.get("status") != "failed":
             report["status"] = "failed"
-            report["reason"] = "pipeline_checkpoint_reportable_predictions_required"
+            report["reason"] = str(reportable_gate.get("reason") or "pipeline_checkpoint_reportable_gate_failed")
         write_json(gate_dir / "benchmark_gate_summary.json", report)
         return report
 
@@ -3458,136 +3592,10 @@ def run_checkpoint_benchmark_gate(
     if validate_code != 0 or smoke_code != 0 or summarize_code != 0:
         report["status"] = "failed"
 
-    reportable_roots, reportable_sources = configured_reportable_roots(cfg, benchmark_profile)
-    reportable_paths = existing_paths(reportable_roots, repo_root())
-    missing_policy = str(
-        cfg.get("missing_reportable_policy")
-        or gates_cfg.get("missing_reportable_policy")
-        or "fail"
-    ).lower()
-    benchmark_cycle = str(arg_value(args, "benchmark_cycle", "") or gates_cfg.get("benchmark_cycle") or "smoke")
-    benchmark_min_tasks = int(arg_value(args, "benchmark_min_tasks", 0) or gates_cfg.get("benchmark_min_tasks") or 1)
-    require_reportable_gate = truthy_value(arg_value(args, "require_reportable_gate", False))
-    benchmark_predictions_raw = str(arg_value(args, "benchmark_predictions", "") or "").strip()
-    benchmark_predictions = resolve_path(benchmark_predictions_raw, repo_root()) if benchmark_predictions_raw else None
-    if reportable_paths:
-        reportable_dir = gate_dir / "reportable"
-        reportable_summary_path = reportable_dir / "reportable_summary.json"
-        prediction_seed: dict[str, Any]
-        if benchmark_predictions is not None and benchmark_predictions.exists():
-            prediction_seed = {
-                "path": str(benchmark_predictions),
-                "records": count_jsonl_rows(benchmark_predictions),
-                "source": "model_generated_predictions",
-            }
-        elif benchmark_cycle == "smoke":
-            prediction_seed = write_reportable_prediction_seed(reportable_paths, reportable_dir / "checkpoint_predictions.jsonl")
-        else:
-            prediction_seed = {
-                "path": benchmark_predictions_raw,
-                "records": 0,
-                "source": "missing_model_generated_predictions",
-            }
-            report["reportable_gate"] = {
-                "status": "pending" if not require_reportable_gate else "failed",
-                "reason": "model_generated_predictions_required_for_non_smoke_reportable_gate",
-                "cycle": benchmark_cycle,
-                "configured_predictions": benchmark_predictions_raw,
-                "task_roots": [str(path) for path in reportable_paths],
-                "configured_task_roots": [str(path) for path in reportable_roots],
-                "root_sources": reportable_sources,
-                "required": require_reportable_gate,
-            }
-            if require_reportable_gate:
-                report["status"] = "failed"
-            write_json(gate_dir / "benchmark_gate_summary.json", report)
-            return report
-        reportable_cmd = [
-            sys.executable,
-            "-m",
-            "omnicoder.eval.benchmark_suite_2026",
-            "--profile",
-            benchmark_profile,
-            "--out-dir",
-            str(reportable_dir),
-            "--model",
-            str(checkpoint_path),
-            "--out",
-            str(reportable_summary_path),
-            "run-reportable",
-            "--cycle",
-            benchmark_cycle,
-            "--run-id",
-            smoke_run_id,
-            "--min-tasks",
-            str(benchmark_min_tasks),
-            "--missing-reportable-policy",
-            missing_policy,
-        ]
-        for path in reportable_paths:
-            reportable_cmd.extend(["--tasks", str(path)])
-        if int(prediction_seed.get("records") or 0) > 0:
-            reportable_cmd.extend(["--predictions", str(prediction_seed["path"])])
-        reportable_code = run_command(reportable_cmd, out_dir / "logs" / f"benchmark_{safe_filename(phase)}_reportable.log")
-        reportable_summary_cmd = [
-            sys.executable,
-            "-m",
-            "omnicoder.eval.benchmark_suite_2026",
-            "--profile",
-            benchmark_profile,
-            "--out-dir",
-            str(reportable_dir),
-            "--model",
-            str(checkpoint_path),
-            "--out",
-            str(reportable_dir / "summary.json"),
-            "summarize",
-            "--results",
-            "reportable_results.jsonl",
-        ]
-        reportable_summary_code = run_command(
-            reportable_summary_cmd,
-            out_dir / "logs" / f"benchmark_{safe_filename(phase)}_reportable_summarize.log",
-        )
-        reportable_summary = read_json(reportable_summary_path) if reportable_summary_path.exists() else {}
-        report["reportable_gate"] = {
-            "returncode": reportable_code,
-            "summarize_returncode": reportable_summary_code,
-            "out_dir": str(reportable_dir),
-            "summary": str(reportable_dir / "summary.json"),
-            "reportable_summary": str(reportable_summary_path),
-            "task_roots": [str(path) for path in reportable_paths],
-            "configured_task_roots": [str(path) for path in reportable_roots],
-            "root_sources": reportable_sources,
-            "predictions": prediction_seed,
-            "status": reportable_summary.get("status"),
-            "cycle": benchmark_cycle,
-            "min_tasks": benchmark_min_tasks,
-            "gate_policy": reportable_summary.get("gate_policy"),
-            "gate_decision": reportable_summary.get("gate_decision"),
-            "reportable": reportable_summary.get("reportable"),
-            "failed": reportable_summary.get("failed"),
-            "skipped": reportable_summary.get("skipped"),
-            "local_only": reportable_summary.get("local_only"),
-        }
-        if (
-            reportable_code != 0
-            or reportable_summary_code != 0
-            or reportable_summary.get("gate_decision") == "blocked_needs_data"
-        ):
-            report["status"] = "failed"
-    else:
-        report["reportable_gate"] = {
-            "status": "needs_data",
-            "reason": "no_official_or_authorized_reportable_tasks_found",
-            "configured_task_roots": [str(path) for path in reportable_roots],
-            "root_sources": reportable_sources,
-            "missing_policy": missing_policy,
-            "gate_policy": "fail_open" if missing_policy in {"allow", "warn", "skip"} else "fail_closed",
-            "gate_decision": "allowed_needs_data" if missing_policy in {"allow", "warn", "skip"} else "blocked_needs_data",
-        }
-        if missing_policy not in {"allow", "warn", "skip"}:
-            report["status"] = "failed"
+    reportable_gate, reportable_failed = run_reportable_gate(benchmark_profile, smoke_run_id)
+    report["reportable_gate"] = reportable_gate
+    if reportable_failed:
+        report["status"] = "failed"
 
     write_json(gate_dir / "benchmark_gate_summary.json", report)
     return report
