@@ -172,10 +172,21 @@ cd /home/cereal/omnicoder_2026_work
 scripts/ai_server_dataset_training_sidecars_2026.sh preflight
 
 # Trace mining, ComfyUI artifact indexing, external dataset expansion,
-# teacher-job sharding, and P40 teacher rollouts.
+# teacher-job sharding, modality-teacher jobs, and P40 teacher rollouts.
 OMNICODER_MAX_RECORDS_PER_DATASET=1024 \
 OMNICODER_TEACHER_LIMIT=256 \
 scripts/ai_server_dataset_training_sidecars_2026.sh all
+
+# Fresh registry-wave delta without reprocessing the entire registry.
+OMNICODER_RUN_ID=external_fifth_sixth_wave_delta_$(date -u +%Y%m%dT%H%M%SZ) \
+OMNICODER_DATASET_INCLUDE_WAVES=fifth_wave_agentic_rlvr_multimodal_2026_05_24,sixth_wave_formal_code_media_2026_05_24 \
+OMNICODER_ENFORCE_DATASET_MINIMA=0 \
+OMNICODER_MAX_RECORDS_PER_DATASET=512 \
+scripts/ai_server_dataset_training_sidecars_2026.sh external-expansion
+
+# Modality-specific distillation job JSONL for Qwen Image/Edit, LTX, ACE-Step,
+# and omni/audio teachers.
+scripts/ai_server_dataset_training_sidecars_2026.sh modality-teacher-jobs
 
 # Later status check.
 scripts/ai_server_dataset_training_sidecars_2026.sh status
@@ -186,6 +197,7 @@ The sidecar runner writes run-scoped outputs under:
 - `weights/curated_datasets_2026/runs/<run_id>`
 - `weights/external_datasets_2026/runs/<run_id>`
 - `weights/data_factory/trace_orchestrator_2026/teacher_jobs/<run_id>`
+- `weights/data_factory/runs/teacher_jobs/<run_id>/modality`
 - `weights/data_factory/teacher_rollouts/<run_id>`
 
 It promotes `latest` symlinks only after outputs exist. The target training
@@ -211,7 +223,10 @@ P40 usage policy:
 - Fast GPUs `0,4,6`: the active 20B pipeline only.
 
 This keeps the RTX 3090s and RTX 8000 saturated by the target model while P40s
-produce agentic, math, code, and tool distillation rows in parallel.
+produce agentic, math, code, and tool distillation rows in parallel. The
+multimodal teacher-job lane creates JSONL work orders for the matching
+image/video/audio/music teachers; it does not run those teacher runtimes inside
+the Qwen P40 text rollout loop.
 
 Monitor a detached lane with `scripts/ai_server_monitor_fast_pipeline_2026.sh`.
 For older hand-launched containers, set `OMNICODER_NAME_FILTER` to the actual

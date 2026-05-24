@@ -167,6 +167,38 @@ Current high-value registry families:
   GitHub-hosted TSV/CSV/JSON/JSONL files can now be materialized through
   `remote_files`, which lets VTC-Bench enter the eval-holdout lane as real
   rows with image refs and ground-truth visual tool trajectories.
+- Fifth/sixth-wave additions: CUA-Gym, A11y-CUA, Telos, MEnvData SWE,
+  JetBrains SWE-Smith trajectories, DeepSWE Kimi-K2 rejection sampling,
+  ElenaFu SWE-agent rows, GELATO OSWorld, WebArena Pro trajectory reviews,
+  Mind2Web UTG, MCP tool-calling, Turkish mobile function-calling,
+  ScreenSpot-Pro, RLVR Linearity, Nous RLVR Coding, IFDecorator,
+  OpenResearcher/OpenSeeker cleaned tool reasoning rows, BrowseComp-plus
+  review rows, VideoPhy2, EditReward-Bench, IESBench, SVI, MieDB, OpenVE-3M,
+  VBench-I2V, DocVQA 2026, ChartMuseum, GroundUI-18K, Kirundi/Indonesian
+  speech, audio preference rows, TrueMuse, tokenized omni/Emu3 review rows,
+  LiveCodeBench, KernelBench, TritonBench, TestGenEval, UTBoost,
+  NuminaMath-LEAN, Kimina/Lean proof rows, FoVer, MathArena HMMT 2026/USAMO
+  2025, and ARC-AGI-2 public-training seeds. These are tagged with
+  `registry_wave` so the AI server can materialize only the fresh wave as a
+  delta run while the full registry remains the promotion gate.
+
+Filtered delta materialization:
+
+```powershell
+dataset-expansion-2026 `
+  --profile profiles/dataset_curation_2026.json `
+  --out-dir weights/external_datasets_2026/runs/fifth_sixth_wave_delta `
+  --download `
+  --max-records-per-dataset 512 `
+  --include-wave fifth_wave_agentic_rlvr_multimodal_2026_05_24 `
+  --include-wave sixth_wave_formal_code_media_2026_05_24 `
+  build
+```
+
+Filtered delta runs deliberately skip the global family-minimum requirement
+unless `--enforce-requirements` is passed. They are sidecar inputs for fresh
+teacher jobs and sampler rows; only a full unfiltered pass can promote
+`weights/external_datasets_2026/latest` as the canonical 20B source.
 
 Rows from external sources are not merged into the 20B target lane merely
 because they exist. They must survive redaction, dedupe, benchmark
@@ -191,6 +223,13 @@ letting old run-scoped rows masquerade as current trace coverage.
 The registry test suite asserts unique names, HF ids, and URLs, verifies the
 expanded 2025-2026 source coverage, and checks that unsafe license markers do
 not resolve to the train bucket.
+
+`scripts/ai_server_dataset_training_sidecars_2026.sh modality-teacher-jobs`
+builds modality-specific teacher job files for Qwen Image, Qwen Image Edit,
+LTX 2.3, ACE-Step 1.5, and omni/audio teachers from the current curated and
+external JSONL outputs. These jobs are separate from P40 Qwen text/tool
+rollouts because raw image/video/audio/music generation and critique need the
+matching teacher runtime.
 
 The AI-server sidecar exports agent-memory audit rows before the trace
 orchestrator runs, then collects Codex, Claude, Hermes, LM Studio, and ComfyUI

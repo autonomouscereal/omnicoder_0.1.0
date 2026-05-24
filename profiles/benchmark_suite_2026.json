@@ -1,6 +1,6 @@
 {
   "profile_name": "benchmark_suite_2026",
-  "version": "2026-05-23",
+  "version": "2026-05-24",
   "purpose": "Comprehensive Omnicoder 2026 benchmark suite profile for model, agent, multimodal, generation, safety, and deployment evaluation.",
   "storage": {
     "primary": "jsonl",
@@ -2928,6 +2928,173 @@
         "separate_synthetic_and_real_workloads"
       ],
       "release_gate": "deployment_performance_release"
+    },
+    {
+      "benchmark_id": "reasoning_rlvr_linearity_math_2026",
+      "axis": "reasoning",
+      "adapter_kind": "math_rlvr_verifier_eval",
+      "source": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
+      "task_format": "jsonl_math_rlvr_verifier",
+      "modalities": [
+        "text"
+      ],
+      "splits": {
+        "smoke": "two AIME24/DeepScaleR public verifier rows",
+        "nightly": "balanced RLVR-linearity slice",
+        "release": "authorized heldout linearly stratified verifier set"
+      },
+      "metrics": [
+        "exact_answer_accuracy",
+        "verifier_reward_agreement",
+        "length_normalized_accuracy",
+        "reward_linearity_error"
+      ],
+      "holdout_policy": [
+        "hide_answer_keys_for_reportable",
+        "separate_train_and_eval_source_splits",
+        "record_dataset_revision"
+      ],
+      "release_gate": "reasoning_release"
+    },
+    {
+      "benchmark_id": "coding_nous_rlvr_coding_2026",
+      "axis": "coding",
+      "adapter_kind": "code_rlvr_unit_test_eval",
+      "source": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
+      "task_format": "jsonl_code_problem_tests",
+      "modalities": [
+        "code",
+        "text"
+      ],
+      "splits": {
+        "smoke": "two public coding verifier tasks",
+        "nightly": "stratified Python verifier slice",
+        "release": "authorized hidden-test verifier slice"
+      },
+      "metrics": [
+        "tests_passed_rate",
+        "patch_or_solution_exec_rate",
+        "timeout_rate",
+        "reward_verifier_agreement"
+      ],
+      "holdout_policy": [
+        "hide_hidden_tests",
+        "hide_reference_solutions",
+        "quarantine_successful_trajectories"
+      ],
+      "release_gate": "coding_release"
+    },
+    {
+      "benchmark_id": "generation_editreward_bench_2026",
+      "axis": "image_generation",
+      "adapter_kind": "image_edit_reward_model_eval",
+      "source": "https://huggingface.co/datasets/EditScore/EditReward-Bench",
+      "task_format": "jsonl_image_edit_preference_pair",
+      "modalities": [
+        "image",
+        "text"
+      ],
+      "splits": {
+        "smoke": "two edit preference pairs",
+        "nightly": "subtask-balanced edit reward slice",
+        "release": "official expert-annotation edit reward set"
+      },
+      "metrics": [
+        "preference_accuracy",
+        "subtask_macro_accuracy",
+        "preservation_score",
+        "instruction_adherence_score"
+      ],
+      "holdout_policy": [
+        "hide_expert_labels",
+        "hash_media_assets",
+        "no_successful_trace_training"
+      ],
+      "release_gate": "generation_release"
+    },
+    {
+      "benchmark_id": "safety_iesbench_image_edit_2026",
+      "axis": "safety_tool_security",
+      "adapter_kind": "image_edit_safety_eval",
+      "source": "https://huggingface.co/datasets/CSU-JPG/IESBench",
+      "task_format": "jsonl_image_edit_safety_prompt",
+      "modalities": [
+        "image",
+        "text"
+      ],
+      "splits": {
+        "smoke": "two image-edit safety probes",
+        "nightly": "balanced image editing safety slice",
+        "release": "official image editing safety suite"
+      },
+      "metrics": [
+        "unsafe_edit_refusal_rate",
+        "benign_edit_completion_rate",
+        "safety_judgment_accuracy"
+      ],
+      "holdout_policy": [
+        "hide_safety_labels",
+        "hash_reference_images",
+        "quarantine_failure_cases"
+      ],
+      "release_gate": "safety_security_release"
+    },
+    {
+      "benchmark_id": "generation_svi_benchmark_2026",
+      "axis": "video_generation",
+      "adapter_kind": "image_to_video_storyline_eval",
+      "source": "https://huggingface.co/datasets/epfl-vita/svi-benchmark",
+      "task_format": "jsonl_prompt_stream_image_to_video",
+      "modalities": [
+        "image",
+        "video",
+        "text"
+      ],
+      "splits": {
+        "smoke": "one storyline prompt stream",
+        "nightly": "storyline and object-consistency slice",
+        "release": "authorized prompt-stream video consistency suite"
+      },
+      "metrics": [
+        "storyline_consistency",
+        "identity_preservation",
+        "motion_continuity",
+        "artifact_integrity"
+      ],
+      "holdout_policy": [
+        "hide_human_scores",
+        "hash_frame_assets",
+        "record_generated_video_sha256"
+      ],
+      "release_gate": "generation_release"
+    },
+    {
+      "benchmark_id": "generation_text_to_audio_pref_2026",
+      "axis": "audio_generation",
+      "adapter_kind": "audio_generation_preference_eval",
+      "source": "https://huggingface.co/datasets/Rapidata/text-2-audio-human-preference-benchmark",
+      "task_format": "jsonl_audio_preference_pair",
+      "modalities": [
+        "audio",
+        "text"
+      ],
+      "splits": {
+        "smoke": "two audio preference pairs",
+        "nightly": "sound-effect/speech/music preference slice",
+        "release": "authorized text-to-audio preference suite"
+      },
+      "metrics": [
+        "preference_accuracy",
+        "prompt_adherence",
+        "audio_artifact_rate",
+        "semantic_audio_alignment"
+      ],
+      "holdout_policy": [
+        "hide_human_preference_labels",
+        "hash_audio_assets",
+        "no_training_on_eval_pairs"
+      ],
+      "release_gate": "generation_release"
     }
   ],
   "reportable_core_25": [
@@ -3002,7 +3169,8 @@
       "coding_swe_bench_multimodal_2026",
       "coding_livecodebench_v6_2026",
       "coding_ojbench_2026",
-      "coding_swe_lancer_2026"
+      "coding_swe_lancer_2026",
+      "coding_nous_rlvr_coding_2026"
     ],
     "agent_tool_release": [
       "agent_bfcl_v4_2026",
@@ -3033,7 +3201,8 @@
       "reasoning_gaia_text_only_2026",
       "reasoning_hle_tools_2026",
       "reasoning_hle_rolling_2026",
-      "reasoning_livebench_2026"
+      "reasoning_livebench_2026",
+      "reasoning_rlvr_linearity_math_2026"
     ],
     "long_context_release": [
       "long_context_ruler_infinitebench_2026",
@@ -3084,12 +3253,16 @@
       "generation_opens2v_nexus_2026",
       "generation_t2v_compbench_2026",
       "generation_impossible_videos_ipv_2026",
-      "generation_complexbench_edit_2026"
+      "generation_complexbench_edit_2026",
+      "generation_editreward_bench_2026",
+      "generation_svi_benchmark_2026",
+      "generation_text_to_audio_pref_2026"
     ],
     "safety_security_release": [
       "safety_tool_security_2026",
       "generation_mvad_authenticity_2026",
-      "safety_healthbench_2026"
+      "safety_healthbench_2026",
+      "safety_iesbench_image_edit_2026"
     ],
     "deployment_performance_release": [
       "deployment_performance_2026",

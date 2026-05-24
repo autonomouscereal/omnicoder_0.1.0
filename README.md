@@ -70,11 +70,18 @@ mix:
   trajectories, Toolathlon trajectories, Plan-RewardBench, Agentic
   Chain-of-Thought Coding SFT, R2E-Gym verifier/testing-agent trajectories,
   APIGen-MT/WebShaper research rows, PrimeIntellect SYNTHETIC-1 SFT/preference,
-  and local Codex/Claude/Hermes/agent-memory traces.
+  CUA-Gym, A11y-CUA, Telos tool trajectories, MEnvData SWE trajectories,
+  JetBrains SWE-Smith trajectories, Kimi-K2 rejection-sampled DeepSWE,
+  WebArena Pro trajectory reviews, Mind2Web UTG eval trajectories, Turkish
+  mobile function-calling, ScreenSpot-Pro, WorkArena/ScaleCUA blocked review
+  rows, and local Codex/Claude/Hermes/agent-memory traces.
 - Extra math/coding RLVR: Nemotron RL super blends, Cascade RL SWE/RLHF,
   Nemotron competitive coding, PrimeIntellect verifiable coding/math review
-  rows, Math-RLVR 773K, High-Quality-Verifiable-Math-156K review rows, and
-  SWE-Agent LM 32B R2E-Gym trajectory review rows.
+  rows, Math-RLVR 773K, High-Quality-Verifiable-Math-156K review rows,
+  RLVR Linearity, Nous RLVR Coding Problems, IFDecorator, NuminaMath-LEAN,
+  Kimina/Lean proof rows, FoVer process-verifier labels, TritonBench,
+  KernelBench research rows, UTBoost/LiveCodeBench eval rows, ARC-AGI-2
+  public-training rows, and SWE-Agent LM 32B R2E-Gym trajectory review rows.
 - Multimodal generation and reward: FineVision/FineVisionMax, ScaleEdit,
   GPT-Image-Edit, NHR-Edit, CrispEdit, BAGEL-World, Rapidata image
   preferences, HPDv3, ImgEdit, UniREdit, BLIP3o, UniWorld, text-to-image DPO
@@ -92,7 +99,10 @@ mix:
   MM-IQ, Real5-OmniDocBench, MMVU,
   VideoVista CoTs, WorldSense/MMOU/MMAU holdouts, AudioSet/zero-shot/adversarial audio
   instruction rows, NVIDIA HiFiTTS2/LongAudio/AF-Think/AF-Chat/MF-Skills,
-  SpeechJudge, AudioCoT, and StoryBench/OmniBench reward/eval holdouts.
+  SpeechJudge, AudioCoT, EditReward-Bench, IESBench, VideoPhy2, VBench-I2V,
+  SVI, MieDB, OpenVE-3M, DocVQA 2026, ChartMuseum, Kirundi and Indonesian
+  TTS/speech rows, TrueMuse, tokenized omni/Emu3 review rows, and
+  StoryBench/OmniBench reward/eval holdouts.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for
@@ -115,6 +125,13 @@ dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
   --out-dir weights/external_datasets_2026/latest \
   --download --max-records-per-dataset 1024 \
   --enforce-requirements build
+
+dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
+  --out-dir weights/external_datasets_2026/runs/fifth_sixth_wave_delta \
+  --download --max-records-per-dataset 512 \
+  --include-wave fifth_wave_agentic_rlvr_multimodal_2026_05_24 \
+  --include-wave sixth_wave_formal_code_media_2026_05_24 \
+  build
 
 agentic-tool-train-2026 --profile profiles/agentic_tool_training_2026.json build
 
@@ -139,6 +156,10 @@ teacher critiques into corrected responses/tool calls/reward components, and
 refreshes those exports again after Qwen3.6 teacher rollouts. New sidecar
 outputs write run-scoped first; shared `weights/agentic_tool_training_2026`
 promotion is opt-in with `OMNICODER_PROMOTE_SHARED_ARTIFACTS=1`.
+The sidecar also builds modality-specific teacher job JSONL for Qwen Image,
+Qwen Image Edit, LTX 2.3, ACE-Step 1.5, and omni/audio teachers so image,
+video, audio, music, and image-to-video distillation work is routed to the
+right teacher family instead of the P40 text/tool rollout path.
 Official/protected benchmark rows remain release-gate evidence only; missing
 official metadata now produces `local_only` benchmark results instead of being
 misreported as public leaderboard quality.

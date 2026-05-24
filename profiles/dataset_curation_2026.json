@@ -2,7 +2,7 @@
   "schema": "omnicoder.dataset_curation_2026.v1",
   "profile_name": "dataset_curation_2026",
   "run_name": "trace_curation_codex_claude_hermes_agent_memory_2026",
-  "source_date": "2026-05-23",
+  "source_date": "2026-05-24",
   "work_dir": "weights/data_factory/trace_orchestrator_2026",
   "jsonl_fallback_first": true,
   "trace_inputs": {
@@ -13655,8 +13655,4923 @@
           "dataset_card_only",
           "release_watch"
         ]
+      },
+      {
+        "name": "RLVR Linearity Dataset",
+        "hf_id": "Miaow-Lab/RLVR-Linearity-Dataset",
+        "url": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "instruction",
+            "input"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "response",
+            "completion",
+            "final_answer",
+            "ground_truth"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "tests"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "rlvr",
+          "linearity_probe",
+          "aime24",
+          "deepscaler_preview",
+          "verifiable_math"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Nous RLVR Coding Problems",
+        "hf_id": "NousResearch/RLVR_Coding_Problems",
+        "url": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "instruction",
+            "input",
+            "description",
+            "task"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "response",
+            "completion",
+            "patch",
+            "code",
+            "tests"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "reasoning_trace"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "unit_tests",
+            "tests"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "rlvr",
+          "coding_verifiers",
+          "unit_test_signal",
+          "reasoning_code"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "IFDecorator Instruction Following RL",
+        "hf_id": "guox18/IFDecorator",
+        "url": "https://huggingface.co/datasets/guox18/IFDecorator",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "instruction",
+            "input"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "response",
+            "completion",
+            "final_answer",
+            "ground_truth"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "tests"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "instruction_following_rl",
+          "constraint_following",
+          "verifiable_rewards",
+          "rule_decorators"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "CAP RLVR SFT",
+        "hf_id": "kylebrussell/cap-rlvr-sft",
+        "url": "https://huggingface.co/datasets/kylebrussell/cap-rlvr-sft",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "unknown",
+        "license_tier": "unknown_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "instruction",
+            "input"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "response",
+            "completion",
+            "final_answer",
+            "ground_truth"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "tests"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "rlvr_sft",
+          "large_scale_reasoning",
+          "license_review"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "HINT-Lab MATH-RLVR Gated",
+        "hf_id": "HINT-lab/MATH-RLVR",
+        "url": "https://huggingface.co/datasets/HINT-lab/MATH-RLVR",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "gated manual access",
+        "license_tier": "gated_unknown_review",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "instruction",
+            "input"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "response",
+            "completion",
+            "final_answer",
+            "ground_truth"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "tests"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "math_rlvr",
+          "gated_review",
+          "do_not_train_until_authorized"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "OpenResearcher RLVR Format",
+        "hf_id": "ServiceNow-AI/OpenResearcher-Dataset-rlvr_format",
+        "url": "https://huggingface.co/datasets/ServiceNow-AI/OpenResearcher-Dataset-rlvr_format",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "gated or unauthorized repository",
+        "license_tier": "gated_unknown_review",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "input",
+            "conversation"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "preference_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "deep_research_rlvr",
+          "tool_retrieval",
+          "blocked_until_authorized"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Tool Reasoning Context Management",
+        "hf_id": "AmanPriyanshu/tool-reasoning-sft-TOOLS-context-management-handling",
+        "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-TOOLS-context-management-handling",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "input",
+            "conversation"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "preference_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "context_management",
+          "tool_reasoning_sft",
+          "multi_turn_tool_state"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Tool Reasoning Hermes Style 115K",
+        "hf_id": "AmanPriyanshu/tool-reasoning-sft-TOOLS-hermes-reasoning-tool-style-data-cleaned-rectified-115k",
+        "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-TOOLS-hermes-reasoning-tool-style-data-cleaned-rectified-115k",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "input",
+            "conversation"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "preference_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "hermes_tool_style",
+          "tool_reasoning_sft",
+          "function_call_format"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "OpenResearcher Tool Reasoning Cleaned",
+        "hf_id": "AmanPriyanshu/tool-reasoning-sft-RESEARCH-openresearcher-dataset-sft-deep-research-agent-data-cleaned",
+        "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-RESEARCH-openresearcher-dataset-sft-deep-research-agent-data-cleaned",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "input",
+            "conversation"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "preference_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "deep_research_agent",
+          "retrieval_tool_use",
+          "source_grounded_research"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "OpenSeeker Tool Reasoning SFT",
+        "hf_id": "AmanPriyanshu/tool-reasoning-sft-RESEARCH-OpenSeeker-v1-Data",
+        "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-RESEARCH-OpenSeeker-v1-Data",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "input",
+            "conversation"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "preference_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "open_seeker",
+          "agentic_search",
+          "tool_reasoning_sft"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "BrowseComp Plus Runs Cleaned",
+        "hf_id": "AmanPriyanshu/tool-reasoning-sft-RESEARCH-grill-lab-browsecomp-plus-runs-data-cleaned-rectified",
+        "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-RESEARCH-grill-lab-browsecomp-plus-runs-data-cleaned-rectified",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "MIT with benchmark contamination risk",
+        "license_tier": "research_internal_benchmark_contamination_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "input",
+            "conversation"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "preference_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "browsecomp_plus",
+          "browser_research",
+          "contamination_review"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "NVIDIA Nemotron Agentic Tool Reasoning Cleaned",
+        "hf_id": "AmanPriyanshu/tool-reasoning-sft-CODING-nvidia-Nemotron-Agentic-v1",
+        "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-CODING-nvidia-Nemotron-Agentic-v1",
+        "family": "coding_agentic",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "input",
+            "conversation"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "preference_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "nemotron_agentic",
+          "coding_tool_reasoning",
+          "cleaned_rectified"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "AllenAI SERA Tool Reasoning Cleaned",
+        "hf_id": "AmanPriyanshu/tool-reasoning-sft-CODING-allenai-SERA-data-cleaned-rectified",
+        "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-CODING-allenai-SERA-data-cleaned-rectified",
+        "family": "coding_agentic",
+        "target_modality": "tool",
+        "license": "ODC-BY",
+        "license_tier": "permissive_attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "input",
+            "conversation"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "preference_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "sera",
+          "coding_agent",
+          "tool_reasoning_sft"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Text-to-Video Human Preferences 2026",
+        "hf_id": "yangge10/text-2-video-human-preferences",
+        "url": "https://huggingface.co/datasets/yangge10/text-2-video-human-preferences",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "text_to_video_preference",
+          "human_preference",
+          "reward_training",
+          "video_generation"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Text-to-Video Ranking Human Preferences",
+        "hf_id": "datapointai/text-2-video-ranking-human-preferences",
+        "url": "https://huggingface.co/datasets/datapointai/text-2-video-ranking-human-preferences",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "CC-BY-4.0 gated auto access",
+        "license_tier": "gated_auto_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "text_to_video_ranking",
+          "human_preference",
+          "gated_review"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Rapidata Text-to-Video Human Preferences Veo3.1",
+        "hf_id": "Rapidata/text-2-video-human-preferences-veo3.1",
+        "url": "https://huggingface.co/datasets/Rapidata/text-2-video-human-preferences-veo3.1",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "Apache-2.0 frontier model preference review",
+        "license_tier": "research_internal_frontier_preference_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "veo31_preferences",
+          "text_to_video_reward",
+          "frontier_preference_review"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Synthetic Audio Paired Preferences",
+        "hf_id": "vprak17/synthetic_audio_paired_preferences",
+        "url": "https://huggingface.co/datasets/vprak17/synthetic_audio_paired_preferences",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "audio_preference",
+          "paired_audio_reward",
+          "synthetic_audio"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Text-to-Audio Human Preference Benchmark",
+        "hf_id": "Rapidata/text-2-audio-human-preference-benchmark",
+        "url": "https://huggingface.co/datasets/Rapidata/text-2-audio-human-preference-benchmark",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "unknown benchmark",
+        "license_tier": "unknown_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "audio_preference_benchmark",
+          "text_to_audio",
+          "holdout"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "EditReward-Bench",
+        "hf_id": "EditScore/EditReward-Bench",
+        "url": "https://huggingface.co/datasets/EditScore/EditReward-Bench",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0 benchmark holdout",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "image_edit_reward_model",
+          "human_annotations",
+          "eval_holdout"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "IESBench Image Editing Safety",
+        "hf_id": "CSU-JPG/IESBench",
+        "url": "https://huggingface.co/datasets/CSU-JPG/IESBench",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "MIT benchmark holdout",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "image_editing_safety",
+          "unsafe_edit_detection",
+          "eval_holdout"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Ditto-1M Video Editing",
+        "hf_id": "QingyanBai/Ditto-1M",
+        "url": "https://huggingface.co/datasets/QingyanBai/Ditto-1M",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "CC-BY-NC-SA-4.0",
+        "license_tier": "non_commercial_sharealike_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "video_to_video_editing",
+          "long_video_editing",
+          "non_commercial_review"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Stable Video Infinity Benchmark",
+        "hf_id": "epfl-vita/svi-benchmark",
+        "url": "https://huggingface.co/datasets/epfl-vita/svi-benchmark",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "unknown benchmark",
+        "license_tier": "unknown_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "stable_video_infinity",
+          "storyline_prompt_streams",
+          "image_to_video_eval"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Audio Mixed Preference Collection 20260330",
+        "hf_id": "owenisas/audio-mixed-preference-collection-20260330",
+        "url": "https://huggingface.co/datasets/owenisas/audio-mixed-preference-collection-20260330",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "gated or unauthorized repository",
+        "license_tier": "gated_unknown_review",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "chosen",
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "preference",
+            "winner",
+            "score"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "asset"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "labels",
+            "rubric",
+            "ratings"
+          ],
+          "reward": [
+            "score",
+            "preference_score",
+            "rating",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "audio_preference",
+          "blocked_until_authorized",
+          "mixed_audio_reward"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "CUA-Gym",
+        "hf_id": "xlangai/CUA-Gym",
+        "url": "https://huggingface.co/datasets/xlangai/CUA-Gym",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages",
+            "actions",
+            "result"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "computer_use",
+          "cua_gym",
+          "rlvr_reward_functions",
+          "desktop_web_gui",
+          "verifiable_cua"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "A11y-CUA",
+        "hf_id": "berkeley-hci/A11y-CUA",
+        "url": "https://huggingface.co/datasets/berkeley-hci/A11y-CUA",
+        "family": "terminal_browser_agents",
+        "target_modality": "video",
+        "license": "CC-BY-4.0 privacy scan required",
+        "license_tier": "permissive_attribution_privacy_scan",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "action",
+            "trajectory",
+            "messages",
+            "answer",
+            "response",
+            "completion",
+            "screen_state"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "computer_use",
+          "accessibility_tree",
+          "windows_gui",
+          "screen_video_audio",
+          "privacy_scan"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Telos Agent Trajectory Dataset",
+        "hf_id": "kosiasuzu/telos-agent-trajectory-dataset",
+        "url": "https://huggingface.co/datasets/kosiasuzu/telos-agent-trajectory-dataset",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "MIT provider-output review",
+        "license_tier": "permissive_synthetic_distilled_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages",
+            "actions",
+            "result"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "telos_frame",
+          "chatml_tools",
+          "multi_turn_function_calling",
+          "synthetic_tool_loops"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "MEnvData SWE Trajectories",
+        "hf_id": "ernie-research/MEnvData-SWE-Trajectory",
+        "url": "https://huggingface.co/datasets/ernie-research/MEnvData-SWE-Trajectory",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "problem",
+            "question",
+            "prompt",
+            "instruction",
+            "issue",
+            "repo",
+            "task"
+          ],
+          "target": [
+            "patch",
+            "solution",
+            "answer",
+            "response",
+            "completion",
+            "trajectory",
+            "messages",
+            "resolved"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "history",
+            "eval_logs"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "actions",
+            "commands"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "tests"
+          ],
+          "verifier_labels": [
+            "resolved",
+            "success",
+            "tests",
+            "labels",
+            "eval_logs"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "resolved",
+            "success"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "openhands",
+          "repo_level_swe",
+          "multi_language_code_agent",
+          "execution_trajectory"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "JetBrains SWE-Smith Agent Trajectories Random Subset",
+        "hf_id": "JetBrains-Research/agent-trajectories-swesmith-random-subset",
+        "url": "https://huggingface.co/datasets/JetBrains-Research/agent-trajectories-swesmith-random-subset",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "problem",
+            "question",
+            "prompt",
+            "instruction",
+            "issue",
+            "repo",
+            "task"
+          ],
+          "target": [
+            "patch",
+            "solution",
+            "answer",
+            "response",
+            "completion",
+            "trajectory",
+            "messages",
+            "resolved"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "history",
+            "eval_logs"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "actions",
+            "commands"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "tests"
+          ],
+          "verifier_labels": [
+            "resolved",
+            "success",
+            "tests",
+            "labels",
+            "eval_logs"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "resolved",
+            "success"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_smith",
+          "mini_swe_agent",
+          "resolved_label",
+          "code_repair_trajectory"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "DeepSWE Kimi K2 Rejection Sampling Trajectories",
+        "hf_id": "SWE-Factory/DeepSWE-Agent-Kimi-K2-Trajectories-Rejection-Sampling",
+        "url": "https://huggingface.co/datasets/SWE-Factory/DeepSWE-Agent-Kimi-K2-Trajectories-Rejection-Sampling",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "problem",
+            "question",
+            "prompt",
+            "instruction",
+            "issue",
+            "repo",
+            "task"
+          ],
+          "target": [
+            "patch",
+            "solution",
+            "answer",
+            "response",
+            "completion",
+            "trajectory",
+            "messages",
+            "resolved"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "history",
+            "eval_logs"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "actions",
+            "commands"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "tests"
+          ],
+          "verifier_labels": [
+            "resolved",
+            "success",
+            "tests",
+            "labels",
+            "eval_logs"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "resolved",
+            "success"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "kimi_k2_distill",
+          "rejection_sampling",
+          "deepswe",
+          "trajectory_selection"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "ElenaFu SWE-agent Trajectories",
+        "hf_id": "ElenaFu/SWE-agent-trajectories",
+        "url": "https://huggingface.co/datasets/ElenaFu/SWE-agent-trajectories",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "CC-BY-4.0 SWE-bench contamination review",
+        "license_tier": "permissive_attribution_contamination_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "problem",
+            "question",
+            "prompt",
+            "instruction",
+            "issue",
+            "repo",
+            "task"
+          ],
+          "target": [
+            "patch",
+            "solution",
+            "answer",
+            "response",
+            "completion",
+            "trajectory",
+            "messages",
+            "resolved"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "history",
+            "eval_logs"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "actions",
+            "commands"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "tests"
+          ],
+          "verifier_labels": [
+            "resolved",
+            "success",
+            "tests",
+            "labels",
+            "eval_logs"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "resolved",
+            "success"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_agent",
+          "large_scale_trajectories",
+          "patch_eval_logs",
+          "swe_bench_decontam"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "GELATO OSWorld Agent Trajectories",
+        "hf_id": "mlfoundations/gelato-osworld-agent-trajectories",
+        "url": "https://huggingface.co/datasets/mlfoundations/gelato-osworld-agent-trajectories",
+        "family": "terminal_browser_agents",
+        "target_modality": "image",
+        "license": "MIT OSWorld holdout review",
+        "license_tier": "permissive_eval_holdout_review",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "action",
+            "trajectory",
+            "messages",
+            "answer",
+            "response",
+            "completion",
+            "screen_state"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "osworld",
+          "desktop_agent",
+          "screenshot_action_replay",
+          "eval_holdout"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "WebArena Pro Trajectory Reviews",
+        "hf_id": "webarenapro/agent_trajectory_reviews",
+        "url": "https://huggingface.co/datasets/webarenapro/agent_trajectory_reviews",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "MIT benchmark trajectory review",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages",
+            "actions",
+            "result"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "webarena_pro",
+          "process_reward",
+          "trajectory_review",
+          "browser_failure_analysis"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Mind2Web UTG Eval Trajectories",
+        "hf_id": "mlfoundations-utg-dev/mind2web-utg-eval-trajectories",
+        "url": "https://huggingface.co/datasets/mlfoundations-utg-dev/mind2web-utg-eval-trajectories",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "unknown",
+        "license_tier": "unknown_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages",
+            "actions",
+            "result"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "mind2web",
+          "ui_transition_graph",
+          "browser_agent_eval",
+          "license_review"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "ScaleCUA",
+        "hf_id": "cua-lite/ScaleCUA",
+        "url": "https://huggingface.co/datasets/cua-lite/ScaleCUA",
+        "family": "terminal_browser_agents",
+        "target_modality": "image",
+        "license": "other source license review",
+        "license_tier": "unknown_review",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "action",
+            "trajectory",
+            "messages",
+            "answer",
+            "response",
+            "completion",
+            "screen_state"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "scale_cua",
+          "desktop_mobile_web",
+          "large_cua_sft",
+          "blocked_license_review"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "MCP Tool-Calling Benchmark",
+        "hf_id": "brijeshvadi/mcp-tool-calling-benchmark",
+        "url": "https://huggingface.co/datasets/brijeshvadi/mcp-tool-calling-benchmark",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0 benchmark holdout",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train",
+          "test"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages",
+            "actions",
+            "result"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "mcp_tool_calling",
+          "connector_errors",
+          "classification_eval",
+          "benchmark_holdout"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "Turkish Mobile Function Calling",
+        "hf_id": "BTX24/turkish-mobile-function-calling-dataset",
+        "url": "https://huggingface.co/datasets/BTX24/turkish-mobile-function-calling-dataset",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages",
+            "actions",
+            "result"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "mobile_function_calling",
+          "turkish_english",
+          "json_router",
+          "multilingual_tool_use"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "WorkArena Instances",
+        "hf_id": "ServiceNow/WorkArena-Instances",
+        "url": "https://huggingface.co/datasets/ServiceNow/WorkArena-Instances",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "manual gated unknown",
+        "license_tier": "gated_unknown_review",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "output",
+            "trajectory",
+            "messages",
+            "actions",
+            "result"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "workarena",
+          "enterprise_browser_agent",
+          "servicenow_instances",
+          "blocked_until_access_terms"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "ScreenSpot-Pro",
+        "hf_id": "TIGER-Lab/ScreenSpot-Pro",
+        "url": "https://huggingface.co/datasets/TIGER-Lab/ScreenSpot-Pro",
+        "family": "terminal_browser_agents",
+        "target_modality": "image",
+        "license": "MIT benchmark holdout",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "valid",
+          "test"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question",
+            "task",
+            "goal",
+            "input",
+            "conversation",
+            "query"
+          ],
+          "target": [
+            "action",
+            "trajectory",
+            "messages",
+            "answer",
+            "response",
+            "completion",
+            "screen_state"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "calls",
+            "actions",
+            "function_calls",
+            "steps.actions"
+          ],
+          "tool_results": [
+            "tool_results",
+            "observations",
+            "results",
+            "step_results"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions",
+            "traj",
+            "events"
+          ],
+          "media": [
+            "screenshot",
+            "screenshots",
+            "image",
+            "images",
+            "video",
+            "screen",
+            "audio",
+            "a11y_tree",
+            "web_logs"
+          ],
+          "verifier_labels": [
+            "verifier_labels",
+            "checks",
+            "labels",
+            "reviews",
+            "reward_fn",
+            "success"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "success",
+            "resolved",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "trajectory_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "gui_grounding",
+          "screenspot_pro",
+          "visual_action_localization",
+          "eval_holdout"
+        ],
+        "registry_wave": "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+      },
+      {
+        "name": "MieDB-100k Medical Image Editing",
+        "hf_id": "Laiyf/MieDB-100k",
+        "url": "https://huggingface.co/datasets/Laiyf/MieDB-100k",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0 medical/privacy review",
+        "license_tier": "permissive_medical_privacy_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "medical_image_editing",
+          "paired_image_edit",
+          "privacy_review",
+          "image_text_to_image"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "Image Editing Style Instruction Following",
+        "hf_id": "obaydata/image-editing-style-instruction-following",
+        "url": "https://huggingface.co/datasets/obaydata/image-editing-style-instruction-following",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "style_transfer",
+          "image_edit_instruction",
+          "rubric_seed",
+          "small_high_quality"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "OpenVE-3M Video Editing",
+        "hf_id": "Lewandofski/OpenVE-3M",
+        "url": "https://huggingface.co/datasets/Lewandofski/OpenVE-3M",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "non_commercial_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "video_editing",
+          "video_to_video",
+          "non_commercial_review",
+          "large_scale_video_edit"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "VideoPhy2 Train",
+        "hf_id": "videophysics/videophy2_train",
+        "url": "https://huggingface.co/datasets/videophysics/videophy2_train",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "MIT",
+        "license_tier": "permissive_reward_training",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "physical_commonsense",
+          "video_reward",
+          "human_ratings",
+          "video_generation_critic"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "VideoPhy2 Test",
+        "hf_id": "videophysics/videophy2_test",
+        "url": "https://huggingface.co/datasets/videophysics/videophy2_test",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "MIT benchmark holdout",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "physical_commonsense",
+          "video_eval",
+          "holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "VBench I2V Human Annotation",
+        "hf_id": "Vchitect/VBench-I2V_human_annotation",
+        "url": "https://huggingface.co/datasets/Vchitect/VBench-I2V_human_annotation",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "unknown benchmark",
+        "license_tier": "unknown_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "image_to_video",
+          "human_annotation",
+          "vbench_i2v",
+          "holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "DocVQA 2026",
+        "hf_id": "VLR-CVC/DocVQA-2026",
+        "url": "https://huggingface.co/datasets/VLR-CVC/DocVQA-2026",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "unknown competition holdout",
+        "license_tier": "unknown_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "validation"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "document_vqa",
+          "multipage_docs",
+          "charts_tables_maps",
+          "competition_holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "ChartMuseum",
+        "hf_id": "lytang/ChartMuseum",
+        "url": "https://huggingface.co/datasets/lytang/ChartMuseum",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "CC-BY-SA-4.0 no-train term",
+        "license_tier": "no_training_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "dev",
+          "test"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "chart_vqa",
+          "visual_reasoning",
+          "no_train_term",
+          "eval_holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "GroundUI-18K",
+        "hf_id": "agent-studio/GroundUI-18K",
+        "url": "https://huggingface.co/datasets/agent-studio/GroundUI-18K",
+        "family": "terminal_browser_agents",
+        "target_modality": "image",
+        "license": "MIT test-set card",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ],
+          "trajectory": [
+            "trajectory",
+            "actions",
+            "steps"
+          ],
+          "tool_calls": [
+            "actions",
+            "tool_calls"
+          ],
+          "tool_results": [
+            "observations",
+            "results"
+          ]
+        },
+        "curriculum_axes": [
+          "gui_grounding",
+          "bbox",
+          "agent_ui",
+          "eval_holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "Kirundi Open Speech Dataset",
+        "hf_id": "Ijwi-ry-Ikirundi-AI/Kirundi_Open_Speech_Dataset",
+        "url": "https://huggingface.co/datasets/Ijwi-ry-Ikirundi-AI/Kirundi_Open_Speech_Dataset",
+        "family": "speech_audio",
+        "target_modality": "audio",
+        "license": "CC-BY-4.0 speaker-rights QA",
+        "license_tier": "permissive_attribution_speaker_rights_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "low_resource_speech",
+          "kirundi",
+          "asr_tts_translation",
+          "speaker_rights_review"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "Indonesian Text-To-Speech Dataset",
+        "hf_id": "X-lord/Dataset-Text-To-Speech-Indonesia",
+        "url": "https://huggingface.co/datasets/X-lord/Dataset-Text-To-Speech-Indonesia",
+        "family": "speech_audio",
+        "target_modality": "audio",
+        "license": "MIT source-text rights review",
+        "license_tier": "permissive_source_rights_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "tts",
+          "indonesian",
+          "audio_text",
+          "source_rights_review"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "Audio Understanding Test Set",
+        "hf_id": "danielrosehill/Audio-Understanding-Test-Set",
+        "url": "https://huggingface.co/datasets/danielrosehill/Audio-Understanding-Test-Set",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "CC-BY-4.0 eval consent caveat",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "audio_understanding",
+          "speaker_analysis",
+          "forensic_audio",
+          "eval_holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "TrueMuse Music Attribution Benchmark",
+        "hf_id": "AnonymousAuthorsssss/TrueMuse_A_Benchmark_for_Data_Attribution_in_Text_to_Music_Models",
+        "url": "https://huggingface.co/datasets/AnonymousAuthorsssss/TrueMuse_A_Benchmark_for_Data_Attribution_in_Text_to_Music_Models",
+        "family": "music_generation",
+        "target_modality": "music",
+        "license": "CC-BY-SA-3.0 benchmark attribution",
+        "license_tier": "sharealike_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "music_attribution",
+          "text_to_music",
+          "benchmark_holdout",
+          "generated_reference_clips"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "Omni Chunked Tokenized",
+        "hf_id": "instinct-org/omni_chunked_tokenized",
+        "url": "https://huggingface.co/datasets/instinct-org/omni_chunked_tokenized",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "gated other tokenizer-specific",
+        "license_tier": "gated_unknown_review",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "pretokenized_audio",
+          "omni_tokens",
+          "uzbek_tts",
+          "blocked_tokenizer_terms"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "CommonCatalog Emu3 Encoded",
+        "hf_id": "blanchon/commoncatalog-cc-by-crop-128-emu3-encoded-dataset",
+        "url": "https://huggingface.co/datasets/blanchon/commoncatalog-cc-by-crop-128-emu3-encoded-dataset",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "unknown emu3-codebook provenance review",
+        "license_tier": "unknown_review",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "caption",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "caption",
+            "label",
+            "chosen",
+            "preference",
+            "rating",
+            "score",
+            "output"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "videos",
+            "audio",
+            "audios",
+            "file",
+            "path",
+            "clips",
+            "metadata"
+          ],
+          "verifier_labels": [
+            "labels",
+            "annotations",
+            "ratings",
+            "rubric",
+            "human_ratings"
+          ],
+          "reward": [
+            "score",
+            "rating",
+            "preference_score",
+            "human_score"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "pretokenized_image",
+          "emu3_codes",
+          "same_token_space_reference",
+          "blocked_provenance_review"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "LiveCodeBench Code Generation Lite",
+        "hf_id": "livecodebench/code_generation_lite",
+        "url": "https://huggingface.co/datasets/livecodebench/code_generation_lite",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "cc contest-source terms review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "splits": [
+          "test"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "question",
+            "problem",
+            "instruction",
+            "description",
+            "reference_code",
+            "task"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "code",
+            "patch",
+            "test_patch",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "tests",
+            "unit_tests",
+            "checker",
+            "eval",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "speedup",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "livecodebench",
+          "fresh_coding",
+          "contest_tests",
+          "eval_holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "KernelBench",
+        "hf_id": "ScalingIntelligence/KernelBench",
+        "url": "https://huggingface.co/datasets/ScalingIntelligence/KernelBench",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "dataset license unknown; repo MIT",
+        "license_tier": "unknown_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "question",
+            "problem",
+            "instruction",
+            "description",
+            "reference_code",
+            "task"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "code",
+            "patch",
+            "test_patch",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "tests",
+            "unit_tests",
+            "checker",
+            "eval",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "speedup",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "cuda_kernel_generation",
+          "performance_reward",
+          "correctness_verifier",
+          "gpu_code_rlvr"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "TritonBench",
+        "url": "https://github.com/thunlp/TritonBench",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "Apache-2.0 repo",
+        "license_tier": "permissive_source_repo",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "question",
+            "problem",
+            "instruction",
+            "description",
+            "reference_code",
+            "task"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "code",
+            "patch",
+            "test_patch",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "tests",
+            "unit_tests",
+            "checker",
+            "eval",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "speedup",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "distillation_prompts": [
+          {
+            "instruction": "Generate a Triton kernel for a PyTorch operator, then verify correctness and speed against reference tests.",
+            "target": "Return the kernel, call signature, correctness checks, and speedup evidence."
+          }
+        ],
+        "curriculum_axes": [
+          "triton_kernel_generation",
+          "operator_optimization",
+          "execution_accuracy",
+          "speed_reward"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "TestGenEval",
+        "hf_id": "kjain14/testgeneval",
+        "url": "https://huggingface.co/datasets/kjain14/testgeneval",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "CC-BY-NC plus third-party repo terms",
+        "license_tier": "non_commercial_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "question",
+            "problem",
+            "instruction",
+            "description",
+            "reference_code",
+            "task"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "code",
+            "patch",
+            "test_patch",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "tests",
+            "unit_tests",
+            "checker",
+            "eval",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "speedup",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "unit_test_generation",
+          "program_repair_verifier",
+          "coverage_metrics",
+          "non_commercial_review"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "SWE-Bench Verified UTBoost",
+        "hf_id": "Bertsekas/SWE-Bench_Verified_UTBoost",
+        "url": "https://huggingface.co/datasets/Bertsekas/SWE-Bench_Verified_UTBoost",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT SWE benchmark verifier",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "question",
+            "problem",
+            "instruction",
+            "description",
+            "reference_code",
+            "task"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "code",
+            "patch",
+            "test_patch",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "tests",
+            "unit_tests",
+            "checker",
+            "eval",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "speedup",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_bench_verified",
+          "unit_test_boost",
+          "patch_verifier",
+          "eval_holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "NuminaMath-LEAN",
+        "hf_id": "AI-MO/NuminaMath-LEAN",
+        "url": "https://huggingface.co/datasets/AI-MO/NuminaMath-LEAN",
+        "family": "math_reasoning",
+        "target_modality": "code",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "formal_statement",
+            "informal_statement",
+            "statement"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "proof",
+            "formal_proof",
+            "full_proof",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "rl_data",
+            "checks",
+            "labels",
+            "error_labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "lean4",
+          "formal_math",
+          "natural_to_formal",
+          "verifiable_proofs"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "Kimina-Prover Promptset",
+        "hf_id": "AI-MO/Kimina-Prover-Promptset",
+        "url": "https://huggingface.co/datasets/AI-MO/Kimina-Prover-Promptset",
+        "family": "math_reasoning",
+        "target_modality": "code",
+        "license": "Apache-2.0 per README; card missing",
+        "license_tier": "permissive_card_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "formal_statement",
+            "informal_statement",
+            "statement"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "proof",
+            "formal_proof",
+            "full_proof",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "rl_data",
+            "checks",
+            "labels",
+            "error_labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "lean4",
+          "prover_promptset",
+          "formal_rl",
+          "license_card_review"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "Lean Workbook Proofs",
+        "hf_id": "Goedel-LM/Lean-workbook-proofs",
+        "url": "https://huggingface.co/datasets/Goedel-LM/Lean-workbook-proofs",
+        "family": "math_reasoning",
+        "target_modality": "code",
+        "license": "dataset card missing; repo code MIT",
+        "license_tier": "unknown_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "formal_statement",
+            "informal_statement",
+            "statement"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "proof",
+            "formal_proof",
+            "full_proof",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "rl_data",
+            "checks",
+            "labels",
+            "error_labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "lean4",
+          "complete_formal_proofs",
+          "proof_sft",
+          "license_review"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "FoVer Formal Verification Collection",
+        "url": "https://huggingface.co/collections/ryokamoi/fover-682e28cc9f6200c7dfd5342f",
+        "family": "math_reasoning",
+        "target_modality": "code",
+        "license": "CC-BY-4.0 datasets; Apache-2.0 code",
+        "license_tier": "permissive_attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "formal_statement",
+            "informal_statement",
+            "statement"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "proof",
+            "formal_proof",
+            "full_proof",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "rl_data",
+            "checks",
+            "labels",
+            "error_labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "distillation_prompts": [
+          {
+            "instruction": "Use formal verification labels to learn step-level proof/process reward decisions.",
+            "target": "Produce proof-step labels, correction hints, and verifier-aligned reward annotations."
+          }
+        ],
+        "curriculum_axes": [
+          "formal_verification",
+          "process_reward_model",
+          "step_error_labels",
+          "formal_logic"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "MathArena HMMT Feb 2026",
+        "hf_id": "MathArena/hmmt_feb_2026",
+        "url": "https://huggingface.co/datasets/MathArena/hmmt_feb_2026",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "CC-BY-NC-SA-4.0",
+        "license_tier": "non_commercial_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "formal_statement",
+            "informal_statement",
+            "statement"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "proof",
+            "formal_proof",
+            "full_proof",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "rl_data",
+            "checks",
+            "labels",
+            "error_labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "hmmt_2026",
+          "fresh_contest_math",
+          "exact_answer",
+          "eval_holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "MathArena USAMO 2025",
+        "hf_id": "MathArena/usamo_2025",
+        "url": "https://huggingface.co/datasets/MathArena/usamo_2025",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "CC-BY-NC-SA-4.0",
+        "license_tier": "non_commercial_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "formal_statement",
+            "informal_statement",
+            "statement"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "proof",
+            "formal_proof",
+            "full_proof",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "rl_data",
+            "checks",
+            "labels",
+            "error_labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "curriculum_axes": [
+          "usamo_2025",
+          "proof_style_math",
+          "rubric_eval",
+          "eval_holdout"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
+      },
+      {
+        "name": "ARC-AGI-2 Public Training",
+        "url": "https://github.com/arcprize/ARC-AGI-2",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_train_split_only",
+        "use_policy": "train",
+        "local_jsonl": "data/reasoning/arc_agi2_training_authorized.jsonl",
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "formal_statement",
+            "informal_statement",
+            "statement"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "proof",
+            "formal_proof",
+            "full_proof",
+            "completion",
+            "response"
+          ],
+          "verifier_labels": [
+            "rl_data",
+            "checks",
+            "labels",
+            "error_labels"
+          ],
+          "reward": [
+            "reward",
+            "score",
+            "pass_rate"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id"
+          ]
+        },
+        "distillation_prompts": [
+          {
+            "instruction": "Solve ARC-AGI-2 public training grid tasks with exact-output programmatic reasoning and no hidden-eval leakage.",
+            "target": "Return the inferred transformation, output grid, and verifier-compatible exact answer."
+          }
+        ],
+        "curriculum_axes": [
+          "arc_agi2",
+          "grid_reasoning",
+          "program_synthesis",
+          "exact_output_rlvr"
+        ],
+        "registry_wave": "sixth_wave_formal_code_media_2026_05_24"
       }
-    ]
+    ],
+    "last_updated": "2026-05-24"
   },
   "dataset_catalog_2026": {
     "omnimodal_understanding": [

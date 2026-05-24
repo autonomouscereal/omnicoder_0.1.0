@@ -216,6 +216,77 @@ def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, m
     assert report["requirements"]["coding_agentic"]["status"] == "failed"
 
 
+def test_dataset_expansion_can_materialize_filtered_registry_wave_without_global_minima(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    _write_jsonl(root / "data" / "wave_math.jsonl", [{"problem": "Solve 3+5.", "answer": "8", "uuid": "wave-m"}])
+    _write_jsonl(root / "data" / "old_code.jsonl", [{"prompt": "Patch bug.", "answer": "done", "uuid": "old-c"}])
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "required_real_family_min_records": {
+                "math_reasoning": {"bucket": "train", "min_real": 1},
+                "coding_agentic": {"bucket": "train", "min_real": 1},
+            },
+            "datasets": [
+                {
+                    "name": "wave_math",
+                    "family": "math_reasoning",
+                    "target_modality": "text",
+                    "registry_wave": "delta_wave",
+                    "local_jsonl": "data/wave_math.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                    "field_map": {"prompt": ["problem"], "target": ["answer"], "id": ["uuid"]},
+                },
+                {
+                    "name": "old_code",
+                    "family": "coding_agentic",
+                    "target_modality": "code",
+                    "registry_wave": "old_wave",
+                    "local_jsonl": "data/old_code.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                    "field_map": {"prompt": ["prompt"], "target": ["answer"], "id": ["uuid"]},
+                },
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type(
+            "Args",
+            (),
+            {
+                "download": False,
+                "no_streaming": False,
+                "max_records_per_dataset": 0,
+                "enforce_requirements": False,
+                "include_wave": ["delta_wave"],
+                "include_family": [],
+                "include_name": [],
+            },
+        )(),
+    )
+
+    assert manifest["status"] == "passed"
+    assert manifest["selection"] | {
+        "total_enabled_entries": 2,
+        "selected_entries": 1,
+        "include_wave": ["delta_wave"],
+        "filtered": True,
+    } == manifest["selection"]
+    assert manifest["requirement_report"]["status"] == "skipped"
+    assert manifest["records"]["train"] == 1
+    assert manifest["families"] == {"math_reasoning": 1}
+
+
 def test_dataset_expansion_family_files_are_train_safe_and_bucket_partitioned(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
@@ -920,6 +991,55 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
         "omnimodal_understanding",
     ]:
         assert family in requirements
+
+
+def test_repo_dataset_registry_covers_fifth_and_sixth_wave_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+
+    expected_policy = {
+        "RLVR Linearity Dataset": "train",
+        "Nous RLVR Coding Problems": "train",
+        "IFDecorator Instruction Following RL": "train",
+        "CAP RLVR SFT": "research_internal",
+        "HINT-Lab MATH-RLVR Gated": "blocked_until_review",
+        "OpenResearcher RLVR Format": "blocked_until_review",
+        "Tool Reasoning Context Management": "train",
+        "Tool Reasoning Hermes Style 115K": "train",
+        "OpenResearcher Tool Reasoning Cleaned": "train",
+        "OpenSeeker Tool Reasoning SFT": "train",
+        "CUA-Gym": "train",
+        "A11y-CUA": "research_internal",
+        "MEnvData SWE Trajectories": "train",
+        "JetBrains SWE-Smith Agent Trajectories Random Subset": "train",
+        "DeepSWE Kimi K2 Rejection Sampling Trajectories": "train",
+        "Turkish Mobile Function Calling": "train",
+        "ScreenSpot-Pro": "eval_only",
+        "MieDB-100k Medical Image Editing": "research_internal",
+        "Image Editing Style Instruction Following": "train",
+        "VideoPhy2 Train": "train",
+        "VideoPhy2 Test": "eval_only",
+        "DocVQA 2026": "eval_only",
+        "ChartMuseum": "eval_only",
+        "GroundUI-18K": "eval_only",
+        "LiveCodeBench Code Generation Lite": "eval_only",
+        "KernelBench": "research_internal",
+        "TritonBench": "train",
+        "NuminaMath-LEAN": "train",
+        "FoVer Formal Verification Collection": "train",
+        "MathArena HMMT Feb 2026": "eval_only",
+        "ARC-AGI-2 Public Training": "train",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["use_policy"] == policy
+    assert by_name["CUA-Gym"]["registry_wave"] == "fifth_wave_agentic_rlvr_multimodal_2026_05_24"
+    assert by_name["NuminaMath-LEAN"]["registry_wave"] == "sixth_wave_formal_code_media_2026_05_24"
+    assert by_name["OpenResearcher RLVR Format"]["license_tier"] == "gated_unknown_review"
+    assert by_name["VideoPhy2 Train"]["target_modality"] == "video"
+    assert by_name["TritonBench"]["distillation_prompts"][0]["instruction"].startswith("Generate a Triton kernel")
+    assert expansion.source_use_bucket(by_name["HINT-Lab MATH-RLVR Gated"]) == "blocked_until_review"
 
 
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:

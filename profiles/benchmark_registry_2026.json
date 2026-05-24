@@ -1,5 +1,5 @@
 {
-  "version": "2026-05-23",
+  "version": "2026-05-24",
   "storage": "raw_postgresql_only",
   "schema": "schemas/eval_harness_2026.sql",
   "task_contract": {
@@ -407,6 +407,75 @@
         "answers",
         "videos"
       ]
+    },
+    {
+      "id": "rlvr_linearity_math_2026",
+      "kind": "math_rlvr_verifier_probe",
+      "source": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
+      "use": "math RLVR verifier generalization and reward-linearity sanity checks",
+      "smoke": "two_aime24_deepscaler_rows",
+      "holdout": [
+        "answer_keys",
+        "reward_linearity_labels",
+        "future_math_rows"
+      ]
+    },
+    {
+      "id": "nous_rlvr_coding_2026",
+      "kind": "code_rlvr_unit_test_probe",
+      "source": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
+      "use": "verifiable coding reward and unit-test pass/fail calibration",
+      "smoke": "two_public_coding_tasks",
+      "holdout": [
+        "hidden_tests",
+        "reference_solutions"
+      ]
+    },
+    {
+      "id": "editreward_bench_2026",
+      "kind": "image_edit_reward_model_eval",
+      "source": "https://huggingface.co/datasets/EditScore/EditReward-Bench",
+      "use": "image-edit reward model calibration across expert human annotations",
+      "smoke": "two_edit_preference_pairs",
+      "holdout": [
+        "expert_labels",
+        "media_assets",
+        "judge_prompts"
+      ]
+    },
+    {
+      "id": "iesbench_image_edit_safety_2026",
+      "kind": "image_edit_safety_eval",
+      "source": "https://huggingface.co/datasets/CSU-JPG/IESBench",
+      "use": "image editing safety, refusal, and harmful-edit detection",
+      "smoke": "two_image_edit_safety_items",
+      "holdout": [
+        "safety_labels",
+        "reference_images"
+      ]
+    },
+    {
+      "id": "svi_benchmark_2026",
+      "kind": "image_to_video_storyline_eval",
+      "source": "https://huggingface.co/datasets/epfl-vita/svi-benchmark",
+      "use": "stable video infinity prompt-stream/storyline consistency",
+      "smoke": "one_storyline_prompt_stream",
+      "holdout": [
+        "frame_assets",
+        "prompt_stream_labels",
+        "human_scores"
+      ]
+    },
+    {
+      "id": "text_to_audio_pref_bench_2026",
+      "kind": "audio_generation_preference_eval",
+      "source": "https://huggingface.co/datasets/Rapidata/text-2-audio-human-preference-benchmark",
+      "use": "text-to-audio preference reward and artifact quality calibration",
+      "smoke": "two_audio_preference_pairs",
+      "holdout": [
+        "audio_assets",
+        "human_preference_labels"
+      ]
     }
   ],
   "release_gates": {
@@ -422,7 +491,9 @@
       "swe_bench_live",
       "terminal_bench_2",
       "longcodebench",
-      "swe_lancer"
+      "swe_lancer",
+      "rlvr_linearity_math_2026",
+      "nous_rlvr_coding_2026"
     ],
     "agent": [
       "bfcl_v4",
@@ -447,7 +518,8 @@
       "hle_rolling_livebench",
       "multimodal_rewardbench2",
       "longmemeval_v2_nolima",
-      "cfvbench"
+      "cfvbench",
+      "text_to_audio_pref_bench_2026"
     ],
     "generation": [
       "image_generation_edit",
@@ -455,7 +527,10 @@
       "cosmos_predict2_generation",
       "opens2v_t2v_compbench",
       "complex_image_video_edit",
-      "healthbench"
+      "healthbench",
+      "editreward_bench_2026",
+      "iesbench_image_edit_safety_2026",
+      "svi_benchmark_2026"
     ]
   },
   "cycles": {

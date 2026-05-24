@@ -80,6 +80,46 @@ def test_registry_profile_validates_release_gate_adapter_references() -> None:
     _assert_profile_valid(profile)
 
 
+def test_release_gate_registry_includes_fresh_rlvr_and_media_preference_gates() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "benchmark_registry_2026.json").read_text(encoding="utf-8"))
+
+    _assert_profile_valid(profile)
+    adapters = {adapter["id"]: adapter for adapter in profile["adapters"]}
+    for adapter_id in [
+        "rlvr_linearity_math_2026",
+        "nous_rlvr_coding_2026",
+        "editreward_bench_2026",
+        "iesbench_image_edit_safety_2026",
+        "svi_benchmark_2026",
+        "text_to_audio_pref_bench_2026",
+    ]:
+        assert adapter_id in adapters
+    assert "rlvr_linearity_math_2026" in profile["release_gates"]["coding"]
+    assert "text_to_audio_pref_bench_2026" in profile["release_gates"]["omnimodal_reasoning"]
+    assert "editreward_bench_2026" in profile["release_gates"]["generation"]
+    assert adapters["editreward_bench_2026"]["kind"] == "image_edit_reward_model_eval"
+
+
+def test_suite_profile_includes_fresh_rlvr_and_media_preference_adapters() -> None:
+    profile = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in profile["benchmarks"]}
+
+    for adapter_id in [
+        "reasoning_rlvr_linearity_math_2026",
+        "coding_nous_rlvr_coding_2026",
+        "generation_editreward_bench_2026",
+        "safety_iesbench_image_edit_2026",
+        "generation_svi_benchmark_2026",
+        "generation_text_to_audio_pref_2026",
+    ]:
+        assert adapter_id in adapters
+    assert "reasoning_rlvr_linearity_math_2026" in profile["release_gates"]["reasoning_release"]
+    assert "coding_nous_rlvr_coding_2026" in profile["release_gates"]["coding_release"]
+    assert "generation_text_to_audio_pref_2026" in profile["release_gates"]["generation_release"]
+    assert adapters["safety_iesbench_image_edit_2026"]["axis"] == "safety_tool_security"
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")

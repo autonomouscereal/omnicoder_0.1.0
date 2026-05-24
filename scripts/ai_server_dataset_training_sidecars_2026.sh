@@ -16,6 +16,7 @@ EXTERNAL_DATASET_SOURCE="${OMNICODER_EXTERNAL_DATASET_SOURCE:-weights/external_d
 TEACHER_JOB_SOURCE="${OMNICODER_TEACHER_JOB_SOURCE:-${TEACHER_JOB_ROOT}/latest}"
 PYTHON_BIN="${OMNICODER_DATA_PYTHON:-python3}"
 ENFORCE_DATASET_MINIMA="${OMNICODER_ENFORCE_DATASET_MINIMA:-1}"
+DATASET_INCLUDE_WAVES="${OMNICODER_DATASET_INCLUDE_WAVES:-}"
 TRACE_LIMIT="${OMNICODER_TRACE_LIMIT:-0}"
 LMSTUDIO_TRACE_LIMIT="${OMNICODER_LMSTUDIO_TRACE_LIMIT:-100000}"
 ACTION="${1:-all}"
@@ -144,8 +145,20 @@ collect_curate() {
 external_expansion() {
   local out="weights/external_datasets_2026/runs/${RUN_ID}"
   local requirement_args=()
+  local selection_args=()
   if [[ "$ENFORCE_DATASET_MINIMA" == "1" || "$ENFORCE_DATASET_MINIMA" == "true" ]]; then
     requirement_args+=(--enforce-requirements)
+  fi
+  if [[ -n "$DATASET_INCLUDE_WAVES" ]]; then
+    local old_ifs="$IFS"
+    IFS=","
+    read -ra waves <<< "$DATASET_INCLUDE_WAVES"
+    IFS="$old_ifs"
+    for wave in "${waves[@]}"; do
+      wave="${wave//[[:space:]]/}"
+      [[ -n "$wave" ]] && selection_args+=(--include-wave "$wave")
+    done
+    log "external dataset expansion is filtered to registry wave(s): $DATASET_INCLUDE_WAVES"
   fi
   mkdir -p "$out"
   log "build external dataset expansion"
@@ -154,6 +167,7 @@ external_expansion() {
     --out-dir "$out" \
     --download \
     --max-records-per-dataset "$MAX_RECORDS_PER_DATASET" \
+    "${selection_args[@]}" \
     "${requirement_args[@]}" \
     build | tee "$out/external_dataset_manifest.stdout.json"
   "$PYTHON_BIN" - <<'PY'
@@ -241,6 +255,24 @@ build_jobs_if_present() {
   fi
 }
 
+build_teacher_jobs_if_present() {
+  local records="$1"
+  local teacher="$2"
+  local job_type="$3"
+  local out="$4"
+  if [[ -s "$records" ]]; then
+    "$PYTHON_BIN" -m omnicoder.data_factory.teacher_jobs_2026 build \
+      --records "$records" \
+      --teacher "$teacher" \
+      --job_type "$job_type" \
+      --limit "$TEACHER_LIMIT" \
+      --out "$out"
+  else
+    log "skip $teacher teacher jobs; missing or empty records: $records"
+    : > "$out"
+  fi
+}
+
 teacher_jobs() {
   local job_dir="${TEACHER_JOB_ROOT}/${RUN_ID}"
   mkdir -p "$job_dir"
@@ -268,6 +300,43 @@ teacher_jobs() {
   fi
   wc -l "$job_dir"/*.jsonl
   log "teacher job dir: $job_dir"
+}
+
+modality_teacher_jobs() {
+  local job_dir="${TEACHER_JOB_ROOT}/${RUN_ID}/modality"
+  mkdir -p "$job_dir"
+  log "build image/video/audio/music teacher jobs for multimodal distillation"
+  build_teacher_jobs_if_present "${CURATED_DATASET_SOURCE}/jsonl/train_media_focus.jsonl" qwen3_omni_optional multimodal_alignment "$job_dir/curated_media_omni_jobs.jsonl"
+  build_teacher_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/image_generation_editing.jsonl" qwen_image_generate image_reward_label "$job_dir/image_reward_jobs.jsonl"
+  build_teacher_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/image_generation_editing.jsonl" qwen_image_edit image_edit_critique "$job_dir/image_edit_jobs.jsonl"
+  build_teacher_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/video_generation.jsonl" ltx_2_3 temporal_reward_label "$job_dir/video_temporal_jobs.jsonl"
+  build_teacher_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/video_generation.jsonl" ltx_2_3 image_to_video_plan "$job_dir/image_to_video_jobs.jsonl"
+  build_teacher_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/audio_music_speech.jsonl" qwen3_omni_optional audio_video_understanding "$job_dir/audio_omni_jobs.jsonl"
+  build_teacher_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/speech_audio.jsonl" qwen3_omni_optional speech_caption "$job_dir/speech_caption_jobs.jsonl"
+  build_teacher_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/music_generation.jsonl" ace_step_1_5 music_reward_label "$job_dir/music_reward_jobs.jsonl"
+  build_teacher_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/music_generation.jsonl" ace_step_1_5 music_plan "$job_dir/music_plan_jobs.jsonl"
+  build_teacher_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/omnimodal_understanding.jsonl" gemini_omni_optional cross_modal_reward "$job_dir/omni_cross_modal_jobs.jsonl"
+  local job_files=()
+  mapfile -d '' job_files < <(find "$job_dir" -maxdepth 1 -name '*_jobs.jsonl' -type f -size +0c -print0 | sort -z)
+  if [[ "${#job_files[@]}" -gt 0 ]]; then
+    cat "${job_files[@]}" > "$job_dir/all_modality_teacher_jobs.jsonl"
+  else
+    : > "$job_dir/all_modality_teacher_jobs.jsonl"
+  fi
+  "$PYTHON_BIN" - <<PY
+import json
+from pathlib import Path
+job_dir = Path("$job_dir")
+counts = {}
+for path in sorted(job_dir.glob("*_jobs.jsonl")):
+    counts[path.name] = sum(1 for line in path.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
+(job_dir / "modality_teacher_jobs_manifest.json").write_text(
+    json.dumps({"status": "ok", "run_id": "$RUN_ID", "counts": counts}, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+  wc -l "$job_dir"/*.jsonl
+  log "modality teacher job dir: $job_dir"
 }
 
 p40_teacher_rollouts() {
@@ -404,6 +473,7 @@ case "$ACTION" in
   external-expansion) external_expansion ;;
   agentic-tool-training) agentic_tool_training ;;
   teacher-jobs) teacher_jobs ;;
+  modality-teacher-jobs) modality_teacher_jobs ;;
   p40-teacher) p40_teacher_rollouts ;;
   status) status ;;
   all)
@@ -412,6 +482,7 @@ case "$ACTION" in
     agentic_tool_training
     external_expansion
     teacher_jobs
+    modality_teacher_jobs
     p40_teacher_rollouts
     status
     ;;

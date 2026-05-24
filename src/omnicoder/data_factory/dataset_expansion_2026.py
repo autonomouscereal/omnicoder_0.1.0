@@ -120,6 +120,44 @@ def profile_entries(profile: dict[str, Any]) -> list[dict[str, Any]]:
     return [entry for entry in entries if isinstance(entry, dict) and entry.get("enabled", True)]
 
 
+def requested_values(raw: Any) -> set[str]:
+    values: set[str] = set()
+    if raw is None:
+        return values
+    raw_items = raw if isinstance(raw, list) else [raw]
+    for item in raw_items:
+        if item is None:
+            continue
+        for part in str(item).split(","):
+            value = part.strip()
+            if value:
+                values.add(value)
+    return values
+
+
+def select_entries(entries: list[dict[str, Any]], args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    include_waves = requested_values(getattr(args, "include_wave", None))
+    include_families = requested_values(getattr(args, "include_family", None))
+    include_names = requested_values(getattr(args, "include_name", None))
+    selected: list[dict[str, Any]] = []
+    for entry in entries:
+        if include_waves and str(entry.get("registry_wave") or "") not in include_waves:
+            continue
+        if include_families and str(entry.get("family") or "") not in include_families:
+            continue
+        if include_names and str(entry.get("name") or "") not in include_names:
+            continue
+        selected.append(entry)
+    return selected, {
+        "total_enabled_entries": len(entries),
+        "selected_entries": len(selected),
+        "include_wave": sorted(include_waves),
+        "include_family": sorted(include_families),
+        "include_name": sorted(include_names),
+        "filtered": bool(include_waves or include_families or include_names),
+    }
+
+
 def training_profile_path(profile: dict[str, Any], root: Path) -> Path:
     registry = profile.get("external_dataset_registry_2026")
     configured = None
@@ -666,7 +704,7 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
     profile = read_json(profile_path)
     training_profile = training_orchestration_2026.load_profile(training_profile_path(profile, root))
     plan = training_orchestration_2026.profile_cfg(training_profile)["training_plan"]
-    entries = profile_entries(profile)
+    entries, selection = select_entries(profile_entries(profile), args)
     jsonl_dir = out_dir / "jsonl"
     manifests_dir = out_dir / "manifests"
     cards_dir = out_dir / "dataset_cards"
@@ -714,7 +752,16 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
     write_jsonl(jsonl_dir / "eval_holdout_all_external.jsonl", eval_rows)
     write_jsonl(jsonl_dir / "blocked_until_review.jsonl", blocked_rows)
     write_jsonl(jsonl_dir / "rejected_external.jsonl", rejected)
-    requirement_report = evaluate_registry_requirements(profile, rows_by_family)
+    if bool(selection["filtered"]) and not bool(getattr(args, "enforce_requirements", False)):
+        requirement_report = {
+            "schema": "omnicoder.external_dataset_requirements_2026.v1",
+            "status": "skipped",
+            "reason": "filtered_registry_delta_without_enforce_requirements",
+            "requirements": {},
+            "failures": {},
+        }
+    else:
+        requirement_report = evaluate_registry_requirements(profile, rows_by_family)
     real_family_counts = {
         family: sum(1 for row in rows if not bool(row.get("synthetic_seed_only")))
         for family, rows in sorted(rows_by_family.items())
@@ -727,12 +774,13 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
     manifest = {
         "schema": "omnicoder.external_dataset_expansion_2026.v1",
         "version": SCHEMA_VERSION,
-        "status": "passed" if requirement_report["status"] == "passed" else "failed_requirements",
+        "status": "passed" if requirement_report["status"] in {"passed", "skipped"} else "failed_requirements",
         "created_at": now_iso(),
         "profile": str(profile_path),
         "out_dir": str(out_dir),
         "download_requested": bool(args.download),
         "streaming": not bool(args.no_streaming),
+        "selection": selection,
         "datasets": acquisition,
         "records": {
             "train": len(train_rows),
@@ -755,7 +803,7 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
             "research_internal_all_external": str(jsonl_dir / "research_internal_all_external.jsonl"),
             "eval_holdout_all_external": str(jsonl_dir / "eval_holdout_all_external.jsonl"),
         },
-        "promotion_policy": "Only train bucket rows may be merged into release weights. research_internal rows are internal distillation/reward candidates. eval_holdout rows are benchmark/evaluation only.",
+        "promotion_policy": "Only train bucket rows may be merged into release weights. research_internal rows are internal distillation/reward candidates. eval_holdout rows are benchmark/evaluation only. Filtered registry delta runs are sidecar inputs unless a full unfiltered requirement pass promotes latest.",
     }
     write_json(manifests_dir / "external_dataset_manifest.json", manifest)
     card_lines = [
@@ -788,6 +836,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--no-streaming", action="store_true", help="Use regular load_dataset instead of streaming")
     parser.add_argument("--max-records-per-dataset", type=int, default=0)
     parser.add_argument("--enforce-requirements", action="store_true", help="Return nonzero if registry required real-family minima are not met")
+    parser.add_argument("--include-wave", action="append", default=[], help="Only materialize entries with this registry_wave. May be repeated or comma-separated.")
+    parser.add_argument("--include-family", action="append", default=[], help="Only materialize entries from this family. May be repeated or comma-separated.")
+    parser.add_argument("--include-name", action="append", default=[], help="Only materialize entries with this exact dataset name. May be repeated or comma-separated.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("build")
     args = parser.parse_args(argv)

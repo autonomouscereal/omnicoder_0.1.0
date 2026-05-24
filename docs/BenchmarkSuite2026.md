@@ -45,7 +45,12 @@ factory exports and training traces.
 
 ## Current Coverage
 
-The default profile covers 25 benchmarks across 11 axes:
+The default suite profile is the broad contract harness, while
+`profiles/benchmark_registry_2026.json` is the compact release-gate registry
+used for high-signal pass/fail planning. Both follow the same quarantine and
+reportability rules.
+
+The broad profile covers the active benchmark axes:
 
 - Coding: SWE-bench Pro, SWE-bench Live, LiveCodeBench, private repo maintenance.
 - Agent/tool: BFCL v4, tau3/tau2-style stateful tasks, MCPMark-style workflows,
@@ -65,6 +70,14 @@ Smoke mode is contract-backed. It validates that every benchmark, artifact
 field, release gate, contamination flag, and output path is wired. It does not
 claim benchmark scores until a real adapter command or full benchmark adapter
 has run.
+
+The release registry now includes fresh RLVR and media-preference gates for
+RLVR Linearity, Nous RLVR Coding, EditReward-Bench, IESBench, Stable Video
+Infinity, and text-to-audio human preference evaluation. These are eval/release
+gates only; their hidden labels, media assets, and successful trajectories do
+not enter training exports. The broad suite profile also includes corresponding
+contract adapters under reasoning, coding, generation, and safety gates so
+nightly/release planning sees the same coverage.
 
 ## Workflows
 
