@@ -15,10 +15,12 @@ DEFAULT_PROFILE = "profiles/training_orchestration_2026.json"
 DEFAULT_OUT_ROOT = "weights/training_orchestration_2026/gpu_sidecar"
 DEFAULT_JOB_TYPES = {
     "dataset_materialization",
+    "external_dataset_expansion",
     "materialization",
     "training",
     "training_run",
     "teacher_distillation",
+    "openai_compatible_teacher_rollout",
     "eval",
     "eval_shard",
     "benchmark_canary",
@@ -118,10 +120,15 @@ def configured_main_devices(profile: dict[str, Any]) -> list[str]:
     return split_devices(env_devices or cfg.get("main_training_devices") or dist.get("main_gpu_devices") or ["0", "4", "6"])
 
 
-def validate_device_isolation(profile: dict[str, Any]) -> dict[str, Any]:
+def selected_jobs(args: argparse.Namespace | None) -> set[str]:
+    return set(as_list(getattr(args, "job", None) if args is not None else None))
+
+
+def validate_device_isolation(profile: dict[str, Any], selected: set[str] | None = None) -> dict[str, Any]:
+    selected = selected or set()
     sidecars = configured_sidecar_devices(profile)
     main = configured_main_devices(profile)
-    overlap = sorted(set(sidecars) & set(main))
+    overlap = [] if selected else sorted(set(sidecars) & set(main))
     sidecar_set = set(sidecars)
     main_set = set(main)
     job_device_overlaps: list[dict[str, str]] = []
@@ -132,12 +139,17 @@ def validate_device_isolation(profile: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(raw, dict) or not bool(raw.get("enabled", True)):
                 continue
             job_id = str(raw.get("job_id") or raw.get("id") or f"sidecar_{index}")
+            job_type = normalize_job_type(raw.get("job_type"))
+            if selected and job_id not in selected and job_type not in selected and str(raw.get("job_type") or "") not in selected:
+                continue
             try:
                 device_text = job_device(raw, sidecars, index)
             except ValueError:
                 invalid_job_devices.append({"job_id": job_id, "device": "", "reason": "no_sidecar_devices_configured"})
                 continue
             for device in split_devices(device_text):
+                if device.lower() == "cpu":
+                    continue
                 if device in main_set:
                     job_device_overlaps.append({"job_id": job_id, "device": device})
                 if device not in sidecar_set:
@@ -176,6 +188,7 @@ def placeholder_context(
     bench = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
     job_id = str(job.get("job_id") or job.get("id") or job.get("job_type"))
     job_out = out_root / job_id
+    run_id = os.environ.get("OMNICODER_RUN_ID", "") or job_id
     return {
         "python": sys.executable,
         "repo_root": str(repo_root()),
@@ -183,6 +196,7 @@ def placeholder_context(
         "sidecar_out": str(out_root),
         "job_out": str(job_out),
         "job_id": job_id,
+        "run_id": run_id,
         "device": device,
         "distill_profile": str(job.get("distill_profile") or distill.get("teacher_profile") or "profiles/distillation_curriculum_2026.json"),
         "benchmark_profile": str(job.get("benchmark_profile") or bench.get("benchmark_profile") or "profiles/benchmark_suite_2026.json"),
@@ -213,6 +227,30 @@ def default_command(profile_path: str | Path, profile: dict[str, Any], out_root:
             context["job_out"],
             "curate-real",
         ]
+    if job_type == "external_dataset_expansion":
+        dataset_profile = str(job.get("dataset_profile") or job.get("profile") or "profiles/dataset_curation_2026.json")
+        raw_out = str(job.get("out_dir") or job.get("out") or context["job_out"])
+        expanded_out = raw_out.replace("${RUN_ID}", context["run_id"]).format(**context)
+        cmd = [
+            sys.executable,
+            "-m",
+            "omnicoder.data_factory.dataset_expansion_2026",
+            "--profile",
+            dataset_profile,
+            "--out-dir",
+            expanded_out,
+        ]
+        if bool(job.get("download", True)):
+            cmd.append("--download")
+        if bool(job.get("no_streaming", False)):
+            cmd.append("--no-streaming")
+        if bool(job.get("enforce_requirements", False)):
+            cmd.append("--enforce-requirements")
+        limit = int(job.get("max_records_per_dataset") or job.get("limit") or 0)
+        if limit > 0:
+            cmd.extend(["--max-records-per-dataset", str(limit)])
+        cmd.append("build")
+        return cmd
     if job_type == "teacher_distillation":
         records = str(job.get("records") or str(out_root / "dataset_materialization" / "jsonl" / "curated_records.jsonl"))
         cmd = [
@@ -376,6 +414,40 @@ def default_command(profile_path: str | Path, profile: dict[str, Any], out_root:
         if timeout > 0:
             cmd.extend(["--timeout-seconds", str(timeout)])
         return cmd
+    if job_type == "openai_compatible_teacher_rollout":
+        records = str(job.get("records") or out_root / "teacher_jobs" / "latest" / "all_jobs.jsonl")
+        output = str(job.get("output") or out_root / context["job_id"] / f"teacher_rollout_gpu{device}.jsonl")
+        cmd = [
+            sys.executable,
+            "-m",
+            "omnicoder.data_factory.openai_teacher_rollout_2026",
+            "--input",
+            records,
+            "--out",
+            output,
+            "--base-url",
+            str(job.get("base_url") or "http://127.0.0.1:18082/v1"),
+            "--model",
+            str(job.get("model") or job.get("teacher_model") or "qwen3.6-27b-q4"),
+            "--record-kind",
+            str(job.get("record_kind") or "qwen36_p40_teacher_rollout"),
+        ]
+        for key, flag, default in (
+            ("limit", "--limit", 64),
+            ("max_tokens", "--max-tokens", 512),
+            ("timeout", "--timeout", 180),
+            ("thermal_guard_celsius", "--max-gpu-temp", 0),
+        ):
+            value = int(job.get(key) or default)
+            if value > 0:
+                cmd.extend([flag, str(value)])
+        for key, flag, default in (("temperature", "--temperature", 0.2), ("sleep", "--sleep", 0.0)):
+            value = float(job.get(key) if job.get(key) not in (None, "") else default)
+            if value > 0 or key == "temperature":
+                cmd.extend([flag, str(value)])
+        if str(job.get("thermal_gpu_index") or device).strip().lower() != "cpu":
+            cmd.extend(["--thermal-gpu-index", str(job.get("thermal_gpu_index") or device)])
+        return cmd
     raise ValueError(f"unknown sidecar job_type: {job_type}")
 
 
@@ -386,6 +458,28 @@ def job_device(job: dict[str, Any], devices: list[str], index: int) -> str:
     if not devices:
         raise ValueError("no sidecar devices configured")
     return devices[index % len(devices)]
+
+
+def per_device_teacher_job(job: dict[str, Any], job_id: str, device: str, offset: int) -> dict[str, Any]:
+    worker = dict(job)
+    worker["job_id"] = f"{job_id}_gpu{device}"
+    worker["device"] = device
+    records = str(worker.get("records") or "")
+    if records:
+        if "{device}" in records:
+            worker["records"] = records.format(device=device)
+        elif "*" in records:
+            worker["records"] = records.replace("*", device)
+    output = str(worker.get("output") or "")
+    if output:
+        if "{device}" in output:
+            worker["output"] = output.format(device=device)
+        elif output.endswith(".jsonl"):
+            worker["output"] = output[:-6] + f"_gpu{device}.jsonl"
+    base_urls = worker.get("base_urls")
+    if isinstance(base_urls, list) and offset < len(base_urls):
+        worker["base_url"] = str(base_urls[offset])
+    return worker
 
 
 def should_skip_job(job: dict[str, Any], root: Path) -> str:
@@ -418,24 +512,36 @@ def materialize_jobs(profile_path: str | Path, profile: dict[str, Any], args: ar
         if not bool(job.get("enabled", True)):
             continue
         device = job_device(job, devices, index)
-        context = placeholder_context(profile_path, profile, out_root, {**job, "job_id": job_id}, device)
-        command = expand_command(job["command"], context) if job.get("command") else default_command(profile_path, profile, out_root, {**job, "job_id": job_id}, device)
-        job_out = Path(context["job_out"])
-        log_path = Path(str(job.get("log_path") or job_out / "sidecar.log"))
-        missing = should_skip_job(job, root)
-        jobs.append(
-            {
-                "job_id": job_id,
-                "job_type": job_type,
-                "device": device,
-                "command": command,
-                "cwd": str(root),
-                "out_dir": str(job_out),
-                "log_path": str(log_path),
-                "status": "skipped" if missing else "planned",
-                "skip_reason": f"missing required path(s): {missing}" if missing else "",
-            }
-        )
+        device_values = split_devices(device)
+        expanded_jobs = [job]
+        if job_type == "openai_compatible_teacher_rollout" and len(device_values) > 1:
+            expanded_jobs = [per_device_teacher_job(job, job_id, value, offset) for offset, value in enumerate(device_values)]
+        for expanded_job in expanded_jobs:
+            expanded_job_id = str(expanded_job.get("job_id") or job_id)
+            expanded_device = job_device(expanded_job, devices, index)
+            context = placeholder_context(profile_path, profile, out_root, {**expanded_job, "job_id": expanded_job_id}, expanded_device)
+            command = (
+                expand_command(expanded_job["command"], context)
+                if expanded_job.get("command")
+                else default_command(profile_path, profile, out_root, {**expanded_job, "job_id": expanded_job_id}, expanded_device)
+            )
+            job_out = Path(context["job_out"])
+            log_path = Path(str(expanded_job.get("log_path") or job_out / "sidecar.log"))
+            missing = should_skip_job(expanded_job, root)
+            jobs.append(
+                {
+                    "job_id": expanded_job_id,
+                    "job_type": job_type,
+                    "device": expanded_device,
+                    "command": command,
+                    "cwd": str(root),
+                    "out_dir": str(job_out),
+                    "log_path": str(log_path),
+                    "status": "skipped" if missing else "planned",
+                    "skip_reason": f"missing required path(s): {missing}" if missing else "",
+                }
+            )
+        continue
     max_active_per_device = int(cfg.get("max_active_per_device") or 0)
     if max_active_per_device > 0:
         active_by_device: dict[str, int] = {}
@@ -455,10 +561,11 @@ def materialize_jobs(profile_path: str | Path, profile: dict[str, Any], args: ar
 def launch_env(job: dict[str, Any], profile: dict[str, Any]) -> dict[str, str]:
     cfg = sidecar_cfg(profile)
     env = os.environ.copy()
+    visible_devices = "" if str(job["device"]).strip().lower() == "cpu" else str(job["device"])
     env.update(
         {
             "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
-            "CUDA_VISIBLE_DEVICES": str(job["device"]),
+            "CUDA_VISIBLE_DEVICES": visible_devices,
             "OMNICODER_SIDECAR_JOB_ID": str(job["job_id"]),
             "OMNICODER_SIDECAR_OUT_DIR": str(job["out_dir"]),
             "TOKENIZERS_PARALLELISM": "false",
@@ -478,7 +585,7 @@ def popen_kwargs() -> dict[str, Any]:
 
 
 def launch_jobs(profile_path: str | Path, profile: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
-    isolation = validate_device_isolation(profile)
+    isolation = validate_device_isolation(profile, selected_jobs(args))
     if isolation["status"] != "ok":
         raise SystemExit(json.dumps({"status": "error", "error": "sidecar_devices_overlap_main_training", **isolation}))
     jobs = materialize_jobs(profile_path, profile, args)
@@ -516,7 +623,7 @@ def launch_jobs(profile_path: str | Path, profile: dict[str, Any], args: argpars
                 stdin=subprocess.DEVNULL,
                 **popen_kwargs(),
             )
-            row = {**job, "status": "running", "pid": int(proc.pid), "env": {"CUDA_VISIBLE_DEVICES": str(job["device"])}}
+            row = {**job, "status": "running", "pid": int(proc.pid), "env": {"CUDA_VISIBLE_DEVICES": env.get("CUDA_VISIBLE_DEVICES", "")}}
             if wait:
                 code = proc.wait()
                 row.update({"status": "passed" if code == 0 else "failed", "returncode": int(code)})
@@ -560,7 +667,7 @@ def pid_alive(pid: int) -> bool:
 
 def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
     profile = read_json(args.profile)
-    isolation = validate_device_isolation(profile)
+    isolation = validate_device_isolation(profile, selected_jobs(args))
     cfg = sidecar_cfg(profile)
     jobs = materialize_jobs(args.profile, profile, args)
     job_types = sorted({job["job_type"] for job in jobs})
@@ -581,7 +688,7 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
 
 def cmd_plan(args: argparse.Namespace) -> dict[str, Any]:
     profile = read_json(args.profile)
-    isolation = validate_device_isolation(profile)
+    isolation = validate_device_isolation(profile, selected_jobs(args))
     return {
         "schema": "omnicoder.gpu_sidecar_plan_2026.v1",
         "schema_version": SCHEMA_VERSION,

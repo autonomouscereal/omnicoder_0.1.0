@@ -113,8 +113,10 @@ Current high-value registry families:
   Computers at Scale, VideoCUA, ExeVR, AgentSynth, Computer Agent Arena,
   Smol2Operator/Aguvis, tau2/AReaL verified tool traces, APEX Agents/SWE,
   WildClawBench, ClawBench, BFCL, ComplexFuncBench, OpenHands CodeScout,
-  AIDev, SWE-CI, Fixbench-RTL, SWE-Synth, and other MCP/function-calling
-  corpora.
+  AIDev, SWE-CI, Fixbench-RTL, SWE-Synth, NVIDIA ToolScale/When2Call/Nemotron
+  Agentic/Cascade RL/SFT data, cleaned Toucan/Hermes/memory-agent/web-QA
+  tool SFT rows, Qwen tool-calling, BrowserGym-style browser-agent SFT,
+  Terminal-Bench 2 HF trajectories, and other MCP/function-calling corpora.
 - Multimodal generation: OpenGPT-4o-Image, ShareGPT-4o-Image, Pico-Banana,
   MultiEdit, OpenSubject, VideoUFO, OpenVid-1M, CI-VID, TIP-I2V, VPData,
   Emilia-YODAS, Granary, CapSpeech, AudioSkills, JamendoMaxCaps, MusicBench,
@@ -130,11 +132,18 @@ Current high-value registry families:
   DreamOmni2Bench, MMMU Pro, Video-MME-v2, LVOmniBench, JointAVBench, LVBench,
   PhyWorldBench, MusicEval, MCIF, Multimodal RewardBench 2, AVGen-Bench,
   VBench 2.0, PARADE_audio, AudioMC, WildSpeech-Bench, WorldSpeech,
-  NonverbalTTS, Captioned AI Music Snippets, and VoiceAgentBench.
+  NonverbalTTS, Captioned AI Music Snippets, VoiceAgentBench, NVIDIA MMOU,
+  QCalEval, SAGE-10K, NitroGen, BLIP3o short/60K, Rapidata frontier image and
+  video preference sets, Hailuo image-to-video preferences, VideoVista CoTs,
+  WorldSense, MMAU, AudioSet/Zeroshot/Adversarial audio instruction rows,
+  NVIDIA HiFiTTS2/LongAudio/AF-Think/AF-Chat/MF-Skills, SpeechJudge, AudioCoT,
+  StoryBench, OmniBench, and Multimodal RewardBench v1 holdouts.
 - Math/reasoning second wave: R-HORIZON, Reasoning Core formal-reasoning
   environments, UniRRM-RL, Nemotron Math Proofs, UltraData-Math, GLM-5.1
-  reasoning traces, and MathVision are included with train/research/eval gates
-  based on license and contamination risk.
+  reasoning traces, MathVision, Nemotron RL super blends, Nemotron 3 Nano RL
+  blends, Math-RLVR 773K, PrimeIntellect verifiable review rows, and
+  High-Quality-Verifiable-Math review rows are included with train/research/eval
+  gates based on license and contamination risk.
 
 Rows from external sources are not merged into the 20B target lane merely
 because they exist. They must survive redaction, dedupe, benchmark

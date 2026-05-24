@@ -64,8 +64,14 @@ mix:
   Multi-Docker-Eval, Terminal-Bench 2.0 trajectories, GUI-360, AgentNet,
   Computer Use Large, VideoCUA, AgentSynth, Smol2Operator/Aguvis, tau2/AReaL
   verified tool traces, BFCL/ComplexFuncBench, APEX, WildClawBench, ClawBench,
-  CodeTraceBench, Hermes, xLAM, Toucan, and local Codex/Claude/Hermes/
-  agent-memory traces.
+  CodeTraceBench, Hermes, xLAM, Toucan, NVIDIA ToolScale/When2Call/Nemotron
+  Agentic and Cascade RL/SFT data, cleaned Toucan/Hermes/memory-agent/web-QA
+  tool SFT, Qwen tool-calling, browser-agent SFT, Terminal-Bench 2 HF
+  trajectories, and local Codex/Claude/Hermes/agent-memory traces.
+- Extra math/coding RLVR: Nemotron RL super blends, Cascade RL SWE/RLHF,
+  Nemotron competitive coding, PrimeIntellect verifiable coding/math review
+  rows, Math-RLVR 773K, High-Quality-Verifiable-Math-156K review rows, and
+  SWE-Agent LM 32B R2E-Gym trajectory review rows.
 - Multimodal generation and reward: FineVision/FineVisionMax, ScaleEdit,
   GPT-Image-Edit, NHR-Edit, CrispEdit, BAGEL-World, Rapidata image
   preferences, HPDv3, ImgEdit, UniREdit, BLIP3o, UniWorld, text-to-image DPO
@@ -74,7 +80,12 @@ mix:
   Prompt2MusicBench, OpenMMReasoner, DeepVision, RLFR-VLM, Open-MM-RL,
   MMMU Pro, Video-MME-v2, LVOmniBench, JointAVBench, AVGen-Bench, VBench 2.0,
   PARADE_audio, AudioMC, WildSpeech-Bench, WorldSpeech, Granary,
-  NonverbalTTS, Music Arena, and Captioned AI Music Snippets.
+  NonverbalTTS, Music Arena, Captioned AI Music Snippets, NVIDIA MMOU/QCalEval/
+  SAGE/NitroGen references, BLIP3o short/60K data, Rapidata 4o/Imagen4/
+  Seedream/Flux/Sora/Genmo/Seedance/Hailuo preference sets, VideoVista CoTs,
+  WorldSense/MMOU/MMAU holdouts, AudioSet/zero-shot/adversarial audio
+  instruction rows, NVIDIA HiFiTTS2/LongAudio/AF-Think/AF-Chat/MF-Skills,
+  SpeechJudge, AudioCoT, and StoryBench/OmniBench reward/eval holdouts.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for
