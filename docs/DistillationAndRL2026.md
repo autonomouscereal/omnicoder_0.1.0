@@ -39,6 +39,20 @@ The intended post-training path is:
    teacher-forced versus rollout mismatch.
 7. Long-context retention and q4-aware recovery distillation.
 
+## On-Policy Environment RL
+
+`profiles/distillation_curriculum_2026.json` now includes
+`on_policy_distillation_2026`. The new route prioritizes teacher-validated
+student/teacher disagreement, reverse-KL token distillation, q4 consistency,
+tool repair, long-context compression, audio-video sync, image-edit
+preservation, and MCP state recovery.
+
+The posttraining sequence also adds `mcp_environment_rl`, an
+Agent-Lightning-style async GRPO lane over MCP, browser, terminal, raw
+PostgreSQL, and ComfyUI environments. Successful eval trajectories stay
+quarantined; poisoned tool metadata, credential requests, and hidden-answer
+leakage become negative replay rows.
+
 ## Commands
 
 ```powershell

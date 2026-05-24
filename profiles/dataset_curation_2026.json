@@ -20868,6 +20868,1083 @@
         "target_modality": "music",
         "url": "https://arxiv.org/abs/2605.21538",
         "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "mcp",
+          "tool_use",
+          "stateful_agent",
+          "rl_rollout",
+          "multi_server"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "eval_holdout_reason": "decontaminate against MCP-Universe and MCPMark tasks before promotion",
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "Shuibai12138/mcp-universe-trajectories",
+        "last_verified": "2026-05-24",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "max_records": 4096,
+        "name": "MCP-Universe Trajectories",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "teacher_model_provenance": "mixed MCP environment rollout traces",
+        "url": "https://huggingface.co/datasets/Shuibai12138/mcp-universe-trajectories",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "mcpmark",
+          "filesystem",
+          "postgres",
+          "playwright",
+          "github",
+          "notion",
+          "tool_trace"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "eval_holdout_reason": "MCPMark successful eval trajectories stay quarantined",
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "Jakumetsu/mcpmark-trajectory-log",
+        "last_verified": "2026-05-24",
+        "license": "MIT",
+        "license_tier": "community_trace_review",
+        "max_records": 2048,
+        "name": "MCPMark Trajectory Log",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "teacher_model_provenance": "community MCPMark trace log",
+        "url": "https://huggingface.co/datasets/Jakumetsu/mcpmark-trajectory-log",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "qwen_3_6",
+          "function_calling",
+          "multi_turn",
+          "rejection_sampling",
+          "agent_trajectory"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "zake7749/Qwen-3.6-plus-agent-tool-calling-trajectory",
+        "last_verified": "2026-05-24",
+        "license": "license not declared",
+        "license_tier": "unknown_review",
+        "max_records": 1024,
+        "name": "Qwen 3.6 Plus Agent Tool Calling Trajectory",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "teacher_model_provenance": "Qwen 3.6 Plus trajectory distillation candidate",
+        "url": "https://huggingface.co/datasets/zake7749/Qwen-3.6-plus-agent-tool-calling-trajectory",
+        "use_policy": "blocked_until_review"
+      },
+      {
+        "curriculum_axes": [
+          "agent_distillation",
+          "trajectory",
+          "prefix_training",
+          "tool_reasoning"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "agent-distillation/Qwen2.5-32B-Instruct_agent_trajectories_2k",
+        "last_verified": "2026-05-24",
+        "license": "license not declared for trajectory split",
+        "license_tier": "distillation_review",
+        "max_records": 2048,
+        "name": "Agent Distillation Qwen Agent Trajectories 2K",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "teacher_model_provenance": "Qwen2.5-32B-Instruct agent trajectories",
+        "url": "https://huggingface.co/datasets/agent-distillation/Qwen2.5-32B-Instruct_agent_trajectories_2k",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "computer_use",
+          "screen_recording",
+          "vision_language_action",
+          "imitation_learning",
+          "gui_agent"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "anaisleila/computer-use-data-psai",
+        "last_verified": "2026-05-24",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "max_records": 2048,
+        "media_rights_review": "trainable only after media provenance and screen-content redaction checks",
+        "name": "Computer Use PSAI",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "video",
+        "url": "https://huggingface.co/datasets/anaisleila/computer-use-data-psai",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "browser_search",
+          "long_context",
+          "answer_exactness",
+          "citation_support",
+          "canary_leakage"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "eval_holdout_reason": "OpenAI BrowseComp-style questions and answers are protected browser-agent eval material",
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "openai/BrowseCompLongContext",
+        "last_verified": "2026-05-24",
+        "license": "MIT",
+        "license_tier": "benchmark_holdout",
+        "max_records": 512,
+        "name": "BrowseCompLongContext",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/openai/BrowseCompLongContext",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "deep_research",
+          "retrieval",
+          "multi_hop_search",
+          "browser_grounding"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "eval_holdout_reason": "Use only retrieval corpus rows; QA answer rows remain held out",
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "Tevatron/browsecomp-plus-corpus",
+        "last_verified": "2026-05-24",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "max_records": 4096,
+        "name": "BrowseComp-Plus Corpus",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "long_context",
+        "url": "https://huggingface.co/datasets/Tevatron/browsecomp-plus-corpus",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "deep_research",
+          "browser_eval",
+          "multi_hop_search",
+          "answer_exactness"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "eval_holdout_reason": "Questions and answers are held out; pair only with corpus decontamination",
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "Tevatron/browsecomp-plus",
+        "last_verified": "2026-05-24",
+        "license": "MIT",
+        "license_tier": "benchmark_holdout",
+        "max_records": 512,
+        "name": "BrowseComp-Plus QA Holdout",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/Tevatron/browsecomp-plus",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "research_replication",
+          "long_horizon_code",
+          "rubric_grading",
+          "experiment_execution"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "eval_holdout_reason": "Rubrics, answers, and successful replication traces are eval-only",
+        "family": "coding_agentic",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "openai/paperbench",
+        "last_verified": "2026-05-24",
+        "license": "OpenAI benchmark release; code/rubric usage review",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 128,
+        "name": "PaperBench Public Smoke",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "code",
+        "url": "https://openai.com/index/paperbench/",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "simulated_company",
+          "enterprise_workflow",
+          "browser_tool",
+          "long_horizon_agent"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "eval_holdout_reason": "Enterprise workflow task states and successful trajectories are protected eval material",
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "TheAgentCompany/TheAgentCompany",
+        "last_verified": "2026-05-24",
+        "license": "MIT",
+        "license_tier": "benchmark_holdout",
+        "max_records": 128,
+        "name": "TheAgentCompany Enterprise Benchmark",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://github.com/TheAgentCompany/TheAgentCompany",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "long_audio",
+          "speech_audio_reasoning",
+          "temporal_retrieval",
+          "audio_eval"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "eval_holdout_reason": "Long-audio benchmark prompts and answers are held out",
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "AudioMarathon/AudioMarathon",
+        "last_verified": "2026-05-24",
+        "license": "benchmark license review",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 512,
+        "name": "AudioMarathon Long Audio Benchmark",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/AudioMarathon/AudioMarathon",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "audio_instruction",
+          "speech_understanding",
+          "audio_caption",
+          "instruction_following"
+        ],
+        "decontamination_fields": [
+          "prompt",
+          "target",
+          "messages",
+          "trajectory",
+          "tools",
+          "environment",
+          "task_id"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id",
+            "problem_id",
+            "instance_id",
+            "sample_id",
+            "example_id",
+            "trajectory_id"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "music",
+            "file_name",
+            "media",
+            "image_path",
+            "video_path",
+            "audio_path"
+          ],
+          "metadata": [
+            "metadata",
+            "source",
+            "provenance",
+            "license",
+            "repo",
+            "environment"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "tools",
+            "state",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "output",
+            "target",
+            "tool_calls",
+            "trajectory",
+            "actions",
+            "solution",
+            "chosen",
+            "rejected"
+          ]
+        },
+        "gated": false,
+        "hf_id": "declare-lab/audio-alpaca",
+        "last_verified": "2026-05-24",
+        "license": "license review required",
+        "license_tier": "source_license_review",
+        "max_records": 4096,
+        "media_rights_review": "requires source media provenance review before train bucket",
+        "name": "Audio-Alpaca Instruction Data",
+        "registry_wave": "eighth_wave_agentic_curation_training_2026_05_24",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/declare-lab/audio-alpaca",
+        "use_policy": "research_internal"
       }
     ],
     "enabled": true,
@@ -20929,6 +22006,34 @@
     "dataset_card": true,
     "posttraining_curation_manifest": "weights/training_orchestration_2026/agentic_tool_training_2026/manifests/posttraining_curation_manifest.json",
     "source_files_manifest": "weights/training_orchestration_2026/manifests/source_files.jsonl"
+  },
+  "mixture_controller_2026": {
+    "domain_weight_inputs": [
+      "family",
+      "modality",
+      "license_tier",
+      "source_date",
+      "quality_score",
+      "dedupe_cluster_size",
+      "teacher_reliability",
+      "downstream_eval_delta",
+      "artifact_validation_fail_rate",
+      "secret_redaction",
+      "contamination_status"
+    ],
+    "emit": "weights/training_orchestration_2026/manifests/mixture_plan.json",
+    "enabled": true,
+    "mode": "adaptive_quality_and_eval_feedback_reweighting",
+    "notes": [
+      "Synthetic-only fallback rows never satisfy real family minima.",
+      "Eval-only and benchmark-holdout rows stay out of train even when permissively licensed.",
+      "Agentic/tool traces require schema validation, secret redaction, and successful-eval trajectory quarantine."
+    ],
+    "synthetic_ratio_caps": {
+      "rephrased_synthetic": 0.3,
+      "synthetic_only_train_minimum_credit": 0.0,
+      "teacher_generated_textbook": 0.1
+    }
   },
   "notes": [
     "Codex and agent-memory traces use dedicated ingest modules; Claude and Hermes traces use the generic 2026 trace normalizer until dedicated modules exist.",

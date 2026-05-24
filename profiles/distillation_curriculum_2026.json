@@ -7,6 +7,27 @@
     "skip_contaminated": true,
     "skip_secret_rejected": true
   },
+  "on_policy_distillation_2026": {
+    "enabled": true,
+    "methods": [
+      "teacher_validated_disagreement_focusing",
+      "reverse_kl_token_distill",
+      "q4_consistency_distill"
+    ],
+    "prioritize": [
+      "student_teacher_disagreement",
+      "teacher_reliable",
+      "verifier_failed_but_repairable"
+    ],
+    "targets": [
+      "video_temporal_grounding",
+      "audio_video_sync",
+      "image_edit_preservation",
+      "tool_repair",
+      "long_context_compression",
+      "mcp_state_recovery"
+    ]
+  },
   "posttraining": {
     "base_model": "Qwen/Qwen3-4B",
     "context_length": 1048576,
@@ -113,6 +134,13 @@
         "dataset": "qwen_webworlddata_browsergym_agent_traces",
         "id": "web_world_model_distill",
         "purpose": "Train browser state prediction, robust tool recovery, and long-horizon web-agent planning."
+      },
+      {
+        "algorithm": "agent_lightning_style_async_grpo",
+        "bridge": "posttrain_bridge_2026",
+        "dataset": "mcp_universe_mcpmark_codex_claude_tool_traces",
+        "id": "mcp_environment_rl",
+        "purpose": "Train stateful MCP/browser/terminal tool recovery with poisoned-tool negatives and successful-eval trace quarantine."
       }
     ],
     "student_profile": "dense_omni_24gb"

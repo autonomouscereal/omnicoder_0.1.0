@@ -624,6 +624,32 @@
       "smoke": "two_public_mcp_workflows",
       "source": "https://github.com/eval-sys/mcpmark",
       "use": "MCP server workflow success tool recovery and state consistency gate"
+    },
+    {
+      "holdout": [
+        "questions",
+        "answers",
+        "canary_strings",
+        "successful_search_traces"
+      ],
+      "id": "browsecomp_long_context_2026",
+      "kind": "browser_search_long_context_eval",
+      "smoke": "two public/canary-safe browsecomp long-context tasks",
+      "source": "https://huggingface.co/datasets/openai/BrowseCompLongContext",
+      "use": "hard-to-find browser research with long-context evidence and citation exactness"
+    },
+    {
+      "holdout": [
+        "task_states",
+        "rubrics",
+        "successful_trajectories",
+        "answer_keys"
+      ],
+      "id": "theagentcompany_enterprise_2026",
+      "kind": "simulated_enterprise_agent_workflow_eval",
+      "smoke": "one public simulated-company task with answers hidden",
+      "source": "https://github.com/TheAgentCompany/TheAgentCompany",
+      "use": "enterprise browser/tool workflow completion and state consistency"
     }
   ],
   "contamination_controls": [
@@ -659,7 +685,9 @@
       "browsergym_webarena_verified_2026",
       "osworld_desktop_2026",
       "bfcl_v4_tool_calling_2026",
-      "mcpmark_mcp_universe_2026"
+      "mcpmark_mcp_universe_2026",
+      "browsecomp_long_context_2026",
+      "theagentcompany_enterprise_2026"
     ],
     "coding": [
       "swe_bench_pro",

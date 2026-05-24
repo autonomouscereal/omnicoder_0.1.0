@@ -192,6 +192,21 @@ Current high-value registry families:
   `seventh_wave_agentic_math_code_omni_2026_05_24` and is designed to add more
   real agentic, math, code, image, video, audio, music, and any-to-any coverage
   without letting protected eval material enter train.
+- Eighth-wave additions: MCP-Universe trajectories, MCPMark trajectory logs,
+  Qwen 3.6 Plus tool-call trajectories, Qwen agent-distillation trajectories,
+  Computer Use PSAI, BrowseCompLongContext, BrowseComp-Plus corpus plus QA
+  holdout, PaperBench smoke, TheAgentCompany, AudioMarathon, Audio-Alpaca,
+  OpenAudioBench, and VideoRewardBench. The wave is tagged
+  `eighth_wave_agentic_curation_training_2026_05_24`. It expands agentic MCP,
+  browser, GUI/computer-use, long-context research, audio, and video-reward
+  coverage while keeping benchmark answers and successful eval trajectories out
+  of training.
+
+`mixture_controller_2026` turns curation metadata into scheduler inputs for the
+training profile. It caps synthetic ratios, includes provenance/license/quality
+signals, and explicitly states that synthetic-only rows do not satisfy real-data
+family minima. Eval-only rows remain held out even when their license is
+permissive.
 
 Filtered delta materialization:
 
@@ -204,6 +219,7 @@ dataset-expansion-2026 `
   --include-wave fifth_wave_agentic_rlvr_multimodal_2026_05_24 `
   --include-wave sixth_wave_formal_code_media_2026_05_24 `
   --include-wave seventh_wave_agentic_math_code_omni_2026_05_24 `
+  --include-wave eighth_wave_agentic_curation_training_2026_05_24 `
   build
 ```
 

@@ -183,7 +183,7 @@ scripts/ai_server_dataset_training_sidecars_2026.sh local-traces
 
 # Fresh registry-wave delta without reprocessing the entire registry.
 OMNICODER_RUN_ID=external_fresh_wave_delta_$(date -u +%Y%m%dT%H%M%SZ) \
-OMNICODER_DATASET_INCLUDE_WAVES=fifth_wave_agentic_rlvr_multimodal_2026_05_24,sixth_wave_formal_code_media_2026_05_24,seventh_wave_agentic_math_code_omni_2026_05_24 \
+OMNICODER_DATASET_INCLUDE_WAVES=fifth_wave_agentic_rlvr_multimodal_2026_05_24,sixth_wave_formal_code_media_2026_05_24,seventh_wave_agentic_math_code_omni_2026_05_24,eighth_wave_agentic_curation_training_2026_05_24 \
 OMNICODER_ENFORCE_DATASET_MINIMA=0 \
 OMNICODER_MAX_RECORDS_PER_DATASET=512 \
 scripts/ai_server_dataset_training_sidecars_2026.sh external-expansion
@@ -191,6 +191,9 @@ scripts/ai_server_dataset_training_sidecars_2026.sh external-expansion
 # Modality-specific distillation job JSONL for Qwen Image/Edit, LTX, ACE-Step,
 # and omni/audio teachers.
 scripts/ai_server_dataset_training_sidecars_2026.sh modality-teacher-jobs
+
+# Adaptive sample weights and native-1M context ladder for the next train pass.
+scripts/ai_server_dataset_training_sidecars_2026.sh mix-plan
 
 # Later status check.
 scripts/ai_server_dataset_training_sidecars_2026.sh status
@@ -204,6 +207,7 @@ The sidecar runner writes run-scoped outputs under:
 - `weights/data_factory/trace_orchestrator_2026/teacher_jobs/<run_id>`
 - `weights/data_factory/runs/teacher_jobs/<run_id>/modality`
 - `weights/data_factory/teacher_rollouts/<run_id>`
+- `weights/training_orchestration_2026/runs/<run_id>/manifests/mixture_plan.json`
 
 It promotes `latest` symlinks only after outputs exist. The target training
 profile reads external expansion JSONL family files when present, but
@@ -212,6 +216,17 @@ Dataset expansion also rejects synthetic-only train promotion and fail-closes
 review, pending, unknown, noncommercial, no-derivatives, holdout, gated,
 research, or blocked license markers into non-train buckets. That rule applies
 even when a profile entry was accidentally tagged `use_policy: train`.
+
+## Adaptive Mixture Controller
+
+The static stage order remains the fallback, but `mix-plan` now emits bounded
+per-stage weights from curated rows, external manifests, agentic exports,
+teacher jobs, and quality/eval signals. The plan includes the native context
+ladder `8K -> 32K -> 128K -> 256K -> 512K -> 1M`, flags zero-modality gaps,
+and records promotion gates for q4 regression, reward variance, contamination
+rejects, and artifact-validation failures. `scripts/ai_server_fast_pipeline_20b.sh`
+passes `OMNICODER_ADAPTIVE_WEIGHTS`, `OMNICODER_MIXTURE_PLAN`,
+`OMNICODER_CONTEXT_LADDER`, and `OMNICODER_RLVR_ALGOS` into the 20B container.
 
 When a target training container or sidecar builder is actively running, stage
 code/profile updates under `weights/staged_patches/<patch_id>` and apply them

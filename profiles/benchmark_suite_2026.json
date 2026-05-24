@@ -3398,6 +3398,64 @@
         "smoke": "two MCP workflows"
       },
       "task_format": "mcp_workflow_jsonl"
+    },
+    {
+      "adapter_kind": "browser_search_long_context_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_browsecomp_long_context_2026",
+      "holdout_policy": [
+        "hide_answers_or_oracles",
+        "quarantine_successful_trajectories",
+        "hash_artifacts",
+        "record_dataset_revision"
+      ],
+      "metrics": [
+        "exact_answer_accuracy",
+        "citation_support",
+        "evidence_span_recall",
+        "canary_leak_rate"
+      ],
+      "modalities": [
+        "text",
+        "tool"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/openai/BrowseCompLongContext",
+      "splits": {
+        "nightly": "authorized public/dev slice",
+        "release": "official_or_authorized_current_release",
+        "smoke": "two canary-safe public tasks"
+      },
+      "task_format": "browser_search_long_context_jsonl"
+    },
+    {
+      "adapter_kind": "simulated_enterprise_agent_workflow_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_theagentcompany_enterprise_2026",
+      "holdout_policy": [
+        "hide_answers_or_oracles",
+        "quarantine_successful_trajectories",
+        "hash_artifacts",
+        "record_dataset_revision"
+      ],
+      "metrics": [
+        "task_success",
+        "state_update_consistency",
+        "tool_error_recovery",
+        "policy_violation_rate"
+      ],
+      "modalities": [
+        "text",
+        "tool"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://github.com/TheAgentCompany/TheAgentCompany",
+      "splits": {
+        "nightly": "authorized public/dev slice",
+        "release": "official_or_authorized_current_release",
+        "smoke": "one public simulated-company task"
+      },
+      "task_format": "enterprise_workflow_state_jsonl"
     }
   ],
   "contamination_controls": [
@@ -3472,7 +3530,9 @@
       "agent_browsergym_webarena_verified_2026",
       "agent_osworld_desktop_2026",
       "agent_bfcl_v4_tool_calling_2026",
-      "agent_mcpmark_universe_2026"
+      "agent_mcpmark_universe_2026",
+      "agent_browsecomp_long_context_2026",
+      "agent_theagentcompany_enterprise_2026"
     ],
     "coding_release": [
       "coding_swe_bench_pro_2026",

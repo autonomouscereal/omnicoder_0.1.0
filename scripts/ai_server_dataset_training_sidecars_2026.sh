@@ -361,6 +361,35 @@ PY
   log "modality teacher job dir: $job_dir"
 }
 
+mix_plan() {
+  local out_dir="weights/training_orchestration_2026/runs/${RUN_ID}"
+  local curation_manifest="weights/curated_datasets_2026/runs/${RUN_ID}/manifests/curation_manifest.json"
+  local external_manifest="${EXTERNAL_DATASET_SOURCE}/manifests/external_dataset_manifest.json"
+  local agentic_manifest="weights/agentic_tool_training_2026/runs/${RUN_ID}/agentic_tool_training_manifest.json"
+  local teacher_manifest="${TEACHER_JOB_ROOT}/${RUN_ID}/modality/modality_teacher_jobs_manifest.json"
+  mkdir -p "$out_dir/manifests"
+  log "build adaptive mixture plan"
+  "$PYTHON_BIN" -m omnicoder.training.training_orchestration_2026 \
+    --profile profiles/training_orchestration_2026.json \
+    --out-dir "$out_dir" \
+    mix-plan \
+    --curation-manifest "$curation_manifest" \
+    --external-manifest "$external_manifest" \
+    --agentic-manifest "$agentic_manifest" \
+    --teacher-manifest "$teacher_manifest" \
+    --output "$out_dir/manifests/mixture_plan.json" \
+    | tee "$out_dir/manifests/mixture_plan.stdout.json"
+  if [[ ! -s "$out_dir/manifests/mixture_plan.json" ]]; then
+    echo "adaptive mixture plan was not written" >&2
+    exit 14
+  fi
+  if truthy "$PROMOTE_LATEST"; then
+    mkdir -p weights/training_orchestration_2026/manifests
+    cp "$out_dir/manifests/mixture_plan.json" weights/training_orchestration_2026/manifests/mixture_plan.json
+  fi
+  log "mixture plan: $out_dir/manifests/mixture_plan.json"
+}
+
 p40_teacher_rollouts() {
   local job_dir="${TEACHER_JOB_SOURCE}"
   local out_dir="weights/data_factory/teacher_rollouts/${RUN_ID}"
@@ -499,6 +528,7 @@ case "$ACTION" in
   local-traces) local_trace_bundle ;;
   teacher-jobs) teacher_jobs ;;
   modality-teacher-jobs) modality_teacher_jobs ;;
+  mix-plan) mix_plan ;;
   p40-teacher) p40_teacher_rollouts ;;
   status) status ;;
   all)
@@ -509,6 +539,7 @@ case "$ACTION" in
     external_expansion
     teacher_jobs
     modality_teacher_jobs
+    mix_plan
     p40_teacher_rollouts
     status
     ;;

@@ -1082,6 +1082,39 @@ def test_repo_dataset_registry_covers_seventh_wave_sources_and_trace_gates() -> 
     assert profile["agent_memory_postgres_export"]["reject_secret_rows"] is True
 
 
+def test_repo_dataset_registry_covers_eighth_wave_training_curation_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "eighth_wave_agentic_curation_training_2026_05_24"
+    expected_policy = {
+        "MCP-Universe Trajectories": "train",
+        "MCPMark Trajectory Log": "research_internal",
+        "Qwen 3.6 Plus Agent Tool Calling Trajectory": "blocked_until_review",
+        "Agent Distillation Qwen Agent Trajectories 2K": "research_internal",
+        "Computer Use PSAI": "train",
+        "BrowseCompLongContext": "eval_only",
+        "BrowseComp-Plus Corpus": "train",
+        "BrowseComp-Plus QA Holdout": "eval_only",
+        "TheAgentCompany Enterprise Benchmark": "eval_only",
+        "Audio-Alpaca Instruction Data": "research_internal",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["use_policy"] == policy
+        assert by_name[name]["registry_wave"] == wave
+    assert by_name["MCP-Universe Trajectories"]["target_modality"] == "tool"
+    assert by_name["Computer Use PSAI"]["target_modality"] == "video"
+    assert by_name["BrowseComp-Plus Corpus"]["target_modality"] == "long_context"
+    assert by_name["OpenAudioBench"]["use_policy"] == "eval_only"
+    assert by_name["VideoRewardBench"]["use_policy"] == "eval_only"
+    assert expansion.source_use_bucket(by_name["MCP-Universe Trajectories"]) == "train"
+    assert expansion.source_use_bucket(by_name["Qwen 3.6 Plus Agent Tool Calling Trajectory"]) == "blocked_until_review"
+    assert expansion.source_use_bucket(by_name["BrowseCompLongContext"]) == "eval_holdout"
+    assert profile["mixture_controller_2026"]["enabled"] is True
+    assert profile["mixture_controller_2026"]["synthetic_ratio_caps"]["synthetic_only_train_minimum_credit"] == 0.0
+
+
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))

@@ -47,6 +47,16 @@ DEFAULT_STAGE_ORDER = ("text", "code", "tool", "image", "video", "audio", "music
 _LJSPEECH_METADATA_CACHE: dict[str, dict[str, str]] = {}
 TARGET_PRESET_2026 = "omnicoder2026_20b_1m"
 PROBE_PRESET_NAMES = {"probe", "native1m_probe", "ledger_probe", "full_ledger_probe", "omnicoder2026_native1m_probe", "omnicoder2026_full_ledger_probe"}
+ADAPTIVE_SIGNAL_DEFAULTS = (
+    "heldout_sample_loss_delta",
+    "per_modality_loss_delta",
+    "verifier_pass_rate",
+    "reward_std",
+    "modality_coverage_deficit",
+    "q4_regression_delta",
+    "contamination_reject_rate",
+    "artifact_validation_fail_rate",
+)
 
 
 def now_iso() -> str:
@@ -101,6 +111,28 @@ def iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
             if isinstance(payload, dict):
                 payload.setdefault("line_number", line_number)
                 yield payload
+
+
+def read_json_if_exists(path: str | Path) -> dict[str, Any]:
+    target = Path(path)
+    if not target.exists() or not target.is_file():
+        return {}
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def clamp_float(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
 
 
 def profile_cfg(profile: dict[str, Any]) -> dict[str, Any]:
@@ -1668,6 +1700,168 @@ def build_real_corpus(profile: dict[str, Any], out_dir: Path) -> dict[str, Any]:
     }
     write_json(out_dir / "manifests" / "curation_manifest.json", manifest)
     return manifest
+
+
+def manifest_modalities(manifest: dict[str, Any]) -> dict[str, int]:
+    raw = manifest.get("modalities")
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, int] = {}
+    for key, value in raw.items():
+        try:
+            result[str(key)] = max(0, int(value or 0))
+        except Exception:
+            result[str(key)] = 0
+    return result
+
+
+def manifest_records(manifest: dict[str, Any]) -> int:
+    value = manifest.get("records")
+    if isinstance(value, dict):
+        return sum(max(0, int(v or 0)) for v in value.values() if isinstance(v, (int, float, str)))
+    try:
+        return max(0, int(value or 0))
+    except Exception:
+        return 0
+
+
+def normalize_mean_one(weights: dict[str, float], lower: float, upper: float) -> dict[str, float]:
+    clamped = {key: clamp_float(value, lower, upper) for key, value in weights.items()}
+    mean = sum(clamped.values()) / max(1, len(clamped))
+    if mean <= 0:
+        return {key: 1.0 for key in clamped}
+    return {key: round(clamp_float(value / mean, lower, upper), 4) for key, value in clamped.items()}
+
+
+def build_adaptive_mixture_plan(
+    profile: dict[str, Any],
+    out_dir: Path,
+    *,
+    curation_manifest_path: str | Path | None = None,
+    external_manifest_path: str | Path | None = None,
+    agentic_manifest_path: str | Path | None = None,
+    teacher_manifest_path: str | Path | None = None,
+    output_path: str | Path | None = None,
+) -> dict[str, Any]:
+    cfg = profile_cfg(profile)
+    scheduler = cfg.get("adaptive_training_scheduler_2026")
+    scheduler_cfg = scheduler if isinstance(scheduler, dict) else {}
+    bounds = scheduler_cfg.get("sample_weight_bounds") if isinstance(scheduler_cfg.get("sample_weight_bounds"), list) else [0.25, 4.0]
+    lower = to_float(bounds[0] if bounds else 0.25, 0.25)
+    upper = to_float(bounds[1] if len(bounds) > 1 else 4.0, 4.0)
+    if lower <= 0 or upper < lower:
+        lower, upper = 0.25, 4.0
+
+    curation_path = Path(curation_manifest_path or out_dir / "manifests" / "curation_manifest.json")
+    external_path = Path(external_manifest_path or repo_root() / "weights" / "external_datasets_2026" / "latest" / "manifests" / "external_dataset_manifest.json")
+    agentic_path = Path(agentic_manifest_path or repo_root() / "weights" / "agentic_tool_training_2026" / "latest_run" / "agentic_tool_training_manifest.json")
+    teacher_path = Path(teacher_manifest_path or repo_root() / "weights" / "data_factory" / "teacher_rollouts" / "latest" / "teacher_rollout_manifest.json")
+
+    curation_manifest = read_json_if_exists(curation_path)
+    external_manifest = read_json_if_exists(external_path)
+    agentic_manifest = read_json_if_exists(agentic_path)
+    teacher_manifest = read_json_if_exists(teacher_path)
+    cleaned_manifest = read_json_if_exists(curation_manifest.get("cleaned_dataset_manifest", "")) if curation_manifest else {}
+
+    modality_counts: dict[str, int] = {modality: 0 for modality in DEFAULT_STAGE_ORDER}
+    for modality, count in manifest_modalities(curation_manifest).items():
+        if modality in modality_counts:
+            modality_counts[modality] += count
+    for modality, count in manifest_modalities(external_manifest).items():
+        if modality in modality_counts:
+            modality_counts[modality] += count
+
+    nonzero_counts = [count for count in modality_counts.values() if count > 0]
+    target_count = max(1.0, (sum(nonzero_counts) / len(nonzero_counts)) if nonzero_counts else 1.0)
+    raw_weights: dict[str, float] = {}
+    stage_rows: list[dict[str, Any]] = []
+    for modality in DEFAULT_STAGE_ORDER:
+        count = modality_counts.get(modality, 0)
+        coverage_deficit = 1.0 if count <= 0 else max(0.0, (target_count - count) / target_count)
+        media_boost = 0.25 if modality in {"image", "video", "audio", "music"} else 0.0
+        agentic_boost = 0.20 if modality in {"tool", "code", "long_context"} else 0.0
+        raw_weights[modality] = 1.0 + (1.75 * coverage_deficit) + media_boost + agentic_boost
+    weights = normalize_mean_one(raw_weights, lower, upper)
+
+    for modality in DEFAULT_STAGE_ORDER:
+        count = modality_counts.get(modality, 0)
+        stage_rows.append(
+            {
+                "stage": modality,
+                "records": count,
+                "weight": weights[modality],
+                "status": "data_gap" if count <= 0 else "ready",
+                "signals": {
+                    "modality_coverage_deficit": round(1.0 if count <= 0 else max(0.0, (target_count - count) / target_count), 6),
+                    "target_record_count": round(target_count, 2),
+                },
+                "recommended_action": "collect_or_distill_before_training" if count <= 0 else "sample_with_adaptive_weight",
+            }
+        )
+
+    context_ladder = scheduler_cfg.get("context_ladder") if isinstance(scheduler_cfg.get("context_ladder"), list) else [8192, 32768, 131072, 262144, 524288, 1048576]
+    ladder_values = [max(1024, int(value)) for value in context_ladder if isinstance(value, (int, float, str)) and str(value).strip()]
+    if not ladder_values:
+        ladder_values = [8192, 32768, 131072, 262144, 524288, 1048576]
+    ladder_values = sorted(dict.fromkeys(ladder_values))
+    ladder_total = sum(range(1, len(ladder_values) + 1)) or 1
+    context_schedule = [
+        {
+            "context_length": value,
+            "target_fraction": round((index + 1) / ladder_total, 6),
+            "route": "native_1m_retention" if value >= 1048576 else "progressive_context_expansion",
+        }
+        for index, value in enumerate(ladder_values)
+    ]
+
+    agentic_counts = agentic_manifest.get("counts") if isinstance(agentic_manifest.get("counts"), dict) else {}
+    teacher_counts = teacher_manifest.get("counts") if isinstance(teacher_manifest.get("counts"), dict) else {}
+    zero_modalities = [row["stage"] for row in stage_rows if row["records"] <= 0]
+    gates_cfg = scheduler_cfg.get("promotion_gates") if isinstance(scheduler_cfg.get("promotion_gates"), dict) else {}
+    require_nonzero = bool(gates_cfg.get("require_nonzero_all_modalities", True))
+    gate_status = "failed" if require_nonzero and zero_modalities else "passed"
+    plan = {
+        "schema": "omnicoder.adaptive_mixture_plan_2026.v1",
+        "schema_version": SCHEMA_VERSION,
+        "status": gate_status,
+        "created_at": now_iso(),
+        "enabled": bool(scheduler_cfg.get("enabled", True)),
+        "mode": scheduler_cfg.get("mode", "online_reweighting_plus_domain_mixture_agent"),
+        "signals": list(scheduler_cfg.get("signals") if isinstance(scheduler_cfg.get("signals"), list) else ADAPTIVE_SIGNAL_DEFAULTS),
+        "sample_weight_bounds": [lower, upper],
+        "manifests": {
+            "curation": str(curation_path),
+            "external": str(external_path),
+            "agentic": str(agentic_path),
+            "teacher": str(teacher_path),
+        },
+        "source_records": {
+            "curation": manifest_records(curation_manifest),
+            "external": manifest_records(external_manifest),
+            "agentic_total": sum(int(v or 0) for v in agentic_counts.values()) if agentic_counts else 0,
+            "teacher_total": sum(int(v or 0) for v in teacher_counts.values()) if teacher_counts else 0,
+        },
+        "modality_counts": modality_counts,
+        "stage_weights": stage_rows,
+        "context_schedule": context_schedule,
+        "promotion_gates": {
+            "status": gate_status,
+            "zero_modalities": zero_modalities,
+            "require_nonzero_all_modalities": require_nonzero,
+            "cleaned_dataset_status": cleaned_manifest.get("status"),
+            "max_q4_relative_regression": gates_cfg.get("max_q4_relative_regression", 0.03),
+            "min_reward_std": gates_cfg.get("min_reward_std", 0.05),
+        },
+        "notes": [
+            "Weights are normalized around mean=1 and bounded by adaptive_training_scheduler_2026.sample_weight_bounds.",
+            "Zero-record modalities fail promotion and are flagged for collection or teacher distillation before full training.",
+            "The plan is JSONL-first orchestration metadata; no ORM, SQLite, Pydantic, or SQLAlchemy is required.",
+        ],
+    }
+    target = Path(output_path or scheduler_cfg.get("emit") or out_dir / "manifests" / "mixture_plan.json")
+    write_json(target, plan)
+    plan["path"] = str(target)
+    return plan
 
 
 def parse_losses(log_path: str | Path) -> list[float]:
@@ -3406,6 +3600,20 @@ def curate_real(args: argparse.Namespace) -> dict[str, Any]:
     return build_real_corpus(profile, out_dir)
 
 
+def mix_plan(args: argparse.Namespace) -> dict[str, Any]:
+    profile = load_profile(args.profile)
+    out_dir = Path(args.out_dir or profile_cfg(profile).get("work_dir") or DEFAULT_OUT_DIR)
+    return build_adaptive_mixture_plan(
+        profile,
+        out_dir,
+        curation_manifest_path=args.curation_manifest or None,
+        external_manifest_path=args.external_manifest or None,
+        agentic_manifest_path=args.agentic_manifest or None,
+        teacher_manifest_path=args.teacher_manifest or None,
+        output_path=args.output or None,
+    )
+
+
 def run_real(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_profile(args.profile)
     out_dir = Path(args.out_dir or profile_cfg(profile).get("work_dir") or DEFAULT_OUT_DIR)
@@ -3450,6 +3658,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("validate").set_defaults(func=validate)
     sub.add_parser("inventory").set_defaults(func=inventory)
     sub.add_parser("curate-real").set_defaults(func=curate_real)
+    mix = sub.add_parser("mix-plan")
+    mix.add_argument("--curation-manifest", default="")
+    mix.add_argument("--external-manifest", default="")
+    mix.add_argument("--agentic-manifest", default="")
+    mix.add_argument("--teacher-manifest", default="")
+    mix.add_argument("--output", default="")
+    mix.set_defaults(func=mix_plan)
     run = sub.add_parser("run-real")
     run.add_argument("--steps-per-stage", type=int, default=0)
     run.add_argument("--seq-len", type=int, default=0)

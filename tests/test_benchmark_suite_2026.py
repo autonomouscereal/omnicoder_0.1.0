@@ -138,6 +138,8 @@ def test_profiles_include_seventh_wave_agentic_omni_release_gates() -> None:
         "audiobench_mmau_2026",
         "vbench2_intrinsic_faithfulness_2026",
         "music_arena_2026",
+        "browsecomp_long_context_2026",
+        "theagentcompany_enterprise_2026",
     ]:
         assert adapter_id in registry_adapters
     for adapter_id in [
@@ -151,9 +153,13 @@ def test_profiles_include_seventh_wave_agentic_omni_release_gates() -> None:
         "multimodal_audiobench_mmau_2026",
         "generation_vbench2_intrinsic_faithfulness_2026",
         "generation_music_arena_2026",
+        "agent_browsecomp_long_context_2026",
+        "agent_theagentcompany_enterprise_2026",
     ]:
         assert adapter_id in suite_adapters
     assert "agent_terminal_bench_2_1_2026" in suite["release_gates"]["agent_tool_release"]
+    assert "agent_browsecomp_long_context_2026" in suite["release_gates"]["agent_tool_release"]
+    assert "agent_theagentcompany_enterprise_2026" in suite["release_gates"]["agent_tool_release"]
     assert "multimodal_video_mme_v2_grouped_2026" in suite["release_gates"]["multimodal_understanding_release"]
     assert "generation_music_arena_2026" in suite["release_gates"]["generation_release"]
 

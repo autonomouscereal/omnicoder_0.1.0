@@ -111,6 +111,12 @@ mix:
   FysicsWorld, MME-Unify, Zero-To-CAD, ASID-1M, VisCoR, CMI-Pref, VoxEval,
   LongSpeech, UltraEval-Audio, and ATTM 2026. These are tagged as
   `seventh_wave_agentic_math_code_omni_2026_05_24` for delta materialization.
+- Eighth-wave May 24, 2026 additions add MCP-Universe and MCPMark trajectories,
+  Qwen 3.6 and Qwen agent-distillation tool traces, Computer Use PSAI,
+  BrowseCompLongContext, BrowseComp-Plus corpus/QA holdout, PaperBench,
+  TheAgentCompany, AudioMarathon, Audio-Alpaca, OpenAudioBench, and
+  VideoRewardBench. These are tagged as
+  `eighth_wave_agentic_curation_training_2026_05_24`.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for
@@ -140,14 +146,22 @@ dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
   --include-wave fifth_wave_agentic_rlvr_multimodal_2026_05_24 \
   --include-wave sixth_wave_formal_code_media_2026_05_24 \
   --include-wave seventh_wave_agentic_math_code_omni_2026_05_24 \
+  --include-wave eighth_wave_agentic_curation_training_2026_05_24 \
   build
 
 agentic-tool-train-2026 --profile profiles/agentic_tool_training_2026.json build
 
 distill-curriculum-2026 validate --profile profiles/distillation_curriculum_2026.json
 
+python -m omnicoder.training.training_orchestration_2026 \
+  --profile profiles/training_orchestration_2026.json mix-plan
+
 scripts/ai_server_dataset_training_sidecars_2026.sh all
 ```
+
+The sidecar runner now emits `mixture_plan.json`, a bounded adaptive sampling
+plan with native `8K -> 1M` context ladder targets, modality-gap flags, q4
+recovery gates, and agentic/multimodal scheduler signals for the next 20B pass.
 
 The sidecar script keeps the 20B target lane on fast GPUs `0,4,6` and uses CPU
 plus P40s for trace collection, dataset expansion, teacher-job sharding, and

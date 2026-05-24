@@ -248,3 +248,24 @@ def test_posttrain_manifest_includes_domain_contract(tmp_path: Path) -> None:
     assert manifest["domain"] == "browser"
     assert manifest["tool_training_contract"]["state_tracking_rewards"] is True
     assert "citation_support" in manifest["verifier_contract"]["reward_axes"]
+
+
+def test_repo_agentic_profile_includes_environment_rl_and_eighth_wave_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "agentic_tool_training_2026.json").read_text(encoding="utf-8"))
+    cfg = profile["agentic_tool_training"]
+
+    for family in [
+        "mcp_universe_trajectories",
+        "mcpmark_trajectory_log",
+        "browsecomp_plus_corpus",
+        "computer_use_psai",
+    ]:
+        assert family in cfg["source_families"]
+    env = cfg["environment_rl_2026"]
+    assert env["enabled"] is True
+    assert env["transition_schema"] == "agent_lightning_style_mdp_transition"
+    assert "mcp" in env["environment_contracts"]
+    assert "raw_postgresql" in env["environment_contracts"]
+    assert "mcp_state_consistency" in cfg["reward_axes"]
+    assert "successful_eval_trace_quarantine" in cfg["reward_axes"]

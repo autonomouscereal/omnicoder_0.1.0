@@ -111,3 +111,15 @@ def test_validate_reports_roles_and_schema_registry(tmp_path: Path) -> None:
     assert result["teacher_roles"]["generator"] == 1
     assert result["teacher_roles"]["verifier"] == 1
     assert "storyboard_plan" in result["schema_registry"]
+
+
+def test_repo_distillation_profile_includes_on_policy_mcp_recovery() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "distillation_curriculum_2026.json").read_text(encoding="utf-8"))
+    opd = profile["on_policy_distillation_2026"]
+    stages = {stage["id"]: stage for stage in profile["posttraining"]["stages"]}
+
+    assert opd["enabled"] is True
+    assert "q4_consistency_distill" in opd["methods"]
+    assert "mcp_state_recovery" in opd["targets"]
+    assert stages["mcp_environment_rl"]["algorithm"] == "agent_lightning_style_async_grpo"

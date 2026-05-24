@@ -598,6 +598,58 @@ def test_run_real_cli_wires_live_posttraining_args(tmp_path, monkeypatch):
     assert captured["args"].posttrain_steps == 2
 
 
+def test_adaptive_mixture_plan_reweights_sparse_modalities(tmp_path):
+    profile = _profile(tmp_path)
+    profile["adaptive_training_scheduler_2026"] = {
+        "enabled": True,
+        "sample_weight_bounds": [0.25, 4.0],
+        "context_ladder": [8192, 32768, 1048576],
+        "promotion_gates": {"require_nonzero_all_modalities": True},
+    }
+    out_dir = tmp_path / "out"
+    manifests = out_dir / "manifests"
+    manifests.mkdir(parents=True)
+    curation_manifest = manifests / "curation_manifest.json"
+    curation_manifest.write_text(
+        json.dumps(
+            {
+                "records": 18,
+                "modalities": {"text": 12, "code": 4, "tool": 2, "image": 0, "video": 0, "audio": 0, "music": 0, "long_context": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    external_manifest = tmp_path / "external.json"
+    external_manifest.write_text(json.dumps({"records": {"train": 6}, "modalities": {"image": 2, "video": 1, "audio": 1, "music": 1, "long_context": 1}}), encoding="utf-8")
+
+    plan = orch.build_adaptive_mixture_plan(
+        profile,
+        out_dir,
+        curation_manifest_path=curation_manifest,
+        external_manifest_path=external_manifest,
+        agentic_manifest_path=tmp_path / "missing_agentic.json",
+        teacher_manifest_path=tmp_path / "missing_teacher.json",
+    )
+
+    weights = {row["stage"]: row["weight"] for row in plan["stage_weights"]}
+    assert plan["status"] == "passed"
+    assert weights["video"] > weights["text"]
+    assert weights["long_context"] > weights["text"]
+    assert plan["context_schedule"][-1]["context_length"] == 1048576
+    assert Path(plan["path"]).exists()
+
+
+def test_repo_training_profile_enables_adaptive_scheduler() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "training_orchestration_2026.json").read_text(encoding="utf-8"))
+    scheduler = profile["adaptive_training_scheduler_2026"]
+
+    assert scheduler["enabled"] is True
+    assert scheduler["context_ladder"][-1] == 1048576
+    assert "modality_coverage_deficit" in scheduler["signals"]
+    assert profile["artifacts"]["mixture_plan"].endswith("mixture_plan.json")
+
+
 def test_training_data_eval_layers_do_not_import_forbidden_database_libraries():
     forbidden = (
         "pydantic",

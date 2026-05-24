@@ -16,6 +16,13 @@ failures, and stop safely. It uses 2025-2026 trace formats and the repo's
 JSONL-first harness. Raw PostgreSQL mirroring is allowed through schema files,
 while the training path stays JSONL-first.
 
+`agentic_tool_training.environment_rl_2026` now defines the transition contract
+for OpenEnv/Agent-Lightning-style rollouts: policy version, environment id,
+observation, action, tool result, reward, and done. Supported environments are
+MCP, terminal, browser, raw PostgreSQL, and ComfyUI. Negative replay includes
+MCP tool-description poisoning, credential-request injection, and hidden-eval
+solution leakage.
+
 ## Source Traces
 
 Accepted sources are immutable tool traces with enough provenance to reproduce
@@ -29,6 +36,8 @@ or audit the action:
   GitLab, Keycloak, Mailcow, Wazuh, iTop, SearXNG, and the AI proxy.
 - Synthetic teacher traces generated from accepted real traces for repair,
   masking, negative sampling, and reward labeling.
+- MCP-Universe, MCPMark, BrowseComp corpus rows, Computer Use PSAI, and strict
+  local Codex/Claude/Hermes traces from the eighth-wave curation registry.
 
 Every source row must preserve `source`, `source_date`, `trace_id`,
 `session_id`, `turn_index`, `event_type`, `created_at`, `tool_name`,

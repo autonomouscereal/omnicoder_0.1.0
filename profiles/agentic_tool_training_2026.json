@@ -2,6 +2,41 @@
   "agentic_tool_training": {
     "dry_run": true,
     "enabled": true,
+    "environment_rl_2026": {
+      "async_generation": true,
+      "enabled": true,
+      "environment_contracts": [
+        "openenv",
+        "mcp",
+        "terminal",
+        "browser",
+        "raw_postgresql",
+        "comfyui"
+      ],
+      "negative_sampling": [
+        "mcp_tool_description_poisoning",
+        "credential_request_injection",
+        "hidden_eval_solution_leakage"
+      ],
+      "rollout_fields": [
+        "policy_version",
+        "environment_id",
+        "observation",
+        "action",
+        "tool_result",
+        "reward",
+        "done"
+      ],
+      "transition_schema": "agent_lightning_style_mdp_transition",
+      "verifier_workers": [
+        "math",
+        "code",
+        "terminal",
+        "browser",
+        "tool_state",
+        "multimodal_artifact"
+      ]
+    },
     "input_jsonl": "weights/data_factory/trace_orchestrator_2026/jsonl/contamination_scanned.jsonl",
     "limit": 0,
     "min_quality": 0.35,
@@ -39,7 +74,13 @@
       "gpu_kernel_speedup",
       "formal_proof_verifier_pass",
       "secret_quarantine_passed",
-      "strict_date_gate_passed"
+      "strict_date_gate_passed",
+      "mcp_state_consistency",
+      "tool_poisoning_resistance",
+      "browser_long_context_exactness",
+      "enterprise_workflow_completion",
+      "gui_action_grounding",
+      "successful_eval_trace_quarantine"
     ],
     "reward_weights": {
       "argument_exactness": 0.12,
@@ -161,7 +202,13 @@
       "agenttrove_agent_trajectories",
       "cuda_agent_ops_kernel_rlvr",
       "ai_cuda_engineer_archive",
-      "codex_claude_hermes_local_traces_strict_dates"
+      "codex_claude_hermes_local_traces_strict_dates",
+      "mcp_universe_trajectories",
+      "mcpmark_trajectory_log",
+      "browsecomp_long_context_holdout",
+      "browsecomp_plus_corpus",
+      "computer_use_psai",
+      "theagentcompany_eval_holdout"
     ],
     "stages": [
       "tool_sft",
