@@ -82,6 +82,64 @@ gold fields are present. The training checkpoint gate writes
 passes it to `run-reportable`; missing authorized snapshots still fail closed
 under the default `missing_reportable_policy`.
 
+### Reportable Prediction Harness
+
+Use `omnicoder.eval.reportable_prediction_harness_2026` to generate the
+prediction JSONL consumed by `run-reportable`. The harness validates authorized
+task metadata before generation, strips oracle/gold fields from model requests,
+and writes rows keyed by `benchmark_id` and `task_id` with one model-output
+field such as `prediction`, `model_patch`, `model_actions`, `tool_call`, or
+`artifact_path`.
+
+No-network fixture mode is for tests and contract checks only:
+
+```powershell
+python -m omnicoder.eval.reportable_prediction_harness_2026 `
+  --backend fixture `
+  --model fixture-local `
+  --tasks data/eval/reportable_2026/mmmu_pro_authorized.jsonl `
+  --out weights/benchmarks_2026/predictions/mmmu_fixture_predictions.jsonl
+```
+
+Local OpenAI-compatible serving:
+
+```powershell
+python -m omnicoder.eval.reportable_prediction_harness_2026 `
+  --backend openai-compatible `
+  --base-url http://127.0.0.1:8000/v1 `
+  --model omnicoder2026-local `
+  --tasks data/eval/reportable_2026/mmmu_pro_authorized.jsonl `
+  --out weights/benchmarks_2026/predictions/mmmu_predictions.jsonl `
+  --force
+```
+
+Local checkpoint runner mode invokes a command once per task. The command reads
+one sanitized JSON request on stdin and writes either plain text or JSON such as
+`{"prediction":"C"}` / `{"model_patch":"diff ..."}` to stdout:
+
+```powershell
+python -m omnicoder.eval.reportable_prediction_harness_2026 `
+  --backend checkpoint-runner `
+  --checkpoint-runner "python tools/local_checkpoint_predict.py" `
+  --checkpoint-path weights/release/checkpoint `
+  --model weights/release/checkpoint `
+  --tasks data/eval/reportable_2026/swe_bench_live_authorized.jsonl `
+  --out weights/benchmarks_2026/predictions/swe_live_predictions.jsonl
+```
+
+Then score the generated predictions:
+
+```powershell
+benchmark-suite-2026 `
+  --profile profiles/benchmark_suite_2026.json `
+  --model weights/release/checkpoint `
+  --out-dir weights/benchmarks_2026/reportable/<run_id> `
+  run-reportable `
+  --tasks data/eval/reportable_2026 `
+  --predictions weights/benchmarks_2026/predictions/swe_live_predictions.jsonl `
+  --cycle release
+```
+
 The release registry now includes fresh RLVR and media-preference gates for
 RLVR Linearity, Nous RLVR Coding, EditReward-Bench, IESBench, Stable Video
 Infinity, and text-to-audio human preference evaluation. The latest expansion

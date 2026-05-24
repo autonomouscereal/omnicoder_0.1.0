@@ -227,7 +227,7 @@ scripts/ai_server_dataset_training_sidecars_2026.sh preflight
 
 # Trace mining, ComfyUI artifact indexing, external dataset expansion,
 # strict local trace export, teacher-job sharding, modality-teacher jobs,
-# and P40 teacher rollouts.
+# P40 teacher rollouts, real media-teacher rollouts, and coverage validation.
 OMNICODER_MAX_RECORDS_PER_DATASET=1024 \
 OMNICODER_TEACHER_LIMIT=256 \
 scripts/ai_server_dataset_training_sidecars_2026.sh all
@@ -245,6 +245,13 @@ scripts/ai_server_dataset_training_sidecars_2026.sh external-expansion
 # Modality-specific distillation job JSONL for Qwen Image/Edit, LTX, ACE-Step,
 # and omni/audio teachers.
 scripts/ai_server_dataset_training_sidecars_2026.sh modality-teacher-jobs
+
+# Real artifact-backed Qwen Image/Edit, LTX, and ACE media teacher rollouts.
+# Do this at a GPU boundary, not while the 20B target training container is
+# actively using the same fast cards.
+OMNICODER_MEDIA_TEACHER_ROLLOUT_MODE=live \
+OMNICODER_MEDIA_TEACHER_LIMIT=64 \
+scripts/ai_server_dataset_training_sidecars_2026.sh media-teacher-rollouts
 
 # Read-only proof that artifacts are materialized, not just declared.
 OMNICODER_REQUIRE_MEDIA_TEACHER_ROLLOUTS=1 \
@@ -284,6 +291,17 @@ teacher jobs, Qwen/P40 rollout outputs, optional Qwen/LTX/ACE media rollout
 outputs, mixture plans, and reportable eval task roots. Set
 `OMNICODER_COVERAGE_STRICT=1` when missing materialized coverage should stop a
 promotion or next-stage launch.
+
+`media-teacher-rollouts` consumes
+`weights/data_factory/runs/teacher_jobs/<run_id>/modality/all_modality_teacher_jobs.jsonl`
+and writes artifact-backed rows under
+`weights/data_factory/teacher_rollouts/<run_id>`, including
+`media_teacher_rollouts.jsonl`, `qwen_image_rollouts.jsonl`,
+`ltx_video_rollouts.jsonl`, `ace_music_rollouts.jsonl`, and
+`media_teacher_rollout_manifest.json`. In `live` mode the action is strict by
+default in the sidecar script: failed Qwen/LTX/ACE execution blocks promotion
+instead of producing contract-only rows. `dry-run` and `report` exist for
+CPU-safe wiring checks only.
 
 ## Adaptive Mixture Controller
 

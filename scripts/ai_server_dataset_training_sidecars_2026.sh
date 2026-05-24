@@ -23,6 +23,8 @@ LOCAL_TRACE_SOURCE="${OMNICODER_LOCAL_TRACE_SOURCE:-weights/curated_datasets_202
 COVERAGE_STRICT="${OMNICODER_COVERAGE_STRICT:-0}"
 REQUIRE_MEDIA_TEACHER_ROLLOUTS="${OMNICODER_REQUIRE_MEDIA_TEACHER_ROLLOUTS:-1}"
 REQUIRE_REPORTABLE_TASKS="${OMNICODER_REQUIRE_REPORTABLE_TASKS:-0}"
+MEDIA_TEACHER_ROLLOUT_MODE="${OMNICODER_MEDIA_TEACHER_ROLLOUT_MODE:-live}"
+MEDIA_TEACHER_LIMIT="${OMNICODER_MEDIA_TEACHER_LIMIT:-$TEACHER_LIMIT}"
 ACTION="${1:-all}"
 
 cd "$ROOT"
@@ -504,6 +506,38 @@ PY
   fi
 }
 
+media_teacher_rollouts() {
+  local job_dir="${TEACHER_JOB_ROOT}/${RUN_ID}/modality"
+  local jobs="$job_dir/all_modality_teacher_jobs.jsonl"
+  local out_dir="weights/data_factory/teacher_rollouts/${RUN_ID}"
+  mkdir -p "$out_dir/logs"
+  if [[ ! -s "$jobs" ]]; then
+    echo "no queued modality teacher jobs found: $jobs" >&2
+    exit 7
+  fi
+  log "run media teacher rollouts mode=${MEDIA_TEACHER_ROLLOUT_MODE}"
+  local args=(
+    -m omnicoder.data_factory.media_teacher_rollouts_2026
+    --input "$jobs"
+    --out-dir "$out_dir"
+    --mode "$MEDIA_TEACHER_ROLLOUT_MODE"
+    --limit "$MEDIA_TEACHER_LIMIT"
+    --resume
+  )
+  if [[ "$MEDIA_TEACHER_ROLLOUT_MODE" == "live" ]]; then
+    args+=(--strict-live)
+  fi
+  "$PYTHON_BIN" "${args[@]}" | tee "$out_dir/logs/media_teacher_rollouts.stdout.json"
+  if [[ ! -s "$out_dir/media_teacher_rollouts.jsonl" ]]; then
+    echo "media teacher rollouts produced no rows" >&2
+    exit 8
+  fi
+  if truthy "$PROMOTE_LATEST"; then
+    ln -sfn "$ROOT/$out_dir" weights/data_factory/teacher_rollouts/latest
+  fi
+  log "media teacher rollout dir: $out_dir"
+}
+
 status() {
   preflight
   log "latest external manifest"
@@ -550,6 +584,7 @@ case "$ACTION" in
   modality-teacher-jobs) modality_teacher_jobs ;;
   mix-plan) mix_plan ;;
   p40-teacher) p40_teacher_rollouts ;;
+  media-teacher-rollouts) media_teacher_rollouts ;;
   coverage-report) coverage_report ;;
   status) status ;;
   all)
@@ -562,6 +597,7 @@ case "$ACTION" in
     modality_teacher_jobs
     mix_plan
     p40_teacher_rollouts
+    media_teacher_rollouts
     coverage_report
     status
     ;;
