@@ -110,6 +110,57 @@ def test_dataset_expansion_falls_back_to_distillation_seeds_after_hf_failure(tmp
     assert manifest["records"]["research_internal"] == 1
     assert manifest["modalities"]["image"] == 1
     assert manifest["datasets"][0]["synthetic_seed_only"] is True
+    assert manifest["synthetic_seed_families"]["image_generation_editing"] == 1
+
+
+def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    _write_jsonl(root / "data" / "math.jsonl", [{"problem": "Solve 1+1.", "answer": "2", "uuid": "m1"}])
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "required_real_family_min_records": {
+                "math_reasoning": {"bucket": "train", "min_real": 1},
+                "coding_agentic": {"bucket": "train", "min_real": 1},
+            },
+            "datasets": [
+                {
+                    "name": "unit_math",
+                    "family": "math_reasoning",
+                    "target_modality": "text",
+                    "local_jsonl": "data/math.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                    "field_map": {"prompt": ["problem"], "target": ["answer"], "id": ["uuid"]},
+                },
+                {
+                    "name": "seeded_code",
+                    "family": "coding_agentic",
+                    "target_modality": "code",
+                    "license": "internal",
+                    "license_tier": "internal_seed",
+                    "use_policy": "train",
+                    "distillation_prompts": [{"instruction": "fix bug", "target": "patch"}],
+                },
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": False, "no_streaming": False, "max_records_per_dataset": 0, "enforce_requirements": False})(),
+    )
+
+    assert manifest["status"] == "failed_requirements"
+    assert manifest["real_families"]["math_reasoning"] == 1
+    assert manifest["synthetic_seed_families"]["coding_agentic"] == 1
+    report = manifest["requirement_report"]
+    assert report["requirements"]["math_reasoning"]["status"] == "passed"
+    assert report["requirements"]["coding_agentic"]["status"] == "failed"
 
 
 def test_huggingface_iteration_errors_do_not_abort_expansion(monkeypatch) -> None:
@@ -197,6 +248,44 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
         "MultiEdit",
         "NVIDIA Granary",
         "AR-Omni-Instruct-v0.1",
+        "DIVER Training OpenR1 Math 46k",
+        "VLM-CapCurriculum TextReasoning",
+        "Frugal Thinking RL Data",
+        "FleetAI Tool-Use Difficult Envs",
+        "FleetAI Thinking Tools Difficult Envs",
+        "ATBench Agent Trajectory Safety",
+        "InternVL-U ScaleEdit-12M",
+        "BLIP3o NEXT Edit Ensemble",
+        "Complex Long Video Understanding Reasoning",
+        "NVIDIA Nemotron-SFT-SWE-v2",
+        "NVIDIA SWE-Hero OpenHands Trajectories",
+        "NVIDIA Nemotron-SFT Competitive Programming v2",
+        "OpenResearcher Dataset",
+        "OpenResearcher Corpus",
+        "WebWalkerQA",
+        "Text-to-Terminal v2 Tool Reasoning Cleaned",
+        "NuminaMath 1.5 RL Verifiable",
+        "DeepSearch-2510",
+        "SWE-bench-Live OS-bench",
+        "ContextBench TraceBench",
+        "NJU CodeTraceBench",
+        "Terminal-Bench 2.0 Trajectories",
+        "OmniAgent MAgenIT Data",
+        "NVIDIA Nemotron Image Training v3",
+        "PRISM VLM RL Dataset",
+        "Innovator VL RL 172K",
+        "NVIDIA AudioSkills XL",
+        "Pico-Banana-400K",
+        "ImgEdit 1.2M",
+        "VIBE Benchmark",
+        "CompBench Complex Editing",
+        "Video-MME",
+        "LVBench",
+        "PhyWorldBench",
+        "MusicEval",
+        "MCIF Crosslingual Multimodal Instruction Following",
+        "Multimodal RewardBench 2",
+        "VoiceAgentBench",
     ]:
         assert name in by_name
 
@@ -206,4 +295,29 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     assert by_name["CoderForge-Preview"]["use_policy"] == "research_internal"
     assert by_name["OmniEdit-Filtered-1.2M"]["use_policy"] == "train"
     assert by_name["AR-Omni-Instruct-v0.1"]["use_policy"] == "research_internal"
-    assert by_name["Open-MM-RL"]["use_policy"] == "blocked_until_review"
+    assert by_name["Open-MM-RL"]["use_policy"] == "train"
+    assert by_name["ATBench Agent Trajectory Safety"]["use_policy"] == "eval_only"
+    assert by_name["InternVL-U ScaleEdit-12M"]["use_policy"] == "train"
+    assert by_name["OpenGPT-4o-Image"]["use_policy"] == "train"
+    assert by_name["ShareGPT-4o-Image"]["use_policy"] == "train"
+    assert by_name["NVIDIA Nemotron-SFT-SWE-v2"]["use_policy"] == "train"
+    assert by_name["OpenResearcher Dataset"]["use_policy"] == "research_internal"
+    assert by_name["WebWalkerQA"]["use_policy"] == "eval_only"
+    assert by_name["MCIF Crosslingual Multimodal Instruction Following"]["use_policy"] == "train"
+    assert by_name["Terminal-Bench 2.0 Trajectories"]["use_policy"] == "research_internal"
+    assert by_name["Video-MME"]["use_policy"] == "eval_only"
+    assert by_name["Multimodal RewardBench 2"]["use_policy"] == "eval_only"
+
+    requirements = profile["external_dataset_registry_2026"]["required_real_family_min_records"]
+    for family in [
+        "math_reasoning",
+        "coding_agentic",
+        "agentic_tool_reasoning",
+        "terminal_browser_agents",
+        "image_generation_editing",
+        "video_generation",
+        "audio_music_speech",
+        "music_generation",
+        "omnimodal_understanding",
+    ]:
+        assert family in requirements

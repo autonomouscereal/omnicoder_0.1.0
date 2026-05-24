@@ -21,7 +21,18 @@ CREATE TABLE IF NOT EXISTS agentic_tool_examples_2026 (
     trace_id TEXT NOT NULL,
     record_hash TEXT NOT NULL,
     training_kind TEXT NOT NULL CHECK (
-        training_kind IN ('tool_sft','tool_reward','tool_preference','tool_rlvr','tool_safety_negative')
+        training_kind IN (
+            'tool_sft',
+            'tool_reward',
+            'tool_preference',
+            'tool_rlvr',
+            'tool_safety_negative',
+            'math_rlvr',
+            'code_rlvr',
+            'terminal_rlvr',
+            'browser_rlvr',
+            'multimodal_rlvr'
+        )
     ),
     source_date DATE,
     messages JSONB NOT NULL DEFAULT '[]'::jsonb,

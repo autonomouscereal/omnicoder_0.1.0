@@ -10,6 +10,9 @@ TEACHER_LIMIT="${OMNICODER_TEACHER_LIMIT:-256}"
 MAX_GPU_TEMP="${OMNICODER_MAX_GPU_TEMP:-78}"
 TEACHER_JOB_ROOT="${OMNICODER_TEACHER_JOB_ROOT:-weights/data_factory/runs/teacher_jobs}"
 PYTHON_BIN="${OMNICODER_DATA_PYTHON:-python3}"
+ENFORCE_DATASET_MINIMA="${OMNICODER_ENFORCE_DATASET_MINIMA:-1}"
+TRACE_LIMIT="${OMNICODER_TRACE_LIMIT:-0}"
+LMSTUDIO_TRACE_LIMIT="${OMNICODER_LMSTUDIO_TRACE_LIMIT:-100000}"
 ACTION="${1:-all}"
 
 cd "$ROOT"
@@ -19,6 +22,22 @@ export OMNICODER_TRACE_WORK_DIR="${OMNICODER_TRACE_WORK_DIR:-weights/data_factor
 
 log() {
   printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+}
+
+require_nonempty_jsonl() {
+  local path="$1"
+  local label="$2"
+  if [[ ! -s "$path" ]]; then
+    echo "required trace artifact is missing or empty: $label -> $path" >&2
+    exit 11
+  fi
+  local rows
+  rows=$(wc -l < "$path" | tr -d ' ')
+  if [[ "${rows:-0}" -le 0 ]]; then
+    echo "required trace artifact has zero rows: $label -> $path" >&2
+    exit 12
+  fi
+  log "trace gate passed: $label rows=$rows path=$path"
 }
 
 preflight() {
@@ -32,32 +51,59 @@ preflight() {
 
 collect_curate() {
   local out="weights/data_factory/runs/${RUN_ID}"
-  mkdir -p "$out/logs" data/raw/codex_traces_2026 data/raw/claude_traces_2026 data/raw/comfyui_outputs_2026 data/raw
+  local codex_out="data/raw/codex_traces_2026/codex_ai_${RUN_ID}.jsonl"
+  local claude_out="data/raw/claude_traces_2026/claude_ai_${RUN_ID}.jsonl"
+  local hermes_out="data/raw/hermes_traces_2026/hermes_ai_${RUN_ID}.jsonl"
+  local lmstudio_out="data/raw/lmstudio_traces_2026/lmstudio_ai_${RUN_ID}.jsonl"
+  local comfy_out="data/raw/comfyui_outputs_2026/comfyui_${RUN_ID}.jsonl"
+  mkdir -p "$out/logs" data/raw/codex_traces_2026 data/raw/claude_traces_2026 data/raw/hermes_traces_2026 data/raw/lmstudio_traces_2026 data/raw/comfyui_outputs_2026 data/raw
   log "export agent-memory PostgreSQL audit"
   "$PYTHON_BIN" -m omnicoder.data_factory.curated_dataset_builder_2026 \
     --profile "$PROFILE" \
     --out-dir "weights/curated_datasets_2026/runs/${RUN_ID}" \
-    export-agent-memory | tee "$out/logs/agent_memory_export.json" || true
+    export-agent-memory | tee "$out/logs/agent_memory_export.json" || log "agent-memory PostgreSQL export failed; requiring pre-exported data/raw/agent_memory_events_2026.jsonl"
+  require_nonempty_jsonl "data/raw/agent_memory_events_2026.jsonl" "agent_memory_events"
   log "collect Codex traces"
   "$PYTHON_BIN" -m omnicoder.data_factory.memory_trace_collectors_2026 collect-codex \
     --input /home/cereal/.codex \
-    --out "data/raw/codex_traces_2026/codex_ai_${RUN_ID}.jsonl" \
-    --source-date 2026-05-24 --min-year 2025 --max-year 2026 --limit 0 || true
+    --out "$codex_out" \
+    --source-date 2026-05-24 --min-year 2025 --max-year 2026 --limit "$TRACE_LIMIT"
+  require_nonempty_jsonl "$codex_out" "codex_traces"
   log "collect Claude traces"
   "$PYTHON_BIN" -m omnicoder.data_factory.memory_trace_collectors_2026 collect-claude \
     --input /home/cereal/.claude \
-    --out "data/raw/claude_traces_2026/claude_ai_${RUN_ID}.jsonl" \
-    --source-date 2026-05-24 --min-year 2025 --max-year 2026 --limit 0 \
-    --source-kind auto || true
+    --out "$claude_out" \
+    --source-date 2026-05-24 --min-year 2025 --max-year 2026 --limit "$TRACE_LIMIT" \
+    --source-kind auto
+  require_nonempty_jsonl "$claude_out" "claude_traces"
+  if [[ -d /home/cereal/.hermes ]]; then
+    log "collect Hermes traces"
+    "$PYTHON_BIN" -m omnicoder.data_factory.memory_trace_collectors_2026 collect-generic \
+      --input /home/cereal/.hermes \
+      --out "$hermes_out" \
+      --source-date 2026-05-24 --min-year 2025 --max-year 2026 --limit "$TRACE_LIMIT" \
+      --collector hermes_trace
+    require_nonempty_jsonl "$hermes_out" "hermes_traces"
+  fi
+  if [[ -d /home/cereal/.lmstudio ]]; then
+    log "collect LM Studio conversations"
+    "$PYTHON_BIN" -m omnicoder.data_factory.memory_trace_collectors_2026 collect-generic \
+      --input /home/cereal/.lmstudio \
+      --out "$lmstudio_out" \
+      --source-date 2026-05-24 --min-year 2025 --max-year 2026 --limit "$LMSTUDIO_TRACE_LIMIT" \
+      --collector lmstudio_conversation
+    require_nonempty_jsonl "$lmstudio_out" "lmstudio_traces"
+  fi
   log "collect ComfyUI media manifests"
   "$PYTHON_BIN" -m omnicoder.data_factory.ingest_comfyui_outputs \
     --input /home/cereal/comfyui/output \
-    --out "data/raw/comfyui_outputs_2026/comfyui_${RUN_ID}.jsonl" \
+    --out "$comfy_out" \
     --dataset_name comfyui_outputs_2026 \
     --namespace train --bucket multimodal_media --split train \
-    --source_date 2026-05-24 --license internal --limit 0 || true
+    --source_date 2026-05-24 --license internal --limit 0
+  require_nonempty_jsonl "$comfy_out" "comfyui_media_manifests"
   log "run trace orchestrator"
-  "$PYTHON_BIN" -m omnicoder.data_factory.trace_orchestrator_2026 --profile "$PROFILE" > "$out/logs/trace_orchestrator.log" 2>&1 || true
+  "$PYTHON_BIN" -m omnicoder.data_factory.trace_orchestrator_2026 --profile "$PROFILE" > "$out/logs/trace_orchestrator.log" 2>&1
   log "build run-scoped curated dataset"
   "$PYTHON_BIN" -m omnicoder.data_factory.curated_dataset_builder_2026 \
     --profile "$PROFILE" \
@@ -69,6 +115,10 @@ collect_curate() {
 
 external_expansion() {
   local out="weights/external_datasets_2026/runs/${RUN_ID}"
+  local requirement_args=()
+  if [[ "$ENFORCE_DATASET_MINIMA" == "1" || "$ENFORCE_DATASET_MINIMA" == "true" ]]; then
+    requirement_args+=(--enforce-requirements)
+  fi
   mkdir -p "$out"
   log "build external dataset expansion"
   "$PYTHON_BIN" -m omnicoder.data_factory.dataset_expansion_2026 \
@@ -76,6 +126,7 @@ external_expansion() {
     --out-dir "$out" \
     --download \
     --max-records-per-dataset "$MAX_RECORDS_PER_DATASET" \
+    "${requirement_args[@]}" \
     build | tee "$out/external_dataset_manifest.stdout.json"
   "$PYTHON_BIN" - <<'PY'
 import json
@@ -88,6 +139,25 @@ if int(records.get("train") or 0) <= 0:
 PY
   ln -sfn "$ROOT/$out" weights/external_datasets_2026/latest
   log "promoted external dataset symlink to $out"
+}
+
+agentic_tool_training() {
+  local out="weights/agentic_tool_training_2026"
+  local run_out="weights/agentic_tool_training_2026/runs/${RUN_ID}"
+  local source="${OMNICODER_TRACE_WORK_DIR}/jsonl/contamination_scanned.jsonl"
+  mkdir -p "$out" "$run_out"
+  require_nonempty_jsonl "$source" "trace_orchestrator_contamination_scanned"
+  log "build agentic tool SFT/reward/preference/RLVR exports"
+  "$PYTHON_BIN" -m omnicoder.training.agentic_tool_training_2026 \
+    --profile profiles/agentic_tool_training_2026.json \
+    build \
+    --input "$source" \
+    --out-dir "$out" \
+    --limit 0 | tee "$run_out/agentic_tool_training_manifest.stdout.json"
+  cp "$out"/tool_*.jsonl "$run_out"/ 2>/dev/null || true
+  cp "$out"/agentic_tool_training_manifest.json "$run_out"/ 2>/dev/null || true
+  ln -sfn "$ROOT/$run_out" weights/agentic_tool_training_2026/latest_run
+  log "agentic tool training exports refreshed in $out"
 }
 
 build_jobs_if_present() {
@@ -191,6 +261,20 @@ p40_teacher_rollouts() {
     echo "teacher rollouts produced no combined rows" >&2
     exit 5
   fi
+  local refreshed_source="weights/agentic_tool_training_2026/runs/${RUN_ID}/trace_plus_teacher_rollouts.jsonl"
+  mkdir -p "$(dirname "$refreshed_source")"
+  if [[ -s "${OMNICODER_TRACE_WORK_DIR}/jsonl/contamination_scanned.jsonl" ]]; then
+    cat "${OMNICODER_TRACE_WORK_DIR}/jsonl/contamination_scanned.jsonl" "$out_dir/qwen36_agentic_math_code_tool.jsonl" > "$refreshed_source"
+  else
+    cp "$out_dir/qwen36_agentic_math_code_tool.jsonl" "$refreshed_source"
+  fi
+  log "refresh agentic RLVR exports with teacher rollout rows"
+  "$PYTHON_BIN" -m omnicoder.training.agentic_tool_training_2026 \
+    --profile profiles/agentic_tool_training_2026.json \
+    build \
+    --input "$refreshed_source" \
+    --out-dir weights/agentic_tool_training_2026 \
+    --limit 0 > "weights/agentic_tool_training_2026/runs/${RUN_ID}/agentic_tool_training_after_teacher.stdout.json"
   "$PYTHON_BIN" - <<PY
 import json
 from pathlib import Path
@@ -221,18 +305,22 @@ PY
   fi
   log "teacher rollout counts"
   find weights/data_factory/teacher_rollouts/latest -maxdepth 1 -name '*.jsonl' -print -exec wc -l {} \; 2>/dev/null || true
+  log "agentic tool training counts"
+  find weights/agentic_tool_training_2026 -maxdepth 1 -name 'tool_*.jsonl' -print -exec wc -l {} \; 2>/dev/null || true
 }
 
 case "$ACTION" in
   preflight) preflight ;;
   collect-curate) collect_curate ;;
   external-expansion) external_expansion ;;
+  agentic-tool-training) agentic_tool_training ;;
   teacher-jobs) teacher_jobs ;;
   p40-teacher) p40_teacher_rollouts ;;
   status) status ;;
   all)
     preflight
     collect_curate
+    agentic_tool_training
     external_expansion
     teacher_jobs
     p40_teacher_rollouts

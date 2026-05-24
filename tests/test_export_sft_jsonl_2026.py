@@ -43,3 +43,28 @@ def test_export_trace_conversations_orders_tool_events(tmp_path: Path) -> None:
     assert any(message["role"] == "tool" and "1 passed" in message["content"] for message in messages)
     assert messages[-1]["content"] == "Done."
 
+
+def test_export_trace_conversations_emits_normalized_tool_fields(tmp_path: Path) -> None:
+    source = tmp_path / "curated.jsonl"
+    row = {
+        "input_json": {
+            "messages": [{"role": "assistant", "content": "I will inspect the file."}],
+            "tool_name": "shell_command",
+            "tool_input": {"command": "rg TODO src"},
+        },
+        "target_json": {
+            "content": "The search completed.",
+            "tool_output": {"exit_code": 0, "stdout": "src/app.py:TODO"},
+        },
+        "quality": {"score": 1.0},
+        "lineage": {"trace_id": "trace-tool-fields", "step_index": 1},
+    }
+    source.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    out = tmp_path / "sft.jsonl"
+
+    count = export_sft.export_trace_conversations(source, out, min_quality=0.0, allow_contaminated=False)
+    messages = json.loads(out.read_text(encoding="utf-8").splitlines()[0])["messages"]
+
+    assert count == 1
+    assert any(message["role"] == "assistant" and "tool_call" in message["content"] for message in messages)
+    assert any(message["role"] == "tool" and "src/app.py:TODO" in message["content"] for message in messages)

@@ -111,12 +111,12 @@ def iter_files(inputs: Sequence[Path], suffixes: set[str] | None = None) -> Iter
 def iter_jsonish_records(inputs: Sequence[Path]) -> Iterable[dict[str, Any]]:
     for path in iter_files(inputs):
         suffix = path.suffix.lower()
-        try:
-            text = _read_text(path)
-        except OSError as exc:
-            yield {"path": str(path), "line": 0, "type": "read_error", "error": str(exc)}
-            continue
         if suffix == ".json":
+            try:
+                text = _read_text(path)
+            except OSError as exc:
+                yield {"path": str(path), "line": 0, "type": "read_error", "error": str(exc)}
+                continue
             try:
                 payload = json.loads(text)
             except Exception as exc:
@@ -130,19 +130,26 @@ def iter_jsonish_records(inputs: Sequence[Path]) -> Iterable[dict[str, Any]]:
                 else:
                     yield {"path": str(path), "line": index, "type": "json_value", "content": item}
             continue
-        for line_number, line in enumerate(text.splitlines(), start=1):
-            if not line.strip():
-                continue
-            try:
-                item = json.loads(line)
-            except Exception:
-                item = {"type": "raw_line", "content": line}
-            if isinstance(item, dict):
-                item.setdefault("path", str(path))
-                item.setdefault("line", line_number)
-                yield item
-            else:
-                yield {"path": str(path), "line": line_number, "type": "json_value", "content": item}
+        try:
+            handle = path.open("r", encoding="utf-8", errors="surrogateescape")
+        except OSError as exc:
+            yield {"path": str(path), "line": 0, "type": "read_error", "error": str(exc)}
+            continue
+        with handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                raw_line = line.rstrip("\r\n")
+                try:
+                    item = json.loads(raw_line)
+                except Exception:
+                    item = {"type": "raw_line", "content": raw_line}
+                if isinstance(item, dict):
+                    item.setdefault("path", str(path))
+                    item.setdefault("line", line_number)
+                    yield item
+                else:
+                    yield {"path": str(path), "line": line_number, "type": "json_value", "content": item}
 
 
 def _stringify(value: Any) -> str:
@@ -435,6 +442,68 @@ def claude_or_agent_memory_row(event: dict[str, Any], bucket: str, split: str, s
     return claude_event_row(event, bucket, split, source_date)
 
 
+def generic_agent_event_row(
+    event: dict[str, Any],
+    bucket: str,
+    split: str,
+    source_date: str | None,
+    *,
+    collector: str = "generic_agent_trace",
+) -> dict[str, Any] | None:
+    item = _item_from_event(event)
+    messages = item.get("messages") or item.get("conversation") or item.get("conversations")
+    if isinstance(messages, str):
+        try:
+            messages = json.loads(messages)
+        except Exception:
+            messages = [{"role": "assistant", "content": messages}]
+    content = first_text(
+        messages
+        or item.get("content")
+        or item.get("prompt")
+        or item.get("instruction")
+        or item.get("response")
+        or item.get("completion")
+        or item
+    )
+    tool_name = item.get("tool_name") or item.get("name") or item.get("function_name")
+    tool_input = item.get("tool_input") or item.get("input") or item.get("arguments") or item.get("args") or {}
+    tool_output = item.get("tool_output") or item.get("output") or item.get("result") or item.get("observation") or {}
+    nested_tool_name, nested_tool_input, nested_tool_output = _tool_from_content(messages)
+    if nested_tool_name and not tool_name:
+        tool_name = nested_tool_name
+    if nested_tool_input and not tool_input:
+        tool_input = nested_tool_input
+    if nested_tool_output and not tool_output:
+        tool_output = nested_tool_output
+    role = coerce_role(item.get("role") or event.get("role"), "tool" if tool_name and tool_output else "assistant")
+    event_type = str(event.get("event_type") or event.get("type") or item.get("event_type") or item.get("type") or collector)
+    trace_id = str(
+        event.get("session_id")
+        or event.get("sessionId")
+        or event.get("conversation_id")
+        or event.get("trace_id")
+        or item.get("session_id")
+        or item.get("conversation_id")
+        or stable_hash(str(event.get("path")))
+    )
+    return make_row(
+        collector=collector,
+        event=event,
+        role=role,
+        content=content,
+        event_type=event_type,
+        tool_name=str(tool_name) if tool_name else None,
+        tool_input=tool_input,
+        tool_output=tool_output,
+        trace_id=trace_id,
+        bucket=bucket,
+        split=split,
+        source_date=source_date,
+        lineage_extra={"cwd": event.get("cwd") or item.get("cwd"), "model": event.get("model") or item.get("model")},
+    )
+
+
 def collect_records(
     inputs: Sequence[Path],
     row_builder: Any,
@@ -456,6 +525,34 @@ def collect_records(
         if limit and len(rows) >= limit:
             break
     return rows
+
+
+def stream_collect_records(
+    inputs: Sequence[Path],
+    row_builder: Any,
+    out: Path,
+    *,
+    bucket: str,
+    split: str,
+    source_date: str | None,
+    min_year: int,
+    max_year: int,
+    limit: int,
+) -> int:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with out.open("w", encoding="utf-8") as handle:
+        for event in iter_jsonish_records(inputs):
+            if not include_by_year(event, min_year, max_year):
+                continue
+            row = row_builder(event, bucket, split, source_date_for(event, source_date))
+            if row is None:
+                continue
+            handle.write(json.dumps(row, ensure_ascii=True, sort_keys=True, default=str) + "\n")
+            written += 1
+            if limit and written >= limit:
+                break
+    return written
 
 
 def read_rows(inputs: Sequence[Path], limit: int = 0) -> Iterable[dict[str, Any]]:
@@ -570,9 +667,11 @@ def add_collect_args(parser: argparse.ArgumentParser, default_out: str, default_
 def run_collect(args: argparse.Namespace, row_builder: Any, defaults: Sequence[Path]) -> dict[str, Any]:
     inputs = resolve_inputs(args.input, defaults)
     require_inputs(inputs)
-    rows = collect_records(
+    out = Path(args.out)
+    written = stream_collect_records(
         inputs,
         row_builder,
+        out,
         bucket=args.bucket,
         split=args.split,
         source_date=args.source_date,
@@ -580,13 +679,12 @@ def run_collect(args: argparse.Namespace, row_builder: Any, defaults: Sequence[P
         max_year=args.max_year,
         limit=args.limit,
     )
-    written = write_jsonl(rows, Path(args.out))
     return {
         "status": "ok",
         "out": args.out,
         "records": written,
         "inputs": [str(path) for path in inputs],
-        "stats": stats_for_rows([Path(args.out)]),
+        "stats": stats_for_rows([out]),
     }
 
 
@@ -600,6 +698,10 @@ def build_parser() -> argparse.ArgumentParser:
     claude = sub.add_parser("collect-claude", help="Collect Claude Code logs and memory_backend export traces")
     add_collect_args(claude, "weights/data_factory/memory_traces_claude_2026.jsonl", "claude_memory_trace")
     claude.add_argument("--source-kind", choices=["auto", "claude", "agent-memory"], default="auto")
+
+    generic = sub.add_parser("collect-generic", help="Collect generic agent JSON/JSONL/log traces such as Hermes and LM Studio exports")
+    add_collect_args(generic, "weights/data_factory/memory_traces_generic_2026.jsonl", "generic_agent_trace")
+    generic.add_argument("--collector", default="generic_agent_trace")
 
     merge = sub.add_parser("merge", help="Merge collector JSONL files")
     merge.add_argument("--input", action="append", required=True)
@@ -626,6 +728,18 @@ def main(argv: Sequence[str] | None = None) -> None:
         else:
             row_builder = claude_or_agent_memory_row
         result = run_collect(args, row_builder, default_claude_inputs())
+    elif args.command == "collect-generic":
+        result = run_collect(
+            args,
+            lambda event, bucket, split, source_date: generic_agent_event_row(
+                event,
+                bucket,
+                split,
+                source_date,
+                collector=str(args.collector or "generic_agent_trace"),
+            ),
+            [],
+        )
     elif args.command == "merge":
         inputs = resolve_inputs(args.input, [])
         require_inputs(inputs)

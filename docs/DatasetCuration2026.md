@@ -76,6 +76,7 @@ dataset-expansion-2026 `
   --out-dir weights/external_datasets_2026/latest `
   --download `
   --max-records-per-dataset 1024 `
+  --enforce-requirements `
   build
 ```
 
@@ -90,22 +91,41 @@ Current high-value registry families:
   Nemotron-Terminal-Corpus, Nemotron-Terminal-Synthetic-Tasks, Toucan-1.5M,
   Hermes function calling, Hermes agent traces, ToolOmni-Data, xLAM,
   DeepResearchGym search logs, AgentTrove/WebWorldData review rows, and
-  Terminal-Bench heldout metadata.
+  Terminal-Bench heldout metadata. The newer May 2026 registry adds
+  Nemotron-SFT-SWE-v2, SWE-Hero, SWE-Zero, SWE-ZERO-12M, SWE-Fixer, R2E-Gym,
+  Jupyter-Agent, OpenResearcher, WebWalkerQA, DeepSearch-2510,
+  BrowseComp-Plus traces, Terminal-Bench 2.0 trajectories, ContextBench
+  TraceBench, CodeTraceBench, and MCP/function-calling corpora.
 - Multimodal generation: OpenGPT-4o-Image, ShareGPT-4o-Image, Pico-Banana,
   MultiEdit, OpenSubject, VideoUFO, OpenVid-1M, CI-VID, TIP-I2V, VPData,
   Emilia-YODAS, Granary, CapSpeech, AudioSkills, JamendoMaxCaps, MusicBench,
-  Music Arena, AR-Omni-Instruct, and Open-MM-RL review rows.
+  Music Arena, AR-Omni-Instruct, and Open-MM-RL review rows. The newer
+  registry adds OmniAgent/MAgenIT, Nemotron-Image-Training-v3, PRISM/Innovator
+  VL RL, NVIDIA AudioSkills-XL, ImgEdit, VIBE, CompBench, Video-MME, LVBench,
+  PhyWorldBench, MusicEval, MCIF, Multimodal RewardBench 2, and
+  VoiceAgentBench.
 
 Rows from external sources are not merged into the 20B target lane merely
 because they exist. They must survive redaction, dedupe, benchmark
 decontamination, license tiering, and heldout sample-loss checks.
 
+`external_dataset_registry_2026.required_real_family_min_records` defines
+family-level gates for real downloaded or local rows. Seed prompts still matter
+for teacher-job generation and future source bootstrapping, but they do not
+count toward the real-data minimum. The expansion manifest includes
+`real_families`, `synthetic_seed_families`, and `requirement_report`; CI and the
+AI-server sidecar can pass `--enforce-requirements` to reject a run that lacks
+real rows for math, coding, agentic tool-use, terminal/browser agents,
+image/editing, video, audio/speech/music, music, or omnimodal understanding.
+
 The AI-server sidecar exports agent-memory audit rows before the trace
-orchestrator runs, then collects Codex, Claude, and ComfyUI rows. ComfyUI JSONL
-manifests and media directories both flow through the trace orchestrator, so
-generated image, video, music, and audio artifacts can feed multimodal SFT,
-reward-labeling, and teacher-job generation with provenance intact. On the AI
-server the trace orchestrator writes to a run-scoped
+orchestrator runs, then collects Codex, Claude, Hermes, LM Studio, and ComfyUI
+rows. Required trace artifacts are checked for nonzero JSONL rows before a
+curation pass can promote outputs. ComfyUI JSONL manifests and media
+directories both flow through the trace orchestrator, so generated image,
+video, music, and audio artifacts can feed multimodal SFT, reward-labeling, and
+teacher-job generation with provenance intact. On the AI server the trace
+orchestrator writes to a run-scoped
 `weights/data_factory/runs/trace_orchestrator/<run_id>` directory so stale
 root-owned artifacts cannot block fresh curation passes.
 
@@ -141,6 +161,15 @@ code tests, terminal state, browser citations, and tool schema/state validity.
 This lets the training sampler weight math, coding, terminal, browser, and
 tool RLVR separately instead of treating every agent trajectory as one generic
 tool trace.
+
+The AI-server sidecar now runs this exporter immediately after trace curation
+and again after P40/Qwen3.6 teacher rollouts. The first pass turns fresh Codex,
+Claude, Hermes, LM Studio, ComfyUI, and agent-memory traces into SFT, reward,
+preference, and RLVR files. The second pass concatenates contamination-scanned
+trace rows with successful teacher-rollout rows so local model critiques become
+actual posttraining artifacts at the stable
+`weights/agentic_tool_training_2026/*.jsonl` paths used by the 20B training
+profile.
 
 ## PostgreSQL
 

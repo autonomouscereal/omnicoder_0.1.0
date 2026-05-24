@@ -79,6 +79,32 @@ def _message_events_from(record: dict[str, Any]) -> list[dict[str, str]]:
     target = str(target_json.get("content") or target_json.get("completion") or target_json.get("answer") or "").strip()
     if target and target != content:
         events.append({"role": "assistant", "content": target})
+    tool_name = input_json.get("tool_name")
+    tool_input = input_json.get("tool_input")
+    if tool_name or tool_input:
+        events.append(
+            {
+                "role": "assistant",
+                "content": json.dumps(
+                    {"tool_call": {"tool": tool_name, "arguments": tool_input if tool_input is not None else {}}},
+                    ensure_ascii=True,
+                    sort_keys=True,
+                ),
+            }
+        )
+    tool_output = target_json.get("tool_output")
+    if tool_output not in (None, "", {}, []):
+        events.append(
+            {
+                "role": "tool",
+                "content": json.dumps(
+                    {"tool": tool_name, "result": tool_output},
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    default=str,
+                ),
+            }
+        )
     tool_calls = record.get("tool_calls") if isinstance(record.get("tool_calls"), list) else []
     for tool_call in tool_calls:
         if isinstance(tool_call, dict):

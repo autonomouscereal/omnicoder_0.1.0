@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from omnicoder.data_factory import curation_layers_2026, memory_trace_collectors_2026
+from omnicoder.data_factory import curation_layers_2026, export_agent_memory_postgres_2026, memory_trace_collectors_2026
 from omnicoder.training import training_orchestration_2026
 
 
@@ -233,6 +233,44 @@ def run_agent_memory_cli_export(profile: dict[str, Any], root: Path, out_dir: Pa
     return {"status": "ok", "out": str(out_path), "records": count, "limit": limit}
 
 
+def run_agent_memory_postgres_export(profile: dict[str, Any], root: Path, out_dir: Path) -> dict[str, Any]:
+    cfg = profile.get("agent_memory_postgres_export")
+    if not isinstance(cfg, dict):
+        cfg = builder_cfg(profile).get("agent_memory_postgres_export")
+    if not isinstance(cfg, dict) or not cfg.get("enabled", False):
+        return {"status": "skipped", "reason": "disabled"}
+    export_cfg = dict(cfg)
+    out_path = resolve_path(str(export_cfg.get("out") or "data/raw/agent_memory_events_2026.jsonl"), root)
+    if not export_cfg.get("out"):
+        out_path = out_dir / "raw" / "agent_memory_events_2026.jsonl"
+    try:
+        return export_agent_memory_postgres_2026.export_rows(export_cfg, out_path)
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "reason": "raw_postgres_export_failed",
+            "error": repr(exc),
+            "out": str(out_path),
+        }
+
+
+def run_agent_memory_export(profile: dict[str, Any], root: Path, out_dir: Path) -> dict[str, Any]:
+    pg_export = run_agent_memory_postgres_export(profile, root, out_dir)
+    if pg_export.get("status") == "ok":
+        pg_export["path"] = "raw_postgresql"
+        return pg_export
+    cli_export = run_agent_memory_cli_export(profile, root, out_dir)
+    if cli_export.get("status") == "ok":
+        cli_export["path"] = "cli_fallback"
+        cli_export["postgres_export"] = pg_export
+        return cli_export
+    return {
+        "status": "failed" if pg_export.get("status") == "failed" or cli_export.get("status") == "failed" else "skipped",
+        "postgres_export": pg_export,
+        "cli_export": cli_export,
+    }
+
+
 def configured_trace_sources(profile: dict[str, Any], root: Path, agent_memory_export: dict[str, Any]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     trace_inputs = profile.get("trace_inputs") if isinstance(profile.get("trace_inputs"), dict) else {}
@@ -284,7 +322,7 @@ def trace_row_builder(harness: str) -> Any:
 
 def collect_trace_rows(profile: dict[str, Any], root: Path, out_dir: Path) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
     cfg = builder_cfg(profile)
-    agent_memory_export = run_agent_memory_cli_export(profile, root, out_dir)
+    agent_memory_export = run_agent_memory_export(profile, root, out_dir)
     entries = configured_trace_sources(profile, root, agent_memory_export)
     min_year = int(cfg.get("min_year") or 2025)
     max_year = int(cfg.get("max_year") or 2026)
@@ -943,7 +981,7 @@ def export_agent_memory_only(profile_path: Path, out_dir: Path | None = None) ->
     profile = read_json(profile_path)
     target_dir = out_dir or resolve_path(str(builder_cfg(profile).get("out_dir") or DEFAULT_OUT_DIR), root)
     target_dir.mkdir(parents=True, exist_ok=True)
-    return run_agent_memory_cli_export(profile, root, target_dir)
+    return run_agent_memory_export(profile, root, target_dir)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -229,6 +229,59 @@ def source_use_bucket(entry: dict[str, Any]) -> str:
     return "blocked_until_review"
 
 
+def registry_cfg(profile: dict[str, Any]) -> dict[str, Any]:
+    registry = profile.get("external_dataset_registry_2026")
+    return registry if isinstance(registry, dict) else {}
+
+
+def requirement_floor(value: Any) -> int:
+    if isinstance(value, dict):
+        for key in ("min_real", "min_total", "min_records"):
+            if key in value:
+                return max(0, int(value.get(key) or 0))
+        return 0
+    return max(0, int(value or 0))
+
+
+def requirement_bucket(value: Any) -> str:
+    if isinstance(value, dict):
+        bucket = str(value.get("bucket") or value.get("training_bucket") or "any").strip().lower()
+        return bucket or "any"
+    return "any"
+
+
+def evaluate_registry_requirements(
+    profile: dict[str, Any],
+    rows_by_family: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    requirements = registry_cfg(profile).get("required_real_family_min_records")
+    if not isinstance(requirements, dict):
+        requirements = {}
+    results: dict[str, Any] = {}
+    failures: dict[str, Any] = {}
+    for family, raw_requirement in sorted(requirements.items()):
+        floor = requirement_floor(raw_requirement)
+        if floor <= 0:
+            continue
+        bucket = requirement_bucket(raw_requirement)
+        rows = [
+            row
+            for row in rows_by_family.get(str(family), [])
+            if not bool(row.get("synthetic_seed_only"))
+            and (bucket == "any" or str(row.get("training_bucket") or "") == bucket)
+        ]
+        result = {"real_records": len(rows), "min_real": floor, "bucket": bucket, "status": "passed" if len(rows) >= floor else "failed"}
+        results[str(family)] = result
+        if result["status"] != "passed":
+            failures[str(family)] = result
+    return {
+        "schema": "omnicoder.external_dataset_requirements_2026.v1",
+        "status": "passed" if not failures else "failed",
+        "requirements": results,
+        "failures": failures,
+    }
+
+
 def synthetic_seed_rows(entry: dict[str, Any]) -> list[dict[str, Any]]:
     seeds = entry.get("distillation_prompts") or entry.get("prompt_seeds") or []
     if isinstance(seeds, dict):
@@ -396,6 +449,7 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
         "license_tier": entry.get("license_tier"),
         "use_policy": entry.get("use_policy"),
         "skill_domain": entry.get("skill_domain") or family,
+        "synthetic_seed_only": bool(record.get("synthetic_seed")),
         "raw_record": record if bool(entry.get("keep_raw_record", False)) else {"raw_id": raw_id, "row_hash": stable_hash(record)},
     }
     row = training_orchestration_2026.make_training_record(
@@ -422,6 +476,7 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     row["license_tier"] = str(entry.get("license_tier") or "unknown")
     row["use_policy"] = str(entry.get("use_policy") or "blocked_until_review")
     row["training_bucket"] = source_use_bucket(entry)
+    row["synthetic_seed_only"] = bool(record.get("synthetic_seed"))
     return row
 
 
@@ -479,9 +534,20 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
     write_jsonl(jsonl_dir / "eval_holdout_all_external.jsonl", eval_rows)
     write_jsonl(jsonl_dir / "blocked_until_review.jsonl", blocked_rows)
     write_jsonl(jsonl_dir / "rejected_external.jsonl", rejected)
+    requirement_report = evaluate_registry_requirements(profile, rows_by_family)
+    real_family_counts = {
+        family: sum(1 for row in rows if not bool(row.get("synthetic_seed_only")))
+        for family, rows in sorted(rows_by_family.items())
+    }
+    synthetic_seed_counts = {
+        family: sum(1 for row in rows if bool(row.get("synthetic_seed_only")))
+        for family, rows in sorted(rows_by_family.items())
+        if any(bool(row.get("synthetic_seed_only")) for row in rows)
+    }
     manifest = {
         "schema": "omnicoder.external_dataset_expansion_2026.v1",
         "version": SCHEMA_VERSION,
+        "status": "passed" if requirement_report["status"] == "passed" else "failed_requirements",
         "created_at": now_iso(),
         "profile": str(profile_path),
         "out_dir": str(out_dir),
@@ -497,8 +563,11 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
             "total_training_rows": sum(len(rows) for rows in rows_by_bucket.values()),
         },
         "families": {family: len(rows) for family, rows in sorted(rows_by_family.items())},
+        "real_families": real_family_counts,
+        "synthetic_seed_families": synthetic_seed_counts,
         "modalities": {modality: len(rows) for modality, rows in sorted(rows_by_modality.items())},
         "license_tiers": dict(sorted(Counter(str(row.get("license_tier") or "unknown") for rows in rows_by_bucket.values() for row in rows).items())),
+        "requirement_report": requirement_report,
         "training_paths": {
             "train_all_external": str(jsonl_dir / "train_all_external.jsonl"),
             "research_internal_all_external": str(jsonl_dir / "research_internal_all_external.jsonl"),
@@ -536,6 +605,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--download", action="store_true", help="Attempt Hugging Face streaming downloads when local JSONL rows are absent")
     parser.add_argument("--no-streaming", action="store_true", help="Use regular load_dataset instead of streaming")
     parser.add_argument("--max-records-per-dataset", type=int, default=0)
+    parser.add_argument("--enforce-requirements", action="store_true", help="Return nonzero if registry required real-family minima are not met")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("build")
     args = parser.parse_args(argv)
@@ -543,6 +613,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit(f"unknown command: {args.command}")
     manifest = build_expansion(resolve_path(args.profile, repo_root()), resolve_path(args.out_dir, repo_root()), args)
     print(json.dumps(manifest, ensure_ascii=True, sort_keys=True))
+    if bool(args.enforce_requirements) and manifest.get("status") != "passed":
+        return 3
     return 0 if manifest["records"]["total_training_rows"] > 0 else 2
 
 

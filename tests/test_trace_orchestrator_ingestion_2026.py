@@ -172,6 +172,39 @@ def test_agent_memory_export_uses_server_or_workstation_script_candidates(tmp_pa
     assert "pytest passed" in out.read_text(encoding="utf-8")
 
 
+def test_builder_prefers_raw_postgres_agent_memory_export(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    profile = {
+        "agent_memory_postgres_export": {
+            "enabled": True,
+            "out": "data/raw/agent_memory_events_2026.jsonl",
+            "date_floor": "2025-01-01",
+        },
+        "builder_2026": {
+            "out_dir": str(root / "weights" / "curated"),
+            "agent_memory_cli_export": {
+                "enabled": True,
+                "script": "C:/missing/agent_memory.py",
+            },
+        },
+    }
+    _write_json(root / "profile.json", profile)
+    monkeypatch.setattr(builder, "repo_root", lambda: root)
+
+    def fake_export(cfg, out_path):
+        assert cfg["date_floor"] == "2025-01-01"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps({"event_type": "PostToolUse", "content": "raw pg event"}) + "\n", encoding="utf-8")
+        return {"status": "ok", "out": str(out_path), "records": 1}
+
+    monkeypatch.setattr(builder.export_agent_memory_postgres_2026, "export_rows", fake_export)
+    result = builder.export_agent_memory_only(root / "profile.json", root / "weights" / "curated")
+
+    assert result["status"] == "ok"
+    assert result["path"] == "raw_postgresql"
+    assert "raw pg event" in (root / "data" / "raw" / "agent_memory_events_2026.jsonl").read_text(encoding="utf-8")
+
+
 def test_trace_orchestrator_assigns_source_step_indices(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     source = root / "data" / "raw" / "local_agent.jsonl"

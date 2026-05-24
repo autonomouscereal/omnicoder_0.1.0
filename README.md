@@ -48,16 +48,30 @@ OpenThoughts2/3, LIMO, DeepCoder, OpenCodeReasoning, SWE-smith, SWE-smith
 trajectories, SWE-Gym, Toucan, Nemotron Terminal, Hermes function-calling,
 OpenGPT-4o-Image, ShareGPT-4o-Image, MultiEdit, VideoUFO, OpenVid-1M,
 Emilia-YODAS, Granary, AudioSkills, MusicBench, Music Arena, and
-AR-Omni-Instruct. Each source is tagged as `train`,
+AR-Omni-Instruct. The May 2026 expansion also tracks Nemotron-SFT-SWE-v2,
+SWE-Hero/SWE-Zero trajectories, SWE-ZERO-12M, R2E-Gym, Jupyter-Agent,
+OpenResearcher, WebWalkerQA, Terminal-Bench 2.0 trajectories, CodeTraceBench,
+OmniAgent/MAgenIT, Nemotron-Image-Training-v3, PRISM/Innovator VL RL,
+Pico-Banana, ImgEdit, VIBE, CompBench, Video-MME, LVBench, PhyWorldBench,
+MusicEval, MCIF, Multimodal RewardBench 2, and VoiceAgentBench. Each source is
+tagged as `train`,
 `research_internal`, `eval_holdout`, or `blocked_until_review` before any row is
 eligible for training.
+
+External expansion now reports real rows separately from synthetic seed rows
+and can fail the run when required family minima are not met. The current
+minimum gates require nonzero real coverage across math, coding, agentic
+tool-use, terminal/browser agents, image/editing, video, audio/speech/music,
+music, and omnimodal understanding before the dataset symlink can be promoted
+as a fresh 20B training source.
 
 Useful entry points:
 
 ```bash
 dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
   --out-dir weights/external_datasets_2026/latest \
-  --download --max-records-per-dataset 1024 build
+  --download --max-records-per-dataset 1024 \
+  --enforce-requirements build
 
 agentic-tool-train-2026 --profile profiles/agentic_tool_training_2026.json build
 
@@ -69,11 +83,15 @@ scripts/ai_server_dataset_training_sidecars_2026.sh all
 The sidecar script keeps the 20B target lane on fast GPUs `0,4,6` and uses CPU
 plus P40s for trace collection, dataset expansion, teacher-job sharding, and
 Qwen3.6 P40 rollouts. It exports agent-memory audit rows before the trace
-orchestrator, collects Codex/Claude traces, consumes ComfyUI manifests as
-first-class multimodal trace sources, and writes trace-orchestrator outputs to
-run-scoped writable directories. Official/protected benchmark rows remain release-gate
-evidence only; missing official metadata now produces `local_only` benchmark
-results instead of being misreported as public leaderboard quality.
+orchestrator, collects Codex/Claude/Hermes/LM Studio traces, consumes ComfyUI
+manifests as first-class multimodal trace sources, and writes
+trace-orchestrator outputs to run-scoped writable directories. It now gates
+required trace artifacts, refreshes agentic SFT/reward/preference/RLVR exports
+from each trace pass, and refreshes those exports again after Qwen3.6 teacher
+rollouts so distillation rows can feed the stable paths in
+`weights/agentic_tool_training_2026`. Official/protected benchmark rows remain
+release-gate evidence only; missing official metadata now produces `local_only`
+benchmark results instead of being misreported as public leaderboard quality.
 
 ## Why This Exists
 
