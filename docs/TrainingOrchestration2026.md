@@ -180,6 +180,13 @@ OMNICODER_POSTTRAIN_STEPS=32 \
 scripts/ai_server_fast_pipeline_20b.sh
 ```
 
+When launching from a staged clean checkout rather than the mutable
+`/home/cereal/omnicoder_2026_work` tree, set
+`OMNICODER_REPO=/home/cereal/omnicoder_2026_work/weights/staged_patches/<checkout>`
+and keep `OMNICODER_WEIGHTS_ROOT=/home/cereal/omnicoder_2026_work/weights`.
+The launcher mounts staged code at `/workspace` and the shared training volume
+at `/workspace/weights`, matching the active 20B container layout.
+
 ## Dataset And Teacher Sidecars
 
 Do not start a second synchronous 20B target run while a target container owns

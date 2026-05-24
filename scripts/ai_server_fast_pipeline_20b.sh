@@ -8,6 +8,7 @@ set -euo pipefail
 #   rank 2 -> RTX 8000, 32 layers plus final norm/head
 
 REPO="${OMNICODER_REPO:-/home/cereal/omnicoder_2026_work}"
+WEIGHTS_ROOT="${OMNICODER_WEIGHTS_ROOT:-/home/cereal/omnicoder_2026_work/weights}"
 IMAGE="${OMNICODER_DOCKER_IMAGE:-omnicoder:cuda-posttrain-2026}"
 RUN_TAG="${OMNICODER_RUN_TAG:-$(date -u +%Y%m%dT%H%M%SZ)}"
 CONTAINER_NAME="${OMNICODER_CONTAINER_NAME:-omnicoder_target20b_fast_${RUN_TAG}}"
@@ -39,7 +40,16 @@ CONTEXT_LADDER="${OMNICODER_CONTEXT_LADDER:-8192,32768,131072,262144,524288,1048
 RLVR_ALGOS="${OMNICODER_RLVR_ALGOS:-grpo,dapo,offline_reward_replay}"
 
 cd "$REPO"
-mkdir -p "$OUT_DIR"
+if [[ "$OUT_DIR" == /workspace/weights/* ]]; then
+  HOST_OUT_DIR="$WEIGHTS_ROOT/${OUT_DIR#/workspace/weights/}"
+elif [[ "$OUT_DIR" == weights/* ]]; then
+  HOST_OUT_DIR="$WEIGHTS_ROOT/${OUT_DIR#weights/}"
+elif [[ "$OUT_DIR" == /* ]]; then
+  HOST_OUT_DIR="$OUT_DIR"
+else
+  HOST_OUT_DIR="$REPO/$OUT_DIR"
+fi
+mkdir -p "$HOST_OUT_DIR"
 
 resume_args=()
 if [[ -n "$RESUME_CHECKPOINT" ]]; then
@@ -147,6 +157,7 @@ docker_args=(
   -e OMNICODER_CONTEXT_LADDER="$CONTEXT_LADDER"
   -e OMNICODER_RLVR_ALGOS="$RLVR_ALGOS"
   -v "$REPO:/workspace"
+  -v "$WEIGHTS_ROOT:/workspace/weights"
   -v /home/cereal:/home/cereal:ro
   -w /workspace
 )
@@ -160,6 +171,7 @@ if [[ "$DETACH" == "1" ]]; then
   docker run -d "${docker_args[@]}" "$IMAGE" "${run_cmd[@]}"
   echo "container=$CONTAINER_NAME"
   echo "out_dir=$OUT_DIR"
+  echo "host_out_dir=$HOST_OUT_DIR"
   echo "logs: docker logs -f $CONTAINER_NAME"
 else
   docker run --rm "${docker_args[@]}" "$IMAGE" "${run_cmd[@]}"
