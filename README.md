@@ -67,7 +67,10 @@ mix:
   CodeTraceBench, Hermes, xLAM, Toucan, NVIDIA ToolScale/When2Call/Nemotron
   Agentic and Cascade RL/SFT data, cleaned Toucan/Hermes/memory-agent/web-QA
   tool SFT, Qwen tool-calling, browser-agent SFT, Terminal-Bench 2 HF
-  trajectories, and local Codex/Claude/Hermes/agent-memory traces.
+  trajectories, Toolathlon trajectories, Plan-RewardBench, Agentic
+  Chain-of-Thought Coding SFT, R2E-Gym verifier/testing-agent trajectories,
+  APIGen-MT/WebShaper research rows, PrimeIntellect SYNTHETIC-1 SFT/preference,
+  and local Codex/Claude/Hermes/agent-memory traces.
 - Extra math/coding RLVR: Nemotron RL super blends, Cascade RL SWE/RLHF,
   Nemotron competitive coding, PrimeIntellect verifiable coding/math review
   rows, Math-RLVR 773K, High-Quality-Verifiable-Math-156K review rows, and
@@ -82,8 +85,12 @@ mix:
   PARADE_audio, AudioMC, WildSpeech-Bench, WorldSpeech, Granary,
   NonverbalTTS, Music Arena, Captioned AI Music Snippets, NVIDIA MMOU/QCalEval/
   SAGE/NitroGen references, BLIP3o short/60K data, Rapidata 4o/Imagen4/
-  Seedream/Flux/Sora/Genmo/Seedance/Hailuo preference sets, VideoVista CoTs,
-  WorldSense/MMOU/MMAU holdouts, AudioSet/zero-shot/adversarial audio
+  Seedream/Flux/Sora/Genmo/Seedance/Hailuo preference sets, JoyAI
+  OpenSpatial, OmniContext, WebSRC, VTC-Bench visual tool chains, FiVE,
+  OmniEdit-Bench, OpenAudioBench, Ming audio edit, OmniDoc-TokenBench,
+  ChartQAPro, OmniDoc OCR correction, OmniCorpus CC/YT, OmniGUI, OCRBench v2,
+  MM-IQ, Real5-OmniDocBench, MMVU,
+  VideoVista CoTs, WorldSense/MMOU/MMAU holdouts, AudioSet/zero-shot/adversarial audio
   instruction rows, NVIDIA HiFiTTS2/LongAudio/AF-Think/AF-Chat/MF-Skills,
   SpeechJudge, AudioCoT, and StoryBench/OmniBench reward/eval holdouts.
 
@@ -129,8 +136,9 @@ run-scoped ambiguity. The sidecar now gates required trace artifacts, refuses
 synthetic-only train promotion, refreshes
 agentic SFT/reward/preference/RLVR exports from each trace pass, parses typed
 teacher critiques into corrected responses/tool calls/reward components, and
-refreshes those exports again after Qwen3.6 teacher rollouts so distillation
-rows can feed the stable paths in `weights/agentic_tool_training_2026`.
+refreshes those exports again after Qwen3.6 teacher rollouts. New sidecar
+outputs write run-scoped first; shared `weights/agentic_tool_training_2026`
+promotion is opt-in with `OMNICODER_PROMOTE_SHARED_ARTIFACTS=1`.
 Official/protected benchmark rows remain release-gate evidence only; missing
 official metadata now produces `local_only` benchmark results instead of being
 misreported as public leaderboard quality.

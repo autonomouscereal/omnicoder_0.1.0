@@ -45,6 +45,18 @@ def write_jsonl(path: str | Path, rows: list[dict[str, Any]]) -> None:
             handle.write(json.dumps(row, ensure_ascii=True, sort_keys=True, default=str) + "\n")
 
 
+def existing_jsonl_rows(path: str | Path) -> int:
+    source = Path(path)
+    if not source.exists() or not source.is_file():
+        return 0
+    rows = 0
+    with source.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if line.strip():
+                rows += 1
+    return rows
+
+
 def extract_prompt(row: dict[str, Any]) -> str:
     payload = row.get("input_json") if isinstance(row.get("input_json"), dict) else row
     messages = payload.get("messages") if isinstance(payload, dict) else None
@@ -163,13 +175,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--record-kind", default="qwen36_p40_teacher_rollout")
     parser.add_argument("--thermal-gpu-index", default="", help="Optional nvidia-smi GPU index to guard before each request")
     parser.add_argument("--max-gpu-temp", type=int, default=0, help="Stop before dispatch when guarded GPU reaches this Celsius temperature")
+    parser.add_argument("--resume", action="store_true", help="Skip rows already written to the output JSONL so interrupted rollouts can continue")
     args = parser.parse_args(argv)
 
     rows = read_jsonl(args.input, limit=int(args.limit))
+    skipped_existing = existing_jsonl_rows(args.out) if args.resume else 0
+    if skipped_existing:
+        rows_to_process = rows[skipped_existing:]
+    else:
+        rows_to_process = rows
     emitted: list[dict[str, Any]] = []
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     stopped_for_thermal = False
-    for index, row in enumerate(rows, 1):
+    for relative_index, row in enumerate(rows_to_process, 1):
+        index = skipped_existing + relative_index
         if args.max_gpu_temp > 0 and str(args.thermal_gpu_index).strip():
             temperature = gpu_temperature(str(args.thermal_gpu_index).strip())
             if temperature is not None and temperature >= int(args.max_gpu_temp):
@@ -245,7 +264,20 @@ def main(argv: list[str] | None = None) -> int:
     if emitted:
         write_jsonl(args.out, emitted)
     status = "stopped_thermal_guard" if stopped_for_thermal else "ok"
-    print(json.dumps({"status": status, "input": args.input, "out": args.out, "records": len(rows)}, ensure_ascii=True))
+    print(
+        json.dumps(
+            {
+                "status": status,
+                "input": args.input,
+                "out": args.out,
+                "records": len(rows),
+                "processed": len(rows_to_process),
+                "skipped_existing": skipped_existing,
+                "resume": bool(args.resume),
+            },
+            ensure_ascii=True,
+        )
+    )
     return 0
 
 

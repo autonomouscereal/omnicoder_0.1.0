@@ -8568,6 +8568,227 @@
         ]
       },
       {
+        "name": "OmniContext",
+        "hf_id": "OmniGen2/OmniContext",
+        "url": "https://huggingface.co/datasets/OmniGen2/OmniContext",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "conversations",
+            "caption"
+          ],
+          "target": [
+            "target",
+            "response",
+            "conversations",
+            "caption"
+          ],
+          "media": [
+            "image",
+            "images",
+            "source_image",
+            "target_image"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "omni_context",
+          "context_preserving_image_generation",
+          "image_editing",
+          "any_to_any_visual"
+        ]
+      },
+      {
+        "name": "VTC-Bench Visual Tool Chain",
+        "url": "https://github.com/zhuzil/VTC-Bench",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "Apache-2.0 eval code; media/data provenance review",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "remote_files": [
+          {
+            "url": "https://raw.githubusercontent.com/zhuzil/VTC-Bench/main/data/VTC-Bench_GTToolChain.tsv",
+            "format": "tsv"
+          }
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "category",
+            "image"
+          ],
+          "target": [
+            "answer",
+            "A",
+            "B",
+            "C",
+            "D",
+            "model_tools_gt"
+          ],
+          "media": [
+            "image"
+          ],
+          "trajectory": [
+            "model_tools_gt"
+          ],
+          "id": [
+            "id",
+            "index"
+          ]
+        },
+        "curriculum_axes": [
+          "visual_tool_chain",
+          "opencv_tool_use",
+          "multimodal_agent",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "FiVE Fine-Grained Video Editing Benchmark",
+        "hf_id": "CiaranCw/FiVE-Fine-Grained-Video-Editing-Benchmark",
+        "url": "https://huggingface.co/datasets/CiaranCw/FiVE-Fine-Grained-Video-Editing-Benchmark",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "non_commercial_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "edit",
+            "video"
+          ],
+          "target": [
+            "answer",
+            "target",
+            "rubric",
+            "metadata"
+          ],
+          "media": [
+            "video",
+            "source_video",
+            "target_video"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "fine_grained_video_editing",
+          "spatial_temporal_editing",
+          "video_edit_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "OmniEdit-Bench",
+        "hf_id": "OmniEdit-Bench/OmniEdit-Bench",
+        "url": "https://huggingface.co/datasets/OmniEdit-Bench/OmniEdit-Bench",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "non_commercial_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "category"
+          ],
+          "target": [
+            "answer",
+            "target",
+            "rubric",
+            "metadata"
+          ],
+          "media": [
+            "video",
+            "audio",
+            "reference",
+            "image"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "omni_edit_bench",
+          "video_audio_editing",
+          "reference_guided_editing",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "MAVERIX",
+        "hf_id": "CUBE-CMU/maverix",
+        "url": "https://huggingface.co/datasets/CUBE-CMU/maverix",
+        "family": "omnimodal_understanding",
+        "target_modality": "video",
+        "license": "license not declared",
+        "license_tier": "unknown_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "subtitles"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "metadata"
+          ],
+          "media": [
+            "video",
+            "audio",
+            "subtitles"
+          ],
+          "id": [
+            "id",
+            "video_id"
+          ]
+        },
+        "curriculum_axes": [
+          "maverix",
+          "audio_visual_subtitle_reasoning",
+          "video_understanding",
+          "benchmark_holdout"
+        ]
+      },
+      {
         "name": "JointAVBench",
         "hf_id": "WayneZENG/JointAVBench",
         "url": "https://huggingface.co/datasets/WayneZENG/JointAVBench",
@@ -8609,6 +8830,482 @@
           "audio_visual_reasoning",
           "omnimodal_eval",
           "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "OpenAudioBench",
+        "hf_id": "baichuan-inc/OpenAudioBench",
+        "url": "https://huggingface.co/datasets/baichuan-inc/OpenAudioBench",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "license not declared",
+        "license_tier": "unknown_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction",
+            "audio"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "metadata"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "wav"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "open_audio_bench",
+          "audio_understanding",
+          "audio_reasoning",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "Ming Freeform Audio Edit Benchmark",
+        "hf_id": "inclusionAI/Ming-Freeform-Audio-Edit-Benchmark",
+        "url": "https://huggingface.co/datasets/inclusionAI/Ming-Freeform-Audio-Edit-Benchmark",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "edit_type"
+          ],
+          "target": [
+            "answer",
+            "target",
+            "rubric"
+          ],
+          "media": [
+            "audio",
+            "source_audio",
+            "target_audio"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "freeform_audio_editing",
+          "audio_insert_delete_substitute",
+          "audio_generation_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "Common Voice 22.0 Mirror English",
+        "hf_id": "fsicoli/common_voice_22_0",
+        "url": "https://huggingface.co/datasets/fsicoli/common_voice_22_0",
+        "family": "speech_audio",
+        "target_modality": "audio",
+        "license": "CC0-1.0",
+        "license_tier": "permissive_public_domain_mirror",
+        "use_policy": "train",
+        "config": "en",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "sentence",
+            "text",
+            "audio"
+          ],
+          "target": [
+            "sentence",
+            "text",
+            "transcription"
+          ],
+          "media": [
+            "audio",
+            "path"
+          ],
+          "id": [
+            "client_id",
+            "path",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "common_voice_22",
+          "speech_recognition",
+          "multilingual_asr",
+          "public_domain_speech"
+        ]
+      },
+      {
+        "name": "PDMX Multi-Instrument Synthesized",
+        "hf_id": "openmusic/pdmx-multi-instrument-synthesized",
+        "url": "https://huggingface.co/datasets/openmusic/pdmx-multi-instrument-synthesized",
+        "family": "music_generation",
+        "target_modality": "music",
+        "license": "CC0-1.0 and CC-BY-4.0 per record",
+        "license_tier": "permissive_attribution_per_record",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "caption",
+            "description",
+            "metadata",
+            "instrument"
+          ],
+          "target": [
+            "audio",
+            "caption",
+            "description",
+            "metadata"
+          ],
+          "media": [
+            "audio",
+            "music",
+            "path"
+          ],
+          "id": [
+            "id",
+            "track_id"
+          ]
+        },
+        "curriculum_axes": [
+          "pdmx",
+          "multi_instrument_music",
+          "music_captioning",
+          "synthetic_music_audio"
+        ]
+      },
+      {
+        "name": "Song Describer",
+        "hf_id": "lmms-lab-audio/song-describer",
+        "url": "https://huggingface.co/datasets/lmms-lab-audio/song-describer",
+        "family": "music_generation",
+        "target_modality": "music",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "audio",
+            "music",
+            "song",
+            "instruction"
+          ],
+          "target": [
+            "caption",
+            "description",
+            "answer",
+            "text"
+          ],
+          "media": [
+            "audio",
+            "music",
+            "path"
+          ],
+          "id": [
+            "id",
+            "song_id"
+          ]
+        },
+        "curriculum_axes": [
+          "song_describer",
+          "music_captioning",
+          "audio_language_alignment",
+          "music_understanding"
+        ]
+      },
+      {
+        "name": "OmniDoc-TokenBench",
+        "hf_id": "alibabagroup/OmniDoc-TokenBench",
+        "url": "https://huggingface.co/datasets/alibabagroup/OmniDoc-TokenBench",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "document"
+          ],
+          "target": [
+            "answer",
+            "tokens",
+            "markdown",
+            "metadata"
+          ],
+          "media": [
+            "image",
+            "document",
+            "page"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "omnidoc_tokenbench",
+          "document_ocr",
+          "token_rendering",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "ChartQAPro",
+        "hf_id": "yujieouo/ChartQAPro",
+        "url": "https://huggingface.co/datasets/yujieouo/ChartQAPro",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "chart"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "metadata"
+          ],
+          "media": [
+            "image",
+            "chart",
+            "plot"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "chartqa_pro",
+          "chart_reasoning",
+          "document_vqa",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "OmniDoc OCR Correction Bench",
+        "hf_id": "andynoodles/omnidoc-ocr-correction-bench",
+        "url": "https://huggingface.co/datasets/andynoodles/omnidoc-ocr-correction-bench",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "ocr",
+            "text",
+            "markdown",
+            "question"
+          ],
+          "target": [
+            "corrected",
+            "answer",
+            "markdown"
+          ],
+          "media": [
+            "image",
+            "document",
+            "page"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "ocr_correction",
+          "document_markdown",
+          "omnidoc",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "OmniCorpus CC",
+        "hf_id": "OpenGVLab/OmniCorpus-CC",
+        "url": "https://huggingface.co/datasets/OpenGVLab/OmniCorpus-CC",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_with_heavy_filtering",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "text",
+            "caption",
+            "interleaved_text"
+          ],
+          "target": [
+            "text",
+            "caption",
+            "interleaved_text"
+          ],
+          "media": [
+            "image",
+            "images",
+            "url"
+          ],
+          "id": [
+            "id",
+            "sample_id",
+            "url"
+          ]
+        },
+        "curriculum_axes": [
+          "omnicorpus_cc",
+          "interleaved_image_text",
+          "web_multimodal",
+          "heavy_filtering"
+        ]
+      },
+      {
+        "name": "OmniCorpus YT",
+        "hf_id": "OpenGVLab/OmniCorpus-YT",
+        "url": "https://huggingface.co/datasets/OpenGVLab/OmniCorpus-YT",
+        "family": "omnimodal_understanding",
+        "target_modality": "video",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_with_heavy_filtering",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "text",
+            "caption",
+            "transcript"
+          ],
+          "target": [
+            "text",
+            "caption",
+            "transcript"
+          ],
+          "media": [
+            "video",
+            "frames",
+            "url"
+          ],
+          "id": [
+            "id",
+            "video_id",
+            "url"
+          ]
+        },
+        "curriculum_axes": [
+          "omnicorpus_yt",
+          "interleaved_video_text",
+          "web_video_multimodal",
+          "heavy_filtering"
+        ]
+      },
+      {
+        "name": "OmniGUI",
+        "hf_id": "XIAOCHENLIN00zz/OmniGUI",
+        "url": "https://huggingface.co/datasets/XIAOCHENLIN00zz/OmniGUI",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "CC-BY-NC-SA-4.0",
+        "license_tier": "non_commercial_sharealike",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "task",
+            "query",
+            "image",
+            "video",
+            "audio"
+          ],
+          "target": [
+            "trajectory",
+            "actions",
+            "answer",
+            "steps"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "screenshot"
+          ],
+          "trajectory": [
+            "trajectory",
+            "actions",
+            "steps"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "omnigui",
+          "smartphone_gui_agent",
+          "omnimodal_tool_use",
+          "non_commercial_research"
         ]
       },
       {
@@ -10826,6 +11523,159 @@
         ]
       },
       {
+        "name": "Salesforce APIGen-MT-5k",
+        "hf_id": "Salesforce/APIGen-MT-5k",
+        "url": "https://huggingface.co/datasets/Salesforce/APIGen-MT-5k",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "non_commercial",
+        "use_policy": "research_internal",
+        "config": "dataset",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "system",
+            "tools",
+            "conversations"
+          ],
+          "target": [
+            "conversations"
+          ],
+          "tool_calls": [
+            "tools"
+          ],
+          "trajectory": [
+            "conversations"
+          ],
+          "id": [
+            "id",
+            "uuid",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "apigen_mt",
+          "multi_turn_function_calling",
+          "tool_planner_sft",
+          "non_commercial_research"
+        ]
+      },
+      {
+        "name": "PrimeIntellect SYNTHETIC-1 SFT",
+        "hf_id": "PrimeIntellect/SYNTHETIC-1-SFT-Data",
+        "url": "https://huggingface.co/datasets/PrimeIntellect/SYNTHETIC-1-SFT-Data",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "task_type",
+            "problem_id"
+          ],
+          "target": [
+            "messages"
+          ],
+          "reward": [
+            "score"
+          ],
+          "id": [
+            "response_id",
+            "problem_id"
+          ]
+        },
+        "curriculum_axes": [
+          "synthetic_1",
+          "distilled_reasoning",
+          "score_filtered_sft",
+          "math_code_reasoning"
+        ]
+      },
+      {
+        "name": "PrimeIntellect SYNTHETIC-1 Preference",
+        "hf_id": "PrimeIntellect/SYNTHETIC-1-Preference-Data",
+        "url": "https://huggingface.co/datasets/PrimeIntellect/SYNTHETIC-1-Preference-Data",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "task_type"
+          ],
+          "target": [
+            "preferred_response",
+            "less_preferred_response"
+          ],
+          "reward": [
+            "preferred_response_score"
+          ],
+          "id": [
+            "problem_id",
+            "preferred_response_id"
+          ]
+        },
+        "curriculum_axes": [
+          "synthetic_1",
+          "preference_training",
+          "reasoning_preferences",
+          "score_margin"
+        ]
+      },
+      {
+        "name": "Alibaba WebShaper",
+        "hf_id": "Alibaba-NLP/WebShaper",
+        "url": "https://huggingface.co/datasets/Alibaba-NLP/WebShaper",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "license not declared",
+        "license_tier": "unknown_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "main"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "urls"
+          ],
+          "target": [
+            "answer",
+            "formalization"
+          ],
+          "trajectory": [
+            "formalization",
+            "urls"
+          ],
+          "id": [
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "web_information_seeking",
+          "web_task_formalization",
+          "browser_search_agent",
+          "license_review"
+        ]
+      },
+      {
         "name": "Cleaned Toucan Tool Use 333K",
         "hf_id": "AmanPriyanshu/tool-reasoning-sft-TOOLS-toucan-1.5m-sft-tool-use-data-cleaned-rectified-333k",
         "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-TOOLS-toucan-1.5m-sft-tool-use-data-cleaned-rectified-333k",
@@ -12204,6 +13054,606 @@
           "reward_eval",
           "noncommercial_holdout",
           "preference_eval"
+        ]
+      },
+      {
+        "name": "Toolathlon Trajectories",
+        "hf_id": "hkust-nlp/Toolathlon-Trajectories",
+        "url": "https://huggingface.co/datasets/hkust-nlp/Toolathlon-Trajectories",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_research_eval",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "config",
+            "task_name"
+          ],
+          "target": [
+            "tool_calls",
+            "task_status",
+            "key_stats"
+          ],
+          "tool_calls": [
+            "tool_calls"
+          ],
+          "trajectory": [
+            "messages",
+            "tool_calls"
+          ],
+          "id": [
+            "request_id",
+            "task_name"
+          ]
+        },
+        "curriculum_axes": [
+          "toolathlon",
+          "long_horizon_tool_use",
+          "benchmark_trace_review",
+          "model_trajectory_analysis"
+        ]
+      },
+      {
+        "name": "Agentic Chain-of-Thought Coding SFT",
+        "hf_id": "AlicanKiraz0/Agentic-Chain-of-Thought-Coding-SFT-Dataset",
+        "url": "https://huggingface.co/datasets/AlicanKiraz0/Agentic-Chain-of-Thought-Coding-SFT-Dataset",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive_synthetic_distilled",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "system",
+            "user"
+          ],
+          "target": [
+            "assistant"
+          ],
+          "trajectory": [
+            "assistant"
+          ]
+        },
+        "curriculum_axes": [
+          "agentic_coding_sft",
+          "minimax_distilled",
+          "structured_plan_actions",
+          "synthetic_cot"
+        ]
+      },
+      {
+        "name": "Plan-RewardBench",
+        "hf_id": "wyy1112/Plan-RewardBench",
+        "url": "https://huggingface.co/datasets/wyy1112/Plan-RewardBench",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_reward_research",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "query",
+            "tools"
+          ],
+          "target": [
+            "chosen",
+            "reject",
+            "rejected"
+          ],
+          "tool_calls": [
+            "tools"
+          ],
+          "id": [
+            "uuid",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "plan_reward_modeling",
+          "chosen_rejected_agent_plans",
+          "irrelevant_tool_penalty",
+          "preference_data"
+        ]
+      },
+      {
+        "name": "R2E-Gym Verifier Trajectories",
+        "hf_id": "R2E-Gym/R2EGym-Verifier-Trajectories",
+        "url": "https://huggingface.co/datasets/R2E-Gym/R2EGym-Verifier-Trajectories",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "license not declared",
+        "license_tier": "unknown_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "docker_images"
+          ],
+          "target": [
+            "rewards",
+            "messages"
+          ],
+          "verifier_labels": [
+            "rewards"
+          ]
+        },
+        "curriculum_axes": [
+          "r2e_gym",
+          "verifier_rewards",
+          "repo_level_code_agent",
+          "license_review"
+        ]
+      },
+      {
+        "name": "R2E-Gym TestingAgent SFT Trajectories",
+        "hf_id": "R2E-Gym/R2EGym-TestingAgent-SFT-Trajectories",
+        "url": "https://huggingface.co/datasets/R2E-Gym/R2EGym-TestingAgent-SFT-Trajectories",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "license not declared",
+        "license_tier": "unknown_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "task",
+            "problem"
+          ],
+          "target": [
+            "messages",
+            "exit_reasons",
+            "num_steps"
+          ],
+          "trajectory": [
+            "messages"
+          ]
+        },
+        "curriculum_axes": [
+          "r2e_gym",
+          "testing_agent",
+          "test_generation",
+          "repo_level_code_agent"
+        ]
+      },
+      {
+        "name": "s1K-1.1 Reasoning",
+        "hf_id": "simplescaling/s1K-1.1",
+        "url": "https://huggingface.co/datasets/simplescaling/s1K-1.1",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question"
+          ],
+          "target": [
+            "solution",
+            "gemini_thinking_trajectory",
+            "deepseek_thinking_trajectory"
+          ],
+          "verifier_labels": [
+            "grades",
+            "reasons"
+          ]
+        },
+        "curriculum_axes": [
+          "math_reasoning",
+          "grader_annotations",
+          "small_high_signal",
+          "trajectory_distillation"
+        ]
+      },
+      {
+        "name": "HMMT February 2025",
+        "hf_id": "PraMamba/HMMT-202502",
+        "url": "https://huggingface.co/datasets/PraMamba/HMMT-202502",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "problem"
+          ],
+          "target": [
+            "answer",
+            "solution"
+          ],
+          "id": [
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "hmmt_2025",
+          "math_eval",
+          "contest_holdout",
+          "verifier_calibration"
+        ]
+      },
+      {
+        "name": "MMVU",
+        "hf_id": "yale-nlp/MMVU",
+        "url": "https://huggingface.co/datasets/yale-nlp/MMVU",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "license not declared",
+        "license_tier": "unknown_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "validation",
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "choices",
+            "video",
+            "youtube_url"
+          ],
+          "target": [
+            "answer",
+            "rationale",
+            "metadata"
+          ],
+          "media": [
+            "video",
+            "youtube_url"
+          ]
+        },
+        "curriculum_axes": [
+          "video_reasoning",
+          "textbook_video_qa",
+          "benchmark_holdout",
+          "multimodal_rationale"
+        ]
+      },
+      {
+        "name": "OCRBench v2",
+        "hf_id": "ling99/OCRBench_v2",
+        "url": "https://huggingface.co/datasets/ling99/OCRBench_v2",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "type",
+            "content"
+          ],
+          "target": [
+            "answers",
+            "eval"
+          ],
+          "media": [
+            "image",
+            "bbox",
+            "bbox_list"
+          ],
+          "id": [
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "ocrbench_v2",
+          "document_vision",
+          "ocr_reasoning",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "MM-IQ",
+        "hf_id": "huanqia/MM-IQ",
+        "url": "https://huggingface.co/datasets/huanqia/MM-IQ",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "question_en",
+            "question_zh",
+            "category"
+          ],
+          "target": [
+            "answer"
+          ],
+          "media": [
+            "image"
+          ]
+        },
+        "curriculum_axes": [
+          "bilingual_multimodal_reasoning",
+          "image_text_intelligence",
+          "benchmark_holdout",
+          "non_english_vl"
+        ]
+      },
+      {
+        "name": "Real5-OmniDocBench",
+        "hf_id": "PaddlePaddle/Real5-OmniDocBench",
+        "url": "https://huggingface.co/datasets/PaddlePaddle/Real5-OmniDocBench",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "license not declared",
+        "license_tier": "unknown_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "label",
+            "degradation",
+            "question"
+          ],
+          "target": [
+            "label",
+            "answer"
+          ],
+          "media": [
+            "image"
+          ]
+        },
+        "curriculum_axes": [
+          "real_world_document_robustness",
+          "degraded_document_images",
+          "ocr_layout",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "JoyAI Image OpenSpatial",
+        "hf_id": "jdopensource/JoyAI-Image-OpenSpatial",
+        "url": "https://huggingface.co/datasets/jdopensource/JoyAI-Image-OpenSpatial",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "conversations",
+            "meta_info",
+            "type"
+          ],
+          "target": [
+            "conversations"
+          ],
+          "media": [
+            "images"
+          ],
+          "id": [
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "spatial_vqa",
+          "3d_grounding",
+          "image_text_spatial_reasoning",
+          "open_spatial"
+        ]
+      },
+      {
+        "name": "JoyAI Image SpatialEdit",
+        "hf_id": "jdopensource/JoyAI-Image-SpatialEdit",
+        "url": "https://huggingface.co/datasets/jdopensource/JoyAI-Image-SpatialEdit",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "files_absent_pending_release",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "edited_image",
+            "answer"
+          ],
+          "media": [
+            "image",
+            "images"
+          ]
+        },
+        "curriculum_axes": [
+          "spatial_image_editing",
+          "pending_release",
+          "object_move_rotation",
+          "camera_viewpoint_edit"
+        ]
+      },
+      {
+        "name": "JoyAI Image SpatialEdit Bench",
+        "hf_id": "jdopensource/JoyAI-Image-SpatialEdit-Bench",
+        "url": "https://huggingface.co/datasets/jdopensource/JoyAI-Image-SpatialEdit-Bench",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "files_absent_eval_pending_release",
+        "use_policy": "blocked_until_review",
+        "splits": [
+          "test"
+        ],
+        "max_records": 0,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "rubric",
+            "answer"
+          ],
+          "media": [
+            "image",
+            "images"
+          ]
+        },
+        "curriculum_axes": [
+          "spatial_edit_benchmark",
+          "pending_release",
+          "object_centric_edit_eval",
+          "camera_centric_edit_eval"
+        ]
+      },
+      {
+        "name": "X-LANCE WikiHow Taskset",
+        "hf_id": "X-LANCE/WikiHow-taskset",
+        "url": "https://huggingface.co/datasets/X-LANCE/WikiHow-taskset",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "text"
+          ],
+          "target": [
+            "text"
+          ]
+        },
+        "curriculum_axes": [
+          "mobile_gui_agent",
+          "wikihow_taskset",
+          "benchmark_holdout",
+          "workflow_task"
+        ]
+      },
+      {
+        "name": "X-LANCE WebSRC v1.0",
+        "hf_id": "X-LANCE/WebSRC_v1.0",
+        "url": "https://huggingface.co/datasets/X-LANCE/WebSRC_v1.0",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train",
+          "dev"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "html",
+            "screenshot"
+          ],
+          "target": [
+            "answer",
+            "answer_start",
+            "element_id"
+          ],
+          "media": [
+            "screenshot",
+            "image",
+            "bbox"
+          ],
+          "id": [
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "web_structural_qa",
+          "html_screenshot_grounding",
+          "document_understanding",
+          "browser_visual_reasoning"
+        ]
+      },
+      {
+        "name": "DeepGen 1.0 Dataset Card",
+        "hf_id": "deepgenteam/DeepGen-1.0",
+        "url": "https://huggingface.co/datasets/deepgenteam/DeepGen-1.0",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "project_card_only",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1,
+        "field_map": {
+          "prompt": [
+            "image"
+          ],
+          "target": [
+            "image"
+          ],
+          "media": [
+            "image"
+          ]
+        },
+        "curriculum_axes": [
+          "deepgen",
+          "unified_image_generation_editing",
+          "dataset_card_only",
+          "release_watch"
         ]
       }
     ]

@@ -447,6 +447,8 @@ def default_command(profile_path: str | Path, profile: dict[str, Any], out_root:
                 cmd.extend([flag, str(value)])
         if str(job.get("thermal_gpu_index") or device).strip().lower() != "cpu":
             cmd.extend(["--thermal-gpu-index", str(job.get("thermal_gpu_index") or device)])
+        if bool(job.get("resume", True)):
+            cmd.append("--resume")
         return cmd
     raise ValueError(f"unknown sidecar job_type: {job_type}")
 

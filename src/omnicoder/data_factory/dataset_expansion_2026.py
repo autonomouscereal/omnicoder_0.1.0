@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
+import io
 import json
 import os
 import time
@@ -9,6 +11,7 @@ from collections import Counter, defaultdict
 from itertools import islice
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+from urllib.request import Request, urlopen
 
 from omnicoder.training import training_orchestration_2026
 
@@ -166,6 +169,42 @@ def field_text(record: dict[str, Any], fields: Any) -> str:
         if text:
             return text
     return ""
+
+
+def field_values(record: dict[str, Any], fields: Any) -> list[Any]:
+    if isinstance(fields, str):
+        fields = [fields]
+    if not isinstance(fields, list):
+        return []
+    values: list[Any] = []
+    for field in fields:
+        if not isinstance(field, str):
+            continue
+        value = dotted_value(record, field)
+        if value is None or value == "":
+            continue
+        if isinstance(value, list):
+            values.extend(item for item in value if item not in (None, ""))
+        else:
+            values.append(value)
+    return values
+
+
+def mapped_structured_values(record: dict[str, Any], explicit_fields: Any, fallback_fields: list[str]) -> list[Any]:
+    values = field_values(record, explicit_fields)
+    if values:
+        return values
+    return field_values(record, fallback_fields)
+
+
+def mapped_dict_list(record: dict[str, Any], explicit_fields: Any, fallback_fields: list[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for value in mapped_structured_values(record, explicit_fields, fallback_fields):
+        if isinstance(value, dict):
+            rows.append(value)
+        elif isinstance(value, str) and value.strip():
+            rows.append({"content": value.strip()})
+    return rows
 
 
 def fallback_prompt(entry: dict[str, Any], record: dict[str, Any]) -> str:
@@ -335,6 +374,83 @@ def rows_from_local_jsonl(entry: dict[str, Any], root: Path, limit: int) -> tupl
     return rows, {"status": "ok", "source": "local_jsonl", "path": str(path), "records": len(rows)}
 
 
+def rows_from_text_payload(text: str, fmt: str) -> list[dict[str, Any]]:
+    normalized = fmt.strip().lower().lstrip(".")
+    if normalized in {"jsonl", "ndjson"}:
+        rows: list[dict[str, Any]] = []
+        for line_number, line in enumerate(text.splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except Exception as exc:
+                payload = {"text": line, "parse_error": str(exc)}
+            if isinstance(payload, dict):
+                payload.setdefault("line_number", line_number)
+                rows.append(payload)
+        return rows
+    if normalized == "json":
+        payload = json.loads(text)
+        if isinstance(payload, list):
+            return [dict(item) for item in payload if isinstance(item, dict)]
+        if isinstance(payload, dict):
+            for key in ("data", "rows", "examples", "records", "items"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return [dict(item) for item in value if isinstance(item, dict)]
+            return [payload]
+        return []
+    if normalized in {"csv", "tsv"}:
+        delimiter = "\t" if normalized == "tsv" else ","
+        return [dict(row) for row in csv.DictReader(io.StringIO(text), delimiter=delimiter)]
+    return []
+
+
+def rows_from_remote_files(entry: dict[str, Any], root: Path, limit: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    files = entry.get("remote_files")
+    if isinstance(files, dict):
+        files = [files]
+    if not isinstance(files, list) or not files:
+        return [], {"status": "skipped", "reason": "no_remote_files"}
+    rows: list[dict[str, Any]] = []
+    errors: list[str] = []
+    per_file: dict[str, int] = {}
+    for raw_spec in files:
+        if limit > 0 and len(rows) >= limit:
+            break
+        spec = raw_spec if isinstance(raw_spec, dict) else {"url": raw_spec}
+        url = str(spec.get("url") or spec.get("path") or "").strip()
+        if not url:
+            continue
+        fmt = str(spec.get("format") or Path(url.split("?", 1)[0]).suffix.lstrip(".") or "jsonl")
+        try:
+            if url.startswith(("http://", "https://")):
+                request = Request(url, headers={"User-Agent": "omnicoder-dataset-expansion-2026"})
+                with urlopen(request, timeout=float(spec.get("timeout") or 60)) as response:
+                    text = response.read().decode(str(spec.get("encoding") or "utf-8"), errors="replace")
+            else:
+                text = resolve_path(url, root).read_text(encoding=str(spec.get("encoding") or "utf-8"), errors="replace")
+            loaded = rows_from_text_payload(text, fmt)
+        except Exception as exc:
+            errors.append(f"{url}: {repr(exc)}")
+            continue
+        if limit > 0:
+            loaded = loaded[: max(0, limit - len(rows))]
+        for index, row in enumerate(loaded, 1):
+            row.setdefault("_remote_file", url)
+            row.setdefault("_remote_row", index)
+            rows.append(row)
+        per_file[url] = len(loaded)
+    status = "ok" if rows else "failed" if errors else "empty"
+    return rows, {
+        "status": status,
+        "source": "remote_files",
+        "records": len(rows),
+        "per_file": per_file,
+        "errors": errors[:8],
+    }
+
+
 def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     hf_id = entry.get("hf_id")
     if not hf_id:
@@ -421,6 +537,9 @@ def materialize_source_rows(entry: dict[str, Any], root: Path, args: argparse.Na
     if local_rows:
         return local_rows, local_status
     if args.download:
+        remote_rows, remote_status = rows_from_remote_files(entry, root, limit)
+        if remote_rows:
+            return remote_rows, remote_status
         hf_rows, hf_status = rows_from_huggingface(entry, limit, streaming=not args.no_streaming)
         if hf_rows:
             return hf_rows, hf_status
@@ -456,7 +575,9 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     if not target or len(target.strip()) < int(entry.get("min_target_chars") or 1):
         return None
     family = str(entry.get("family") or "external_dataset")
-    modality = str(entry.get("target_modality") or FAMILY_TO_MODALITY.get(family, "text"))
+    declared_modality = str(entry.get("target_modality") or FAMILY_TO_MODALITY.get(family, "text"))
+    stage_safe_modalities = set(plan.get("artifact_token_count", {}).keys()) | {"text", "code", "tool", "long_context"}
+    modality = declared_modality if declared_modality in stage_safe_modalities else FAMILY_TO_MODALITY.get(family, "text")
     source_uri = str(entry.get("url") or entry.get("hf_id") or entry.get("name") or family)
     raw_id = field_text(record, field_map.get("id") or ["id", "task_id", "problem_id", "instance_id", "ID", "uid"]) or f"row-{row_index}"
     source_payload = {
@@ -495,14 +616,49 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     )
     row["dataset_family"] = family
     row["dataset_name"] = str(entry.get("name") or entry.get("hf_id") or family)
+    row["declared_target_modality"] = declared_modality
     row["license_tier"] = str(entry.get("license_tier") or "unknown")
     row["use_policy"] = str(entry.get("use_policy") or "blocked_until_review")
     row["training_bucket"] = training_bucket_for_record(entry, record)
     row["synthetic_seed_only"] = bool(record.get("synthetic_seed"))
+    row["media_refs"] = mapped_structured_values(
+        record,
+        field_map.get("media") or field_map.get("media_refs") or field_map.get("artifacts"),
+        ["media", "media_refs", "artifacts", "image", "images", "video", "videos", "audio", "audios"],
+    )
+    row["tool_calls"] = mapped_dict_list(record, field_map.get("tool_calls"), ["tool_calls", "actions", "steps.tool_calls"])
+    row["tool_results"] = mapped_dict_list(record, field_map.get("tool_results"), ["tool_results", "observations", "results"])
+    trajectory = mapped_structured_values(record, field_map.get("trajectory"), ["trajectory", "actions", "steps", "messages"])
+    if trajectory:
+        row["trajectory"] = trajectory
+    verifier_labels = mapped_structured_values(record, field_map.get("verifier_labels"), ["verifier_labels", "checks", "labels"])
+    if verifier_labels:
+        row["verifier_labels"] = verifier_labels
+    reward = field_values(record, field_map.get("reward") or ["reward", "score", "preference_score", "human_score"])
+    if reward:
+        row["reward"] = reward[0]
+    if row["tool_calls"]:
+        row["domains"] = sorted(set(row.get("domains", [])) | {"tool"})
     if row["synthetic_seed_only"] and source_use_bucket(entry) == "train":
         row["synthetic_train_blocked"] = True
         row["synthetic_train_block_reason"] = "distillation_prompt_seed_cannot_enter_train_bucket_without_real_hf_or_local_rows"
     return row
+
+
+def write_bucket_partitioned_rows(jsonl_dir: Path, stem: str, rows: list[dict[str, Any]]) -> dict[str, str]:
+    paths = {
+        "train": jsonl_dir / f"{stem}.jsonl",
+        "all": jsonl_dir / f"{stem}_all.jsonl",
+        "research_internal": jsonl_dir / f"{stem}_research_internal.jsonl",
+        "eval_holdout": jsonl_dir / f"{stem}_eval_holdout.jsonl",
+        "blocked_until_review": jsonl_dir / f"{stem}_blocked_until_review.jsonl",
+    }
+    write_jsonl(paths["train"], [row for row in rows if row.get("training_bucket") == "train"])
+    write_jsonl(paths["all"], rows)
+    write_jsonl(paths["research_internal"], [row for row in rows if row.get("training_bucket") == "research_internal"])
+    write_jsonl(paths["eval_holdout"], [row for row in rows if row.get("training_bucket") == "eval_holdout"])
+    write_jsonl(paths["blocked_until_review"], [row for row in rows if row.get("training_bucket") == "blocked_until_review"])
+    return {key: str(path) for key, path in paths.items()}
 
 
 def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
@@ -545,10 +701,8 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
             rows_by_bucket[str(row["training_bucket"])].append(row)
             rows_by_family[family].append(row)
             rows_by_modality[str(row["modality"])].append(row)
-    for family, rows in sorted(rows_by_family.items()):
-        write_jsonl(jsonl_dir / f"{family}.jsonl", rows)
-    for modality, rows in sorted(rows_by_modality.items()):
-        write_jsonl(jsonl_dir / f"{modality}.jsonl", rows)
+    family_paths = {family: write_bucket_partitioned_rows(jsonl_dir, family, rows) for family, rows in sorted(rows_by_family.items())}
+    modality_paths = {modality: write_bucket_partitioned_rows(jsonl_dir, modality, rows) for modality, rows in sorted(rows_by_modality.items())}
     for bucket, rows in sorted(rows_by_bucket.items()):
         write_jsonl(jsonl_dir / f"{bucket}.jsonl", rows)
     train_rows = rows_by_bucket.get("train", [])
@@ -589,9 +743,11 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
             "total_training_rows": sum(len(rows) for rows in rows_by_bucket.values()),
         },
         "families": {family: len(rows) for family, rows in sorted(rows_by_family.items())},
+        "family_paths": family_paths,
         "real_families": real_family_counts,
         "synthetic_seed_families": synthetic_seed_counts,
         "modalities": {modality: len(rows) for modality, rows in sorted(rows_by_modality.items())},
+        "modality_paths": modality_paths,
         "license_tiers": dict(sorted(Counter(str(row.get("license_tier") or "unknown") for rows in rows_by_bucket.values() for row in rows).items())),
         "requirement_report": requirement_report,
         "training_paths": {

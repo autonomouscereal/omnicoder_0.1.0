@@ -157,6 +157,44 @@ def test_build_exports_domain_rlvr_files(tmp_path: Path) -> None:
         assert paths[key].exists()
 
 
+def test_pure_math_row_emits_math_rlvr_without_tool_sft() -> None:
+    rows = tooltrain.rows_for_record(
+        {
+            "text": "Solve the olympiad equation. The final answer is \\boxed{4}.",
+            "quality": {"score": 1.0},
+            "domains": ["math"],
+        },
+        min_quality=0.1,
+        profile_cfg={},
+    )
+
+    assert rows["sft"] == []
+    assert rows["reward"] == []
+    assert rows["preference"] == []
+    assert rows["rlvr"] == []
+    assert len(rows["math_rlvr"]) == 1
+    assert rows["math_rlvr"][0]["training_kind"] == "math_rlvr"
+
+
+def test_pure_code_verifier_row_emits_code_rlvr_without_tool_sft() -> None:
+    rows = tooltrain.rows_for_record(
+        {
+            "text": "Repair the failing Python routine. pytest passed after the fix.",
+            "quality": {"score": 1.0},
+            "domains": ["code"],
+        },
+        min_quality=0.1,
+        profile_cfg={},
+    )
+
+    assert rows["sft"] == []
+    assert rows["reward"] == []
+    assert rows["preference"] == []
+    assert rows["rlvr"] == []
+    assert len(rows["code_rlvr"]) == 1
+    assert rows["code_rlvr"][0]["reward_components"]["code_tests_passed"] == 1.0
+
+
 def test_teacher_rollout_json_becomes_typed_training_rows() -> None:
     record = {
         "schema": "omnicoder.openai_teacher_rollout_2026.v1",

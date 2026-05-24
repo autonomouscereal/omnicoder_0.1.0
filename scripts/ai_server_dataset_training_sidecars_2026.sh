@@ -9,6 +9,11 @@ MAX_RECORDS_PER_DATASET="${OMNICODER_MAX_RECORDS_PER_DATASET:-1024}"
 TEACHER_LIMIT="${OMNICODER_TEACHER_LIMIT:-256}"
 MAX_GPU_TEMP="${OMNICODER_MAX_GPU_TEMP:-78}"
 TEACHER_JOB_ROOT="${OMNICODER_TEACHER_JOB_ROOT:-weights/data_factory/runs/teacher_jobs}"
+PROMOTE_LATEST="${OMNICODER_PROMOTE_LATEST:-1}"
+PROMOTE_SHARED_ARTIFACTS="${OMNICODER_PROMOTE_SHARED_ARTIFACTS:-0}"
+CURATED_DATASET_SOURCE="${OMNICODER_CURATED_DATASET_SOURCE:-weights/curated_datasets_2026/latest}"
+EXTERNAL_DATASET_SOURCE="${OMNICODER_EXTERNAL_DATASET_SOURCE:-weights/external_datasets_2026/latest}"
+TEACHER_JOB_SOURCE="${OMNICODER_TEACHER_JOB_SOURCE:-${TEACHER_JOB_ROOT}/latest}"
 PYTHON_BIN="${OMNICODER_DATA_PYTHON:-python3}"
 ENFORCE_DATASET_MINIMA="${OMNICODER_ENFORCE_DATASET_MINIMA:-1}"
 TRACE_LIMIT="${OMNICODER_TRACE_LIMIT:-0}"
@@ -22,6 +27,13 @@ export OMNICODER_TRACE_WORK_DIR="${OMNICODER_TRACE_WORK_DIR:-weights/data_factor
 
 log() {
   printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+}
+
+truthy() {
+  case "${1,,}" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 require_nonempty_jsonl() {
@@ -121,8 +133,12 @@ collect_curate() {
     --profile "$PROFILE" \
     --out-dir "weights/curated_datasets_2026/runs/${RUN_ID}" \
     build | tee "$out/logs/curated_dataset_builder.json"
-  ln -sfn "$ROOT/weights/curated_datasets_2026/runs/${RUN_ID}" weights/curated_datasets_2026/latest
-  log "promoted curated dataset symlink to weights/curated_datasets_2026/runs/${RUN_ID}"
+  if truthy "$PROMOTE_LATEST"; then
+    ln -sfn "$ROOT/weights/curated_datasets_2026/runs/${RUN_ID}" weights/curated_datasets_2026/latest
+    log "promoted curated dataset symlink to weights/curated_datasets_2026/runs/${RUN_ID}"
+  else
+    log "kept curated dataset run-scoped at weights/curated_datasets_2026/runs/${RUN_ID}"
+  fi
 }
 
 external_expansion() {
@@ -164,15 +180,19 @@ with train_path.open("r", encoding="utf-8", errors="ignore") as handle:
 if synthetic_train:
     raise SystemExit(f"external expansion attempted to promote {synthetic_train} synthetic seed rows into train")
 PY
-  ln -sfn "$ROOT/$out" weights/external_datasets_2026/latest
-  log "promoted external dataset symlink to $out"
+  if truthy "$PROMOTE_LATEST"; then
+    ln -sfn "$ROOT/$out" weights/external_datasets_2026/latest
+    log "promoted external dataset symlink to $out"
+  else
+    log "kept external dataset run-scoped at $out"
+  fi
 }
 
 agentic_tool_training() {
-  local out="weights/agentic_tool_training_2026"
   local run_out="weights/agentic_tool_training_2026/runs/${RUN_ID}"
+  local out="$run_out"
   local source="${OMNICODER_TRACE_WORK_DIR}/jsonl/contamination_scanned.jsonl"
-  mkdir -p "$out" "$run_out"
+  mkdir -p "$out"
   require_nonempty_jsonl "$source" "trace_orchestrator_contamination_scanned"
   log "build agentic tool SFT/reward/preference/RLVR exports"
   "$PYTHON_BIN" -m omnicoder.training.agentic_tool_training_2026 \
@@ -183,8 +203,9 @@ agentic_tool_training() {
     --limit 0 | tee "$run_out/agentic_tool_training_manifest.stdout.json"
   "$PYTHON_BIN" - <<'PY'
 import json
+import os
 from pathlib import Path
-p = Path("weights/agentic_tool_training_2026/agentic_tool_training_manifest.json")
+p = Path("weights/agentic_tool_training_2026/runs") / Path(os.environ["RUN_ID"]) / "agentic_tool_training_manifest.json"
 data = json.loads(p.read_text())
 counts = data.get("counts", {})
 required = ["sft", "reward", "preference", "rlvr", "tool_rlvr"]
@@ -192,9 +213,14 @@ missing = {name: int(counts.get(name) or 0) for name in required if int(counts.g
 if missing:
     raise SystemExit(f"agentic tool training produced empty required exports: {missing}")
 PY
-  cp "$out"/tool_*.jsonl "$run_out"/ 2>/dev/null || true
-  cp "$out"/agentic_tool_training_manifest.json "$run_out"/ 2>/dev/null || true
-  ln -sfn "$ROOT/$run_out" weights/agentic_tool_training_2026/latest_run
+  if truthy "$PROMOTE_LATEST"; then
+    ln -sfn "$ROOT/$run_out" weights/agentic_tool_training_2026/latest_run
+  fi
+  if truthy "$PROMOTE_SHARED_ARTIFACTS"; then
+    cp "$run_out"/*.jsonl weights/agentic_tool_training_2026/ 2>/dev/null || true
+    cp "$run_out"/agentic_tool_training_manifest.json weights/agentic_tool_training_2026/ 2>/dev/null || true
+    log "promoted agentic tool exports to shared weights/agentic_tool_training_2026"
+  fi
   log "agentic tool training exports refreshed in $out"
 }
 
@@ -219,14 +245,14 @@ teacher_jobs() {
   local job_dir="${TEACHER_JOB_ROOT}/${RUN_ID}"
   mkdir -p "$job_dir"
   log "build agentic/math/code/tool teacher jobs"
-  build_jobs_if_present weights/curated_datasets_2026/latest/jsonl/train_agentic_focus.jsonl agentic_math_code_tool_critique "$job_dir/agentic_jobs.jsonl"
-  build_jobs_if_present weights/curated_datasets_2026/latest/jsonl/train_code.jsonl code_repair_reasoning_critique "$job_dir/code_jobs.jsonl"
-  build_jobs_if_present weights/curated_datasets_2026/latest/jsonl/train_tool.jsonl tool_call_replay_reward_critique "$job_dir/tool_jobs.jsonl"
-  build_jobs_if_present weights/external_datasets_2026/latest/jsonl/math_reasoning.jsonl math_rlvr_answer_critique "$job_dir/math_jobs.jsonl"
-  build_jobs_if_present weights/external_datasets_2026/latest/jsonl/coding_agentic.jsonl coding_agent_trajectory_critique "$job_dir/external_code_jobs.jsonl"
-  build_jobs_if_present weights/external_datasets_2026/latest/jsonl/agentic_tool_reasoning.jsonl agentic_tool_reasoning_critique "$job_dir/external_tool_jobs.jsonl"
-  build_jobs_if_present weights/external_datasets_2026/latest/jsonl/terminal_browser_agents.jsonl terminal_browser_agent_critique "$job_dir/external_terminal_jobs.jsonl"
-  build_jobs_if_present weights/external_datasets_2026/latest/jsonl/research_internal_all_external.jsonl research_internal_distillation_review "$job_dir/research_internal_jobs.jsonl"
+  build_jobs_if_present "${CURATED_DATASET_SOURCE}/jsonl/train_agentic_focus.jsonl" agentic_math_code_tool_critique "$job_dir/agentic_jobs.jsonl"
+  build_jobs_if_present "${CURATED_DATASET_SOURCE}/jsonl/train_code.jsonl" code_repair_reasoning_critique "$job_dir/code_jobs.jsonl"
+  build_jobs_if_present "${CURATED_DATASET_SOURCE}/jsonl/train_tool.jsonl" tool_call_replay_reward_critique "$job_dir/tool_jobs.jsonl"
+  build_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/math_reasoning.jsonl" math_rlvr_answer_critique "$job_dir/math_jobs.jsonl"
+  build_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/coding_agentic.jsonl" coding_agent_trajectory_critique "$job_dir/external_code_jobs.jsonl"
+  build_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/agentic_tool_reasoning.jsonl" agentic_tool_reasoning_critique "$job_dir/external_tool_jobs.jsonl"
+  build_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/terminal_browser_agents.jsonl" terminal_browser_agent_critique "$job_dir/external_terminal_jobs.jsonl"
+  build_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/research_internal_all_external.jsonl" research_internal_distillation_review "$job_dir/research_internal_jobs.jsonl"
   local job_files=()
   mapfile -d '' job_files < <(find "$job_dir" -maxdepth 1 -name '*_jobs.jsonl' -type f -size +0c -print0 | sort -z)
   if [[ "${#job_files[@]}" -eq 0 ]]; then
@@ -237,13 +263,15 @@ teacher_jobs() {
   awk 'NR % 3 == 1' "$job_dir/all_jobs.jsonl" > "$job_dir/shard_gpu1.jsonl"
   awk 'NR % 3 == 2' "$job_dir/all_jobs.jsonl" > "$job_dir/shard_gpu2.jsonl"
   awk 'NR % 3 == 0' "$job_dir/all_jobs.jsonl" > "$job_dir/shard_gpu3.jsonl"
-  ln -sfn "$ROOT/$job_dir" "${TEACHER_JOB_ROOT}/latest"
+  if truthy "$PROMOTE_LATEST"; then
+    ln -sfn "$ROOT/$job_dir" "${TEACHER_JOB_ROOT}/latest"
+  fi
   wc -l "$job_dir"/*.jsonl
   log "teacher job dir: $job_dir"
 }
 
 p40_teacher_rollouts() {
-  local job_dir="${TEACHER_JOB_ROOT}/latest"
+  local job_dir="${TEACHER_JOB_SOURCE}"
   local out_dir="weights/data_factory/teacher_rollouts/${RUN_ID}"
   mkdir -p "$out_dir/logs"
   log "launch P40 teacher rollouts"
@@ -257,6 +285,7 @@ p40_teacher_rollouts() {
       --limit "$TEACHER_LIMIT" --max-tokens 1024 --temperature 0.2 --timeout 180 --sleep 2 \
       --record-kind qwen36_p40_agentic_math_code_tool \
       --thermal-gpu-index 1 --max-gpu-temp "$MAX_GPU_TEMP" \
+      --resume \
       > "$out_dir/logs/gpu1.log" 2>&1 &
     pids+=("$!")
   fi
@@ -269,6 +298,7 @@ p40_teacher_rollouts() {
       --limit "$TEACHER_LIMIT" --max-tokens 1024 --temperature 0.2 --timeout 180 --sleep 2 \
       --record-kind qwen36_p40_agentic_math_code_tool \
       --thermal-gpu-index 2 --max-gpu-temp "$MAX_GPU_TEMP" \
+      --resume \
       > "$out_dir/logs/gpu2.log" 2>&1 &
     pids+=("$!")
   fi
@@ -281,6 +311,7 @@ p40_teacher_rollouts() {
       --limit "$TEACHER_LIMIT" --max-tokens 1024 --temperature 0.2 --timeout 180 --sleep 2 \
       --record-kind qwen36_p40_agentic_math_code_tool \
       --thermal-gpu-index 3 --max-gpu-temp "$MAX_GPU_TEMP" \
+      --resume \
       > "$out_dir/logs/gpu3.log" 2>&1 &
     pids+=("$!")
   fi
@@ -300,6 +331,7 @@ p40_teacher_rollouts() {
     exit 5
   fi
   local refreshed_source="weights/agentic_tool_training_2026/runs/${RUN_ID}/trace_plus_teacher_rollouts.jsonl"
+  local refreshed_out="weights/agentic_tool_training_2026/runs/${RUN_ID}/after_teacher"
   mkdir -p "$(dirname "$refreshed_source")"
   if [[ -s "${OMNICODER_TRACE_WORK_DIR}/jsonl/contamination_scanned.jsonl" ]]; then
     cat "${OMNICODER_TRACE_WORK_DIR}/jsonl/contamination_scanned.jsonl" "$out_dir/qwen36_agentic_math_code_tool.jsonl" > "$refreshed_source"
@@ -311,12 +343,13 @@ p40_teacher_rollouts() {
     --profile profiles/agentic_tool_training_2026.json \
     build \
     --input "$refreshed_source" \
-    --out-dir weights/agentic_tool_training_2026 \
+    --out-dir "$refreshed_out" \
     --limit 0 > "weights/agentic_tool_training_2026/runs/${RUN_ID}/agentic_tool_training_after_teacher.stdout.json"
   "$PYTHON_BIN" - <<'PY'
 import json
+import os
 from pathlib import Path
-p = Path("weights/agentic_tool_training_2026/agentic_tool_training_manifest.json")
+p = Path("weights/agentic_tool_training_2026/runs") / Path(os.environ["RUN_ID"]) / "after_teacher" / "agentic_tool_training_manifest.json"
 data = json.loads(p.read_text())
 counts = data.get("counts", {})
 required = ["sft", "reward", "preference", "rlvr", "tool_rlvr"]
@@ -324,6 +357,11 @@ missing = {name: int(counts.get(name) or 0) for name in required if int(counts.g
 if missing:
     raise SystemExit(f"teacher-refreshed agentic exports are empty: {missing}")
 PY
+  if truthy "$PROMOTE_SHARED_ARTIFACTS"; then
+    cp "$refreshed_out"/*.jsonl weights/agentic_tool_training_2026/ 2>/dev/null || true
+    cp "$refreshed_out"/agentic_tool_training_manifest.json weights/agentic_tool_training_2026/ 2>/dev/null || true
+    log "promoted teacher-refreshed agentic exports to shared weights/agentic_tool_training_2026"
+  fi
   "$PYTHON_BIN" - <<PY
 import json
 from pathlib import Path
@@ -333,7 +371,9 @@ for path in sorted(out.glob("qwen36*.jsonl")):
     counts[path.name] = sum(1 for line in path.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
 (out / "teacher_rollout_manifest.json").write_text(json.dumps({"status": "ok", "run_id": "$RUN_ID", "failures": $failures, "counts": counts}, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
 PY
-  ln -sfn "$ROOT/$out_dir" weights/data_factory/teacher_rollouts/latest
+  if truthy "$PROMOTE_LATEST"; then
+    ln -sfn "$ROOT/$out_dir" weights/data_factory/teacher_rollouts/latest
+  fi
   if [[ "$failures" -gt 0 ]]; then
     log "teacher rollout dir: $out_dir with $failures failed worker(s); combined nonempty output promoted"
   else

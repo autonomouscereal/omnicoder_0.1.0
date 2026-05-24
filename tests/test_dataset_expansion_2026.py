@@ -113,6 +113,57 @@ def test_dataset_expansion_falls_back_to_distillation_seeds_after_hf_failure(tmp
     assert manifest["synthetic_seed_families"]["image_generation_editing"] == 1
 
 
+def test_dataset_expansion_downloads_remote_tsv_rows(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    tsv = (
+        "index\tid\tcategory\timage\tquestion\tanswer\tA\tB\tC\tD\tmodel_tools_gt\n"
+        "1\tattention_1\tattention\timages/a.jpg\tRead the mirrored sign.\tA\tText\tOther\tNone\tAll\t[\"Crop\", \"Flip\"]\n"
+        "2\tcount_1\tcounting\timages/b.jpg\tHow many objects?\tC\t1\t2\t3\t4\t[\"Threshold\", \"Draw Contours\"]\n"
+    )
+    (root / "data" / "vtc.tsv").parent.mkdir(parents=True, exist_ok=True)
+    (root / "data" / "vtc.tsv").write_text(tsv, encoding="utf-8")
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "unit_vtc",
+                    "family": "omnimodal_understanding",
+                    "target_modality": "image",
+                    "remote_files": [{"url": "data/vtc.tsv", "format": "tsv"}],
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive_eval_holdout",
+                    "use_policy": "eval_only",
+                    "field_map": {
+                        "prompt": ["question", "category"],
+                        "target": ["answer", "A", "B", "C", "D", "model_tools_gt"],
+                        "media": ["image"],
+                        "trajectory": ["model_tools_gt"],
+                        "id": ["id"],
+                    },
+                }
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": True, "no_streaming": False, "max_records_per_dataset": 0})(),
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (root / "weights" / "external" / "jsonl" / "omnimodal_understanding_eval_holdout.jsonl").read_text().splitlines()
+    ]
+    assert manifest["datasets"][0]["source"] == "remote_files"
+    assert manifest["records"]["eval_holdout"] == 2
+    assert rows[0]["media_refs"] == ["images/a.jpg"]
+    assert rows[0]["trajectory"] == ['["Crop", "Flip"]']
+
+
 def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
@@ -163,6 +214,124 @@ def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, m
     report = manifest["requirement_report"]
     assert report["requirements"]["math_reasoning"]["status"] == "passed"
     assert report["requirements"]["coding_agentic"]["status"] == "failed"
+
+
+def test_dataset_expansion_family_files_are_train_safe_and_bucket_partitioned(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    _write_jsonl(root / "data" / "tool_train.jsonl", [{"prompt": "Call the weather tool.", "answer": "Use the tool.", "id": "t1"}])
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "train_tool",
+                    "family": "agentic_tool_reasoning",
+                    "target_modality": "tool",
+                    "local_jsonl": "data/tool_train.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                    "field_map": {
+                        "prompt": ["prompt"],
+                        "target": ["answer"],
+                        "id": ["id"],
+                        "tool_calls": ["tool_calls"],
+                        "media_refs": ["media"],
+                    },
+                },
+                {
+                    "name": "eval_tool",
+                    "family": "agentic_tool_reasoning",
+                    "target_modality": "tool",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive_eval_holdout",
+                    "use_policy": "eval_only",
+                    "distillation_prompts": [{"instruction": "held out tool task", "target": "held out answer"}],
+                },
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": False, "no_streaming": False, "max_records_per_dataset": 0, "enforce_requirements": False})(),
+    )
+
+    train_family = [json.loads(line) for line in (root / "weights" / "external" / "jsonl" / "agentic_tool_reasoning.jsonl").read_text().splitlines()]
+    eval_family = [json.loads(line) for line in (root / "weights" / "external" / "jsonl" / "agentic_tool_reasoning_eval_holdout.jsonl").read_text().splitlines()]
+    all_family = [json.loads(line) for line in (root / "weights" / "external" / "jsonl" / "agentic_tool_reasoning_all.jsonl").read_text().splitlines()]
+
+    assert manifest["family_paths"]["agentic_tool_reasoning"]["train"].endswith("agentic_tool_reasoning.jsonl")
+    assert len(train_family) == 1
+    assert {row["training_bucket"] for row in train_family} == {"train"}
+    assert len(eval_family) == 1
+    assert {row["training_bucket"] for row in eval_family} == {"eval_holdout"}
+    assert len(all_family) == 2
+
+
+def test_dataset_expansion_preserves_structured_tool_media_and_declared_modality(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    _write_jsonl(
+        root / "data" / "multi.jsonl",
+        [
+            {
+                "instruction": "Edit this image and explain the patch.",
+                "response": "Preserve the product logo and replace the background.",
+                "media": [{"type": "image", "path": "sample.png"}],
+                "calls": [{"tool": "image_edit", "arguments": {"mask": "background"}}],
+                "results": [{"status": "ok"}],
+                "labels": [{"check": "preserve_identity", "label": "pass"}],
+                "score": 0.87,
+            }
+        ],
+    )
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "multi_tool_media",
+                    "family": "image_generation_editing",
+                    "target_modality": "multimodal",
+                    "local_jsonl": "data/multi.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                    "field_map": {
+                        "prompt": ["instruction"],
+                        "target": ["response"],
+                        "media": ["media"],
+                        "tool_calls": ["calls"],
+                        "tool_results": ["results"],
+                        "verifier_labels": ["labels"],
+                        "reward": ["score"],
+                    },
+                }
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+    expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": False, "no_streaming": False, "max_records_per_dataset": 0, "enforce_requirements": False})(),
+    )
+
+    row = json.loads((root / "weights" / "external" / "jsonl" / "image_generation_editing.jsonl").read_text().splitlines()[0])
+    assert row["declared_target_modality"] == "multimodal"
+    assert row["modality"] == "image"
+    assert row["media_refs"][0]["path"] == "sample.png"
+    assert row["tool_calls"][0]["tool"] == "image_edit"
+    assert row["tool_results"][0]["status"] == "ok"
+    assert row["verifier_labels"][0]["check"] == "preserve_identity"
+    assert row["reward"] == 0.87
+    assert "tool" in row["domains"]
 
 
 def test_huggingface_iteration_errors_do_not_abort_expansion(monkeypatch) -> None:
@@ -419,13 +588,50 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
         "Video-MME-v2",
         "LVBench",
         "LVOmniBench",
+        "OmniContext",
+        "VTC-Bench Visual Tool Chain",
+        "FiVE Fine-Grained Video Editing Benchmark",
+        "OmniEdit-Bench",
+        "MAVERIX",
         "JointAVBench",
+        "OpenAudioBench",
+        "Ming Freeform Audio Edit Benchmark",
+        "Common Voice 22.0 Mirror English",
+        "PDMX Multi-Instrument Synthesized",
+        "Song Describer",
+        "OmniDoc-TokenBench",
+        "ChartQAPro",
+        "OmniDoc OCR Correction Bench",
+        "OmniCorpus CC",
+        "OmniCorpus YT",
+        "OmniGUI",
         "PhyWorldBench",
         "Image-to-Video Human Preferences Large",
         "MusicEval",
         "MCIF Crosslingual Multimodal Instruction Following",
         "Multimodal RewardBench 2",
         "VoiceAgentBench",
+        "Toolathlon Trajectories",
+        "Agentic Chain-of-Thought Coding SFT",
+        "Plan-RewardBench",
+        "R2E-Gym Verifier Trajectories",
+        "R2E-Gym TestingAgent SFT Trajectories",
+        "s1K-1.1 Reasoning",
+        "HMMT February 2025",
+        "MMVU",
+        "OCRBench v2",
+        "MM-IQ",
+        "Real5-OmniDocBench",
+        "JoyAI Image OpenSpatial",
+        "JoyAI Image SpatialEdit",
+        "JoyAI Image SpatialEdit Bench",
+        "X-LANCE WikiHow Taskset",
+        "X-LANCE WebSRC v1.0",
+        "DeepGen 1.0 Dataset Card",
+        "Salesforce APIGen-MT-5k",
+        "PrimeIntellect SYNTHETIC-1 SFT",
+        "PrimeIntellect SYNTHETIC-1 Preference",
+        "Alibaba WebShaper",
     ]:
         assert name in by_name
 
@@ -539,7 +745,24 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     assert by_name["LongMemEval-V2"]["use_policy"] == "eval_only"
     assert by_name["Video-MME-v2"]["use_policy"] == "eval_only"
     assert by_name["LVOmniBench"]["use_policy"] == "eval_only"
+    assert by_name["OmniContext"]["use_policy"] == "train"
+    assert by_name["VTC-Bench Visual Tool Chain"]["use_policy"] == "eval_only"
+    assert by_name["VTC-Bench Visual Tool Chain"]["remote_files"][0]["format"] == "tsv"
+    assert by_name["FiVE Fine-Grained Video Editing Benchmark"]["use_policy"] == "eval_only"
+    assert by_name["OmniEdit-Bench"]["use_policy"] == "eval_only"
+    assert by_name["MAVERIX"]["use_policy"] == "eval_only"
     assert by_name["JointAVBench"]["use_policy"] == "eval_only"
+    assert by_name["OpenAudioBench"]["use_policy"] == "eval_only"
+    assert by_name["Ming Freeform Audio Edit Benchmark"]["use_policy"] == "eval_only"
+    assert by_name["Common Voice 22.0 Mirror English"]["use_policy"] == "train"
+    assert by_name["PDMX Multi-Instrument Synthesized"]["use_policy"] == "train"
+    assert by_name["Song Describer"]["use_policy"] == "train"
+    assert by_name["OmniDoc-TokenBench"]["use_policy"] == "eval_only"
+    assert by_name["ChartQAPro"]["use_policy"] == "eval_only"
+    assert by_name["OmniDoc OCR Correction Bench"]["use_policy"] == "eval_only"
+    assert by_name["OmniCorpus CC"]["use_policy"] == "train"
+    assert by_name["OmniCorpus YT"]["use_policy"] == "train"
+    assert by_name["OmniGUI"]["use_policy"] == "research_internal"
     assert by_name["Image-to-Video Human Preferences Large"]["use_policy"] == "research_internal"
     assert by_name["AudioMC"]["use_policy"] == "eval_only"
     assert by_name["HLE"]["use_policy"] == "eval_only"
@@ -552,6 +775,10 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     assert by_name["CodeElo"]["license_tier"] == "permissive_eval_holdout"
     assert by_name["MMMU Pro"]["license_tier"] == "permissive_eval_holdout"
     assert by_name["LVOmniBench"]["license_tier"] == "benchmark_holdout_review"
+    assert by_name["OmniContext"]["license_tier"] == "permissive"
+    assert by_name["VTC-Bench Visual Tool Chain"]["license_tier"] == "permissive_eval_holdout"
+    assert by_name["OpenAudioBench"]["license_tier"] == "unknown_eval_holdout"
+    assert by_name["OmniGUI"]["license_tier"] == "non_commercial_sharealike"
     assert by_name["JointAVBench"]["license_tier"] == "sharealike_eval_holdout"
     assert by_name["LongMemEval-V2"]["family"] == "long_context"
     assert by_name["AVGen-Bench"]["target_modality"] == "video"
@@ -567,6 +794,11 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     assert by_name["Video-MME"]["use_policy"] == "eval_only"
     assert by_name["Multimodal RewardBench 2"]["use_policy"] == "eval_only"
     assert by_name["Multimodal RewardBench 2"]["hf_id"] == "rl-research/multimodal-rewardbench-2"
+    assert by_name["Salesforce APIGen-MT-5k"]["use_policy"] == "research_internal"
+    assert by_name["Salesforce APIGen-MT-5k"]["config"] == "dataset"
+    assert by_name["PrimeIntellect SYNTHETIC-1 SFT"]["use_policy"] == "train"
+    assert by_name["PrimeIntellect SYNTHETIC-1 Preference"]["use_policy"] == "train"
+    assert by_name["Alibaba WebShaper"]["use_policy"] == "research_internal"
 
     third_wave_policy = {
         "NVIDIA ToolScale": "research_internal",
@@ -648,6 +880,32 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     assert by_name["Math-RLVR 773K"]["license_tier"] == "permissive"
     assert by_name["NVIDIA LongAudio"]["license_tier"] == "non_commercial_review"
     assert by_name["Rapidata Image-to-Video Human Preference Hailuo 02 Marey"]["target_modality"] == "video"
+    fourth_wave_policy = {
+        "Toolathlon Trajectories": "research_internal",
+        "Agentic Chain-of-Thought Coding SFT": "train",
+        "Plan-RewardBench": "research_internal",
+        "R2E-Gym Verifier Trajectories": "research_internal",
+        "R2E-Gym TestingAgent SFT Trajectories": "research_internal",
+        "s1K-1.1 Reasoning": "train",
+        "HMMT February 2025": "eval_only",
+        "MMVU": "eval_only",
+        "OCRBench v2": "eval_only",
+        "MM-IQ": "eval_only",
+        "Real5-OmniDocBench": "eval_only",
+        "JoyAI Image OpenSpatial": "train",
+        "JoyAI Image SpatialEdit": "blocked_until_review",
+        "JoyAI Image SpatialEdit Bench": "blocked_until_review",
+        "X-LANCE WikiHow Taskset": "eval_only",
+        "X-LANCE WebSRC v1.0": "train",
+        "DeepGen 1.0 Dataset Card": "research_internal",
+    }
+    for name, policy in fourth_wave_policy.items():
+        assert by_name[name]["use_policy"] == policy
+    assert by_name["Toolathlon Trajectories"]["license"] == "CC-BY-4.0"
+    assert by_name["Agentic Chain-of-Thought Coding SFT"]["license_tier"] == "permissive_synthetic_distilled"
+    assert by_name["JoyAI Image OpenSpatial"]["target_modality"] == "image"
+    assert by_name["X-LANCE WebSRC v1.0"]["family"] == "omnimodal_understanding"
+    assert expansion.source_use_bucket(by_name["JoyAI Image SpatialEdit"]) == "blocked_until_review"
 
     requirements = profile["external_dataset_registry_2026"]["required_real_family_min_records"]
     for family in [

@@ -87,6 +87,13 @@ dataset-expansion-2026 `
   build
 ```
 
+For family and modality partitions, the bare JSONL path is train-only
+(`math_reasoning.jsonl`, `image.jsonl`). Explicit suffixes carry the wider
+policy buckets: `_all`, `_research_internal`, `_eval_holdout`, and
+`_blocked_until_review`. Aggregate files follow the same rule with
+`train_all_external.jsonl`, `research_internal_all_external.jsonl`,
+`eval_holdout_all_external.jsonl`, and `blocked_until_review.jsonl`.
+
 Current high-value registry families:
 
 - Math/reasoning: OpenR1-Math-220k, DAPO-Math-17k-Processed,
@@ -144,6 +151,22 @@ Current high-value registry families:
   blends, Math-RLVR 773K, PrimeIntellect verifiable review rows, and
   High-Quality-Verifiable-Math review rows are included with train/research/eval
   gates based on license and contamination risk.
+- Fourth-wave additions: Toolathlon, Agentic CoT Coding SFT,
+  Plan-RewardBench, R2E verifier/testing rows, s1K-1.1, HMMT 2025, MMVU,
+  OCRBench v2, MM-IQ, Real5, JoyAI OpenSpatial, OmniContext, VTC-Bench visual
+  tool chains, FiVE, OmniEdit-Bench, OpenAudioBench, Ming freeform audio edit,
+  Common Voice 22.0, PDMX, Song Describer, OmniDoc-TokenBench, ChartQAPro,
+  OmniDoc OCR correction, OmniCorpus CC/YT, OmniGUI, X-LANCE WikiHow/WebSRC,
+  APIGen-MT, PrimeIntellect SYNTHETIC-1 SFT and preference rows, WebShaper, and
+  DeepGen card rows are now represented in the registry. APIGen-MT, OmniGUI,
+  and WebShaper are research/internal until their non-commercial,
+  share-alike, or missing-license constraints are resolved. FiVE,
+  OmniEdit-Bench, OpenAudioBench, Ming audio edit, OmniDoc, ChartQAPro, and
+  VTC-Bench stay in eval-holdout buckets. JoyAI SpatialEdit is blocked until
+  license/split review; DeepGen card rows are research-only.
+  GitHub-hosted TSV/CSV/JSON/JSONL files can now be materialized through
+  `remote_files`, which lets VTC-Bench enter the eval-holdout lane as real
+  rows with image refs and ground-truth visual tool trajectories.
 
 Rows from external sources are not merged into the 20B target lane merely
 because they exist. They must survive redaction, dedupe, benchmark
@@ -178,7 +201,9 @@ video, music, and audio artifacts can feed multimodal SFT, reward-labeling, and
 teacher-job generation with provenance intact. On the AI server the trace
 orchestrator writes to a run-scoped
 `weights/data_factory/runs/trace_orchestrator/<run_id>` directory so stale
-root-owned artifacts cannot block fresh curation passes.
+root-owned artifacts cannot block fresh curation passes. Curated, external,
+teacher, and agentic-tool sidecar outputs are also run-scoped by default;
+shared-path promotion is explicit opt-in through the sidecar promotion knobs.
 
 ## Quality And Safety
 
@@ -211,16 +236,19 @@ Domain rows carry verifier contracts and reward axes for exact math answers,
 code tests, terminal state, browser citations, and tool schema/state validity.
 This lets the training sampler weight math, coding, terminal, browser, and
 tool RLVR separately instead of treating every agent trajectory as one generic
-tool trace.
+tool trace. Pure math and pure code verifier rows now emit `math_rlvr.jsonl`
+or `code_rlvr.jsonl` without entering generic `tool_sft.jsonl`,
+`tool_reward.jsonl`, or `tool_preference.jsonl`.
 
 The AI-server sidecar now runs this exporter immediately after trace curation
 and again after P40/Qwen3.6 teacher rollouts. The first pass turns fresh Codex,
 Claude, Hermes, LM Studio, ComfyUI, and agent-memory traces into SFT, reward,
 preference, and RLVR files. The second pass concatenates contamination-scanned
 trace rows with successful teacher-rollout rows so local model critiques become
-actual posttraining artifacts at the stable
-`weights/agentic_tool_training_2026/*.jsonl` paths used by the 20B training
-profile.
+actual posttraining artifacts. Outputs first land under
+`weights/agentic_tool_training_2026/runs/<run_id>`; copying them to shared
+`weights/agentic_tool_training_2026/*.jsonl` paths requires explicit shared
+promotion opt-in.
 
 ## PostgreSQL
 

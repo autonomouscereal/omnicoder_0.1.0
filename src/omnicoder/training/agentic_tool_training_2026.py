@@ -73,6 +73,7 @@ DEFAULT_REWARD_WEIGHTS = {
     "rollout_efficiency": 0.07,
     "risk_penalty": -0.35,
 }
+PURE_VERIFIABLE_RLVR_DOMAINS = {"math", "code"}
 
 
 def stable_hash(value: Any) -> str:
@@ -495,7 +496,25 @@ def eligible(record: dict[str, Any], min_quality: float) -> bool:
         return False
     if quality_score(record) < min_quality:
         return False
-    return has_tool_signal(record) and bool(normalize_messages_for_tools(record))
+    if not normalize_messages_for_tools(record):
+        return False
+    return has_tool_signal(record) or bool(pure_verifiable_rlvr_domains(record))
+
+
+def pure_verifiable_rlvr_domains(record: dict[str, Any]) -> list[str]:
+    if has_tool_signal(record):
+        return []
+    domains = [domain for domain in task_domains(record) if domain in PURE_VERIFIABLE_RLVR_DOMAINS]
+    if not domains:
+        return []
+    components = reward_components(record, [], [], risk_labels(record), domains)
+    verified: list[str] = []
+    for domain in domains:
+        if domain == "math" and components.get("math_answer_exact", 0.0) > 0.0:
+            verified.append(domain)
+        if domain == "code" and components.get("code_tests_passed", 0.0) > 0.0:
+            verified.append(domain)
+    return verified
 
 
 def domain_config(profile_cfg: dict[str, Any] | None, domain: str) -> dict[str, Any]:
@@ -580,11 +599,14 @@ def rows_for_record(
         outputs["safety"].append(build_safety_row(record, risks))
     if not eligible(record, min_quality):
         return outputs
+    is_tool_row = has_tool_signal(record)
     reward_weights = profile_cfg.get("reward_weights") if isinstance(profile_cfg, dict) and isinstance(profile_cfg.get("reward_weights"), dict) else {}
     signal = teacher_signal(record)
     calls = tool_calls(record)
     results = tool_results(record)
     domains = task_domains(record) or ["tool"]
+    if not is_tool_row:
+        domains = pure_verifiable_rlvr_domains(record)
     messages = normalize_messages_for_tools(record)
     if signal.get("is_teacher_rollout") and signal.get("corrected_response"):
         user_messages = [message for message in messages if message["role"] in {"system", "user"}]
@@ -611,44 +633,45 @@ def rows_for_record(
     }
     if signal.get("is_teacher_rollout"):
         base["teacher_signal"] = signal
-    outputs["sft"].append(
-        {
-            **base,
-            "training_kind": "tool_sft",
-            "messages": messages,
-            "metadata": {
-                "assistant_only_loss": True,
-                "tool_schema_masking": True,
-                "state_tracking": bool(results),
-            },
-        }
-    )
-    outputs["reward"].append(
-        {
-            **base,
-            "training_kind": "tool_reward",
-            "prompt": text,
-            "reward": reward,
-            "reward_components": components,
-        }
-    )
-    if signal.get("is_teacher_rollout"):
-        chosen = str(signal.get("chosen") or signal.get("corrected_response") or messages[-1]["content"])
-        rejected = str(signal.get("rejected") or "No valid tool plan.")
-    else:
-        chosen = json.dumps({"tool_calls": calls, "final": messages[-1]}, ensure_ascii=True, sort_keys=True)
-        rejected = json.dumps({"tool_calls": [], "final": "No valid tool plan."}, ensure_ascii=True, sort_keys=True)
-    outputs["preference"].append(
-        {
-            **base,
-            "training_kind": "tool_preference",
-            "prompt": text,
-            "chosen": chosen,
-            "rejected": rejected,
-            "preference_reason": "Prefer valid tool calls with state-aware use and no protected material.",
-        }
-    )
-    outputs["rlvr"].append(build_rlvr_row(record, base, reward, components, domains, profile_cfg))
+    if is_tool_row:
+        outputs["sft"].append(
+            {
+                **base,
+                "training_kind": "tool_sft",
+                "messages": messages,
+                "metadata": {
+                    "assistant_only_loss": True,
+                    "tool_schema_masking": True,
+                    "state_tracking": bool(results),
+                },
+            }
+        )
+        outputs["reward"].append(
+            {
+                **base,
+                "training_kind": "tool_reward",
+                "prompt": text,
+                "reward": reward,
+                "reward_components": components,
+            }
+        )
+        if signal.get("is_teacher_rollout"):
+            chosen = str(signal.get("chosen") or signal.get("corrected_response") or messages[-1]["content"])
+            rejected = str(signal.get("rejected") or "No valid tool plan.")
+        else:
+            chosen = json.dumps({"tool_calls": calls, "final": messages[-1]}, ensure_ascii=True, sort_keys=True)
+            rejected = json.dumps({"tool_calls": [], "final": "No valid tool plan."}, ensure_ascii=True, sort_keys=True)
+        outputs["preference"].append(
+            {
+                **base,
+                "training_kind": "tool_preference",
+                "prompt": text,
+                "chosen": chosen,
+                "rejected": rejected,
+                "preference_reason": "Prefer valid tool calls with state-aware use and no protected material.",
+            }
+        )
+        outputs["rlvr"].append(build_rlvr_row(record, base, reward, components, domains, profile_cfg))
     for domain in domains:
         if domain_config(profile_cfg, domain)["enabled"]:
             outputs[f"{domain}_rlvr"].append(build_rlvr_row(record, base, reward, components, domains, profile_cfg, domain=domain))
