@@ -196,8 +196,10 @@ if synthetic_train:
 PY
   if truthy "$PROMOTE_LATEST"; then
     ln -sfn "$ROOT/$out" weights/external_datasets_2026/latest
+    EXTERNAL_DATASET_SOURCE="weights/external_datasets_2026/latest"
     log "promoted external dataset symlink to $out"
   else
+    EXTERNAL_DATASET_SOURCE="$out"
     log "kept external dataset run-scoped at $out"
   fi
 }
@@ -465,6 +467,8 @@ PY
   find weights/data_factory/teacher_rollouts/latest -maxdepth 1 -name '*.jsonl' -print -exec wc -l {} \; 2>/dev/null || true
   log "agentic tool training counts"
   find weights/agentic_tool_training_2026 -maxdepth 1 -name 'tool_*.jsonl' -print -exec wc -l {} \; 2>/dev/null || true
+  log "modality teacher job counts"
+  find "${TEACHER_JOB_ROOT}/latest/modality" -maxdepth 1 -name '*.jsonl' -print -exec wc -l {} \; 2>/dev/null || true
 }
 
 case "$ACTION" in
