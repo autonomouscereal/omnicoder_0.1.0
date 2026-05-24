@@ -158,6 +158,14 @@ The reward stack should be staged before on-policy RL:
 6. Verifiable RL: GRPO/DAPO/Tree-GRPO rollouts with deterministic task checks,
    retry limits, and automatic failure labels.
 
+Teacher rollouts are parsed as structured training signals, not plain assistant
+text. The Qwen3.6/teacher prompt asks for corrected responses, corrected tool
+calls, chosen/rejected preference pairs, scalar rewards, reward components,
+verifier labels, process labels, and safety notes. `agentic_tool_training_2026`
+then routes those fields into SFT, reward, preference, and domain RLVR exports
+so teacher feedback can supervise tool repair and verifier behavior without
+flattening everything into generic chat text.
+
 ## Domain-Specific RLVR Exports
 
 The 2026 lane now emits separate verifier-ready RLVR files in addition to the

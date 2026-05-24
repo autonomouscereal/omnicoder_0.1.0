@@ -65,11 +65,26 @@ def reward_value(record: dict[str, Any]) -> float:
         return 0.5
 
 
+def is_rlvr_training_kind(kind: str) -> bool:
+    return str(kind or "").lower().endswith("_rlvr")
+
+
 def record_to_text_and_weight(record: dict[str, Any]) -> tuple[str, float]:
-    kind = str(record.get("training_kind") or "")
+    kind = str(record.get("training_kind") or "").lower()
     prompt = str(record.get("prompt") or "")
     reward = reward_value(record)
-    if kind == "tool_preference" or {"prompt", "chosen", "rejected"} <= set(record):
+    if is_rlvr_training_kind(kind):
+        target = {
+            "verifier": record.get("verifier", {}),
+            "environment": record.get("environment", {}),
+            "reward": record.get("reward", reward),
+            "reward_components": record.get("reward_components", {}),
+            "tool_calls": record.get("tool_calls", []),
+            "tool_results": record.get("tool_results", []),
+        }
+        text = f"user: {prompt}\nassistant: {compact_json(target)}"
+        weight = 0.75 + max(0.0, reward) * 1.25
+    elif kind == "tool_preference" or {"prompt", "chosen", "rejected"} <= set(record):
         text = f"user: {prompt}\nassistant: {record.get('chosen', '')}"
         weight = 1.25 + max(0.0, reward) * 0.5
     elif kind == "tool_reward":
@@ -81,14 +96,6 @@ def record_to_text_and_weight(record: dict[str, Any]) -> tuple[str, float]:
         }
         text = f"user: {prompt}\nassistant: {compact_json(target)}"
         weight = 0.5 + max(0.0, reward) * 1.5
-    elif kind == "tool_rlvr":
-        target = {
-            "verifier": record.get("verifier", {}),
-            "environment": record.get("environment", {}),
-            "tool_calls": record.get("tool_calls", []),
-        }
-        text = f"user: {prompt}\nassistant: {compact_json(target)}"
-        weight = 0.75 + max(0.0, reward) * 1.25
     elif kind == "tool_safety_negative":
         text = f"user: {prompt}\nassistant: {record.get('chosen', 'Refuse unsafe tool use and protect credentials.')}"
         weight = 1.5
@@ -100,8 +107,9 @@ def record_to_text_and_weight(record: dict[str, Any]) -> tuple[str, float]:
 
 
 class RewardReplayDataset(torch.utils.data.Dataset):
-    def __init__(self, paths: list[str], tokenizer: Any, seq_len: int, max_records: int = 0):
+    def __init__(self, paths: list[str], tokenizer: Any, seq_len: int, max_records: int = 0, allow_empty: bool = False):
         self.samples: list[tuple[list[int], float, str]] = []
+        self.empty_source = False
         per_file_limit = int(max_records) if int(max_records) > 0 and len(paths) == 1 else 0
         remaining = int(max_records) if int(max_records) > 0 else 0
         for path in paths:
@@ -121,7 +129,10 @@ class RewardReplayDataset(torch.utils.data.Dataset):
             if remaining and len(self.samples) >= remaining:
                 break
         if not self.samples:
-            self.samples.append(([1, 1], 0.05, "empty_fallback"))
+            if not allow_empty:
+                raise ValueError("reward replay dataset is empty; pass an explicit smoke/dry-run flag to allow empty replay data")
+            self.empty_source = True
+            self.samples.append(([1, 1], 0.05, "empty_smoke_fallback"))
         self.seq_len = int(seq_len)
 
     def __len__(self) -> int:
@@ -182,15 +193,27 @@ def main() -> None:
     parser.add_argument("--max-records", type=int, default=0)
     parser.add_argument("--log-file", default="")
     parser.add_argument("--seed", type=int, default=20260523)
+    parser.add_argument("--dry-run", action="store_true", help="Validate replay data and exit without training; permits empty smoke datasets")
+    parser.add_argument("--smoke", action="store_true", help="Allow an empty replay dataset to use a tiny fallback sample for smoke checks")
     args = parser.parse_args()
 
     random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
     device = torch.device(args.device)
     tokenizer = get_text_tokenizer(prefer_hf=True)
+    dataset = RewardReplayDataset(
+        args.train_jsonl,
+        tokenizer,
+        int(args.seq_len),
+        int(args.max_records),
+        allow_empty=bool(args.dry_run or args.smoke),
+    )
+    if args.dry_run:
+        done = {"status": "dry_run_ok", "dataset_records": len(dataset), "empty_dataset": bool(dataset.empty_source)}
+        print(json.dumps(done, ensure_ascii=True, sort_keys=True))
+        return
     model = load_native_checkpoint(args.checkpoint, args.profile, device)
     model.train()
-    dataset = RewardReplayDataset(args.train_jsonl, tokenizer, int(args.seq_len), int(args.max_records))
     loader = torch.utils.data.DataLoader(dataset, batch_size=int(args.batch_size), shuffle=True, drop_last=False)
     opt = torch.optim.AdamW(model.parameters(), lr=float(args.lr))
     log_path = Path(args.log_file) if args.log_file else None

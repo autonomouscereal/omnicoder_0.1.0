@@ -157,6 +157,45 @@ def test_build_exports_domain_rlvr_files(tmp_path: Path) -> None:
         assert paths[key].exists()
 
 
+def test_teacher_rollout_json_becomes_typed_training_rows() -> None:
+    record = {
+        "schema": "omnicoder.openai_teacher_rollout_2026.v1",
+        "source_date": "2026-05-24",
+        "input_json": {
+            "messages": [
+                {"role": "system", "content": "teacher"},
+                {"role": "user", "content": "Fix the failing pytest by using the shell tool."},
+            ],
+            "source_record": {"lineage": {"trace_id": "teacher-trace"}},
+        },
+        "target_json": {
+            "teacher_status": "ok",
+            "content": json.dumps(
+                {
+                    "corrected_response": "Run pytest, inspect the failing assertion, then patch the function.",
+                    "corrected_tool_calls": [{"tool": "shell", "arguments": {"command": "pytest -q"}}],
+                    "chosen": "Use the shell tool and verify tests pass.",
+                    "rejected": "Guess without running tests.",
+                    "reward": 0.88,
+                    "reward_components": {"tests_passed": 1.0, "tool_schema_valid": 1.0},
+                    "verifier_labels": [{"check": "unit_tests_pass", "label": "pass"}],
+                }
+            ),
+        },
+        "modalities": ["text", "tool"],
+        "quality": {"score": 0.9},
+    }
+
+    rows = tooltrain.rows_for_record(record, min_quality=0.1, profile_cfg={})
+
+    assert rows["sft"][0]["messages"][-1]["content"].startswith("Run pytest")
+    assert rows["sft"][0]["tool_calls"][0]["tool"] == "shell"
+    assert rows["reward"][0]["reward"] == 0.88
+    assert rows["reward"][0]["reward_components"]["teacher_reward"] == 0.88
+    assert rows["preference"][0]["chosen"] == "Use the shell tool and verify tests pass."
+    assert rows["rlvr"][0]["teacher_signal"]["verifier_labels"][0]["check"] == "unit_tests_pass"
+
+
 def test_posttrain_manifest_includes_domain_contract(tmp_path: Path) -> None:
     manifest = tooltrain.posttrain_manifest(
         "grpo",

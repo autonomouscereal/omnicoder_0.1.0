@@ -29,15 +29,16 @@ BENCHMARK_MARKERS = (
 
 
 def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
-    for idx, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines()):
-        if not line.strip():
-            continue
-        try:
-            item = json.loads(line)
-        except Exception:
-            item = {"text": line, "line": idx + 1}
-        if isinstance(item, dict):
-            yield item
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        for idx, line in enumerate(handle):
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except Exception:
+                item = {"text": line.rstrip("\n"), "line": idx + 1}
+            if isinstance(item, dict):
+                yield item
 
 
 def _text(record: dict[str, Any]) -> str:

@@ -9,12 +9,13 @@ from omnicoder.data_factory.postgres import transaction
 
 
 def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        if not line.strip():
-            continue
-        item = json.loads(line)
-        if isinstance(item, dict):
-            yield item
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            if isinstance(item, dict):
+                yield item
 
 
 def _decode_jsonb(value: Any) -> Any:
@@ -116,6 +117,26 @@ def _message_events_from(record: dict[str, Any]) -> list[dict[str, str]]:
     return events
 
 
+def _trim_events(events: list[dict[str, str]]) -> list[dict[str, str]]:
+    max_events = 0
+    max_chars = 0
+    try:
+        import os
+
+        max_events = int(os.environ.get("OMNICODER_SFT_MAX_EVENTS_PER_TRACE", "192") or 0)
+        max_chars = int(os.environ.get("OMNICODER_SFT_MAX_EVENT_CHARS", "6000") or 0)
+    except Exception:
+        max_events = 192
+        max_chars = 6000
+    if max_chars > 0:
+        events = [{**event, "content": event["content"][:max_chars]} for event in events]
+    if max_events > 0 and len(events) > max_events:
+        head = max_events // 2
+        tail = max_events - head
+        events = events[:head] + events[-tail:]
+    return events
+
+
 def _record_order(record: dict[str, Any], fallback: int) -> tuple[str, int]:
     lineage = record.get("lineage") if isinstance(record.get("lineage"), dict) else {}
     timestamp = str(record.get("created_at") or lineage.get("created_at") or record.get("source_date") or "")
@@ -207,9 +228,19 @@ def export_trace_conversations(input_path: Path, out_path: Path, min_quality: fl
                 },
             },
         )
-        group.setdefault("events", []).append({"order": _record_order(record, fallback_index), "messages": _message_events_from(record)})
+        group_events = group.setdefault("events", [])
+        max_events = 0
+        try:
+            import os
+
+            max_events = int(os.environ.get("OMNICODER_SFT_MAX_EVENTS_PER_TRACE", "192") or 0)
+        except Exception:
+            max_events = 192
+        if not max_events or len(group_events) < max_events:
+            group_events.append({"order": _record_order(record, fallback_index), "messages": _trim_events(_message_events_from(record))})
         group["metadata"]["record_count"] += 1
-        group["metadata"]["lineages"].append(record.get("lineage", {}))
+        if len(group["metadata"]["lineages"]) < 32:
+            group["metadata"]["lineages"].append(record.get("lineage", {}))
         quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
         if quality:
             group["metadata"]["quality_scores"].append(float(quality.get("score") or quality.get("overall") or 0.0))

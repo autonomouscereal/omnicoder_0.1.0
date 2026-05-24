@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import hashlib
 import json
 import re
@@ -96,16 +97,17 @@ def iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
     source = Path(path)
     if not source.exists():
         return
-    for line_no, line in enumerate(source.read_text(encoding="utf-8", errors="ignore").splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            payload = json.loads(line)
-        except Exception as exc:
-            yield {"parse_error": str(exc), "line_no": line_no, "text": line}
-            continue
-        if isinstance(payload, dict):
-            yield payload
+    with source.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except Exception as exc:
+                yield {"parse_error": str(exc), "line_no": line_no, "text": line.rstrip("\n")}
+                continue
+            if isinstance(payload, dict):
+                yield payload
 
 
 def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
@@ -121,6 +123,22 @@ def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
 
 def ensure_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def first_string(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, dict):
+        for key in ("content", "text", "answer", "response", "completion", "final", "reason"):
+            text = first_string(value.get(key))
+            if text:
+                return text
+    if isinstance(value, list):
+        parts = [first_string(item) for item in value[:8]]
+        return "\n".join(part for part in parts if part)
+    return ""
 
 
 def record_messages(record: dict[str, Any]) -> list[dict[str, str]]:
@@ -247,8 +265,99 @@ def extract_json_objects(text: str, limit: int = 8) -> list[dict[str, Any]]:
     return objects
 
 
+def parse_json_values(text: str, limit: int = 4) -> list[Any]:
+    values: list[Any] = []
+    decoder = json.JSONDecoder()
+    candidates = [text]
+    fenced = re.findall(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
+    candidates.extend(fenced)
+    for candidate in candidates:
+        probe = candidate.strip()
+        if not probe:
+            continue
+        starts = [idx for idx, char in enumerate(probe) if char in "[{"]
+        if 0 not in starts:
+            starts.insert(0, 0)
+        for start in starts:
+            if len(values) >= limit:
+                return values
+            try:
+                value, _ = decoder.raw_decode(probe[start:])
+            except Exception:
+                continue
+            values.append(value)
+    return values
+
+
+def _coerce_list_of_dicts(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        return [value]
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _coerce_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def teacher_signal(record: dict[str, Any]) -> dict[str, Any]:
+    target_json = record.get("target_json") if isinstance(record.get("target_json"), dict) else {}
+    content = str(target_json.get("content") or target_json.get("completion") or target_json.get("answer") or "")
+    if not content:
+        return {}
+    parsed: dict[str, Any] = target_json.get("teacher_signal") if isinstance(target_json.get("teacher_signal"), dict) else {}
+    for value in parse_json_values(content):
+        if isinstance(value, dict):
+            parsed = {**parsed, **value}
+            break
+    corrected_response = first_string(
+        parsed.get("corrected_response")
+        or parsed.get("corrected_answer")
+        or parsed.get("final")
+        or parsed.get("answer")
+        or parsed.get("response")
+    )
+    if not corrected_response:
+        corrected_response = content.strip()
+    corrected_tool_calls = (
+        _coerce_list_of_dicts(parsed.get("corrected_tool_calls"))
+        or _coerce_list_of_dicts(parsed.get("tool_calls"))
+        or _coerce_list_of_dicts(parsed.get("actions"))
+    )
+    reward_components = parsed.get("reward_components") or parsed.get("reward_vector") or parsed.get("scores")
+    if not isinstance(reward_components, dict):
+        reward_components = {}
+    reward = _coerce_float(parsed.get("reward") or parsed.get("score") or parsed.get("quality_score"), 0.75 if str(target_json.get("teacher_status") or "").lower() == "ok" else 0.0)
+    verifier_labels = parsed.get("verifier_labels") or parsed.get("verifier") or parsed.get("checks") or parsed.get("process_labels")
+    if isinstance(verifier_labels, dict):
+        verifier_labels = [verifier_labels]
+    elif not isinstance(verifier_labels, list):
+        verifier_labels = []
+    chosen = first_string(parsed.get("chosen")) or corrected_response
+    rejected = first_string(parsed.get("rejected")) or first_string(parsed.get("negative")) or "No valid tool plan."
+    return {
+        "is_teacher_rollout": str(record.get("schema") or "").startswith("omnicoder.openai_teacher_rollout")
+        or "teacher_status" in target_json,
+        "corrected_response": corrected_response,
+        "corrected_tool_calls": corrected_tool_calls,
+        "chosen": chosen,
+        "rejected": rejected,
+        "reward": max(-1.0, min(1.0, reward)),
+        "reward_components": {str(key): _coerce_float(value, 0.0) for key, value in reward_components.items()},
+        "verifier_labels": verifier_labels,
+        "raw_content_hash": stable_hash(content),
+    }
+
+
 def tool_calls(record: dict[str, Any]) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
+    signal = teacher_signal(record)
+    if signal.get("corrected_tool_calls"):
+        calls.extend(_coerce_list_of_dicts(signal.get("corrected_tool_calls")))
     raw = record.get("tool_calls")
     if isinstance(raw, list):
         for item in raw:
@@ -449,68 +558,100 @@ def build_rows(
     outputs = {"sft": [], "preference": [], "reward": [], "rlvr": [], "safety": []}
     for domain in DOMAIN_DEFAULTS:
         outputs[f"{domain}_rlvr"] = []
-    reward_weights = profile_cfg.get("reward_weights") if isinstance(profile_cfg, dict) and isinstance(profile_cfg.get("reward_weights"), dict) else {}
     for record in records:
         if limit and len(outputs["sft"]) >= limit:
             break
-        risks = risk_labels(record)
-        if risks and has_tool_signal(record):
-            outputs["safety"].append(build_safety_row(record, risks))
-        if not eligible(record, min_quality):
-            continue
-        calls = tool_calls(record)
-        results = tool_results(record)
-        domains = task_domains(record) or ["tool"]
-        components = reward_components(record, calls, results, risks, domains)
-        reward = tool_reward(record, risks, components, reward_weights)
-        base = {
-            "schema": "omnicoder.agentic_tool_training_2026.v1",
-            "trace_id": trace_id(record),
-            "record_hash": stable_hash(record),
-            "source_date": source_date(record),
-            "tool_calls": calls,
-            "tool_results": results,
-            "risk_labels": risks,
-            "domains": domains,
-            "quality_score": quality_score(record),
+        for name, row in rows_for_record(record, min_quality, profile_cfg).items():
+            if isinstance(row, list):
+                outputs.setdefault(name, []).extend(row)
+    return outputs
+
+
+def rows_for_record(
+    record: dict[str, Any],
+    min_quality: float,
+    profile_cfg: dict[str, Any] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    outputs: dict[str, list[dict[str, Any]]] = {"sft": [], "preference": [], "reward": [], "rlvr": [], "safety": []}
+    for domain in DOMAIN_DEFAULTS:
+        outputs[f"{domain}_rlvr"] = []
+    risks = risk_labels(record)
+    if risks and has_tool_signal(record):
+        outputs["safety"].append(build_safety_row(record, risks))
+    if not eligible(record, min_quality):
+        return outputs
+    reward_weights = profile_cfg.get("reward_weights") if isinstance(profile_cfg, dict) and isinstance(profile_cfg.get("reward_weights"), dict) else {}
+    signal = teacher_signal(record)
+    calls = tool_calls(record)
+    results = tool_results(record)
+    domains = task_domains(record) or ["tool"]
+    messages = normalize_messages_for_tools(record)
+    if signal.get("is_teacher_rollout") and signal.get("corrected_response"):
+        user_messages = [message for message in messages if message["role"] in {"system", "user"}]
+        if user_messages:
+            messages = user_messages + [{"role": "assistant", "content": str(signal["corrected_response"])}]
+    if not messages:
+        return outputs
+    text = record_text(record)[:20000]
+    components = reward_components(record, calls, results, risks, domains)
+    if signal.get("is_teacher_rollout"):
+        teacher_components = signal.get("reward_components") if isinstance(signal.get("reward_components"), dict) else {}
+        components = {**components, **teacher_components, "teacher_reward": float(signal.get("reward") or 0.0)}
+    reward = float(signal.get("reward")) if signal.get("is_teacher_rollout") else tool_reward(record, risks, components, reward_weights)
+    base = {
+        "schema": "omnicoder.agentic_tool_training_2026.v1",
+        "trace_id": trace_id(record),
+        "record_hash": stable_hash(record),
+        "source_date": source_date(record),
+        "tool_calls": calls,
+        "tool_results": results,
+        "risk_labels": risks,
+        "domains": domains,
+        "quality_score": quality_score(record),
+    }
+    if signal.get("is_teacher_rollout"):
+        base["teacher_signal"] = signal
+    outputs["sft"].append(
+        {
+            **base,
+            "training_kind": "tool_sft",
+            "messages": messages,
+            "metadata": {
+                "assistant_only_loss": True,
+                "tool_schema_masking": True,
+                "state_tracking": bool(results),
+            },
         }
-        outputs["sft"].append(
-            {
-                **base,
-                "training_kind": "tool_sft",
-                "messages": normalize_messages_for_tools(record),
-                "metadata": {
-                    "assistant_only_loss": True,
-                    "tool_schema_masking": True,
-                    "state_tracking": bool(results),
-                },
-            }
-        )
-        outputs["reward"].append(
-            {
-                **base,
-                "training_kind": "tool_reward",
-                "prompt": record_text(record)[:20000],
-                "reward": reward,
-                "reward_components": components,
-            }
-        )
-        chosen = json.dumps({"tool_calls": calls, "final": normalize_messages_for_tools(record)[-1]}, ensure_ascii=True, sort_keys=True)
+    )
+    outputs["reward"].append(
+        {
+            **base,
+            "training_kind": "tool_reward",
+            "prompt": text,
+            "reward": reward,
+            "reward_components": components,
+        }
+    )
+    if signal.get("is_teacher_rollout"):
+        chosen = str(signal.get("chosen") or signal.get("corrected_response") or messages[-1]["content"])
+        rejected = str(signal.get("rejected") or "No valid tool plan.")
+    else:
+        chosen = json.dumps({"tool_calls": calls, "final": messages[-1]}, ensure_ascii=True, sort_keys=True)
         rejected = json.dumps({"tool_calls": [], "final": "No valid tool plan."}, ensure_ascii=True, sort_keys=True)
-        outputs["preference"].append(
-            {
-                **base,
-                "training_kind": "tool_preference",
-                "prompt": record_text(record)[:20000],
-                "chosen": chosen,
-                "rejected": rejected,
-                "preference_reason": "Prefer valid tool calls with state-aware use and no protected material.",
-            }
-        )
-        outputs["rlvr"].append(build_rlvr_row(record, base, reward, components, domains, profile_cfg))
-        for domain in domains:
-            if domain_config(profile_cfg, domain)["enabled"]:
-                outputs[f"{domain}_rlvr"].append(build_rlvr_row(record, base, reward, components, domains, profile_cfg, domain=domain))
+    outputs["preference"].append(
+        {
+            **base,
+            "training_kind": "tool_preference",
+            "prompt": text,
+            "chosen": chosen,
+            "rejected": rejected,
+            "preference_reason": "Prefer valid tool calls with state-aware use and no protected material.",
+        }
+    )
+    outputs["rlvr"].append(build_rlvr_row(record, base, reward, components, domains, profile_cfg))
+    for domain in domains:
+        if domain_config(profile_cfg, domain)["enabled"]:
+            outputs[f"{domain}_rlvr"].append(build_rlvr_row(record, base, reward, components, domains, profile_cfg, domain=domain))
     return outputs
 
 
@@ -561,11 +702,7 @@ def posttrain_manifest(
     }
 
 
-def build_training_exports(
-    rows: dict[str, list[dict[str, Any]]],
-    out_dir: Path,
-    profile_cfg: dict[str, Any],
-) -> tuple[dict[str, Path], dict[str, int]]:
+def training_export_paths(out_dir: Path, profile_cfg: dict[str, Any]) -> dict[str, Path]:
     paths = {
         "sft": out_dir / "tool_sft.jsonl",
         "preference": out_dir / "tool_preference.jsonl",
@@ -576,7 +713,43 @@ def build_training_exports(
     for domain in DOMAIN_DEFAULTS:
         cfg = domain_config(profile_cfg, domain)
         paths[f"{domain}_rlvr"] = out_dir / cfg["export"]
+    return paths
+
+
+def build_training_exports(
+    rows: dict[str, list[dict[str, Any]]],
+    out_dir: Path,
+    profile_cfg: dict[str, Any],
+) -> tuple[dict[str, Path], dict[str, int]]:
+    paths = training_export_paths(out_dir, profile_cfg)
     counts = {name: write_jsonl(paths[name], rows.get(name, [])) for name in paths}
+    return paths, counts
+
+
+def build_training_exports_streaming(
+    records: Iterable[dict[str, Any]],
+    out_dir: Path,
+    min_quality: float,
+    limit: int,
+    profile_cfg: dict[str, Any],
+) -> tuple[dict[str, Path], dict[str, int]]:
+    paths = training_export_paths(out_dir, profile_cfg)
+    for path in paths.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    counts = {name: 0 for name in paths}
+    with ExitStack() as stack:
+        handles = {name: stack.enter_context(path.open("w", encoding="utf-8")) for name, path in paths.items()}
+        for record in records:
+            if limit and counts["sft"] >= limit:
+                break
+            emitted = rows_for_record(record, min_quality, profile_cfg)
+            for name, rows in emitted.items():
+                handle = handles.get(name)
+                if handle is None:
+                    continue
+                for row in rows:
+                    handle.write(json.dumps(row, ensure_ascii=True, sort_keys=True, default=str) + "\n")
+                    counts[name] += 1
     return paths, counts
 
 
@@ -589,8 +762,7 @@ def run_build(args: argparse.Namespace) -> dict[str, Any]:
     source = Path(args.input or cfg.get("input_jsonl") or "")
     if not source.exists():
         raise SystemExit(json.dumps({"status": "error", "error": "input_jsonl not found", "input": str(source)}))
-    rows = build_rows(iter_jsonl(source), min_quality=min_quality, limit=limit, profile_cfg=cfg)
-    paths, counts = build_training_exports(rows, out_dir, cfg)
+    paths, counts = build_training_exports_streaming(iter_jsonl(source), out_dir, min_quality=min_quality, limit=limit, profile_cfg=cfg)
     model = str(args.model or cfg.get("model") or profile.get("base_model") or "Qwen/Qwen3-4B")
     bridge_dir = out_dir / "posttrain_manifests"
     bridge_rows = {

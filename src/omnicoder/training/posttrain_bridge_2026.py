@@ -199,6 +199,20 @@ def count_jsonl(path: str | Path | None, limit: int = 0) -> int:
     return count
 
 
+def is_rlvr_training_kind(kind: Any) -> bool:
+    return str(kind or "").lower().endswith("_rlvr")
+
+
+def is_tool_trajectory_record(obj: dict[str, Any]) -> bool:
+    kind = str(obj.get("training_kind") or "").lower()
+    return kind in {
+        "tool_sft",
+        "tool_reward",
+        "tool_preference",
+        "tool_safety_negative",
+    } or is_rlvr_training_kind(kind)
+
+
 def inspect_dataset(path: str | Path | None, limit: int = 2000) -> dict[str, Any]:
     if not path or not Path(path).exists():
         return {"exists": False, "records": 0, "schemas": {}}
@@ -213,16 +227,10 @@ def inspect_dataset(path: str | Path | None, limit: int = 2000) -> dict[str, Any
         except Exception:
             schemas["parse_error"] = schemas.get("parse_error", 0) + 1
             continue
-        if isinstance(obj, dict) and isinstance(obj.get("messages"), list):
-            schemas["messages"] = schemas.get("messages", 0) + 1
-        elif isinstance(obj, dict) and obj.get("training_kind") in {
-            "tool_sft",
-            "tool_reward",
-            "tool_preference",
-            "tool_rlvr",
-            "tool_safety_negative",
-        }:
+        if isinstance(obj, dict) and is_tool_trajectory_record(obj):
             schemas["tool_trajectory"] = schemas.get("tool_trajectory", 0) + 1
+        elif isinstance(obj, dict) and isinstance(obj.get("messages"), list):
+            schemas["messages"] = schemas.get("messages", 0) + 1
         elif isinstance(obj, dict) and {"prompt", "chosen", "rejected"} <= set(obj):
             schemas["preference_pair"] = schemas.get("preference_pair", 0) + 1
         elif isinstance(obj, dict) and ("reward" in obj or "score" in obj):
@@ -250,6 +258,23 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     spec = ALGORITHM_REGISTRY[algorithm]
     deps = dep_status(spec["deps"])
     missing = [name for name, ok in deps.items() if not ok]
+    dataset = inspect_dataset(args.train_jsonl)
+    dry_run = bool(getattr(args, "dry_run", False))
+    smoke = bool(getattr(args, "smoke", False))
+    empty_allowed_by = "dry_run" if dry_run else "smoke" if smoke else ""
+    if int(dataset.get("records_sampled") or dataset.get("records") or 0) == 0 and not empty_allowed_by:
+        raise SystemExit(
+            json.dumps(
+                {
+                    "status": "error",
+                    "error": "empty_dataset",
+                    "message": "posttraining replay dataset is empty; use --dry_run or --smoke only for explicit smoke checks",
+                    "train_jsonl": args.train_jsonl,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
     manifest = {
         "schema": "omnicoder.posttrain_bridge_2026.v1",
         "requested_algorithm": requested_algorithm,
@@ -263,7 +288,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
         "out_dir": args.out_dir,
         "deps": deps,
         "missing_dependencies": missing,
-        "dataset": inspect_dataset(args.train_jsonl),
+        "dataset": dataset,
         "eval_dataset": inspect_dataset(args.eval_jsonl) if args.eval_jsonl else None,
         "hyperparameters": {
             "max_seq_len": args.max_seq_len,
@@ -279,8 +304,10 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "kl_beta": args.kl_beta,
             "temperature": args.temperature,
         },
-        "status": "dry_run_ok" if args.dry_run else "configured",
+        "status": "dry_run_ok" if dry_run else "smoke_ok" if smoke else "configured",
     }
+    if empty_allowed_by:
+        manifest["empty_dataset_allowed_by"] = empty_allowed_by
     if missing and args.check_deps:
         manifest["status"] = "missing_dependencies"
     if algorithm in {"grpo", "tree_grpo", "dapo", "dr_grpo", "vapo", "dcpo", "lspo", "cispo", "retool", "toolrl", "ppo", "rloo"}:
@@ -334,6 +361,7 @@ def main() -> None:
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--check_deps", action="store_true")
     parser.add_argument("--dry_run", action="store_true")
+    parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
 
     manifest = build_manifest(args)

@@ -136,6 +136,21 @@ data = json.loads(p.read_text())
 records = data.get("records", {})
 if int(records.get("train") or 0) <= 0:
     raise SystemExit("external expansion produced no train rows; refusing latest promotion")
+if data.get("status") != "passed":
+    raise SystemExit(f"external expansion requirements failed: {json.dumps(data.get('requirement_report', {}), sort_keys=True)[:4000]}")
+train_path = Path(data.get("training_paths", {}).get("train_all_external", ""))
+if not train_path.is_absolute():
+    train_path = Path.cwd() / train_path
+synthetic_train = 0
+with train_path.open("r", encoding="utf-8", errors="ignore") as handle:
+    for line in handle:
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if row.get("synthetic_seed_only"):
+            synthetic_train += 1
+if synthetic_train:
+    raise SystemExit(f"external expansion attempted to promote {synthetic_train} synthetic seed rows into train")
 PY
   ln -sfn "$ROOT/$out" weights/external_datasets_2026/latest
   log "promoted external dataset symlink to $out"
@@ -154,6 +169,17 @@ agentic_tool_training() {
     --input "$source" \
     --out-dir "$out" \
     --limit 0 | tee "$run_out/agentic_tool_training_manifest.stdout.json"
+  "$PYTHON_BIN" - <<'PY'
+import json
+from pathlib import Path
+p = Path("weights/agentic_tool_training_2026/agentic_tool_training_manifest.json")
+data = json.loads(p.read_text())
+counts = data.get("counts", {})
+required = ["sft", "reward", "preference", "rlvr", "tool_rlvr"]
+missing = {name: int(counts.get(name) or 0) for name in required if int(counts.get(name) or 0) <= 0}
+if missing:
+    raise SystemExit(f"agentic tool training produced empty required exports: {missing}")
+PY
   cp "$out"/tool_*.jsonl "$run_out"/ 2>/dev/null || true
   cp "$out"/agentic_tool_training_manifest.json "$run_out"/ 2>/dev/null || true
   ln -sfn "$ROOT/$run_out" weights/agentic_tool_training_2026/latest_run
@@ -275,6 +301,17 @@ p40_teacher_rollouts() {
     --input "$refreshed_source" \
     --out-dir weights/agentic_tool_training_2026 \
     --limit 0 > "weights/agentic_tool_training_2026/runs/${RUN_ID}/agentic_tool_training_after_teacher.stdout.json"
+  "$PYTHON_BIN" - <<'PY'
+import json
+from pathlib import Path
+p = Path("weights/agentic_tool_training_2026/agentic_tool_training_manifest.json")
+data = json.loads(p.read_text())
+counts = data.get("counts", {})
+required = ["sft", "reward", "preference", "rlvr", "tool_rlvr"]
+missing = {name: int(counts.get(name) or 0) for name in required if int(counts.get(name) or 0) <= 0}
+if missing:
+    raise SystemExit(f"teacher-refreshed agentic exports are empty: {missing}")
+PY
   "$PYTHON_BIN" - <<PY
 import json
 from pathlib import Path

@@ -95,16 +95,17 @@ def _read_text(path: Path) -> str:
 
 
 def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
-    for line_number, line in enumerate(_read_text(path).splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            item = json.loads(line)
-        except Exception as exc:
-            item = {"text": line, "line_number": line_number, "parse_error": str(exc)}
-        if isinstance(item, dict):
-            item.setdefault("line_number", line_number)
-            yield item
+    with path.open("r", encoding="utf-8-sig", errors="ignore") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except Exception as exc:
+                item = {"text": line.rstrip("\n"), "line_number": line_number, "parse_error": str(exc)}
+            if isinstance(item, dict):
+                item.setdefault("line_number", line_number)
+                yield item
 
 
 def _walk_input(path: Path) -> Iterable[dict[str, Any]]:

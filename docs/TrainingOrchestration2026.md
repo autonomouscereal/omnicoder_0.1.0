@@ -191,6 +191,17 @@ The sidecar runner writes run-scoped outputs under:
 It promotes `latest` symlinks only after outputs exist. The target training
 profile reads external expansion JSONL family files when present, but
 `eval_holdout` and `blocked_until_review` files stay out of train paths.
+Dataset expansion also rejects synthetic-only train promotion and fail-closes
+review, pending, unknown, noncommercial, no-derivatives, holdout, gated,
+research, or blocked license markers into non-train buckets. That rule applies
+even when a profile entry was accidentally tagged `use_policy: train`.
+
+When a target training container or sidecar builder is actively running, stage
+code/profile updates under `weights/staged_patches/<patch_id>` and apply them
+only after a checkpoint and sidecar boundary. Do not overwrite
+`profiles/dataset_curation_2026.json`, `scripts/ai_server_dataset_training_sidecars_2026.sh`,
+or imported `src/omnicoder/...` modules while the current 20B target or
+sidecar Python processes are alive.
 
 P40 usage policy:
 

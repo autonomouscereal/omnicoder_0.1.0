@@ -158,6 +158,8 @@ def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, m
     assert manifest["status"] == "failed_requirements"
     assert manifest["real_families"]["math_reasoning"] == 1
     assert manifest["synthetic_seed_families"]["coding_agentic"] == 1
+    assert manifest["records"]["train"] == 1
+    assert manifest["records"]["research_internal"] == 1
     report = manifest["requirement_report"]
     assert report["requirements"]["math_reasoning"]["status"] == "passed"
     assert report["requirements"]["coding_agentic"]["status"] == "failed"
@@ -228,16 +230,73 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
     entries = profile["external_dataset_registry_2026"]["datasets"]
+    names = [entry["name"] for entry in entries]
+    assert len(names) == len(set(names))
+    for key in ("hf_id", "url"):
+        values = [entry[key] for entry in entries if entry.get(key)]
+        assert len(values) == len(set(values))
     by_name = {entry["name"]: entry for entry in entries}
 
     for name in [
         "OpenThoughts2-1M",
+        "DeepMath-103K",
+        "AI-MO NuminaMath 1.5",
+        "Polaris Nemotron Easy Math Verifiable",
+        "Polaris Nemotron Medium Math Verifiable",
+        "Korean NuminaMath Verifiable 540K",
+        "RLVR Eurus 2 Math Fixed",
         "DeepCoder-Preview-Dataset",
+        "SWE-Dev Train",
+        "Dorothy SWE-Dev",
+        "DeepSWE Agent Kimi K2 Trajectories 2.8K",
+        "SWE-Factory-Gym",
+        "SWE-Next",
+        "SWE-Next SFT Trajectories",
+        "SWE-Swiss SFT Repair 4K",
+        "SWE-Swiss Repair RL 12K",
+        "SWE-Universe Repaired Bug Pilot Trajectories",
         "NVIDIA Nemotron-RL Agentic SWE Pivot",
         "Scale-SWE",
         "Nebius SWE-rebench OpenHands Trajectories",
         "NVIDIA OpenCodeReasoning-2",
+        "MCP-Atlas",
+        "NVIDIA Nemotron-RL Agentic Conversational Tool Use Pivot v1",
+        "WebAgent-R1 Distill",
+        "WebShepherd PRM Collection",
+        "WebExplorer-QA",
+        "DeepDive",
+        "WebArena Infinity Trajectories",
+        "BrowserAgent SeedData",
+        "BrowserAgent Data",
+        "Web Agent Graph Dataset",
+        "WebChain",
+        "WebArena Pro Task Intents and Rubrics",
+        "Deceptive Web Execution-Time Warnings",
+        "CognitiveKernel Pro SFT",
         "NVIDIA Nemotron-Terminal-Corpus",
+        "TerminalWorld",
+        "OSWorld 2 Ubuntu Trajectories",
+        "OSWorld Control Trajectories",
+        "Magic-RICH",
+        "macOS GUI Agent Train",
+        "Multi-Docker-Eval",
+        "SWE-bench Pro",
+        "SWE-bench Pro ABS",
+        "SWE-QA-Pro-Bench",
+        "SWE-bench Multilingual",
+        "CodeElo",
+        "ICPC-Eval",
+        "HLE-Verified",
+        "MathArena AIME 2026 Holdout",
+        "Multi-SWE-bench",
+        "SWE-Bench++",
+        "EVMbench",
+        "SWE-bench Multimodal",
+        "SWE-Lancer",
+        "SWE-PolyBench",
+        "SWE-bench Live MultiLang",
+        "SWE-bench Live Windows",
+        "JetBrains SWE-bench Agent Trajectories",
         "Hermes Function Calling V1",
         "Tool Use Multiturn Reasoning",
         "OmniEdit-Filtered-1.2M",
@@ -273,15 +332,48 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
         "OmniAgent MAgenIT Data",
         "NVIDIA Nemotron Image Training v3",
         "PRISM VLM RL Dataset",
+        "RLFR Dataset VLM",
         "Innovator VL RL 172K",
         "NVIDIA AudioSkills XL",
         "Pico-Banana-400K",
+        "Pico-Banana-400K Apple Research Reference",
+        "FineVision",
+        "FineVisionMax",
+        "GPT-Image-Edit-1.5M",
+        "NHR-Edit",
+        "CrispEdit-2M",
+        "BAGEL-World",
         "ImgEdit 1.2M",
+        "Rapidata Open Image Preferences v1 More Results",
+        "Text-to-Image DPO Human Preferences Full",
         "VIBE Benchmark",
         "CompBench Complex Editing",
+        "ImagenWorld",
+        "DreamOmni2Bench",
+        "DeepVision-103K",
+        "WorldSpeech",
+        "NonverbalTTS",
+        "Captioned AI Music Snippets",
+        "Cambrian-P-Data",
+        "MMMU Pro",
+        "LongMemEval-V2",
+        "AVGen-Bench",
+        "TAG-Bench-Video",
+        "VGenST-Bench",
+        "VBench 2.0",
+        "Video-Bench",
+        "PARADE_audio",
+        "WildSpeech-Bench",
+        "AudioMC",
+        "AV-SpeakerBench",
+        "HLE",
         "Video-MME",
+        "Video-MME-v2",
         "LVBench",
+        "LVOmniBench",
+        "JointAVBench",
         "PhyWorldBench",
+        "Image-to-Video Human Preferences Large",
         "MusicEval",
         "MCIF Crosslingual Multimodal Instruction Following",
         "Multimodal RewardBench 2",
@@ -290,14 +382,96 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
         assert name in by_name
 
     assert by_name["NVIDIA Nemotron-Terminal-Corpus"]["use_policy"] == "train"
+    assert by_name["DeepMath-103K"]["use_policy"] == "train"
+    assert by_name["AI-MO NuminaMath 1.5"]["use_policy"] == "train"
+    assert by_name["Polaris Nemotron Medium Math Verifiable"]["use_policy"] == "train"
+    assert by_name["Korean NuminaMath Verifiable 540K"]["use_policy"] == "train"
+    assert by_name["RLVR Eurus 2 Math Fixed"]["use_policy"] == "research_internal"
+    assert by_name["SWE-Dev Train"]["use_policy"] == "train"
+    assert by_name["Dorothy SWE-Dev"]["use_policy"] == "train"
+    assert by_name["DeepSWE Agent Kimi K2 Trajectories 2.8K"]["use_policy"] == "train"
+    assert by_name["SWE-Factory-Gym"]["use_policy"] == "research_internal"
+    assert by_name["SWE-Next"]["use_policy"] == "train"
+    assert by_name["SWE-Next SFT Trajectories"]["use_policy"] == "train"
+    assert by_name["SWE-Swiss Repair RL 12K"]["use_policy"] == "train"
+    assert by_name["SWE-Universe Repaired Bug Pilot Trajectories"]["use_policy"] == "research_internal"
+    assert by_name["MCP-Atlas"]["use_policy"] == "train"
+    assert by_name["NVIDIA Nemotron-RL Agentic Conversational Tool Use Pivot v1"]["use_policy"] == "train"
+    assert by_name["WebAgent-R1 Distill"]["use_policy"] == "train"
+    assert by_name["WebShepherd PRM Collection"]["use_policy"] == "research_internal"
+    assert by_name["WebExplorer-QA"]["use_policy"] == "train"
+    assert by_name["DeepDive"]["use_policy"] == "train"
+    assert by_name["WebArena Infinity Trajectories"]["use_policy"] == "train"
+    assert by_name["BrowserAgent SeedData"]["use_policy"] == "train"
+    assert by_name["BrowserAgent Data"]["use_policy"] == "research_internal"
+    assert by_name["Web Agent Graph Dataset"]["use_policy"] == "train"
+    assert by_name["WebChain"]["use_policy"] == "research_internal"
+    assert by_name["WebArena Pro Task Intents and Rubrics"]["use_policy"] == "eval_only"
+    assert by_name["Deceptive Web Execution-Time Warnings"]["use_policy"] == "eval_only"
+    assert by_name["CognitiveKernel Pro SFT"]["use_policy"] == "research_internal"
+    assert by_name["TerminalWorld"]["use_policy"] == "eval_only"
+    assert by_name["OSWorld 2 Ubuntu Trajectories"]["use_policy"] == "research_internal"
+    assert by_name["OSWorld Control Trajectories"]["use_policy"] == "eval_only"
+    assert by_name["Magic-RICH"]["use_policy"] == "eval_only"
+    assert by_name["Multi-Docker-Eval"]["use_policy"] == "eval_only"
+    assert by_name["SWE-bench Pro"]["use_policy"] == "eval_only"
+    assert by_name["SWE-bench Pro ABS"]["use_policy"] == "eval_only"
+    assert by_name["SWE-QA-Pro-Bench"]["use_policy"] == "eval_only"
+    assert by_name["SWE-bench Multilingual"]["use_policy"] == "eval_only"
+    assert by_name["CodeElo"]["use_policy"] == "eval_only"
+    assert by_name["ICPC-Eval"]["use_policy"] == "eval_only"
+    assert by_name["HLE-Verified"]["use_policy"] == "eval_only"
+    assert by_name["MathArena AIME 2026 Holdout"]["use_policy"] == "eval_only"
+    assert by_name["Multi-SWE-bench"]["use_policy"] == "eval_only"
+    assert by_name["SWE-Lancer"]["use_policy"] == "eval_only"
+    assert by_name["SWE-PolyBench"]["use_policy"] == "eval_only"
+    assert by_name["JetBrains SWE-bench Agent Trajectories"]["use_policy"] == "research_internal"
     assert by_name["Scale-SWE"]["use_policy"] == "train"
     assert by_name["SWE-Compass"]["use_policy"] == "benchmark_holdout"
     assert by_name["CoderForge-Preview"]["use_policy"] == "research_internal"
     assert by_name["OmniEdit-Filtered-1.2M"]["use_policy"] == "train"
     assert by_name["AR-Omni-Instruct-v0.1"]["use_policy"] == "research_internal"
     assert by_name["Open-MM-RL"]["use_policy"] == "train"
+    assert by_name["RLFR Dataset VLM"]["use_policy"] == "train"
     assert by_name["ATBench Agent Trajectory Safety"]["use_policy"] == "eval_only"
     assert by_name["InternVL-U ScaleEdit-12M"]["use_policy"] == "train"
+    assert by_name["GPT-Image-Edit-1.5M"]["use_policy"] == "train"
+    assert by_name["NHR-Edit"]["use_policy"] == "train"
+    assert by_name["CrispEdit-2M"]["use_policy"] == "train"
+    assert by_name["BAGEL-World"]["use_policy"] == "train"
+    assert by_name["Rapidata Open Image Preferences v1 More Results"]["use_policy"] == "train"
+    assert by_name["Text-to-Image DPO Human Preferences Full"]["use_policy"] == "research_internal"
+    assert by_name["ImagenWorld"]["use_policy"] == "eval_only"
+    assert by_name["DreamOmni2Bench"]["use_policy"] == "eval_only"
+    assert by_name["DeepVision-103K"]["use_policy"] == "research_internal"
+    assert by_name["NonverbalTTS"]["use_policy"] == "research_internal"
+    assert by_name["Captioned AI Music Snippets"]["use_policy"] == "research_internal"
+    assert by_name["Cambrian-P-Data"]["use_policy"] == "train"
+    assert by_name["FineVision"]["use_policy"] == "research_internal"
+    assert by_name["WorldSpeech"]["use_policy"] == "research_internal"
+    assert by_name["AVGen-Bench"]["use_policy"] == "eval_only"
+    assert by_name["MMMU Pro"]["use_policy"] == "eval_only"
+    assert by_name["LongMemEval-V2"]["use_policy"] == "eval_only"
+    assert by_name["Video-MME-v2"]["use_policy"] == "eval_only"
+    assert by_name["LVOmniBench"]["use_policy"] == "eval_only"
+    assert by_name["JointAVBench"]["use_policy"] == "eval_only"
+    assert by_name["Image-to-Video Human Preferences Large"]["use_policy"] == "research_internal"
+    assert by_name["AudioMC"]["use_policy"] == "eval_only"
+    assert by_name["HLE"]["use_policy"] == "eval_only"
+    assert by_name["FineVision"]["license_tier"] == "source_license_varies"
+    assert by_name["FineVisionMax"]["license_tier"] == "source_license_varies"
+    assert by_name["WorldSpeech"]["license_tier"] == "non_commercial"
+    assert by_name["HLE"]["license_tier"] == "benchmark_holdout_review"
+    assert by_name["HLE-Verified"]["license_tier"] == "benchmark_holdout_review"
+    assert by_name["TerminalWorld"]["license_tier"] == "non_commercial_eval_holdout"
+    assert by_name["CodeElo"]["license_tier"] == "permissive_eval_holdout"
+    assert by_name["MMMU Pro"]["license_tier"] == "permissive_eval_holdout"
+    assert by_name["LVOmniBench"]["license_tier"] == "benchmark_holdout_review"
+    assert by_name["JointAVBench"]["license_tier"] == "sharealike_eval_holdout"
+    assert by_name["LongMemEval-V2"]["family"] == "long_context"
+    assert by_name["AVGen-Bench"]["target_modality"] == "video"
+    assert by_name["Video-MME-v2"]["target_modality"] == "video"
+    assert by_name["PARADE_audio"]["target_modality"] == "audio"
     assert by_name["OpenGPT-4o-Image"]["use_policy"] == "train"
     assert by_name["ShareGPT-4o-Image"]["use_policy"] == "train"
     assert by_name["NVIDIA Nemotron-SFT-SWE-v2"]["use_policy"] == "train"
@@ -307,6 +481,7 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     assert by_name["Terminal-Bench 2.0 Trajectories"]["use_policy"] == "research_internal"
     assert by_name["Video-MME"]["use_policy"] == "eval_only"
     assert by_name["Multimodal RewardBench 2"]["use_policy"] == "eval_only"
+    assert by_name["Multimodal RewardBench 2"]["hf_id"] == "rl-research/multimodal-rewardbench-2"
 
     requirements = profile["external_dataset_registry_2026"]["required_real_family_min_records"]
     for family in [
@@ -321,3 +496,25 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
         "omnimodal_understanding",
     ]:
         assert family in requirements
+
+
+def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    unsafe_markers = (
+        "review",
+        "pending",
+        "unknown",
+        "non_commercial",
+        "no_derivatives",
+        "holdout",
+        "gated",
+        "research",
+        "blocked",
+    )
+
+    for entry in entries:
+        blob = f"{entry.get('license') or ''} {entry.get('license_tier') or ''}".lower()
+        if any(marker in blob for marker in unsafe_markers):
+            assert expansion.source_use_bucket(entry) != "train", entry["name"]

@@ -67,6 +67,13 @@ The registry separates:
 - `eval_holdout`: benchmark or official eval material that must not be trained.
 - `blocked_until_review`: rows that need a human license/split decision.
 
+Expansion is fail-closed. If `license` or `license_tier` contains review,
+pending, unknown, non-commercial, no-derivatives, holdout, gated, research, or
+blocked markers, `dataset_expansion_2026.source_use_bucket` prevents the row
+from materializing as `train` even if `use_policy` was set too aggressively.
+Synthetic fallback seed rows are also demoted out of train and do not satisfy
+real-family minimum gates.
+
 The expansion runner materializes rows into the normal ledger-token training
 schema and writes family, modality, license, and policy manifests:
 
@@ -84,7 +91,9 @@ Current high-value registry families:
 
 - Math/reasoning: OpenR1-Math-220k, DAPO-Math-17k-Processed,
   DeepScaleR-Preview, NVIDIA OpenMathReasoning, MathNet,
-  NVIDIA AceReason-Math, OpenThoughts2/3, OpenThoughts-114k, LIMO, and
+  NVIDIA AceReason-Math, OpenThoughts2/3, OpenThoughts-114k, LIMO,
+  DeepMath-103K, AI-MO NuminaMath 1.5, Polaris Nemotron verifiable math,
+  Korean NuminaMath, RLVR Eurus review rows, AIME 2025/2026 holdouts, HLE, and
   Bespoke-Stratos quarantine rows.
 - Coding/SWE/terminal/tool: NVIDIA OpenCodeReasoning-2, SWE-smith, SWE-Gym,
   SWE-smith trajectories, OpenHands SFT trajectories, DeepCoder,
@@ -95,15 +104,25 @@ Current high-value registry families:
   Nemotron-SFT-SWE-v2, SWE-Hero, SWE-Zero, SWE-ZERO-12M, SWE-Fixer, R2E-Gym,
   Jupyter-Agent, OpenResearcher, WebWalkerQA, DeepSearch-2510,
   BrowseComp-Plus traces, Terminal-Bench 2.0 trajectories, ContextBench
-  TraceBench, CodeTraceBench, and MCP/function-calling corpora.
+  TraceBench, CodeTraceBench, MCP-Atlas, Nemotron RL tool-use, WebAgent-R1,
+  WebShepherd, WebExplorer, DeepDive, WebArena Infinity, BrowserAgent,
+  Web Agent Graph, WebChain, OSWorld 2, Magic-RICH, SWE-Dev, SWE-Next,
+  DeepSWE/Kimi-K2 trajectories, SWE-Swiss repair SFT/RL, SWE-Factory-Gym,
+  SWE-bench Pro/ABS/Multilingual, SWE-Lancer, SWE-PolyBench, SWE-bench Live,
+  CodeElo, ICPC-Eval, and other MCP/function-calling corpora.
 - Multimodal generation: OpenGPT-4o-Image, ShareGPT-4o-Image, Pico-Banana,
   MultiEdit, OpenSubject, VideoUFO, OpenVid-1M, CI-VID, TIP-I2V, VPData,
   Emilia-YODAS, Granary, CapSpeech, AudioSkills, JamendoMaxCaps, MusicBench,
   Music Arena, AR-Omni-Instruct, and Open-MM-RL review rows. The newer
   registry adds OmniAgent/MAgenIT, Nemotron-Image-Training-v3, PRISM/Innovator
-  VL RL, NVIDIA AudioSkills-XL, ImgEdit, VIBE, CompBench, Video-MME, LVBench,
-  PhyWorldBench, MusicEval, MCIF, Multimodal RewardBench 2, and
-  VoiceAgentBench.
+  VL RL, RLFR-VLM, FineVision, FineVisionMax, ScaleEdit, GPT-Image-Edit,
+  NHR-Edit, CrispEdit, BAGEL-World, Rapidata image preferences,
+  text-to-image DPO preferences, image-to-video preferences, DeepVision,
+  NVIDIA AudioSkills-XL, ImgEdit, VIBE, CompBench, ImagenWorld,
+  DreamOmni2Bench, MMMU Pro, Video-MME-v2, LVOmniBench, JointAVBench, LVBench,
+  PhyWorldBench, MusicEval, MCIF, Multimodal RewardBench 2, AVGen-Bench,
+  VBench 2.0, PARADE_audio, AudioMC, WildSpeech-Bench, WorldSpeech,
+  NonverbalTTS, Captioned AI Music Snippets, and VoiceAgentBench.
 
 Rows from external sources are not merged into the 20B target lane merely
 because they exist. They must survive redaction, dedupe, benchmark
@@ -117,6 +136,10 @@ count toward the real-data minimum. The expansion manifest includes
 AI-server sidecar can pass `--enforce-requirements` to reject a run that lacks
 real rows for math, coding, agentic tool-use, terminal/browser agents,
 image/editing, video, audio/speech/music, music, or omnimodal understanding.
+
+The registry test suite asserts unique names, HF ids, and URLs, verifies the
+expanded 2025-2026 source coverage, and checks that unsafe license markers do
+not resolve to the train bucket.
 
 The AI-server sidecar exports agent-memory audit rows before the trace
 orchestrator runs, then collects Codex, Claude, Hermes, LM Studio, and ComfyUI

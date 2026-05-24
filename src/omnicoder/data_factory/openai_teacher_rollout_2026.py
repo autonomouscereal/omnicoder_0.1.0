@@ -13,24 +13,27 @@ from typing import Any
 SYSTEM_PROMPT = (
     "You are a teacher model producing concise, structured distillation targets "
     "for Omnicoder's dense omnimodal student. Return useful corrections, tool "
-    "plans, verifier notes, and reward labels. Prefer JSON when the prompt asks "
-    "for structure."
+    "plans, verifier notes, and reward labels. Return one JSON object whenever "
+    "possible with keys: corrected_response, corrected_tool_calls, chosen, "
+    "rejected, reward, reward_components, verifier_labels, process_labels, "
+    "safety_notes."
 )
 
 
 def read_jsonl(path: str | Path, limit: int = 0) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for line in Path(path).read_text(encoding="utf-8", errors="ignore").splitlines():
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except Exception:
-            row = {"text": line}
-        if isinstance(row, dict):
-            rows.append(row)
-            if limit and len(rows) >= limit:
-                break
+    with Path(path).open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                row = {"text": line.rstrip("\n")}
+            if isinstance(row, dict):
+                rows.append(row)
+                if limit and len(rows) >= limit:
+                    break
     return rows
 
 
@@ -94,6 +97,27 @@ def teacher_text(response: dict[str, Any]) -> str:
             if isinstance(first.get("text"), str):
                 return first["text"]
     return json.dumps(response, ensure_ascii=True, sort_keys=True)
+
+
+def parse_teacher_signal(content: str) -> dict[str, Any]:
+    decoder = json.JSONDecoder()
+    probes = [content.strip()]
+    if "```" in content:
+        import re
+
+        probes.extend(re.findall(r"```(?:json)?\s*(.*?)```", content, flags=re.DOTALL | re.IGNORECASE))
+    for probe in probes:
+        starts = [idx for idx, char in enumerate(probe) if char == "{"]
+        if 0 not in starts:
+            starts.insert(0, 0)
+        for start in starts:
+            try:
+                value, _ = decoder.raw_decode(probe[start:])
+            except Exception:
+                continue
+            if isinstance(value, dict):
+                return value
+    return {}
 
 
 def gpu_temperature(index: str) -> int | None:
@@ -173,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             response = post_chat(args.base_url, args.model, prompt, args.timeout, args.max_tokens, args.temperature)
             content = teacher_text(response)
+            parsed_signal = parse_teacher_signal(content)
             if content.strip():
                 status = "ok"
                 error = ""
@@ -181,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
                 error = "empty_teacher_content"
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
             content = ""
+            parsed_signal = {}
             status = "failed"
             error = repr(exc)
         emitted.append(
@@ -204,6 +230,7 @@ def main(argv: list[str] | None = None) -> int:
                 "target_json": {
                     "content": content,
                     "teacher_status": status,
+                    "teacher_signal": parsed_signal,
                 },
                 "modalities": row.get("modalities") if isinstance(row.get("modalities"), list) else ["text", "tool"],
                 "split": "train",

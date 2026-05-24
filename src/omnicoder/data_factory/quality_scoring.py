@@ -14,15 +14,16 @@ SECRET_RE = re.compile(r"(?i)(api[_-]?key|password|secret|token)\s*[:=]\s*['\"]?
 
 
 def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
-    for idx, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines()):
-        if not line.strip():
-            continue
-        try:
-            item = json.loads(line)
-        except Exception as exc:
-            item = {"text": line, "line": idx + 1, "parse_error": str(exc)}
-        if isinstance(item, dict):
-            yield item
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        for idx, line in enumerate(handle):
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except Exception as exc:
+                item = {"text": line.rstrip("\n"), "line": idx + 1, "parse_error": str(exc)}
+            if isinstance(item, dict):
+                yield item
 
 
 def extract_text(record: dict[str, Any]) -> str:

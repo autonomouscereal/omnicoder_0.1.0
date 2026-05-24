@@ -43,20 +43,37 @@ Current rebuild docs:
 The data lane now has a license-aware external dataset registry and a
 nonblocking AI-server sidecar runner. The registry covers current math,
 coding/SWE, terminal/browser/tool, image/editing, video, speech/audio, and
-music sources such as OpenR1-Math, DAPO, DeepScaleR, OpenMathReasoning,
-OpenThoughts2/3, LIMO, DeepCoder, OpenCodeReasoning, SWE-smith, SWE-smith
-trajectories, SWE-Gym, Toucan, Nemotron Terminal, Hermes function-calling,
-OpenGPT-4o-Image, ShareGPT-4o-Image, MultiEdit, VideoUFO, OpenVid-1M,
-Emilia-YODAS, Granary, AudioSkills, MusicBench, Music Arena, and
-AR-Omni-Instruct. The May 2026 expansion also tracks Nemotron-SFT-SWE-v2,
-SWE-Hero/SWE-Zero trajectories, SWE-ZERO-12M, R2E-Gym, Jupyter-Agent,
-OpenResearcher, WebWalkerQA, Terminal-Bench 2.0 trajectories, CodeTraceBench,
-OmniAgent/MAgenIT, Nemotron-Image-Training-v3, PRISM/Innovator VL RL,
-Pico-Banana, ImgEdit, VIBE, CompBench, Video-MME, LVBench, PhyWorldBench,
-MusicEval, MCIF, Multimodal RewardBench 2, and VoiceAgentBench. Each source is
-tagged as `train`,
-`research_internal`, `eval_holdout`, or `blocked_until_review` before any row is
-eligible for training.
+music sources. The May 24, 2026 expansion adds hard agentic and multimodal
+coverage beyond the initial OpenR1/OpenThoughts/SWE-smith/Nemotron/ComfyUI
+mix:
+
+- Math and RLVR: DeepMath-103K, AI-MO NuminaMath 1.5, DAPO, DeepScaleR,
+  OpenMathReasoning, Polaris Nemotron verifiable math, Korean NuminaMath,
+  AIME 2025/2026 holdouts, and HLE/HLE-Verified holdouts.
+- Coding and SWE agents: SWE-Dev, SWE-Next, DeepSWE/Kimi-K2 trajectories,
+  SWE-Swiss repair SFT/RL, SWE-Factory-Gym, SWE-bench Pro/ABS/Multilingual,
+  SWE-Lancer, SWE-PolyBench, SWE-bench Live variants, CodeElo, ICPC-Eval,
+  JetBrains trajectory analysis rows, SWE-Hero/SWE-Zero, R2E-Gym, and
+  Jupyter-Agent.
+- Browser, GUI, terminal, and tool agents: MCP-Atlas, Nemotron RL tool-use,
+  WebAgent-R1, WebShepherd, WebExplorer, DeepDive, WebArena Infinity,
+  BrowserAgent, Web Agent Graph, WebChain, OSWorld 2, Magic-RICH, TerminalWorld,
+  Multi-Docker-Eval, Terminal-Bench 2.0 trajectories, CodeTraceBench, Hermes,
+  xLAM, Toucan, and local Codex/Claude/Hermes/agent-memory traces.
+- Multimodal generation and reward: FineVision/FineVisionMax, ScaleEdit,
+  GPT-Image-Edit, NHR-Edit, CrispEdit, BAGEL-World, Rapidata image
+  preferences, text-to-image DPO preferences, image-to-video preferences,
+  DeepVision, RLFR-VLM, Open-MM-RL, MMMU Pro, Video-MME-v2, LVOmniBench,
+  JointAVBench, AVGen-Bench, VBench 2.0, PARADE_audio, AudioMC,
+  WildSpeech-Bench, WorldSpeech, Granary, NonverbalTTS, Music Arena, and
+  Captioned AI Music Snippets.
+
+Each source is tagged as `train`, `research_internal`, `eval_only`,
+`benchmark_holdout`, or `blocked_until_review` before any row is eligible for
+training. Expansion is fail-closed: review, pending, unknown, noncommercial,
+no-derivatives, gated, research-only, or holdout license markers cannot
+materialize into the `train` bucket even if a profile row is accidentally marked
+train.
 
 External expansion now reports real rows separately from synthetic seed rows
 and can fail the run when required family minima are not met. The current
@@ -86,12 +103,14 @@ Qwen3.6 P40 rollouts. It exports agent-memory audit rows before the trace
 orchestrator, collects Codex/Claude/Hermes/LM Studio traces, consumes ComfyUI
 manifests as first-class multimodal trace sources, and writes
 trace-orchestrator outputs to run-scoped writable directories. It now gates
-required trace artifacts, refreshes agentic SFT/reward/preference/RLVR exports
-from each trace pass, and refreshes those exports again after Qwen3.6 teacher
-rollouts so distillation rows can feed the stable paths in
-`weights/agentic_tool_training_2026`. Official/protected benchmark rows remain
-release-gate evidence only; missing official metadata now produces `local_only`
-benchmark results instead of being misreported as public leaderboard quality.
+required trace artifacts, refuses synthetic-only train promotion, refreshes
+agentic SFT/reward/preference/RLVR exports from each trace pass, parses typed
+teacher critiques into corrected responses/tool calls/reward components, and
+refreshes those exports again after Qwen3.6 teacher rollouts so distillation
+rows can feed the stable paths in `weights/agentic_tool_training_2026`.
+Official/protected benchmark rows remain release-gate evidence only; missing
+official metadata now produces `local_only` benchmark results instead of being
+misreported as public leaderboard quality.
 
 ## Why This Exists
 

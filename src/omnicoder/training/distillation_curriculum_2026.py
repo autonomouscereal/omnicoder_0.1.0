@@ -42,18 +42,19 @@ def write_json(path: str | Path, payload: dict[str, Any]) -> None:
 
 def read_jsonl(path: str | Path, limit: int = 0) -> Iterable[dict[str, Any]]:
     seen = 0
-    for line in Path(path).read_text(encoding="utf-8", errors="ignore").splitlines():
-        if not line.strip():
-            continue
-        try:
-            item = json.loads(line)
-        except Exception:
-            continue
-        if isinstance(item, dict):
-            yield item
-            seen += 1
-            if limit and seen >= limit:
-                return
+    with Path(path).open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(item, dict):
+                yield item
+                seen += 1
+                if limit and seen >= limit:
+                    return
 
 
 def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:

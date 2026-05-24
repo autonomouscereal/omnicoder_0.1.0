@@ -92,19 +92,20 @@ def build_job_input(record: dict[str, Any]) -> dict[str, Any]:
 
 def build_jobs(records_path: str, teacher: str, job_type: str, limit: int = 0) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
-    for line in Path(records_path).read_text(encoding="utf-8", errors="ignore").splitlines():
-        if not line.strip():
-            continue
-        obj = json.loads(line)
-        jobs.append(
-            {
-                "teacher_name": teacher,
-                "job_type": job_type,
-                "input_json": build_job_input(obj),
-            }
-        )
-        if limit and len(jobs) >= limit:
-            break
+    with Path(records_path).open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            obj = json.loads(line)
+            jobs.append(
+                {
+                    "teacher_name": teacher,
+                    "job_type": job_type,
+                    "input_json": build_job_input(obj),
+                }
+            )
+            if limit and len(jobs) >= limit:
+                break
     return jobs
 
 
@@ -142,12 +143,13 @@ def main() -> None:
         return
     if args.cmd == "enqueue":
         count = 0
-        for line in Path(args.jobs).read_text(encoding="utf-8", errors="ignore").splitlines():
-            if not line.strip():
-                continue
-            job = json.loads(line)
-            enqueue_teacher_job(job["teacher_name"], job["job_type"], job["input_json"], priority=args.priority)
-            count += 1
+        with Path(args.jobs).open("r", encoding="utf-8", errors="ignore") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                job = json.loads(line)
+                enqueue_teacher_job(job["teacher_name"], job["job_type"], job["input_json"], priority=args.priority)
+                count += 1
         print(json.dumps({"status": "ok", "enqueued": count}))
         return
     if args.cmd == "claim":

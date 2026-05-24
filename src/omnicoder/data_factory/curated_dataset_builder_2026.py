@@ -86,16 +86,17 @@ def iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
     source = Path(path)
     if not source.exists() or not source.is_file():
         return
-    for line_number, line in enumerate(source.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            payload = json.loads(line)
-        except Exception as exc:
-            payload = {"text": line, "parse_error": str(exc), "line_number": line_number}
-        if isinstance(payload, dict):
-            payload.setdefault("line_number", line_number)
-            yield payload
+    with source.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except Exception as exc:
+                payload = {"text": line.rstrip("\n"), "parse_error": str(exc), "line_number": line_number}
+            if isinstance(payload, dict):
+                payload.setdefault("line_number", line_number)
+                yield payload
 
 
 def repo_root() -> Path:

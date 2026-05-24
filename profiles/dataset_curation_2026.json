@@ -444,6 +444,46 @@
         ]
       },
       {
+        "name": "DeepMath-103K",
+        "hf_id": "zwhe99/DeepMath-103K",
+        "url": "https://huggingface.co/datasets/zwhe99/DeepMath-103K",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "messages"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "ground_truth",
+            "messages"
+          ],
+          "id": [
+            "id",
+            "problem_id",
+            "uuid"
+          ]
+        },
+        "curriculum_axes": [
+          "math",
+          "rlvr",
+          "decontaminated",
+          "hard_math",
+          "verifiable_answer"
+        ]
+      },
+      {
         "name": "DAPO-Math-17k-Processed",
         "hf_id": "open-r1/DAPO-Math-17k-Processed",
         "url": "https://huggingface.co/datasets/open-r1/DAPO-Math-17k-Processed",
@@ -1034,6 +1074,353 @@
         ]
       },
       {
+        "name": "SWE-Dev Train",
+        "hf_id": "zai-org/SWE-Dev-train",
+        "url": "https://huggingface.co/datasets/zai-org/SWE-Dev-train",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT source repo; dataset card license review",
+        "license_tier": "permissive_review_upstream",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "issue",
+            "messages"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "reward",
+            "resolved",
+            "messages"
+          ],
+          "id": [
+            "instance_id",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_dev",
+          "repo_repair",
+          "rft",
+          "test_verified",
+          "agentic_coding"
+        ]
+      },
+      {
+        "name": "Dorothy SWE-Dev",
+        "hf_id": "Dorothydu/SWE-Dev",
+        "url": "https://huggingface.co/datasets/Dorothydu/SWE-Dev",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "issue",
+            "repo"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "unit_tests",
+            "resolved"
+          ],
+          "id": [
+            "instance_id",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "feature_development",
+          "repo_repair",
+          "unit_test_verified",
+          "agentic_coding"
+        ]
+      },
+      {
+        "name": "DeepSWE Agent Kimi K2 Trajectories 2.8K",
+        "hf_id": "SWE-Factory/DeepSWE-Agent-Kimi-K2-Trajectories-2.8K",
+        "url": "https://huggingface.co/datasets/SWE-Factory/DeepSWE-Agent-Kimi-K2-Trajectories-2.8K",
+        "family": "coding_agentic",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2800,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "messages",
+            "repo"
+          ],
+          "target": [
+            "trajectory",
+            "messages",
+            "patch",
+            "resolved",
+            "reward"
+          ],
+          "id": [
+            "instance_id",
+            "trajectory_id"
+          ]
+        },
+        "curriculum_axes": [
+          "deepswe",
+          "kimi_k2_trajectory",
+          "tool_trace",
+          "patch_repair",
+          "process_reward_model"
+        ]
+      },
+      {
+        "name": "SWE-Factory-Gym",
+        "hf_id": "SWE-Factory/SWE-Factory-Gym",
+        "url": "https://huggingface.co/datasets/SWE-Factory/SWE-Factory-Gym",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT plus generated environment review",
+        "license_tier": "permissive_review_upstream",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "repo",
+            "environment"
+          ],
+          "target": [
+            "patch",
+            "tests",
+            "reward",
+            "metadata"
+          ],
+          "id": [
+            "instance_id",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_factory",
+          "environment_generation",
+          "repo_repair",
+          "license_review"
+        ]
+      },
+      {
+        "name": "SWE-Next",
+        "hf_id": "TIGER-Lab/SWE-Next",
+        "url": "https://huggingface.co/datasets/TIGER-Lab/SWE-Next",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "repo",
+            "issue"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "resolved",
+            "metadata"
+          ],
+          "id": [
+            "instance_id",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_next",
+          "execution_grounded",
+          "real_prs",
+          "repo_repair"
+        ]
+      },
+      {
+        "name": "SWE-Next SFT Trajectories",
+        "hf_id": "TIGER-Lab/SWE-Next-SFT-Trajectories",
+        "url": "https://huggingface.co/datasets/TIGER-Lab/SWE-Next-SFT-Trajectories",
+        "family": "coding_agentic",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 3693,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "messages",
+            "repo"
+          ],
+          "target": [
+            "trajectory",
+            "messages",
+            "patch",
+            "resolved"
+          ],
+          "id": [
+            "instance_id",
+            "trajectory_id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_next",
+          "expert_tool_trajectory",
+          "multi_turn",
+          "repo_repair"
+        ]
+      },
+      {
+        "name": "SWE-Swiss SFT Repair 4K",
+        "hf_id": "SWE-Swiss/SWESwiss-SFT-Repair-4K",
+        "url": "https://huggingface.co/datasets/SWE-Swiss/SWESwiss-SFT-Repair-4K",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "oracle_files",
+            "distractor_files",
+            "instruction"
+          ],
+          "target": [
+            "patch",
+            "response",
+            "unit_test_pass",
+            "metadata"
+          ],
+          "id": [
+            "instance_id",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_swiss",
+          "bug_localization",
+          "oracle_and_distractor_files",
+          "unit_test_filtered"
+        ]
+      },
+      {
+        "name": "SWE-Swiss Repair RL 12K",
+        "hf_id": "SWE-Swiss/SWESwiss-Repair-RL-SWEGym-SWESmith-12K",
+        "url": "https://huggingface.co/datasets/SWE-Swiss/SWESwiss-Repair-RL-SWEGym-SWESmith-12K",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "repo",
+            "oracle_files"
+          ],
+          "target": [
+            "patch",
+            "reward",
+            "unit_test_pass",
+            "metadata"
+          ],
+          "id": [
+            "instance_id",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_swiss",
+          "repair_rl",
+          "unit_test_reward",
+          "repo_repair"
+        ]
+      },
+      {
+        "name": "SWE-Universe Repaired Bug Pilot Trajectories",
+        "hf_id": "VmaxRL/SWE-universe-repaired-bug-pilot-trajectories",
+        "url": "https://huggingface.co/datasets/VmaxRL/SWE-universe-repaired-bug-pilot-trajectories",
+        "family": "coding_agentic",
+        "target_modality": "tool",
+        "license": "other",
+        "license_tier": "research_internal_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 804,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "repo",
+            "messages"
+          ],
+          "target": [
+            "trajectory",
+            "messages",
+            "score",
+            "runtime",
+            "pass"
+          ],
+          "id": [
+            "instance_id",
+            "trajectory_id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_universe",
+          "mini_swe_agent",
+          "trajectory_review",
+          "license_review"
+        ]
+      },
+      {
         "name": "SWE-Gym",
         "hf_id": "SWE-Gym/SWE-Gym",
         "url": "https://huggingface.co/datasets/SWE-Gym/SWE-Gym",
@@ -1518,6 +1905,535 @@
         ]
       },
       {
+        "name": "MCP-Atlas",
+        "hf_id": "ScaleAI/MCP-Atlas",
+        "url": "https://huggingface.co/datasets/ScaleAI/MCP-Atlas",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0 dataset; MIT tooling",
+        "license_tier": "attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "task",
+            "instruction",
+            "messages",
+            "tools"
+          ],
+          "target": [
+            "answer",
+            "tool_calls",
+            "trajectory",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "task_id"
+          ]
+        },
+        "curriculum_axes": [
+          "mcp",
+          "tool_selection",
+          "schema_grounding",
+          "non_overlap_with_eval"
+        ]
+      },
+      {
+        "name": "NVIDIA Nemotron-RL Agentic Conversational Tool Use Pivot v1",
+        "hf_id": "nvidia/Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1",
+        "url": "https://huggingface.co/datasets/nvidia/Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "tools"
+          ],
+          "target": [
+            "messages",
+            "response",
+            "tool_calls",
+            "reward"
+          ],
+          "id": [
+            "id",
+            "uuid"
+          ]
+        },
+        "curriculum_axes": [
+          "agentic_conversation",
+          "tool_use_rl",
+          "pivot_rollout",
+          "reward_conditioning"
+        ]
+      },
+      {
+        "name": "WebAgent-R1 Distill",
+        "hf_id": "yczhuang/webagent-r1-distill",
+        "url": "https://huggingface.co/datasets/yczhuang/webagent-r1-distill",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "instruction",
+            "messages",
+            "task"
+          ],
+          "target": [
+            "trajectory",
+            "messages",
+            "answer",
+            "reward"
+          ],
+          "id": [
+            "id",
+            "task_id"
+          ]
+        },
+        "curriculum_axes": [
+          "web_agent",
+          "browser_rl",
+          "multi_turn",
+          "tool_observation"
+        ]
+      },
+      {
+        "name": "WebShepherd PRM Collection",
+        "hf_id": "WebShepherd/WebPRMCollection_preference_pair",
+        "url": "https://huggingface.co/datasets/WebShepherd/WebPRMCollection_preference_pair",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "license pending source review",
+        "license_tier": "research_internal_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "query",
+            "trajectory",
+            "messages"
+          ],
+          "target": [
+            "chosen",
+            "rejected",
+            "preference",
+            "reward"
+          ],
+          "id": [
+            "id",
+            "pair_id"
+          ]
+        },
+        "curriculum_axes": [
+          "web_navigation",
+          "process_reward_model",
+          "preference_pair",
+          "license_review"
+        ]
+      },
+      {
+        "name": "WebExplorer-QA",
+        "hf_id": "hkust-nlp/WebExplorer-QA",
+        "url": "https://huggingface.co/datasets/hkust-nlp/WebExplorer-QA",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "query",
+            "messages",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "trajectory",
+            "evidence",
+            "messages"
+          ],
+          "id": [
+            "id",
+            "qid"
+          ]
+        },
+        "curriculum_axes": [
+          "web_exploration",
+          "deep_research",
+          "citation_grounding",
+          "long_context"
+        ]
+      },
+      {
+        "name": "DeepDive",
+        "hf_id": "zai-org/DeepDive",
+        "url": "https://huggingface.co/datasets/zai-org/DeepDive",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "query",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "evidence",
+            "trajectory",
+            "messages"
+          ],
+          "id": [
+            "id",
+            "query_id"
+          ]
+        },
+        "curriculum_axes": [
+          "deep_search",
+          "knowledge_graph_query",
+          "multi_turn_research",
+          "rl_search"
+        ]
+      },
+      {
+        "name": "WebArena Infinity Trajectories",
+        "hf_id": "webarena-x/webarena-infinity-trajectories",
+        "url": "https://huggingface.co/datasets/webarena-x/webarena-infinity-trajectories",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2329,
+        "field_map": {
+          "prompt": [
+            "task",
+            "intent",
+            "messages",
+            "screenshots"
+          ],
+          "target": [
+            "trajectory",
+            "actions",
+            "observations",
+            "reward",
+            "pass"
+          ],
+          "id": [
+            "task_id",
+            "trajectory_id"
+          ]
+        },
+        "curriculum_axes": [
+          "webarena_infinity",
+          "browser_agent",
+          "gui_grounding",
+          "verifier_pass_fail"
+        ]
+      },
+      {
+        "name": "BrowserAgent SeedData",
+        "hf_id": "TIGER-Lab/BrowserAgent-SeedData",
+        "url": "https://huggingface.co/datasets/TIGER-Lab/BrowserAgent-SeedData",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "instruction",
+            "messages",
+            "task"
+          ],
+          "target": [
+            "answer",
+            "trajectory",
+            "reward_model.ground_truth",
+            "messages"
+          ],
+          "id": [
+            "id",
+            "task_id"
+          ]
+        },
+        "curriculum_axes": [
+          "browser_agent",
+          "rft_seed",
+          "reward_ground_truth",
+          "web_navigation"
+        ]
+      },
+      {
+        "name": "BrowserAgent Data",
+        "hf_id": "TIGER-Lab/BrowserAgent-Data",
+        "url": "https://huggingface.co/datasets/TIGER-Lab/BrowserAgent-Data",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "dataset card license review",
+        "license_tier": "research_internal_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "instruction",
+            "task",
+            "url"
+          ],
+          "target": [
+            "messages",
+            "trajectory",
+            "actions",
+            "reward"
+          ],
+          "id": [
+            "id",
+            "task_id"
+          ]
+        },
+        "curriculum_axes": [
+          "browser_agent",
+          "chatml_action",
+          "sft_rft",
+          "license_review"
+        ]
+      },
+      {
+        "name": "Web Agent Graph Dataset",
+        "hf_id": "Anish13/web-agent-graph-dataset",
+        "url": "https://huggingface.co/datasets/Anish13/web-agent-graph-dataset",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "history",
+            "current_state",
+            "observation",
+            "instruction"
+          ],
+          "target": [
+            "gold_action",
+            "hard_negatives",
+            "next_screenshot",
+            "reward"
+          ],
+          "id": [
+            "id",
+            "state_id"
+          ]
+        },
+        "curriculum_axes": [
+          "browser_agent",
+          "action_value",
+          "hard_negative",
+          "accessibility_tree"
+        ]
+      },
+      {
+        "name": "WebChain",
+        "hf_id": "webagentlab/WebChain",
+        "url": "https://huggingface.co/datasets/webagentlab/WebChain",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "gated other license",
+        "license_tier": "research_internal_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "messages",
+            "screenshot",
+            "accessibility_tree"
+          ],
+          "target": [
+            "trajectory",
+            "actions",
+            "planning",
+            "reward"
+          ],
+          "id": [
+            "id",
+            "trajectory_id"
+          ]
+        },
+        "curriculum_axes": [
+          "web_chain",
+          "gui_grounding",
+          "browser_agent",
+          "gated_review"
+        ]
+      },
+      {
+        "name": "WebArena Pro Task Intents and Rubrics",
+        "hf_id": "webarenapro/task-intents-and-rubrics",
+        "url": "https://huggingface.co/datasets/webarenapro/task-intents-and-rubrics",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "intent",
+            "task",
+            "instruction"
+          ],
+          "target": [
+            "rubric",
+            "answer",
+            "metadata"
+          ],
+          "id": [
+            "task_id",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "browser_agent_eval",
+          "rubric",
+          "reward_calibration",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "Deceptive Web Execution-Time Warnings",
+        "hf_id": "deceptive-web/execution-time-warnings-web-agents",
+        "url": "https://huggingface.co/datasets/deceptive-web/execution-time-warnings-web-agents",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "task",
+            "warning",
+            "instruction",
+            "messages"
+          ],
+          "target": [
+            "safe_action",
+            "unsafe_action",
+            "rubric",
+            "label"
+          ],
+          "id": [
+            "id",
+            "task_id"
+          ]
+        },
+        "curriculum_axes": [
+          "browser_safety",
+          "deceptive_ui",
+          "runtime_warning",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "CognitiveKernel Pro SFT",
+        "hf_id": "CognitiveKernel/CognitiveKernel-Pro-SFT",
+        "url": "https://huggingface.co/datasets/CognitiveKernel/CognitiveKernel-Pro-SFT",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "license pending source review",
+        "license_tier": "research_internal_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "messages",
+            "instruction",
+            "query"
+          ],
+          "target": [
+            "messages",
+            "trajectory",
+            "tool_calls",
+            "answer"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "agent_foundation_sft",
+          "web_file_code_tools",
+          "multi_agent_trace",
+          "license_review"
+        ]
+      },
+      {
         "name": "NVIDIA Nemotron-Terminal-Corpus",
         "hf_id": "nvidia/Nemotron-Terminal-Corpus",
         "url": "https://huggingface.co/datasets/nvidia/Nemotron-Terminal-Corpus",
@@ -1718,13 +2634,13 @@
         "url": "https://huggingface.co/datasets/open-thoughts/AgentTrove",
         "family": "agentic_tool_reasoning",
         "target_modality": "tool",
-        "license": "license pending source review",
-        "license_tier": "unknown",
-        "use_policy": "blocked_until_review",
+        "license": "Apache-2.0 on Hugging Face; trace provenance review",
+        "license_tier": "permissive_with_trace_review",
+        "use_policy": "train",
         "splits": [
           "train"
         ],
-        "max_records": 1024,
+        "max_records": 4096,
         "field_map": {
           "prompt": [
             "messages",
@@ -1741,7 +2657,8 @@
         "curriculum_axes": [
           "agent_trace",
           "tool_calling",
-          "blocked_license_review"
+          "multi_turn",
+          "trace_provenance_review"
         ]
       },
       {
@@ -1750,13 +2667,13 @@
         "url": "https://huggingface.co/datasets/Qwen/WebWorldData",
         "family": "terminal_browser_agents",
         "target_modality": "tool",
-        "license": "license pending source review",
-        "license_tier": "unknown",
-        "use_policy": "blocked_until_review",
+        "license": "Apache-2.0 on Hugging Face; web-source provenance review",
+        "license_tier": "permissive_with_trace_review",
+        "use_policy": "train",
         "splits": [
           "train"
         ],
-        "max_records": 1024,
+        "max_records": 4096,
         "field_map": {
           "prompt": [
             "instruction",
@@ -1772,7 +2689,8 @@
         "curriculum_axes": [
           "browser",
           "web_agent",
-          "blocked_license_review"
+          "qwen_webworld",
+          "trace_provenance_review"
         ]
       },
       {
@@ -1804,6 +2722,497 @@
           "terminal",
           "eval_holdout",
           "container_tasks"
+        ]
+      },
+      {
+        "name": "TerminalWorld",
+        "hf_id": "EuniAI/TerminalWorld",
+        "url": "https://huggingface.co/datasets/EuniAI/TerminalWorld",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "CC-BY-NC-4.0 dataset; repo tooling Apache-2.0",
+        "license_tier": "non_commercial_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train",
+          "test"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "task",
+            "instruction",
+            "query",
+            "recording"
+          ],
+          "target": [
+            "answer",
+            "trajectory",
+            "commands",
+            "verifier"
+          ],
+          "id": [
+            "id",
+            "task_id"
+          ]
+        },
+        "curriculum_axes": [
+          "terminal",
+          "human_recorded_workflows",
+          "verified_subset",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "OSWorld 2 Ubuntu Trajectories",
+        "hf_id": "xlangai/ubuntu_osworld2_trajs",
+        "url": "https://huggingface.co/datasets/xlangai/ubuntu_osworld2_trajs",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "mixed source review",
+        "license_tier": "research_internal_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "task",
+            "screenshot",
+            "observation"
+          ],
+          "target": [
+            "trajectory",
+            "actions",
+            "reward",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "task_id",
+            "trajectory_id"
+          ]
+        },
+        "curriculum_axes": [
+          "osworld2",
+          "desktop_agent",
+          "gui_control",
+          "source_review"
+        ]
+      },
+      {
+        "name": "OSWorld Control Trajectories",
+        "hf_id": "ChrisHarig/OSWorld-Control-Trajectories",
+        "url": "https://huggingface.co/datasets/ChrisHarig/OSWorld-Control-Trajectories",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "task",
+            "trajectory",
+            "scenario"
+          ],
+          "target": [
+            "honest_action",
+            "attack_action",
+            "label",
+            "rubric"
+          ],
+          "id": [
+            "id",
+            "task_id"
+          ]
+        },
+        "curriculum_axes": [
+          "desktop_agent_safety",
+          "osworld",
+          "attack_trajectory",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "Magic-RICH",
+        "hf_id": "GUIAgent/Magic-RICH",
+        "url": "https://huggingface.co/datasets/GUIAgent/Magic-RICH",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "screenshot",
+            "observation",
+            "task"
+          ],
+          "target": [
+            "action",
+            "step_label",
+            "rubric",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "task_id"
+          ]
+        },
+        "curriculum_axes": [
+          "mobile_gui",
+          "step_level_eval",
+          "visual_grounding",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "macOS GUI Agent Train",
+        "hf_id": "GumbiiDigital/macos-gui-agent-train",
+        "url": "https://huggingface.co/datasets/GumbiiDigital/macos-gui-agent-train",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "license pending source review",
+        "license_tier": "research_internal_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "screenshot",
+            "messages",
+            "task"
+          ],
+          "target": [
+            "action",
+            "messages",
+            "response",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "macos_gui",
+          "desktop_agent",
+          "visual_grounding",
+          "license_review"
+        ]
+      },
+      {
+        "name": "Multi-Docker-Eval",
+        "hf_id": "litble/Multi-Docker-Eval",
+        "url": "https://huggingface.co/datasets/litble/Multi-Docker-Eval",
+        "family": "terminal_browser_agents",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "task",
+            "instruction",
+            "dockerfile",
+            "environment"
+          ],
+          "target": [
+            "answer",
+            "tests",
+            "reward",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "task_id"
+          ]
+        },
+        "curriculum_axes": [
+          "docker_env",
+          "terminal_eval",
+          "environment_construction",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-bench Pro",
+        "hf_id": "ScaleAI/SWE-bench_Pro",
+        "url": "https://huggingface.co/datasets/ScaleAI/SWE-bench_Pro",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "public benchmark subset; upstream source repo terms",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "repo",
+            "instruction"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ],
+          "id": [
+            "instance_id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_bench_pro",
+          "enterprise_swe",
+          "long_horizon_repo_repair",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-bench Pro ABS",
+        "hf_id": "OpenAgentLab/SWE-bench_Pro-ABS",
+        "url": "https://huggingface.co/datasets/OpenAgentLab/SWE-bench_Pro-ABS",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "repo",
+            "adversarial_tests"
+          ],
+          "target": [
+            "test_patch",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS",
+            "metadata"
+          ],
+          "id": [
+            "instance_id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_bench_pro_abs",
+          "adversarial_tests",
+          "patch_verification",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-QA-Pro-Bench",
+        "hf_id": "TIGER-Lab/SWE-QA-Pro-Bench",
+        "url": "https://huggingface.co/datasets/TIGER-Lab/SWE-QA-Pro-Bench",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "question",
+            "repo",
+            "problem_statement"
+          ],
+          "target": [
+            "answer",
+            "evidence",
+            "tests",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "instance_id"
+          ]
+        },
+        "curriculum_axes": [
+          "repo_qa",
+          "code_understanding",
+          "swe_agent_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-bench Multilingual",
+        "hf_id": "SWE-bench/SWE-bench_Multilingual",
+        "url": "https://huggingface.co/datasets/SWE-bench/SWE-bench_Multilingual",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "repo",
+            "language"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ],
+          "id": [
+            "instance_id"
+          ]
+        },
+        "curriculum_axes": [
+          "multilingual_swe",
+          "cross_language_repo_repair",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "CodeElo",
+        "hf_id": "Qwen/CodeElo",
+        "url": "https://huggingface.co/datasets/Qwen/CodeElo",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "statement"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "tests",
+            "elo"
+          ],
+          "id": [
+            "id",
+            "problem_id"
+          ]
+        },
+        "curriculum_axes": [
+          "competition_coding",
+          "elo_scoring",
+          "judge_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "ICPC-Eval",
+        "hf_id": "RUC-AIBOX/ICPC-Eval",
+        "url": "https://huggingface.co/datasets/RUC-AIBOX/ICPC-Eval",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 128,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "statement"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "tests",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "problem_id"
+          ]
+        },
+        "curriculum_axes": [
+          "icpc",
+          "competition_coding",
+          "iterative_repair_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "HLE-Verified",
+        "hf_id": "skylenage-ai/HLE-Verified",
+        "url": "https://huggingface.co/datasets/skylenage-ai/HLE-Verified",
+        "family": "omnimodal_understanding",
+        "target_modality": "multimodal",
+        "license": "benchmark holdout; source review required",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "image",
+            "messages"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "category",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "question_id"
+          ]
+        },
+        "curriculum_axes": [
+          "hle_verified",
+          "hard_reasoning",
+          "multimodal_eval",
+          "benchmark_holdout"
         ]
       },
       {
@@ -2032,6 +3441,215 @@
           "subject_consistency",
           "image_generation",
           "identity_review"
+        ]
+      },
+      {
+        "name": "FineVision",
+        "hf_id": "HuggingFaceM4/FineVision",
+        "url": "https://huggingface.co/datasets/HuggingFaceM4/FineVision",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "mixed source licenses; prompts where applicable CC-BY-4.0",
+        "license_tier": "source_license_varies",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "question",
+            "instruction",
+            "messages",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "messages",
+            "caption",
+            "response"
+          ],
+          "id": [
+            "id",
+            "source_id"
+          ]
+        },
+        "curriculum_axes": [
+          "vlm_mixture",
+          "ocr_charts_diagrams",
+          "science_visual_reasoning",
+          "per_source_license_review"
+        ]
+      },
+      {
+        "name": "FineVisionMax",
+        "hf_id": "HuggingFaceM4/FineVisionMax",
+        "url": "https://huggingface.co/datasets/HuggingFaceM4/FineVisionMax",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "mixed source licenses",
+        "license_tier": "source_license_varies",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "instruction",
+            "messages",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "messages",
+            "caption",
+            "response"
+          ]
+        },
+        "curriculum_axes": [
+          "vlm_scale_mixture",
+          "visual_instruction_density",
+          "per_source_license_review"
+        ]
+      },
+      {
+        "name": "GPT-Image-Edit-1.5M",
+        "hf_id": "UCSC-VLAA/GPT-Image-Edit-1.5M",
+        "url": "https://huggingface.co/datasets/UCSC-VLAA/GPT-Image-Edit-1.5M",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "edit_instruction",
+            "prompt"
+          ],
+          "target": [
+            "edited_image",
+            "target_image",
+            "output_image",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "image_editing",
+          "edit_triplets",
+          "generated_image_review",
+          "instruction_following"
+        ]
+      },
+      {
+        "name": "NHR-Edit",
+        "hf_id": "iitolstykh/NHR-Edit",
+        "url": "https://huggingface.co/datasets/iitolstykh/NHR-Edit",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "edit_instruction",
+            "prompt"
+          ],
+          "target": [
+            "edited_image",
+            "target_image",
+            "source_image",
+            "metadata"
+          ],
+          "id": [
+            "original_seed",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "image_editing",
+          "source_target_triplet",
+          "synthetic_quality_filter",
+          "seed_dedup"
+        ]
+      },
+      {
+        "name": "CrispEdit-2M",
+        "hf_id": "WeiChow/CrispEdit-2M",
+        "url": "https://huggingface.co/datasets/WeiChow/CrispEdit-2M",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "edit_instruction",
+            "prompt"
+          ],
+          "target": [
+            "edited_image",
+            "target_image",
+            "output",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "image_editing",
+          "large_scale_edit_diversity",
+          "attribution_review"
+        ]
+      },
+      {
+        "name": "BAGEL-World",
+        "hf_id": "VQVA/BAGEL-World-data",
+        "url": "https://huggingface.co/datasets/VQVA/BAGEL-World-data",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "visual_answer",
+            "response",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "visual_question_answer",
+          "image_text_reasoning",
+          "generation_linked_answers"
         ]
       },
       {
@@ -2446,6 +4064,75 @@
         ]
       },
       {
+        "name": "WorldSpeech",
+        "hf_id": "disco-eth/WorldSpeech",
+        "url": "https://huggingface.co/datasets/disco-eth/WorldSpeech",
+        "family": "speech_audio",
+        "target_modality": "audio",
+        "license": "CC-BY-NC-4.0 plus per-source terms",
+        "license_tier": "non_commercial",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "transcript",
+            "text",
+            "language",
+            "prompt"
+          ],
+          "target": [
+            "audio",
+            "path",
+            "cer",
+            "snr",
+            "dnsmos"
+          ]
+        },
+        "curriculum_axes": [
+          "multilingual_speech",
+          "asr",
+          "quality_filtered_audio",
+          "non_commercial_quarantine"
+        ]
+      },
+      {
+        "name": "NonverbalTTS",
+        "hf_id": "deepvk/NonverbalTTS",
+        "url": "https://huggingface.co/datasets/deepvk/NonverbalTTS",
+        "family": "speech_audio",
+        "target_modality": "audio",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_privacy_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "text",
+            "transcript",
+            "emotion",
+            "nonverbal"
+          ],
+          "target": [
+            "audio",
+            "speaker",
+            "emotion",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "tts",
+          "expressive_speech",
+          "nonverbal_vocalization",
+          "speaker_privacy_review"
+        ]
+      },
+      {
         "name": "AudioSkills",
         "hf_id": "nvidia/AudioSkills",
         "url": "https://huggingface.co/datasets/nvidia/AudioSkills",
@@ -2605,6 +4292,39 @@
           "music_preference",
           "reward_model",
           "generated_music_review"
+        ]
+      },
+      {
+        "name": "Captioned AI Music Snippets",
+        "hf_id": "laion/captioned-ai-music-snippets",
+        "url": "https://huggingface.co/datasets/laion/captioned-ai-music-snippets",
+        "family": "music_generation",
+        "target_modality": "music",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "caption",
+            "prompt",
+            "tags"
+          ],
+          "target": [
+            "audio",
+            "music",
+            "caption",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "text_to_music_alignment",
+          "music_caption",
+          "generated_audio_review",
+          "apache_music_data"
         ]
       },
       {
@@ -3024,6 +4744,32 @@
         "license_tier": "non_commercial",
         "use_policy": "research_internal",
         "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction",
+            "video",
+            "timestamps"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "reasoning",
+            "temporal_evidence",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "video_id",
+            "sample_id"
+          ],
+          "media": [
+            "video",
+            "video_path",
+            "frames"
+          ]
+        },
         "distillation_prompts": [
           {
             "instruction": "Create a long-video reasoning row: timestamped observations, temporal state changes, question, evidence chain, answer, and source-license quarantine metadata.",
@@ -3035,6 +4781,39 @@
           "long_video",
           "temporal_cot",
           "non_commercial_quarantine"
+        ]
+      },
+      {
+        "name": "Cambrian-P-Data",
+        "hf_id": "nyu-visionx/Cambrian-P-Data",
+        "url": "https://huggingface.co/datasets/nyu-visionx/Cambrian-P-Data",
+        "family": "omnimodal_understanding",
+        "target_modality": "video",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_source_media_review",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "pose",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "pose_grounded_video",
+          "human_motion_reasoning",
+          "video_understanding",
+          "source_media_review"
         ]
       },
       {
@@ -3631,6 +5410,187 @@
         ]
       },
       {
+        "name": "AI-MO NuminaMath 1.5",
+        "hf_id": "AI-MO/NuminaMath-1.5",
+        "url": "https://huggingface.co/datasets/AI-MO/NuminaMath-1.5",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "permissive dataset metadata; source provenance review",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "messages"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "ground_truth",
+            "messages"
+          ],
+          "id": [
+            "id",
+            "problem_id"
+          ]
+        },
+        "curriculum_axes": [
+          "math",
+          "rlvr",
+          "verifiable_answer",
+          "numina_math_1_5"
+        ]
+      },
+      {
+        "name": "Polaris Nemotron Easy Math Verifiable",
+        "hf_id": "devvrit/polaris_filtered_nemotron_easy_math_verifiable",
+        "url": "https://huggingface.co/datasets/devvrit/polaris_filtered_nemotron_easy_math_verifiable",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "boxed_answer",
+            "reward_model.ground_truth"
+          ],
+          "id": [
+            "id",
+            "problem_id"
+          ]
+        },
+        "curriculum_axes": [
+          "math",
+          "rlvr",
+          "math_verify",
+          "polaris_decontam"
+        ]
+      },
+      {
+        "name": "Polaris Nemotron Medium Math Verifiable",
+        "hf_id": "devvrit/polaris_filtered_nemotron_medium_math_verifiable",
+        "url": "https://huggingface.co/datasets/devvrit/polaris_filtered_nemotron_medium_math_verifiable",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "boxed_answer",
+            "reward_model.ground_truth"
+          ],
+          "id": [
+            "id",
+            "problem_id"
+          ]
+        },
+        "curriculum_axes": [
+          "math",
+          "rlvr",
+          "math_verify",
+          "polaris_decontam"
+        ]
+      },
+      {
+        "name": "Korean NuminaMath Verifiable 540K",
+        "hf_id": "OLAIR/numina_math_ko_verifiable_540k",
+        "url": "https://huggingface.co/datasets/OLAIR/numina_math_ko_verifiable_540k",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "ground_truth"
+          ],
+          "id": [
+            "id",
+            "problem_id"
+          ]
+        },
+        "curriculum_axes": [
+          "math",
+          "rlvr",
+          "korean",
+          "multilingual_reasoning"
+        ]
+      },
+      {
+        "name": "RLVR Eurus 2 Math Fixed",
+        "hf_id": "uiuc-kang-lab/RLVR-Eurus-2-Math-Fixed",
+        "url": "https://huggingface.co/datasets/uiuc-kang-lab/RLVR-Eurus-2-Math-Fixed",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "license pending source review",
+        "license_tier": "research_internal_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "problem",
+            "question"
+          ],
+          "target": [
+            "reward_model.ground_truth",
+            "answer",
+            "solution",
+            "ability"
+          ]
+        },
+        "curriculum_axes": [
+          "math",
+          "rlvr",
+          "large_scale_review",
+          "license_review"
+        ]
+      },
+      {
         "name": "RLVR Math 16k",
         "hf_id": "Julian2002/RLVR-Math-16k",
         "url": "https://huggingface.co/datasets/Julian2002/RLVR-Math-16k",
@@ -3690,6 +5650,36 @@
           "aime_2025",
           "benchmark_holdout",
           "math_gate"
+        ]
+      },
+      {
+        "name": "MathArena AIME 2026 Holdout",
+        "hf_id": "MathArena/aime_2026",
+        "url": "https://huggingface.co/datasets/MathArena/aime_2026",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "CC-BY-NC-SA-4.0",
+        "license_tier": "non_commercial_benchmark",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 60,
+        "field_map": {
+          "prompt": [
+            "problem",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "category"
+          ]
+        },
+        "curriculum_axes": [
+          "aime_2026",
+          "benchmark_holdout",
+          "math_release_gate"
         ]
       },
       {
@@ -3784,6 +5774,267 @@
           "os_migration",
           "docker_smoke",
           "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "Multi-SWE-bench",
+        "url": "https://multi-swe-bench.github.io/",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "benchmark source review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "max_records": 512,
+        "distillation_prompts": [
+          {
+            "instruction": "Create a multilingual SWE benchmark metadata row with repo, language, issue text, hidden test pointer, and contamination canary.",
+            "target": "Keep gold patches and test answers sealed; emit only eval metadata and protected hash fields."
+          }
+        ],
+        "curriculum_axes": [
+          "multi_swe_bench",
+          "multilingual_swe",
+          "repo_repair_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-Bench++",
+        "url": "https://swebenchplusplus.github.io/",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "benchmark source review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "max_records": 512,
+        "distillation_prompts": [
+          {
+            "instruction": "Create a SWE-Bench++ release-gate row with issue, repo metadata, environment pointer, hidden test pointer, and no gold patch.",
+            "target": "Return eval-only metadata with patch/test canary hashes and benchmark split tags."
+          }
+        ],
+        "curriculum_axes": [
+          "swe_bench_plus_plus",
+          "repo_repair_eval",
+          "hidden_tests",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "EVMbench",
+        "url": "https://github.com/eth-sri/evmbench",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "benchmark source review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "max_records": 512,
+        "distillation_prompts": [
+          {
+            "instruction": "Create an EVM smart-contract coding eval row with task text, contract context pointer, verifier command, and sealed answer metadata.",
+            "target": "Emit benchmark metadata only; keep exploit/fix answer keys quarantined."
+          }
+        ],
+        "curriculum_axes": [
+          "smart_contract",
+          "evm",
+          "security_code_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-bench Multimodal",
+        "url": "https://github.com/swe-bench/swe-bench",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "benchmark source review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "max_records": 512,
+        "distillation_prompts": [
+          {
+            "instruction": "Create a multimodal SWE eval row where issue context includes screenshots, UI artifacts, logs, or diagrams plus sealed patch/test metadata.",
+            "target": "Return eval-only metadata with media artifact placeholders and contamination canaries."
+          }
+        ],
+        "curriculum_axes": [
+          "swe_multimodal",
+          "ui_repo_repair",
+          "visual_debugging",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-Lancer",
+        "url": "https://github.com/openai/SWELancer-Benchmark",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "benchmark source review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "max_records": 512,
+        "distillation_prompts": [
+          {
+            "instruction": "Create a freelance SWE eval metadata row with issue, expected deliverable, value score, hidden verifier, and no solution leakage.",
+            "target": "Return sealed benchmark metadata suitable for release-gate evaluation only."
+          }
+        ],
+        "curriculum_axes": [
+          "swe_lancer",
+          "freelance_swe",
+          "economic_value_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-PolyBench",
+        "hf_id": "AmazonScience/SWE-PolyBench",
+        "url": "https://huggingface.co/datasets/AmazonScience/SWE-PolyBench",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "repo",
+            "language",
+            "instruction"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ],
+          "id": [
+            "instance_id",
+            "id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_polybench",
+          "polyglot_repo_repair",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-bench Live MultiLang",
+        "hf_id": "SWE-bench-Live/MultiLang",
+        "url": "https://huggingface.co/datasets/SWE-bench-Live/MultiLang",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "repo",
+            "language",
+            "instruction"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "test_cmd",
+            "metadata"
+          ],
+          "id": [
+            "instance_id"
+          ]
+        },
+        "curriculum_axes": [
+          "live_swe",
+          "multilang",
+          "current_repo_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "SWE-bench Live Windows",
+        "hf_id": "SWE-bench-Live/Windows",
+        "url": "https://huggingface.co/datasets/SWE-bench-Live/Windows",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 256,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "repo",
+            "platform",
+            "instruction"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "test_cmd",
+            "metadata"
+          ],
+          "id": [
+            "instance_id"
+          ]
+        },
+        "curriculum_axes": [
+          "live_swe",
+          "windows",
+          "cross_platform_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "JetBrains SWE-bench Agent Trajectories",
+        "hf_id": "JetBrains-Research/agent-trajectories-swe-bench-test-minus-verified",
+        "url": "https://huggingface.co/datasets/JetBrains-Research/agent-trajectories-swe-bench-test-minus-verified",
+        "family": "coding_agentic",
+        "target_modality": "tool",
+        "license": "MIT",
+        "license_tier": "benchmark_contamination_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "field_map": {
+          "prompt": [
+            "problem_statement",
+            "messages",
+            "repo"
+          ],
+          "target": [
+            "trajectory",
+            "messages",
+            "patch",
+            "success"
+          ],
+          "id": [
+            "instance_id",
+            "trajectory_id"
+          ]
+        },
+        "curriculum_axes": [
+          "swe_bench_trace_analysis",
+          "contamination_quarantine",
+          "tool_action_structure",
+          "no_direct_training_on_eval"
         ]
       },
       {
@@ -4006,6 +6257,44 @@
         ]
       },
       {
+        "name": "RLFR Dataset VLM",
+        "hf_id": "JingHaoZ/RLFR-Dataset-VLM",
+        "url": "https://huggingface.co/datasets/JingHaoZ/RLFR-Dataset-VLM",
+        "family": "omnimodal_understanding",
+        "target_modality": "multimodal",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "image",
+            "messages"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "reward",
+            "ground_truth"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "multimodal_rl",
+          "visual_math",
+          "rlfr",
+          "verifiable_answer"
+        ]
+      },
+      {
         "name": "Innovator VL RL 172K",
         "hf_id": "InnovatorLab/Innovator-VL-RL-172K",
         "url": "https://huggingface.co/datasets/InnovatorLab/Innovator-VL-RL-172K",
@@ -4078,7 +6367,7 @@
         ]
       },
       {
-        "name": "Pico-Banana-400K",
+        "name": "Pico-Banana-400K Apple Research Reference",
         "url": "https://machinelearning.apple.com/research/pico-banana",
         "family": "image_generation_editing",
         "target_modality": "image",
@@ -4119,6 +6408,80 @@
           "multi_turn_edit",
           "instruction_preservation",
           "reward_model"
+        ]
+      },
+      {
+        "name": "Rapidata Open Image Preferences v1 More Results",
+        "hf_id": "Rapidata/open-image-preferences-v1-more-results",
+        "url": "https://huggingface.co/datasets/Rapidata/open-image-preferences-v1-more-results",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "caption"
+          ],
+          "target": [
+            "chosen",
+            "rejected",
+            "preference",
+            "human_preference"
+          ],
+          "id": [
+            "id",
+            "pair_id"
+          ]
+        },
+        "curriculum_axes": [
+          "image_preference",
+          "reward_model",
+          "human_preference",
+          "prompt_alignment"
+        ]
+      },
+      {
+        "name": "Text-to-Image DPO Human Preferences Full",
+        "hf_id": "datapointai/text-2-image-dpo-human-preferences-full",
+        "url": "https://huggingface.co/datasets/datapointai/text-2-image-dpo-human-preferences-full",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "CC-BY-4.0 gated",
+        "license_tier": "gated_attribution_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "caption"
+          ],
+          "target": [
+            "chosen",
+            "rejected",
+            "preference",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "pair_id"
+          ]
+        },
+        "curriculum_axes": [
+          "text_to_image_preference",
+          "dpo",
+          "human_preference",
+          "gated_review"
         ]
       },
       {
@@ -4187,6 +6550,118 @@
         ]
       },
       {
+        "name": "ImagenWorld",
+        "hf_id": "TIGER-Lab/ImagenWorld",
+        "url": "https://huggingface.co/datasets/TIGER-Lab/ImagenWorld",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train",
+          "test"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "task"
+          ],
+          "target": [
+            "answer",
+            "rubric",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "image_generation_eval",
+          "image_editing_eval",
+          "instruction_following",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "DreamOmni2Bench",
+        "hf_id": "xiabs/DreamOmni2Bench",
+        "url": "https://huggingface.co/datasets/xiabs/DreamOmni2Bench",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "rubric",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ]
+        },
+        "curriculum_axes": [
+          "unified_image_generation_editing",
+          "dreamomni2",
+          "instruction_following_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "DeepVision-103K",
+        "hf_id": "skylenage/DeepVision-103K",
+        "url": "https://huggingface.co/datasets/skylenage/DeepVision-103K",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "source license review",
+        "license_tier": "research_internal_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "field_map": {
+          "prompt": [
+            "question",
+            "problem",
+            "prompt",
+            "image"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "ground_truth",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "problem_id"
+          ]
+        },
+        "curriculum_axes": [
+          "visual_math",
+          "multimodal_rlvr",
+          "verifiable_answer",
+          "decontamination_review"
+        ]
+      },
+      {
         "name": "Video-MME",
         "url": "https://github.com/MME-Benchmarks/Video-MME",
         "family": "omnimodal_understanding",
@@ -4205,6 +6680,121 @@
           "video_understanding",
           "long_video",
           "temporal_reasoning",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "Video-MME-v2",
+        "hf_id": "MME-Benchmarks/Video-MME-v2",
+        "url": "https://huggingface.co/datasets/MME-Benchmarks/Video-MME-v2",
+        "family": "omnimodal_understanding",
+        "target_modality": "video",
+        "license": "benchmark source review",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 3000,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "video"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "metadata",
+            "rubric"
+          ],
+          "id": [
+            "id",
+            "video_id"
+          ]
+        },
+        "curriculum_axes": [
+          "video_mme_v2",
+          "video_understanding",
+          "temporal_reasoning",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "MMMU Pro",
+        "hf_id": "MMMU/MMMU_Pro",
+        "url": "https://huggingface.co/datasets/MMMU/MMMU_Pro",
+        "family": "omnimodal_understanding",
+        "target_modality": "image",
+        "license": "benchmark source review",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "validation"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "image",
+            "options"
+          ],
+          "target": [
+            "answer",
+            "explanation",
+            "subject",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "question_id"
+          ]
+        },
+        "curriculum_axes": [
+          "mmmu_pro",
+          "multimodal_reasoning",
+          "expert_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "LongMemEval-V2",
+        "hf_id": "xiaowu0162/longmemeval-v2",
+        "url": "https://huggingface.co/datasets/xiaowu0162/longmemeval-v2",
+        "family": "long_context",
+        "target_modality": "long_context",
+        "license": "permissive benchmark metadata",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 1024,
+        "field_map": {
+          "prompt": [
+            "question",
+            "context",
+            "messages",
+            "memory"
+          ],
+          "target": [
+            "answer",
+            "evidence",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "question_id"
+          ]
+        },
+        "curriculum_axes": [
+          "long_memory_eval",
+          "long_context",
+          "1m_context_gate",
           "benchmark_holdout"
         ]
       },
@@ -4231,6 +6821,88 @@
         ]
       },
       {
+        "name": "LVOmniBench",
+        "hf_id": "KD-TAO/LVOmniBench",
+        "url": "https://huggingface.co/datasets/KD-TAO/LVOmniBench",
+        "family": "omnimodal_understanding",
+        "target_modality": "video",
+        "license": "benchmark source review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "video"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "metadata",
+            "rubric"
+          ],
+          "id": [
+            "id",
+            "video_id"
+          ]
+        },
+        "curriculum_axes": [
+          "lvomni",
+          "long_video",
+          "omnimodal_video_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "JointAVBench",
+        "hf_id": "WayneZENG/JointAVBench",
+        "url": "https://huggingface.co/datasets/WayneZENG/JointAVBench",
+        "family": "omnimodal_understanding",
+        "target_modality": "multimodal",
+        "license": "CC-BY-SA style benchmark review",
+        "license_tier": "sharealike_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "audio",
+            "video"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "rubric",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "media": [
+            "audio",
+            "video",
+            "media_path"
+          ]
+        },
+        "curriculum_axes": [
+          "joint_audio_video",
+          "audio_visual_reasoning",
+          "omnimodal_eval",
+          "benchmark_holdout"
+        ]
+      },
+      {
         "name": "PhyWorldBench",
         "url": "https://research.nvidia.com/labs/cosmos-lab/phyworldbench/",
         "family": "video_generation",
@@ -4250,6 +6922,207 @@
           "physics_consistency",
           "world_modeling",
           "nvidia_cosmos"
+        ]
+      },
+      {
+        "name": "Image-to-Video Human Preferences Large",
+        "hf_id": "datapointai/image-2-video-human-preferences-large",
+        "url": "https://huggingface.co/datasets/datapointai/image-2-video-human-preferences-large",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "CC-BY-4.0 gated",
+        "license_tier": "gated_attribution_review",
+        "use_policy": "research_internal",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "image",
+            "instruction"
+          ],
+          "target": [
+            "chosen",
+            "rejected",
+            "preference",
+            "metadata"
+          ],
+          "id": [
+            "id",
+            "pair_id"
+          ]
+        },
+        "curriculum_axes": [
+          "image_to_video",
+          "video_preference",
+          "dpo",
+          "gated_review"
+        ]
+      },
+      {
+        "name": "AVGen-Bench",
+        "hf_id": "microsoft/AVGen-Bench",
+        "url": "https://huggingface.co/datasets/microsoft/AVGen-Bench",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "text"
+          ],
+          "target": [
+            "audio_video_alignment",
+            "rubric",
+            "answer",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "audio_video_generation_eval",
+          "audiovisual_alignment",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "TAG-Bench-Video",
+        "hf_id": "dghadiya/TAG-Bench-Video",
+        "url": "https://huggingface.co/datasets/dghadiya/TAG-Bench-Video",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "train",
+          "test"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "caption",
+            "instruction"
+          ],
+          "target": [
+            "rating",
+            "score",
+            "action_consistency",
+            "temporal_coherence"
+          ]
+        },
+        "curriculum_axes": [
+          "video_reward_calibration",
+          "temporal_coherence",
+          "human_ratings",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "VGenST-Bench",
+        "hf_id": "NeurIPS2026-VGenST-Bench/VGenST-Bench",
+        "url": "https://huggingface.co/datasets/NeurIPS2026-VGenST-Bench/VGenST-Bench",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "non_commercial_benchmark",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 1200,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "instruction",
+            "task"
+          ],
+          "target": [
+            "answer",
+            "rubric",
+            "spatiotemporal_label",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "spatiotemporal_video_reasoning",
+          "video_generation_eval",
+          "non_commercial_benchmark"
+        ]
+      },
+      {
+        "name": "VBench 2.0",
+        "hf_id": "Vchitect/VBench-2.0_human_annotation",
+        "url": "https://huggingface.co/datasets/Vchitect/VBench-2.0_human_annotation",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "license pending source review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "caption",
+            "instruction"
+          ],
+          "target": [
+            "human_score",
+            "rating",
+            "dimension",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "video_generation_reward_eval",
+          "human_annotation",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "Video-Bench",
+        "hf_id": "Video-Bench/Video-Bench_human_annotation",
+        "url": "https://huggingface.co/datasets/Video-Bench/Video-Bench_human_annotation",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "license pending source review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "prompt",
+            "caption",
+            "instruction"
+          ],
+          "target": [
+            "human_score",
+            "rating",
+            "dimension",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "video_generation_reward_eval",
+          "human_annotation",
+          "benchmark_holdout"
         ]
       },
       {
@@ -4315,6 +7188,7 @@
       },
       {
         "name": "Multimodal RewardBench 2",
+        "hf_id": "rl-research/multimodal-rewardbench-2",
         "url": "https://arxiv.org/abs/2512.16899",
         "family": "omnimodal_understanding",
         "target_modality": "multimodal",
@@ -4355,6 +7229,175 @@
           "spoken_tool_use",
           "audio_reasoning",
           "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "PARADE_audio",
+        "hf_id": "UCSC-VLAA/PARADE_audio",
+        "url": "https://huggingface.co/datasets/UCSC-VLAA/PARADE_audio",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 5000,
+        "field_map": {
+          "prompt": [
+            "question",
+            "instruction",
+            "audio_prompt"
+          ],
+          "target": [
+            "answer",
+            "category",
+            "rubric",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "audio_language_eval",
+          "emotion_multilingual_robustness",
+          "safety_fairness_audio",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "WildSpeech-Bench",
+        "hf_id": "tencent/WildSpeech-Bench",
+        "url": "https://huggingface.co/datasets/tencent/WildSpeech-Bench",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "repo license review",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "speech_query",
+            "question",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "paralinguistic_label",
+            "rubric"
+          ]
+        },
+        "curriculum_axes": [
+          "speech_to_speech_eval",
+          "paralinguistic_understanding",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "AudioMC",
+        "hf_id": "ScaleAI/audiomc",
+        "url": "https://huggingface.co/datasets/ScaleAI/audiomc",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "dialogue",
+            "question",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "memory_challenge",
+            "repair_label",
+            "rubric"
+          ]
+        },
+        "curriculum_axes": [
+          "multi_turn_audio_dialogue",
+          "audio_memory",
+          "instruction_retention",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "AV-SpeakerBench",
+        "hf_id": "plnguyen2908/AV-SpeakerBench",
+        "url": "https://huggingface.co/datasets/plnguyen2908/AV-SpeakerBench",
+        "family": "omnimodal_understanding",
+        "target_modality": "multimodal",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "train"
+        ],
+        "max_records": 2000,
+        "field_map": {
+          "prompt": [
+            "question",
+            "instruction",
+            "audio_visual_context"
+          ],
+          "target": [
+            "answer",
+            "speaker_label",
+            "rubric",
+            "metadata"
+          ]
+        },
+        "curriculum_axes": [
+          "audio_visual_qa",
+          "speaker_understanding",
+          "privacy_bias_review",
+          "benchmark_holdout"
+        ]
+      },
+      {
+        "name": "HLE",
+        "hf_id": "cais/hle",
+        "url": "https://huggingface.co/datasets/cais/hle",
+        "family": "omnimodal_understanding",
+        "target_modality": "multimodal",
+        "license": "MIT",
+        "license_tier": "benchmark_holdout_review",
+        "use_policy": "eval_only",
+        "splits": [
+          "test",
+          "validation",
+          "train"
+        ],
+        "max_records": 3000,
+        "field_map": {
+          "prompt": [
+            "question",
+            "prompt",
+            "image"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "category",
+            "rubric"
+          ]
+        },
+        "curriculum_axes": [
+          "hard_multimodal_reasoning",
+          "image_reasoning",
+          "final_eval_holdout",
+          "canary_protected"
         ]
       }
     ]

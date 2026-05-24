@@ -78,15 +78,16 @@ def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> int:
 def iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
     if not path.exists():
         return
-    for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            payload = json.loads(line)
-        except Exception as exc:
-            payload = {"line": line_number, "parse_error": str(exc), "text": line}
-        if isinstance(payload, dict):
-            yield payload
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except Exception as exc:
+                payload = {"line": line_number, "parse_error": str(exc), "text": line.rstrip("\n")}
+            if isinstance(payload, dict):
+                yield payload
 
 
 def count_jsonl(path: Path) -> int:
@@ -447,20 +448,24 @@ def normalize_file(path: Path, harness: str, profile: dict[str, Any]) -> list[di
 
 
 def normalize_traces(files: list[dict[str, Any]], profile: dict[str, Any], out_path: Path) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     global_limit = int((profile.get("data") if isinstance(profile.get("data"), dict) else {}).get("limit") or 0)
-    for item in files:
-        path = Path(str(item["path"]))
-        harness = normalize_harness(str(item.get("harness") or "generic"))
-        try:
-            rows.extend(normalize_file(path, harness, profile))
-        except Exception as exc:
-            errors.append({"path": str(path), "harness": harness, "error": str(exc)})
-        if global_limit and len(rows) >= global_limit:
-            rows = rows[:global_limit]
-            break
-    written = write_jsonl(out_path, rows)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with out_path.open("w", encoding="utf-8") as handle:
+        for item in files:
+            path = Path(str(item["path"]))
+            harness = normalize_harness(str(item.get("harness") or "generic"))
+            try:
+                for row in normalize_file(path, harness, profile):
+                    if global_limit and written >= global_limit:
+                        break
+                    handle.write(json.dumps(row, ensure_ascii=True, default=str) + "\n")
+                    written += 1
+            except Exception as exc:
+                errors.append({"path": str(path), "harness": harness, "error": str(exc)})
+            if global_limit and written >= global_limit:
+                break
     return {"records": written, "errors": errors, "harnesses": sorted({str(item.get("harness")) for item in files})}
 
 

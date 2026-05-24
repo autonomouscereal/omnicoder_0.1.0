@@ -35,6 +35,17 @@ FAMILY_TO_MODALITY = {
 TRAINABLE_POLICIES = {"train", "internal_train", "distill_train", "train_ok"}
 INTERNAL_ONLY_POLICIES = {"research_internal", "distill_seed", "internal_distill_seed", "reward_only"}
 EVAL_ONLY_POLICIES = {"eval", "eval_only", "benchmark_holdout"}
+UNSAFE_TRAIN_LICENSE_MARKERS = (
+    "review",
+    "pending",
+    "unknown",
+    "non_commercial",
+    "no_derivatives",
+    "holdout",
+    "gated",
+    "research",
+    "blocked",
+)
 
 
 def now_iso() -> str:
@@ -74,16 +85,17 @@ def iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
     source = Path(path)
     if not source.exists() or not source.is_file():
         return
-    for line_number, line in enumerate(source.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            payload = json.loads(line)
-        except Exception as exc:
-            payload = {"text": line, "parse_error": str(exc), "line_number": line_number}
-        if isinstance(payload, dict):
-            payload.setdefault("line_number", line_number)
-            yield payload
+    with source.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except Exception as exc:
+                payload = {"text": line.rstrip("\n"), "parse_error": str(exc), "line_number": line_number}
+            if isinstance(payload, dict):
+                payload.setdefault("line_number", line_number)
+                yield payload
 
 
 def repo_root() -> Path:
@@ -218,7 +230,10 @@ def fallback_target(entry: dict[str, Any], record: dict[str, Any]) -> str:
 
 def source_use_bucket(entry: dict[str, Any]) -> str:
     policy = str(entry.get("use_policy") or entry.get("license_tier") or "").lower()
+    license_blob = f"{entry.get('license') or ''} {entry.get('license_tier') or ''}".lower()
     if policy in TRAINABLE_POLICIES:
+        if any(marker in license_blob for marker in UNSAFE_TRAIN_LICENSE_MARKERS):
+            return "research_internal"
         return "train"
     if policy in EVAL_ONLY_POLICIES:
         return "eval_holdout"
@@ -227,6 +242,13 @@ def source_use_bucket(entry: dict[str, Any]) -> str:
     if str(entry.get("license_tier") or "").lower() in {"eval_only", "research_only", "non_commercial", "non_commercial_no_derivatives"}:
         return "research_internal"
     return "blocked_until_review"
+
+
+def training_bucket_for_record(entry: dict[str, Any], record: dict[str, Any]) -> str:
+    bucket = source_use_bucket(entry)
+    if bucket == "train" and bool(record.get("synthetic_seed")):
+        return "research_internal"
+    return bucket
 
 
 def registry_cfg(profile: dict[str, Any]) -> dict[str, Any]:
@@ -475,8 +497,11 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     row["dataset_name"] = str(entry.get("name") or entry.get("hf_id") or family)
     row["license_tier"] = str(entry.get("license_tier") or "unknown")
     row["use_policy"] = str(entry.get("use_policy") or "blocked_until_review")
-    row["training_bucket"] = source_use_bucket(entry)
+    row["training_bucket"] = training_bucket_for_record(entry, record)
     row["synthetic_seed_only"] = bool(record.get("synthetic_seed"))
+    if row["synthetic_seed_only"] and source_use_bucket(entry) == "train":
+        row["synthetic_train_blocked"] = True
+        row["synthetic_train_block_reason"] = "distillation_prompt_seed_cannot_enter_train_bucket_without_real_hf_or_local_rows"
     return row
 
 
@@ -508,6 +533,7 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
                 "license_tier": entry.get("license_tier"),
                 "use_policy": entry.get("use_policy"),
                 "bucket": source_use_bucket(entry),
+                "synthetic_train_seed_policy": "research_internal_only" if source_use_bucket(entry) == "train" else None,
             }
         )
         acquisition.append(status)
