@@ -64,6 +64,13 @@
       "argument_exactness",
       "state_update_consistency",
       "task_outcome",
+      "math_answer_exact",
+      "reasoning_step_validity",
+      "code_tests_passed",
+      "minimal_patch",
+      "terminal_exit_success",
+      "state_change_correctness",
+      "browser_evidence_support",
       "unnecessary_call_rate",
       "tool_error_recovery",
       "approval_boundary_respect",
@@ -79,7 +86,98 @@
       "rollout_length_efficiency",
       "overthinking_penalty",
       "user_simulator_success"
-    ]
+    ],
+    "reward_weights": {
+      "quality": 0.15,
+      "schema_valid": 0.12,
+      "argument_exactness": 0.12,
+      "state_consistency": 0.12,
+      "outcome_passed": 0.22,
+      "domain_verifier": 0.2,
+      "rollout_efficiency": 0.07,
+      "risk_penalty": -0.35
+    },
+    "rlvr_domains": {
+      "math": {
+        "enabled": true,
+        "export": "math_rlvr.jsonl",
+        "checks": [
+          "final_answer_exact",
+          "symbolic_equivalence",
+          "numeric_tolerance",
+          "no_answer_key_leak"
+        ],
+        "reward_axes": [
+          "math_answer_exact",
+          "reasoning_step_validity",
+          "format_compliance"
+        ]
+      },
+      "code": {
+        "enabled": true,
+        "export": "code_rlvr.jsonl",
+        "checks": [
+          "unit_tests_pass",
+          "no_hidden_tests_leak",
+          "patch_applies",
+          "no_forbidden_dependency"
+        ],
+        "reward_axes": [
+          "code_tests_passed",
+          "minimal_patch",
+          "runtime_safety",
+          "style_consistency"
+        ]
+      },
+      "terminal": {
+        "enabled": true,
+        "export": "terminal_rlvr.jsonl",
+        "checks": [
+          "exit_code_zero",
+          "stdout_matches",
+          "filesystem_state_matches",
+          "no_destructive_unapproved_action"
+        ],
+        "reward_axes": [
+          "terminal_exit_success",
+          "command_relevance",
+          "state_change_correctness",
+          "recovery_after_error"
+        ]
+      },
+      "browser": {
+        "enabled": true,
+        "export": "browser_rlvr.jsonl",
+        "checks": [
+          "answer_exact",
+          "citation_supports_claim",
+          "page_state_reached",
+          "no_stale_source"
+        ],
+        "reward_axes": [
+          "browser_answer_exactness",
+          "citation_support",
+          "navigation_efficiency",
+          "source_freshness_2026"
+        ]
+      },
+      "tool": {
+        "enabled": true,
+        "export": "tool_rlvr.jsonl",
+        "checks": [
+          "tool_schema_valid",
+          "argument_exactness",
+          "state_update_consistent",
+          "task_outcome_passed"
+        ],
+        "reward_axes": [
+          "tool_schema_valid",
+          "argument_exactness",
+          "state_update_consistency",
+          "task_outcome"
+        ]
+      }
+    }
   },
   "posttraining_sequence": [
     {
@@ -105,6 +203,30 @@
       "algorithm": "grpo_rloo",
       "input": "tool_rlvr.jsonl",
       "purpose": "Use verifiable rewards for BFCL, tau, MCPMark, terminal/container tasks, code tests, and multimodal tool artifacts."
+    },
+    {
+      "id": "math_rlvr_grpo",
+      "algorithm": "grpo_rloo",
+      "input": "math_rlvr.jsonl",
+      "purpose": "Train answer-verifiable math and symbolic-reasoning rollouts with no benchmark answer-key leakage."
+    },
+    {
+      "id": "code_rlvr_grpo",
+      "algorithm": "grpo_rloo",
+      "input": "code_rlvr.jsonl",
+      "purpose": "Train code repair and repository task rollouts against unit-test, patch-application, and runtime-safety rewards."
+    },
+    {
+      "id": "terminal_rlvr_grpo",
+      "algorithm": "grpo_rloo",
+      "input": "terminal_rlvr.jsonl",
+      "purpose": "Train shell, container, deployment, and recovery rollouts against exit-code, stdout, and filesystem-state rewards."
+    },
+    {
+      "id": "browser_rlvr_grpo",
+      "algorithm": "grpo_rloo",
+      "input": "browser_rlvr.jsonl",
+      "purpose": "Train browser/research/citation tasks with evidence support, freshness, and reached-page-state rewards."
     },
     {
       "id": "tool_safety_negative_alignment",

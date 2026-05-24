@@ -167,7 +167,57 @@ def job_type_matches(job_type: str, teacher_modalities: set[str], record_modalit
     return False
 
 
-def expected_output_schema(job_type: str) -> dict[str, Any]:
+VALID_TEACHER_ROLES = {"primary", "verifier", "critic", "generator", "adjudicator", "optional_crosscheck"}
+
+
+def profile_schema_registry(profile: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    registry = profile.get("schema_registry") if isinstance(profile, dict) and isinstance(profile.get("schema_registry"), dict) else {}
+    return {str(key): value for key, value in registry.items() if isinstance(value, dict)}
+
+
+def infer_teacher_role(teacher_name: str, teacher_cfg: dict[str, Any]) -> str:
+    configured = str(teacher_cfg.get("teacher_role") or "").strip()
+    if configured:
+        return configured
+    provider = str(teacher_cfg.get("provider") or "").lower()
+    name = teacher_name.lower()
+    if "image" in name or "ltx" in name or "ace" in name or "comfyui" in provider:
+        return "generator"
+    if any(marker in name for marker in ("deepseek", "gemini", "grok", "verifier")):
+        return "verifier"
+    if "optional" in name:
+        return "optional_crosscheck"
+    return "primary"
+
+
+def infer_adjudication_group(teacher_name: str, teacher_cfg: dict[str, Any]) -> str:
+    configured = str(teacher_cfg.get("adjudication_group") or "").strip()
+    if configured:
+        return configured
+    modalities = {str(item) for item in teacher_cfg.get("modalities", [])}
+    if "image" in modalities:
+        return "image_edit"
+    if "video" in modalities:
+        return "video"
+    if "music" in modalities:
+        return "music"
+    if "audio" in modalities:
+        return "audio"
+    if "long_context" in modalities:
+        return "long_context"
+    if "code" in modalities:
+        return "agent_tool"
+    return "hard_reasoning" if "deepseek" in teacher_name.lower() else "agent_tool"
+
+
+def expected_output_schema(job_type: str, profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    registered = profile_schema_registry(profile).get(job_type)
+    if registered:
+        payload = dict(registered)
+        payload.setdefault("schema_id", f"omnicoder.teacher_job.{job_type}.v1")
+        payload.setdefault("kind", "registered")
+        payload.setdefault("required_fields", [])
+        return payload
     if "tool_call_ast" in job_type:
         kind = "verifier"
         fields = ["tool_name", "arguments", "ast_valid", "schema_errors", "corrected_call", "reward"]
@@ -189,23 +239,34 @@ def expected_output_schema(job_type: str) -> dict[str, Any]:
     elif "verifier" in job_type or "oracle" in job_type:
         kind = "verifier"
         fields = ["checks", "passed", "evidence", "verifier_confidence"]
-    elif any(token in job_type for token in ("image", "video", "audio", "music", "speech", "lyrics", "modal")):
+    elif "image" in job_type or "edit" in job_type:
         kind = "modal"
-        fields = ["artifact_plan", "alignment_labels", "quality_axes", "negative_prompts", "reward"]
+        fields = ["prompt", "negative_prompt", "composition_constraints", "edit_instructions", "preserve_regions", "change_regions", "alignment_labels", "artifact_failures", "reward"]
+    elif "video" in job_type or "shot" in job_type or "temporal" in job_type:
+        kind = "modal"
+        fields = ["shot_list", "camera_motion", "keyframes", "temporal_constraints", "subject_consistency", "transition_notes", "artifact_failures", "reward"]
+    elif any(token in job_type for token in ("audio", "music", "speech", "lyrics")):
+        kind = "modal"
+        fields = ["style_tags", "tempo_bpm", "structure", "lyrics_alignment", "instrumentation", "mix_quality_axes", "artifact_failures", "reward"]
     else:
         kind = "critique"
         fields = ["critique", "corrected_output", "reasoning_tags", "tool_action_fix", "reward"]
-    return {"kind": kind, "description": DEFAULT_JOB_SCHEMA[kind], "required_fields": fields}
+    return {"schema_id": f"omnicoder.teacher_job.{job_type}.v1", "kind": kind, "description": DEFAULT_JOB_SCHEMA[kind], "required_fields": fields}
 
 
-def build_teacher_job(record: dict[str, Any], teacher_name: str, teacher_cfg: dict[str, Any], job_type: str) -> dict[str, Any]:
+def build_teacher_job(record: dict[str, Any], teacher_name: str, teacher_cfg: dict[str, Any], job_type: str, profile: dict[str, Any] | None = None) -> dict[str, Any]:
     modalities = sorted(media_families(record))
     text = extract_text(record)
     lineage = record.get("lineage") if isinstance(record.get("lineage"), dict) else {}
+    role = infer_teacher_role(teacher_name, teacher_cfg)
+    adjudication_group = infer_adjudication_group(teacher_name, teacher_cfg)
     return {
         "teacher_name": teacher_name,
         "teacher_provider": teacher_cfg.get("provider"),
         "teacher_model_alias": teacher_cfg.get("model_alias"),
+        "teacher_role": role,
+        "adjudication_group": adjudication_group,
+        "consensus_policy": teacher_cfg.get("consensus_policy") or ("primary_plus_verifier" if role in {"primary", "verifier"} else "single"),
         "endpoint_env": teacher_cfg.get("endpoint_env"),
         "job_type": job_type,
         "priority": int(teacher_cfg.get("priority") or 100),
@@ -226,7 +287,7 @@ def build_teacher_job(record: dict[str, Any], teacher_name: str, teacher_cfg: di
                 "Return structured JSON only. Include corrections, reward/verifier labels, "
                 "modality alignment notes, and rejection reasons when the trace is unsafe or weak."
             ),
-            "expected_output_schema": expected_output_schema(job_type),
+            "expected_output_schema": expected_output_schema(job_type, profile),
             "training_targets": [
                 "sft",
                 "preference_optimization",
@@ -260,7 +321,7 @@ def build_jobs(profile: dict[str, Any], records_path: str | Path, limit: int = 0
                 job_type = str(job_type)
                 if not job_type_matches(job_type, teacher_modalities, record_modalities):
                     continue
-                jobs.append(build_teacher_job(record, teacher_name, teacher_cfg, job_type))
+                jobs.append(build_teacher_job(record, teacher_name, teacher_cfg, job_type, profile))
                 per_teacher_counts[teacher_name] += 1
                 counts[f"teacher_{teacher_name}"] += 1
                 counts[f"job_type_{job_type}"] += 1
@@ -345,14 +406,28 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
             modality_counts[str(modality)] += 1
         for job_type in cfg.get("job_types", []):
             job_counts[str(job_type)] += 1
+    role_counts: Counter[str] = Counter()
+    invalid_roles: dict[str, str] = {}
+    missing_adjudication: list[str] = []
+    for teacher_name, cfg in teachers.items():
+        role = infer_teacher_role(teacher_name, cfg)
+        role_counts[role] += 1
+        if role not in VALID_TEACHER_ROLES:
+            invalid_roles[teacher_name] = role
+        if not infer_adjudication_group(teacher_name, cfg):
+            missing_adjudication.append(teacher_name)
     required = {"text", "code", "agent_trace", "tool", "image", "video", "audio", "music"}
     covered = set(modality_counts)
     return {
-        "status": "ok",
+        "status": "ok" if not invalid_roles else "invalid_teacher_roles",
         "teachers": len(teachers),
         "missing_modalities": sorted(required - covered),
         "modalities": dict(sorted(modality_counts.items())),
         "job_types": dict(sorted(job_counts.items())),
+        "teacher_roles": dict(sorted(role_counts.items())),
+        "invalid_teacher_roles": invalid_roles,
+        "missing_adjudication_groups": missing_adjudication,
+        "schema_registry": sorted(profile_schema_registry(profile)),
         "posttraining_stages": [stage.get("id") for stage in (profile.get("posttraining") or {}).get("stages", [])],
     }
 

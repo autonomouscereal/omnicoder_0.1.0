@@ -159,6 +159,49 @@ OMNICODER_RESUME_CHECKPOINT=weights/training_orchestration_2026/target20b_pipeli
 scripts/ai_server_fast_pipeline_20b.sh
 ```
 
+## Dataset And Teacher Sidecars
+
+Do not start a second synchronous 20B target run while a target container owns
+fast GPUs `0,4,6`. Use `scripts/ai_server_dataset_training_sidecars_2026.sh`
+for additive work:
+
+```bash
+cd /home/cereal/omnicoder_2026_work
+
+# Read-only state check.
+scripts/ai_server_dataset_training_sidecars_2026.sh preflight
+
+# Trace mining, ComfyUI artifact indexing, external dataset expansion,
+# teacher-job sharding, and P40 teacher rollouts.
+OMNICODER_MAX_RECORDS_PER_DATASET=1024 \
+OMNICODER_TEACHER_LIMIT=256 \
+scripts/ai_server_dataset_training_sidecars_2026.sh all
+
+# Later status check.
+scripts/ai_server_dataset_training_sidecars_2026.sh status
+```
+
+The sidecar runner writes run-scoped outputs under:
+
+- `weights/curated_datasets_2026/runs/<run_id>`
+- `weights/external_datasets_2026/runs/<run_id>`
+- `weights/data_factory/trace_orchestrator_2026/teacher_jobs/<run_id>`
+- `weights/data_factory/teacher_rollouts/<run_id>`
+
+It promotes `latest` symlinks only after outputs exist. The target training
+profile reads external expansion JSONL family files when present, but
+`eval_holdout` and `blocked_until_review` files stay out of train paths.
+
+P40 usage policy:
+
+- GPUs `1,2,3`: warm Qwen3.6 27B Q4 OpenAI-compatible teacher rollouts.
+- GPU `5`: optional probe/short validation if it is idle and cool.
+- CPU: trace export, redaction, dedupe, license-tier manifests, JSONL slicing.
+- Fast GPUs `0,4,6`: the active 20B pipeline only.
+
+This keeps the RTX 3090s and RTX 8000 saturated by the target model while P40s
+produce agentic, math, code, and tool distillation rows in parallel.
+
 Monitor a detached lane with `scripts/ai_server_monitor_fast_pipeline_2026.sh`.
 For older hand-launched containers, set `OMNICODER_NAME_FILTER` to the actual
 container prefix.

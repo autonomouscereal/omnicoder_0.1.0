@@ -54,6 +54,46 @@ curate-2026 export-training --input curated.jsonl --out training.jsonl
 - `manifests/trace_orchestrator_manifest.json`: release manifest.
 - `dataset_card.md`: human-readable release summary.
 
+## External Dataset Expansion
+
+`profiles/dataset_curation_2026.json` now includes
+`external_dataset_registry_2026`, a license-tiered 2025-2026 dataset registry.
+The registry separates:
+
+- `train`: permissive/attribution sources allowed into training after
+  decontamination.
+- `research_internal`: useful for local distillation, reward labeling, or
+  internal experiments, but not automatically publishable.
+- `eval_holdout`: benchmark or official eval material that must not be trained.
+- `blocked_until_review`: rows that need a human license/split decision.
+
+The expansion runner materializes rows into the normal ledger-token training
+schema and writes family, modality, license, and policy manifests:
+
+```powershell
+dataset-expansion-2026 `
+  --profile profiles/dataset_curation_2026.json `
+  --out-dir weights/external_datasets_2026/latest `
+  --download `
+  --max-records-per-dataset 1024 `
+  build
+```
+
+Current high-value registry families:
+
+- Math/reasoning: OpenR1-Math-220k, DAPO-Math-17k-Processed,
+  DeepScaleR-Preview, NVIDIA OpenMathReasoning, MathNet,
+  NVIDIA AceReason-Math, and OpenThoughts3.
+- Coding/SWE/terminal/tool: NVIDIA OpenCodeReasoning-2, SWE-smith, SWE-Gym,
+  OpenHands SFT trajectories, Toucan-1.5M, ToolOmni-Data, and
+  Terminal-Bench heldout metadata.
+- Multimodal generation: OpenGPT-4o-Image, ShareGPT-4o-Image, VideoUFO,
+  OpenVid-1M, Emilia-YODAS, AudioSkills, JamendoMaxCaps, and MusicBench.
+
+Rows from external sources are not merged into the 20B target lane merely
+because they exist. They must survive redaction, dedupe, benchmark
+decontamination, license tiering, and heldout sample-loss checks.
+
 ## Quality And Safety
 
 The curation layer stores scores instead of only dropping rows. It tracks
@@ -65,6 +105,27 @@ The SFT exporter groups eligible rows into conversations by trace id and skips
 single-message/self-answer traces unless they contain an assistant turn. This
 keeps trace training focused on real interactions rather than prompt-equals-
 answer artifacts.
+
+## Agentic And RLVR Exports
+
+`agentic-tool-train-2026` now emits both compatibility exports and domain
+exports:
+
+- `tool_sft.jsonl`
+- `tool_reward.jsonl`
+- `tool_preference.jsonl`
+- `tool_rlvr.jsonl`
+- `math_rlvr.jsonl`
+- `code_rlvr.jsonl`
+- `terminal_rlvr.jsonl`
+- `browser_rlvr.jsonl`
+- `tool_safety_negatives.jsonl`
+
+Domain rows carry verifier contracts and reward axes for exact math answers,
+code tests, terminal state, browser citations, and tool schema/state validity.
+This lets the training sampler weight math, coding, terminal, browser, and
+tool RLVR separately instead of treating every agent trajectory as one generic
+tool trace.
 
 ## PostgreSQL
 

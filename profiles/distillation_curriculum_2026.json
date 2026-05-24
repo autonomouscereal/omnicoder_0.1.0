@@ -5,12 +5,105 @@
   "work_dir": "weights/distillation_2026",
   "records": "weights/data_factory/trace_orchestrator_2026/jsonl/contamination_scanned.jsonl",
   "sft_jsonl": "weights/data_factory/trace_orchestrator_2026/exports/sft_traces.jsonl",
+  "schema_registry": {
+    "agent_replay_repair": {
+      "schema_id": "omnicoder.teacher_job.agent_replay_repair.v1",
+      "kind": "critique",
+      "required_fields": [
+        "trace_summary",
+        "fault_localization",
+        "corrected_tool_plan",
+        "approval_needed",
+        "state_delta",
+        "safety_notes",
+        "tests_to_run",
+        "reward"
+      ],
+      "evidence_required": true
+    },
+    "patch_test_plan": {
+      "schema_id": "omnicoder.teacher_job.patch_test_plan.v1",
+      "kind": "verifier",
+      "required_fields": [
+        "repo_context",
+        "proposed_patch_summary",
+        "unit_tests",
+        "integration_tests",
+        "regression_risks",
+        "expected_failures",
+        "reward"
+      ],
+      "evidence_required": true
+    },
+    "hard_reasoning_proof_check": {
+      "schema_id": "omnicoder.teacher_job.hard_reasoning_proof_check.v1",
+      "kind": "verifier",
+      "required_fields": [
+        "problem_statement",
+        "proof_steps",
+        "invalid_steps",
+        "final_answer",
+        "symbolic_or_numeric_check",
+        "reward"
+      ],
+      "evidence_required": true
+    },
+    "image_prompt_decomposition": {
+      "schema_id": "omnicoder.teacher_job.image_prompt_decomposition.v1",
+      "kind": "modal",
+      "required_fields": [
+        "prompt",
+        "negative_prompt",
+        "composition_constraints",
+        "edit_instructions",
+        "preserve_regions",
+        "change_regions",
+        "alignment_labels",
+        "artifact_failures",
+        "reward"
+      ],
+      "evidence_required": true
+    },
+    "storyboard_plan": {
+      "schema_id": "omnicoder.teacher_job.storyboard_plan.v1",
+      "kind": "modal",
+      "required_fields": [
+        "shot_list",
+        "camera_motion",
+        "keyframes",
+        "temporal_constraints",
+        "subject_consistency",
+        "transition_notes",
+        "artifact_failures",
+        "reward"
+      ],
+      "evidence_required": true
+    },
+    "music_structure_plan": {
+      "schema_id": "omnicoder.teacher_job.music_structure_plan.v1",
+      "kind": "modal",
+      "required_fields": [
+        "style_tags",
+        "tempo_bpm",
+        "structure",
+        "lyrics_alignment",
+        "instrumentation",
+        "mix_quality_axes",
+        "artifact_failures",
+        "reward"
+      ],
+      "evidence_required": true
+    }
+  },
   "teacher_registry": {
     "qwen3.6_27b_q4_local": {
       "enabled": true,
       "provider": "lm_studio_openai_compatible",
       "endpoint_env": "LMSTUDIO_BASE_URL",
       "model_alias": "qwen3.6-27b-q4",
+      "teacher_role": "primary",
+      "adjudication_group": "agent_tool",
+      "consensus_policy": "primary_plus_verifier",
       "modalities": [
         "text",
         "code",
@@ -18,6 +111,10 @@
         "tool"
       ],
       "job_types": [
+        "agent_replay_repair",
+        "patch_test_plan",
+        "memory_trace_summarization",
+        "approval_gate_classification",
         "trace_critique",
         "tool_repair",
         "tool_call_ast_label",
@@ -57,11 +154,16 @@
       "provider": "comfyui",
       "endpoint_env": "COMFYUI_BASE_URL",
       "model_alias": "qwen-image",
+      "teacher_role": "generator",
+      "adjudication_group": "image_edit",
+      "consensus_policy": "reward_weighted",
       "modalities": [
         "image",
         "text"
       ],
       "job_types": [
+        "image_prompt_decomposition",
+        "image_asset_spec",
         "image_prompt",
         "image_critique",
         "image_reward_label"
@@ -73,11 +175,17 @@
       "provider": "comfyui",
       "endpoint_env": "COMFYUI_BASE_URL",
       "model_alias": "qwen-image-edit",
+      "teacher_role": "generator",
+      "adjudication_group": "image_edit",
+      "consensus_policy": "reward_weighted",
       "modalities": [
         "image",
         "text"
       ],
       "job_types": [
+        "edit_mask_plan",
+        "before_after_edit_preservation",
+        "image_artifact_failure_taxonomy",
         "image_edit_plan",
         "image_edit_critique",
         "edit_preservation_reward"
@@ -89,12 +197,19 @@
       "provider": "comfyui",
       "endpoint_env": "COMFYUI_BASE_URL",
       "model_alias": "ltx-2.3",
+      "teacher_role": "generator",
+      "adjudication_group": "video",
+      "consensus_policy": "reward_weighted",
       "modalities": [
         "video",
         "image",
         "text"
       ],
       "job_types": [
+        "storyboard_plan",
+        "shot_transition_plan",
+        "camera_motion_label",
+        "temporal_consistency_reward",
         "video_prompt",
         "shot_plan",
         "video_sync_critique",
@@ -108,12 +223,19 @@
       "provider": "comfyui",
       "endpoint_env": "COMFYUI_BASE_URL",
       "model_alias": "ace-step-1.5",
+      "teacher_role": "generator",
+      "adjudication_group": "music",
+      "consensus_policy": "reward_weighted",
       "modalities": [
         "music",
         "audio",
         "text"
       ],
       "job_types": [
+        "music_structure_plan",
+        "lyrics_prosody_alignment",
+        "genre_instrumentation_label",
+        "loopability_reward",
         "music_plan",
         "lyrics_alignment",
         "audio_critique",
@@ -126,6 +248,9 @@
       "provider": "external_openai_compatible",
       "endpoint_env": "DEEPSEEK_BASE_URL",
       "model_alias": "deepseek-v4",
+      "teacher_role": "verifier",
+      "adjudication_group": "hard_reasoning",
+      "consensus_policy": "primary_plus_verifier",
       "modalities": [
         "text",
         "code",
@@ -133,6 +258,11 @@
         "tool"
       ],
       "job_types": [
+        "hard_reasoning_proof_check",
+        "terminal_task_verifier",
+        "code_patch_semantic_review",
+        "rlvr_failure_oracle",
+        "sql_safety_verifier",
         "hard_reasoning_verifier",
         "code_patch_review",
         "tool_repair",

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "2026-05-23"
+SCHEMA_VERSION = "2026-05-24"
 TOOL_HINTS = (
     "tool",
     "function",
@@ -36,6 +36,42 @@ RISK_HINTS = (
     "hidden test",
     "answer key",
 )
+MATH_HINTS = ("solve", "equation", "proof", "theorem", "latex", "\\boxed", "olympiad", "aime", "gsm8k", "math")
+CODE_HINTS = ("pytest", "unit test", "def ", "class ", "traceback", "patch", "diff --git", "compiler", "leetcode", "codeforces")
+TERMINAL_HINTS = ("exit_code", "stdout", "stderr", "powershell", "bash", "cmd.exe", "shell", "terminal", "docker", "nvidia-smi")
+BROWSER_HINTS = ("browser", "playwright", "click", "screenshot", "url", "citation", "websearch", "web_research", "http://", "https://")
+DOMAIN_DEFAULTS = {
+    "math": {
+        "checks": ["final_answer_exact", "symbolic_equivalence", "numeric_tolerance", "no_answer_key_leak"],
+        "reward_axes": ["math_answer_exact", "reasoning_step_validity", "format_compliance"],
+    },
+    "code": {
+        "checks": ["unit_tests_pass", "no_hidden_tests_leak", "patch_applies", "no_forbidden_dependency"],
+        "reward_axes": ["code_tests_passed", "minimal_patch", "runtime_safety", "style_consistency"],
+    },
+    "terminal": {
+        "checks": ["exit_code_zero", "stdout_matches", "filesystem_state_matches", "no_destructive_unapproved_action"],
+        "reward_axes": ["terminal_exit_success", "command_relevance", "state_change_correctness", "recovery_after_error"],
+    },
+    "browser": {
+        "checks": ["answer_exact", "citation_supports_claim", "page_state_reached", "no_stale_source"],
+        "reward_axes": ["browser_answer_exactness", "citation_support", "navigation_efficiency", "source_freshness_2026"],
+    },
+    "tool": {
+        "checks": ["tool_schema_valid", "argument_exactness", "state_update_consistent", "task_outcome_passed"],
+        "reward_axes": ["tool_schema_valid", "argument_exactness", "state_update_consistency", "task_outcome"],
+    },
+}
+DEFAULT_REWARD_WEIGHTS = {
+    "quality": 0.15,
+    "schema_valid": 0.12,
+    "argument_exactness": 0.12,
+    "state_consistency": 0.12,
+    "outcome_passed": 0.22,
+    "domain_verifier": 0.20,
+    "rollout_efficiency": 0.07,
+    "risk_penalty": -0.35,
+}
 
 
 def stable_hash(value: Any) -> str:
@@ -167,6 +203,28 @@ def has_tool_signal(record: dict[str, Any]) -> bool:
     return any(hint in text for hint in TOOL_HINTS)
 
 
+def task_domains(record: dict[str, Any]) -> list[str]:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    explicit = record.get("domains") or metadata.get("domains") or record.get("task_family") or metadata.get("task_family")
+    domains: set[str] = set()
+    if isinstance(explicit, str):
+        domains.add(explicit.lower().replace("tool_use", "tool"))
+    elif isinstance(explicit, list):
+        domains.update(str(item).lower().replace("tool_use", "tool") for item in explicit)
+    text = record_text(record).lower()
+    if any(hint in text for hint in MATH_HINTS):
+        domains.add("math")
+    if any(hint in text for hint in CODE_HINTS):
+        domains.add("code")
+    if any(hint in text for hint in TERMINAL_HINTS):
+        domains.add("terminal")
+    if any(hint in text for hint in BROWSER_HINTS):
+        domains.add("browser")
+    if has_tool_signal(record):
+        domains.add("tool")
+    return sorted(domain for domain in domains if domain in DOMAIN_DEFAULTS)
+
+
 def risk_labels(record: dict[str, Any]) -> list[str]:
     text = record_text(record).lower()
     labels = [hint.replace(" ", "_") for hint in RISK_HINTS if hint in text]
@@ -227,15 +285,91 @@ def normalize_messages_for_tools(record: dict[str, Any]) -> list[dict[str, str]]
     return [{"role": "user", "content": text}] if text else []
 
 
-def tool_reward(record: dict[str, Any], risks: list[str]) -> float:
-    reward = quality_score(record)
-    if tool_calls(record) or tool_results(record):
-        reward += 0.15
-    if risks:
-        reward -= min(0.8, 0.18 * len(risks))
-    if has_hidden_material(record):
-        reward = min(reward, 0.0)
+def _numeric_ratio(value: Any, total: Any) -> float | None:
+    try:
+        numerator = float(value)
+        denominator = float(total)
+    except (TypeError, ValueError):
+        return None
+    if denominator <= 0:
+        return None
+    return max(0.0, min(1.0, numerator / denominator))
+
+
+def reward_components(
+    record: dict[str, Any],
+    calls: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+    risks: list[str],
+    domains: list[str],
+) -> dict[str, float]:
+    text = record_text(record).lower()
+    components: dict[str, float] = {
+        "quality": max(0.0, min(1.0, quality_score(record))),
+        "schema_valid": 1.0 if calls or results else 0.0,
+        "argument_exactness": 1.0 if all(isinstance(call, dict) for call in calls) else 0.0,
+        "state_consistency": 1.0 if results else 0.5 if calls else 0.0,
+        "outcome_passed": 1.0 if any(marker in text for marker in ("passed", "\"ok\"", "success", "exit_code\":0", "exit_code\": 0")) else 0.0,
+        "risk_penalty": 1.0 if risks or has_hidden_material(record) else 0.0,
+        "rollout_efficiency": max(0.0, 1.0 - min(1.0, len(calls) / 24.0)),
+        "domain_verifier": 0.0,
+    }
+    if "math" in domains:
+        exact = any(marker in text for marker in ("\\boxed", "final answer", "ground_truth", "answer"))
+        components["math_answer_exact"] = 1.0 if exact else 0.0
+        components["domain_verifier"] = max(components["domain_verifier"], components["math_answer_exact"])
+    if "code" in domains:
+        ratio = None
+        for result in results:
+            if isinstance(result, dict):
+                ratio = _numeric_ratio(result.get("tests_passed"), result.get("tests_total"))
+                if ratio is not None:
+                    break
+        if ratio is None:
+            ratio = 1.0 if any(marker in text for marker in ("pytest passed", "tests passed", "pass_to_pass")) else 0.0
+        components["code_tests_passed"] = ratio
+        components["domain_verifier"] = max(components["domain_verifier"], ratio)
+    if "terminal" in domains:
+        exit_success = 1.0 if any(("exit_code" in json.dumps(result, ensure_ascii=True).lower() and ": 0" in json.dumps(result, ensure_ascii=True)) or result.get("exit_code") == 0 for result in results if isinstance(result, dict)) else 0.0
+        components["terminal_exit_success"] = exit_success
+        components["domain_verifier"] = max(components["domain_verifier"], exit_success)
+    if "browser" in domains:
+        support = 1.0 if any(marker in text for marker in ("citation", "source", "url", "screenshot")) else 0.0
+        components["browser_evidence_support"] = support
+        components["browser_answer_exactness"] = 1.0 if "answer" in text and support else 0.0
+        components["domain_verifier"] = max(components["domain_verifier"], support)
+    if "tool" in domains:
+        components["tool_schema_valid"] = components["schema_valid"]
+        components["task_outcome"] = components["outcome_passed"]
+    return {key: round(float(value), 6) for key, value in components.items()}
+
+
+def compose_reward(components: dict[str, float], weights: dict[str, float] | None = None) -> float:
+    active_weights = {**DEFAULT_REWARD_WEIGHTS, **(weights or {})}
+    reward = 0.0
+    for axis, value in components.items():
+        if axis == "risk_penalty":
+            reward += active_weights.get("risk_penalty", -0.35) * value
+        else:
+            reward += active_weights.get(axis, 0.0) * value
+    if not any(axis in active_weights for axis in components):
+        reward = components.get("quality", 0.0)
     return max(-1.0, min(1.0, round(reward, 4)))
+
+
+def tool_reward(
+    record: dict[str, Any],
+    risks: list[str],
+    components: dict[str, float] | None = None,
+    weights: dict[str, float] | None = None,
+) -> float:
+    if components is None:
+        calls = tool_calls(record)
+        results = tool_results(record)
+        components = reward_components(record, calls, results, risks, task_domains(record))
+    if has_hidden_material(record):
+        components = {**components, "risk_penalty": 1.0, "domain_verifier": min(components.get("domain_verifier", 0.0), 0.0)}
+    return compose_reward(components, weights)
 
 
 def source_date(record: dict[str, Any]) -> str | None:
@@ -255,8 +389,67 @@ def eligible(record: dict[str, Any], min_quality: float) -> bool:
     return has_tool_signal(record) and bool(normalize_messages_for_tools(record))
 
 
-def build_rows(records: Iterable[dict[str, Any]], min_quality: float, limit: int = 0) -> dict[str, list[dict[str, Any]]]:
+def domain_config(profile_cfg: dict[str, Any] | None, domain: str) -> dict[str, Any]:
+    rlvr = profile_cfg.get("rlvr_domains") if isinstance(profile_cfg, dict) and isinstance(profile_cfg.get("rlvr_domains"), dict) else {}
+    configured = rlvr.get(domain) if isinstance(rlvr.get(domain), dict) else {}
+    defaults = DOMAIN_DEFAULTS.get(domain, DOMAIN_DEFAULTS["tool"])
+    return {
+        "enabled": bool(configured.get("enabled", True)),
+        "checks": list(configured.get("checks") or defaults["checks"]),
+        "reward_axes": list(configured.get("reward_axes") or defaults["reward_axes"]),
+        "export": str(configured.get("export") or f"{domain}_rlvr.jsonl"),
+    }
+
+
+def build_rlvr_row(
+    record: dict[str, Any],
+    base: dict[str, Any],
+    reward: float,
+    components: dict[str, float],
+    domains: list[str],
+    profile_cfg: dict[str, Any] | None = None,
+    domain: str | None = None,
+) -> dict[str, Any]:
+    active_domains = [domain] if domain else domains
+    checks: list[str] = []
+    axes: list[str] = []
+    for item in active_domains:
+        cfg = domain_config(profile_cfg, item)
+        checks.extend(str(check) for check in cfg["checks"])
+        axes.extend(str(axis) for axis in cfg["reward_axes"])
+    return {
+        **base,
+        "training_kind": "tool_rlvr" if domain is None else f"{domain}_rlvr",
+        "domains": active_domains,
+        "prompt": record_text(record)[:20000],
+        "reward": reward,
+        "reward_components": components,
+        "verifier": {
+            "checks": sorted(set(checks or DOMAIN_DEFAULTS["tool"]["checks"])),
+            "reward_axes": sorted(set(axes or DOMAIN_DEFAULTS["tool"]["reward_axes"])),
+            "expected_artifacts": ["tool_trace", "state_delta", "test_or_observation_evidence"],
+            "reward": reward,
+        },
+        "environment": {
+            "family": domain or "mixed_agentic_tool",
+            "families": ["bfcl", "tau", "mcpmark", "terminal_bench", "swe_gym", "internal_traces"],
+            "sandbox": "container_or_mocked_tool_environment",
+            "timeout_s": 600,
+            "rollout_policy": "group_relative_with_verifiable_rewards",
+        },
+    }
+
+
+def build_rows(
+    records: Iterable[dict[str, Any]],
+    min_quality: float,
+    limit: int = 0,
+    profile_cfg: dict[str, Any] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
     outputs = {"sft": [], "preference": [], "reward": [], "rlvr": [], "safety": []}
+    for domain in DOMAIN_DEFAULTS:
+        outputs[f"{domain}_rlvr"] = []
+    reward_weights = profile_cfg.get("reward_weights") if isinstance(profile_cfg, dict) and isinstance(profile_cfg.get("reward_weights"), dict) else {}
     for record in records:
         if limit and len(outputs["sft"]) >= limit:
             break
@@ -267,7 +460,9 @@ def build_rows(records: Iterable[dict[str, Any]], min_quality: float, limit: int
             continue
         calls = tool_calls(record)
         results = tool_results(record)
-        reward = tool_reward(record, risks)
+        domains = task_domains(record) or ["tool"]
+        components = reward_components(record, calls, results, risks, domains)
+        reward = tool_reward(record, risks, components, reward_weights)
         base = {
             "schema": "omnicoder.agentic_tool_training_2026.v1",
             "trace_id": trace_id(record),
@@ -276,6 +471,7 @@ def build_rows(records: Iterable[dict[str, Any]], min_quality: float, limit: int
             "tool_calls": calls,
             "tool_results": results,
             "risk_labels": risks,
+            "domains": domains,
             "quality_score": quality_score(record),
         }
         outputs["sft"].append(
@@ -296,12 +492,7 @@ def build_rows(records: Iterable[dict[str, Any]], min_quality: float, limit: int
                 "training_kind": "tool_reward",
                 "prompt": record_text(record)[:20000],
                 "reward": reward,
-                "reward_components": {
-                    "quality": quality_score(record),
-                    "tool_call_count": len(calls),
-                    "tool_result_count": len(results),
-                    "risk_penalty": len(risks),
-                },
+                "reward_components": components,
             }
         )
         chosen = json.dumps({"tool_calls": calls, "final": normalize_messages_for_tools(record)[-1]}, ensure_ascii=True, sort_keys=True)
@@ -316,27 +507,10 @@ def build_rows(records: Iterable[dict[str, Any]], min_quality: float, limit: int
                 "preference_reason": "Prefer valid tool calls with state-aware use and no protected material.",
             }
         )
-        outputs["rlvr"].append(
-            {
-                **base,
-                "training_kind": "tool_rlvr",
-                "prompt": record_text(record)[:20000],
-                "verifier": {
-                    "checks": [
-                        "tool_schema_valid",
-                        "state_update_consistent",
-                        "no_protected_material",
-                        "no_credential_leak",
-                        "task_outcome_passed",
-                    ],
-                    "reward": reward,
-                },
-                "environment": {
-                    "families": ["bfcl", "tau", "mcpmark", "terminal_bench", "internal_traces"],
-                    "rollout_policy": "group_relative_with_verifiable_rewards",
-                },
-            }
-        )
+        outputs["rlvr"].append(build_rlvr_row(record, base, reward, components, domains, profile_cfg))
+        for domain in domains:
+            if domain_config(profile_cfg, domain)["enabled"]:
+                outputs[f"{domain}_rlvr"].append(build_rlvr_row(record, base, reward, components, domains, profile_cfg, domain=domain))
     return outputs
 
 
@@ -354,7 +528,16 @@ def build_safety_row(record: dict[str, Any], risks: list[str]) -> dict[str, Any]
     }
 
 
-def posttrain_manifest(algorithm: str, train_jsonl: Path, out_dir: Path, model: str, dry_run: bool) -> dict[str, Any]:
+def posttrain_manifest(
+    algorithm: str,
+    train_jsonl: Path,
+    out_dir: Path,
+    model: str,
+    dry_run: bool,
+    domain: str | None = None,
+    reward_axes: list[str] | None = None,
+    checks: list[str] | None = None,
+) -> dict[str, Any]:
     return {
         "schema": "omnicoder.agentic_tool_posttrain_manifest_2026.v1",
         "algorithm": algorithm,
@@ -362,6 +545,12 @@ def posttrain_manifest(algorithm: str, train_jsonl: Path, out_dir: Path, model: 
         "train_jsonl": str(train_jsonl),
         "out_dir": str(out_dir / algorithm),
         "dry_run": dry_run,
+        "domain": domain,
+        "verifier_contract": {
+            "checks": checks or [],
+            "reward_axes": reward_axes or [],
+            "eval_gates": ["heldout_sample_loss", "domain_rlvr_replay", "protected_benchmark_decontam"],
+        },
         "tool_training_contract": {
             "assistant_only_loss": algorithm == "sft",
             "tool_schema_masking": True,
@@ -370,6 +559,25 @@ def posttrain_manifest(algorithm: str, train_jsonl: Path, out_dir: Path, model: 
             "q4_recovery_ready": True,
         },
     }
+
+
+def build_training_exports(
+    rows: dict[str, list[dict[str, Any]]],
+    out_dir: Path,
+    profile_cfg: dict[str, Any],
+) -> tuple[dict[str, Path], dict[str, int]]:
+    paths = {
+        "sft": out_dir / "tool_sft.jsonl",
+        "preference": out_dir / "tool_preference.jsonl",
+        "reward": out_dir / "tool_reward.jsonl",
+        "rlvr": out_dir / "tool_rlvr.jsonl",
+        "safety": out_dir / "tool_safety_negatives.jsonl",
+    }
+    for domain in DOMAIN_DEFAULTS:
+        cfg = domain_config(profile_cfg, domain)
+        paths[f"{domain}_rlvr"] = out_dir / cfg["export"]
+    counts = {name: write_jsonl(paths[name], rows.get(name, [])) for name in paths}
+    return paths, counts
 
 
 def run_build(args: argparse.Namespace) -> dict[str, Any]:
@@ -381,15 +589,8 @@ def run_build(args: argparse.Namespace) -> dict[str, Any]:
     source = Path(args.input or cfg.get("input_jsonl") or "")
     if not source.exists():
         raise SystemExit(json.dumps({"status": "error", "error": "input_jsonl not found", "input": str(source)}))
-    rows = build_rows(iter_jsonl(source), min_quality=min_quality, limit=limit)
-    paths = {
-        "sft": out_dir / "tool_sft.jsonl",
-        "preference": out_dir / "tool_preference.jsonl",
-        "reward": out_dir / "tool_reward.jsonl",
-        "rlvr": out_dir / "tool_rlvr.jsonl",
-        "safety": out_dir / "tool_safety_negatives.jsonl",
-    }
-    counts = {name: write_jsonl(paths[name], rows[name]) for name in paths}
+    rows = build_rows(iter_jsonl(source), min_quality=min_quality, limit=limit, profile_cfg=cfg)
+    paths, counts = build_training_exports(rows, out_dir, cfg)
     model = str(args.model or cfg.get("model") or profile.get("base_model") or "Qwen/Qwen3-4B")
     bridge_dir = out_dir / "posttrain_manifests"
     bridge_rows = {
@@ -399,6 +600,19 @@ def run_build(args: argparse.Namespace) -> dict[str, Any]:
         "grpo": posttrain_manifest("grpo", paths["rlvr"], bridge_dir, model, bool(args.dry_run)),
         "kto": posttrain_manifest("kto", paths["safety"], bridge_dir, model, bool(args.dry_run)),
     }
+    for domain in DOMAIN_DEFAULTS:
+        domain_key = f"{domain}_rlvr"
+        cfg_domain = domain_config(cfg, domain)
+        bridge_rows[domain_key] = posttrain_manifest(
+            "grpo",
+            paths[domain_key],
+            bridge_dir,
+            model,
+            bool(args.dry_run),
+            domain=domain,
+            reward_axes=cfg_domain["reward_axes"],
+            checks=cfg_domain["checks"],
+        )
     bridge_paths: dict[str, str] = {}
     for name, payload in bridge_rows.items():
         path = bridge_dir / f"{name}_tool_manifest.json"
@@ -413,7 +627,17 @@ def run_build(args: argparse.Namespace) -> dict[str, Any]:
         "counts": counts,
         "paths": {name: str(path) for name, path in paths.items()},
         "posttrain_manifests": bridge_paths,
-        "training_sequence": ["tool_sft", "tool_reward", "tool_preference", "tool_rlvr", "tool_safety_negative"],
+        "training_sequence": [
+            "tool_sft",
+            "tool_reward",
+            "tool_preference",
+            "math_rlvr",
+            "code_rlvr",
+            "terminal_rlvr",
+            "browser_rlvr",
+            "tool_rlvr",
+            "tool_safety_negative",
+        ],
         "release_gate_links": ["bfcl_v4", "tau3", "mcpmark", "terminal_bench", "safety_tool_security"],
     }
     manifest_path = out_dir / "agentic_tool_training_manifest.json"
@@ -427,9 +651,12 @@ def validate_profile(args: argparse.Namespace) -> dict[str, Any]:
     cfg = profile.get("agentic_tool_training") if isinstance(profile.get("agentic_tool_training"), dict) else profile
     required = ["input_jsonl", "out_dir", "min_quality", "stages"]
     missing = [key for key in required if key not in cfg]
+    rlvr_domains = cfg.get("rlvr_domains") if isinstance(cfg.get("rlvr_domains"), dict) else {}
+    missing_domains = sorted(set(DOMAIN_DEFAULTS) - set(rlvr_domains))
     return {
         "status": "ok" if not missing else "missing_config",
         "missing": missing,
+        "missing_rlvr_domains": missing_domains,
         "stages": ensure_list(cfg.get("stages")),
         "reward_axes": ensure_list(cfg.get("reward_axes")),
         "safety_negatives": bool(cfg.get("safety_negatives", True)),

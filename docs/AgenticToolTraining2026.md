@@ -158,6 +158,28 @@ The reward stack should be staged before on-policy RL:
 6. Verifiable RL: GRPO/DAPO/Tree-GRPO rollouts with deterministic task checks,
    retry limits, and automatic failure labels.
 
+## Domain-Specific RLVR Exports
+
+The 2026 lane now emits separate verifier-ready RLVR files in addition to the
+legacy aggregate `tool_rlvr.jsonl`:
+
+- `math_rlvr.jsonl`: final-answer exactness, symbolic equivalence, numeric
+  tolerance, and benchmark-answer-key exclusion.
+- `code_rlvr.jsonl`: unit-test pass rate, patch application, dependency
+  safety, minimal patching, and runtime behavior.
+- `terminal_rlvr.jsonl`: exit code, stdout/stderr match, filesystem state,
+  recovery after errors, and destructive-action boundaries.
+- `browser_rlvr.jsonl`: answer exactness, citation support, page state,
+  navigation efficiency, and source freshness.
+- `tool_rlvr.jsonl`: tool schema validity, argument exactness, state update
+  consistency, and task outcome.
+
+`profiles/agentic_tool_training_2026.json` carries `rlvr_domains` and
+`reward_weights`, so math, coding, terminal, browser, and generic tool rows can
+be sampled and optimized independently. This is the route for agentic math and
+coding reinforcement learning without smearing every task into one generic
+tool-use reward.
+
 Use `posttrain-bridge-2026` for dry-run validation and algorithm handoff. Use
 teacher jobs for critique and reward-label generation before expensive RL.
 

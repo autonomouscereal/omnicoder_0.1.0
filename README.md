@@ -38,6 +38,38 @@ Current rebuild docs:
 - `docs/BenchmarkSuite2026.md`
 - `docs/AgenticToolTraining2026.md`
 
+### 2026 Data And Training Sidecars
+
+The data lane now has a license-aware external dataset registry and a
+nonblocking AI-server sidecar runner. The registry covers current math,
+coding/SWE, terminal/browser/tool, image/editing, video, speech/audio, and
+music sources such as OpenR1-Math, DAPO, DeepScaleR, OpenMathReasoning,
+OpenCodeReasoning, SWE-smith, SWE-Gym, Toucan, OpenGPT-4o-Image,
+ShareGPT-4o-Image, VideoUFO, OpenVid-1M, Emilia-YODAS, AudioSkills,
+JamendoMaxCaps, and MusicBench. Each source is tagged as `train`,
+`research_internal`, `eval_holdout`, or `blocked_until_review` before any row is
+eligible for training.
+
+Useful entry points:
+
+```bash
+dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
+  --out-dir weights/external_datasets_2026/latest \
+  --download --max-records-per-dataset 1024 build
+
+agentic-tool-train-2026 --profile profiles/agentic_tool_training_2026.json build
+
+distill-curriculum-2026 validate --profile profiles/distillation_curriculum_2026.json
+
+scripts/ai_server_dataset_training_sidecars_2026.sh all
+```
+
+The sidecar script keeps the 20B target lane on fast GPUs `0,4,6` and uses CPU
+plus P40s for trace collection, dataset expansion, teacher-job sharding, and
+Qwen3.6 P40 rollouts. Official/protected benchmark rows remain release-gate
+evidence only; missing official metadata now produces `local_only` benchmark
+results instead of being misreported as public leaderboard quality.
+
 ## Why This Exists
 
 Most multimodal systems are pipelines: an LLM delegates to an image model, an

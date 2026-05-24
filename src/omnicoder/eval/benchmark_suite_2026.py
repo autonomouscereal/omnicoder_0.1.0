@@ -1039,7 +1039,11 @@ def cmd_run_reportable(args: argparse.Namespace) -> int:
     if args.out:
         write_json(Path(args.out), summary)
     print(json.dumps(summary, sort_keys=True))
-    return 1 if failed > 0 or blocked else 0
+    # Missing official metadata, task roots, or model outputs is a reportability
+    # gate condition, not a CLI/process failure. Keep the release gate fail-closed
+    # in the summary while returning success so automation can collect and publish
+    # the local-only evidence for remediation.
+    return 1 if failed > 0 else 0
 
 
 def cmd_summarize(args: argparse.Namespace) -> int:

@@ -49,6 +49,10 @@
       "weights/curated_datasets_2026/latest/jsonl/train_tool.jsonl",
       "weights/curated_datasets_2026/latest/jsonl/train_long_context.jsonl",
       "weights/curated_datasets_2026/latest/jsonl/train_agentic_focus.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/agentic_tool_reasoning.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/terminal_browser_agents.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/research_internal_all_external.jsonl",
+      "weights/data_factory/teacher_rollouts/latest/qwen36_agentic_math_code_tool.jsonl",
       "data/raw/agent_memory_events_2026.jsonl",
       "data/raw/codex_traces_2026/codex_local_2026.jsonl",
       "data/raw/claude_traces_2026/claude_local_2026.jsonl",
@@ -61,6 +65,8 @@
     ],
     "text_jsonl": [
       "weights/curated_datasets_2026/latest/jsonl/train_text.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/math_reasoning.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/omnimodal_understanding.jsonl",
       "data/mm_instructions.jsonl",
       "data/reasoning/gsm8k.jsonl",
       "data/qa/arc_easy.jsonl",
@@ -80,6 +86,7 @@
     ],
     "code_jsonl": [
       "weights/curated_datasets_2026/latest/jsonl/train_code.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/coding_agentic.jsonl",
       "data/code/mbpp.jsonl",
       "data/code/code_to_text_ruby.jsonl",
       "data/code/codeparrot_clean.jsonl",
@@ -115,6 +122,7 @@
     ],
     "image_jsonl": [
       "weights/curated_datasets_2026/latest/jsonl/train_image.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/image_generation_editing.jsonl",
       "data/vl_coco.jsonl",
       "data/vl_cc.jsonl",
       "data/vision/nemotron_image_training_v3_manifest.jsonl",
@@ -157,18 +165,22 @@
     ],
     "video_jsonl": [
       "weights/curated_datasets_2026/latest/jsonl/train_video.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/video_generation.jsonl",
       "data/video/avgen_bench_authorized_dev.jsonl",
       "data/video/traceav_authorized_dev.jsonl",
       "data/video/ltx23_curated_manifest.jsonl"
     ],
     "audio_jsonl": [
       "weights/curated_datasets_2026/latest/jsonl/train_audio.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/speech_audio.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/audio_music_speech.jsonl",
       "data/audio/granary_v1_1_authorized_manifest.jsonl",
       "data/audio/amuse_authorized_dev.jsonl",
       "data/audio/vidaudio_bench_authorized_dev.jsonl"
     ],
     "music_jsonl": [
       "weights/curated_datasets_2026/latest/jsonl/train_music.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/music_generation.jsonl",
       "data/music/ace_step15_curated_manifest.jsonl",
       "data/music/music_arena_authorized_dev.jsonl",
       "data/music/vidaudio_music_authorized_dev.jsonl"
@@ -255,14 +267,14 @@
     ],
     "max_records_per_modality": 256,
     "max_records_per_modality_by_modality": {
-      "text": 768,
-      "code": 768,
-      "tool": 768,
-      "long_context": 768,
-      "audio": 768,
-      "image": 128,
-      "video": 128,
-      "music": 128
+      "text": 2048,
+      "code": 2048,
+      "tool": 2048,
+      "long_context": 1536,
+      "audio": 1024,
+      "image": 512,
+      "video": 512,
+      "music": 512
     },
     "min_records_per_modality": 1,
     "steps_per_stage": 64,
@@ -328,6 +340,17 @@
         "priority": 10
       },
       {
+        "job_id": "cpu_external_dataset_expansion_2026",
+        "job_type": "external_dataset_expansion",
+        "device": "cpu",
+        "enabled": true,
+        "priority": 12,
+        "profile": "profiles/dataset_curation_2026.json",
+        "out_dir": "weights/external_datasets_2026/runs/${RUN_ID}",
+        "max_records_per_dataset": 1024,
+        "promotion": "symlink to weights/external_datasets_2026/latest only after manifest has nonzero train rows and license tiers are reviewed"
+      },
+      {
         "job_id": "p40_2_teacher_distillation_jobs",
         "job_type": "teacher_distillation",
         "device": "2",
@@ -338,6 +361,22 @@
         "skip_if_missing": [
           "weights/curated_datasets_2026/latest/jsonl/train_tool.jsonl"
         ]
+      },
+      {
+        "job_id": "p40_qwen36_agentic_math_code_teacher_rollouts",
+        "job_type": "openai_compatible_teacher_rollout",
+        "device": "1,2,3",
+        "enabled": true,
+        "priority": 25,
+        "records": "weights/data_factory/trace_orchestrator_2026/teacher_jobs/latest/shard_gpu*.jsonl",
+        "output": "weights/data_factory/teacher_rollouts/latest/qwen36_agentic_math_code_tool.jsonl",
+        "base_urls": [
+          "http://127.0.0.1:18084/v1",
+          "http://127.0.0.1:18082/v1",
+          "http://127.0.0.1:18085/v1"
+        ],
+        "thermal_guard_celsius": 78,
+        "record_kind": "qwen36_p40_agentic_math_code_tool"
       },
       {
         "job_id": "p40_3_eval_shard_latest_checkpoint",

@@ -63,6 +63,7 @@ training-orchestration-2026 = "omnicoder.training.training_orchestration_2026:ma
 gpu-sidecar-2026 = "omnicoder.tools.gpu_sidecar_2026:main"
 ingest-2026 = "omnicoder.data_factory.ingest_2026:main"
 teacher-jobs-2026 = "omnicoder.data_factory.teacher_jobs_2026:main"
+dataset-expansion-2026 = "omnicoder.data_factory.dataset_expansion_2026:main"
 curate-2026 = "omnicoder.data_factory.curation_layers_2026:main"
 trace-orchestrator-2026 = "omnicoder.data_factory.trace_orchestrator_2026:main"
 memory-traces-2026 = "omnicoder.data_factory.memory_trace_collectors_2026:main"
