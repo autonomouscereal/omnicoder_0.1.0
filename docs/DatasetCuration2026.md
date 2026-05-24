@@ -109,7 +109,12 @@ Current high-value registry families:
   Web Agent Graph, WebChain, OSWorld 2, Magic-RICH, SWE-Dev, SWE-Next,
   DeepSWE/Kimi-K2 trajectories, SWE-Swiss repair SFT/RL, SWE-Factory-Gym,
   SWE-bench Pro/ABS/Multilingual, SWE-Lancer, SWE-PolyBench, SWE-bench Live,
-  CodeElo, ICPC-Eval, and other MCP/function-calling corpora.
+  CodeElo, ICPC-Eval, GUI-360, AgentNet, Computer Use Large, Synthetic
+  Computers at Scale, VideoCUA, ExeVR, AgentSynth, Computer Agent Arena,
+  Smol2Operator/Aguvis, tau2/AReaL verified tool traces, APEX Agents/SWE,
+  WildClawBench, ClawBench, BFCL, ComplexFuncBench, OpenHands CodeScout,
+  AIDev, SWE-CI, Fixbench-RTL, SWE-Synth, and other MCP/function-calling
+  corpora.
 - Multimodal generation: OpenGPT-4o-Image, ShareGPT-4o-Image, Pico-Banana,
   MultiEdit, OpenSubject, VideoUFO, OpenVid-1M, CI-VID, TIP-I2V, VPData,
   Emilia-YODAS, Granary, CapSpeech, AudioSkills, JamendoMaxCaps, MusicBench,
@@ -117,12 +122,19 @@ Current high-value registry families:
   registry adds OmniAgent/MAgenIT, Nemotron-Image-Training-v3, PRISM/Innovator
   VL RL, RLFR-VLM, FineVision, FineVisionMax, ScaleEdit, GPT-Image-Edit,
   NHR-Edit, CrispEdit, BAGEL-World, Rapidata image preferences,
-  text-to-image DPO preferences, image-to-video preferences, DeepVision,
-  NVIDIA AudioSkills-XL, ImgEdit, VIBE, CompBench, ImagenWorld,
+  HPDv3, ImgEdit, EditReward, UniREdit, BLIP3o, UniWorld, text-to-image DPO
+  preferences, image-to-video preferences, VideoGen-RewardBench, Rapidata
+  text/image-to-video preferences, JavisInst-Omni, Javis AV fine-tune, TTSDS
+  listening tests, SAM Audio data, Prompt2MusicBench, OpenMMReasoner,
+  DeepVision, NVIDIA AudioSkills-XL, VIBE, CompBench, ImagenWorld,
   DreamOmni2Bench, MMMU Pro, Video-MME-v2, LVOmniBench, JointAVBench, LVBench,
   PhyWorldBench, MusicEval, MCIF, Multimodal RewardBench 2, AVGen-Bench,
   VBench 2.0, PARADE_audio, AudioMC, WildSpeech-Bench, WorldSpeech,
   NonverbalTTS, Captioned AI Music Snippets, and VoiceAgentBench.
+- Math/reasoning second wave: R-HORIZON, Reasoning Core formal-reasoning
+  environments, UniRRM-RL, Nemotron Math Proofs, UltraData-Math, GLM-5.1
+  reasoning traces, and MathVision are included with train/research/eval gates
+  based on license and contamination risk.
 
 Rows from external sources are not merged into the 20B target lane merely
 because they exist. They must survive redaction, dedupe, benchmark
@@ -136,6 +148,13 @@ count toward the real-data minimum. The expansion manifest includes
 AI-server sidecar can pass `--enforce-requirements` to reject a run that lacks
 real rows for math, coding, agentic tool-use, terminal/browser agents,
 image/editing, video, audio/speech/music, music, or omnimodal understanding.
+
+Agent-memory export is PostgreSQL-first. The profile writes the raw export to
+`data/raw/agent_memory_events_2026.jsonl` and treats `limit=0` as unlimited so
+full Codex/Claude audit history can be collected without silently truncating at
+12k rows. If the AI server lacks the `agent_memory_pg` credential, stage a fresh
+workstation export into `data/raw/` before starting the next sidecar instead of
+letting old run-scoped rows masquerade as current trace coverage.
 
 The registry test suite asserts unique names, HF ids, and URLs, verifies the
 expanded 2025-2026 source coverage, and checks that unsafe license markers do

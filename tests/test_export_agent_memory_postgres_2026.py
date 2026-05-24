@@ -50,3 +50,44 @@ def test_normalize_record_redacts_secret_fields() -> None:
     assert normalized["event_type"] == "PostToolUse"
     assert normalized["metadata"]["password"] == "<redacted>"
     assert "abc123456789012345" not in json.dumps(normalized)
+
+
+def test_connection_limit_zero_means_unlimited(monkeypatch, tmp_path: Path) -> None:
+    observed_limits: list[int] = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=()):
+            if "information_schema.columns" in sql:
+                return
+            observed_limits.append(int(params[-2]))
+
+        def fetchall(self):
+            if not observed_limits:
+                return [{"column_name": "created_at"}, {"column_name": "content"}]
+            return []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(exporter, "connect", lambda cfg: Conn())
+
+    result = exporter.export_rows({"limit": 0, "page_size": 123, "password": "x"}, tmp_path / "events.jsonl")
+
+    assert result["limit"] == 0
+    assert observed_limits == [123]

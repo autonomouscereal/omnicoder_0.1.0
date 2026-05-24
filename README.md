@@ -49,24 +49,32 @@ mix:
 
 - Math and RLVR: DeepMath-103K, AI-MO NuminaMath 1.5, DAPO, DeepScaleR,
   OpenMathReasoning, Polaris Nemotron verifiable math, Korean NuminaMath,
-  AIME 2025/2026 holdouts, and HLE/HLE-Verified holdouts.
+  R-HORIZON, Reasoning Core formal RLVR, UniRRM-RL, Nemotron Math Proofs,
+  UltraData-Math, GLM-5.1 reasoning traces, MathVision, AIME 2025/2026
+  holdouts, and HLE/HLE-Verified holdouts.
 - Coding and SWE agents: SWE-Dev, SWE-Next, DeepSWE/Kimi-K2 trajectories,
   SWE-Swiss repair SFT/RL, SWE-Factory-Gym, SWE-bench Pro/ABS/Multilingual,
   SWE-Lancer, SWE-PolyBench, SWE-bench Live variants, CodeElo, ICPC-Eval,
-  JetBrains trajectory analysis rows, SWE-Hero/SWE-Zero, R2E-Gym, and
-  Jupyter-Agent.
+  JetBrains trajectory analysis rows, SWE-Hero/SWE-Zero, R2E-Gym V1/SFT
+  trajectories, OpenHands CodeScout rollouts, AIDev PR traces, SWE-CI,
+  Fixbench-RTL, SWE-Synth, and Jupyter-Agent.
 - Browser, GUI, terminal, and tool agents: MCP-Atlas, Nemotron RL tool-use,
   WebAgent-R1, WebShepherd, WebExplorer, DeepDive, WebArena Infinity,
   BrowserAgent, Web Agent Graph, WebChain, OSWorld 2, Magic-RICH, TerminalWorld,
-  Multi-Docker-Eval, Terminal-Bench 2.0 trajectories, CodeTraceBench, Hermes,
-  xLAM, Toucan, and local Codex/Claude/Hermes/agent-memory traces.
+  Multi-Docker-Eval, Terminal-Bench 2.0 trajectories, GUI-360, AgentNet,
+  Computer Use Large, VideoCUA, AgentSynth, Smol2Operator/Aguvis, tau2/AReaL
+  verified tool traces, BFCL/ComplexFuncBench, APEX, WildClawBench, ClawBench,
+  CodeTraceBench, Hermes, xLAM, Toucan, and local Codex/Claude/Hermes/
+  agent-memory traces.
 - Multimodal generation and reward: FineVision/FineVisionMax, ScaleEdit,
   GPT-Image-Edit, NHR-Edit, CrispEdit, BAGEL-World, Rapidata image
-  preferences, text-to-image DPO preferences, image-to-video preferences,
-  DeepVision, RLFR-VLM, Open-MM-RL, MMMU Pro, Video-MME-v2, LVOmniBench,
-  JointAVBench, AVGen-Bench, VBench 2.0, PARADE_audio, AudioMC,
-  WildSpeech-Bench, WorldSpeech, Granary, NonverbalTTS, Music Arena, and
-  Captioned AI Music Snippets.
+  preferences, HPDv3, ImgEdit, UniREdit, BLIP3o, UniWorld, text-to-image DPO
+  preferences, VideoGen-RewardBench, Rapidata text/image-to-video preferences,
+  JavisInst-Omni, Javis AV fine-tune, TTSDS listening tests, SAM Audio data,
+  Prompt2MusicBench, OpenMMReasoner, DeepVision, RLFR-VLM, Open-MM-RL,
+  MMMU Pro, Video-MME-v2, LVOmniBench, JointAVBench, AVGen-Bench, VBench 2.0,
+  PARADE_audio, AudioMC, WildSpeech-Bench, WorldSpeech, Granary,
+  NonverbalTTS, Music Arena, and Captioned AI Music Snippets.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for
@@ -102,8 +110,12 @@ plus P40s for trace collection, dataset expansion, teacher-job sharding, and
 Qwen3.6 P40 rollouts. It exports agent-memory audit rows before the trace
 orchestrator, collects Codex/Claude/Hermes/LM Studio traces, consumes ComfyUI
 manifests as first-class multimodal trace sources, and writes
-trace-orchestrator outputs to run-scoped writable directories. It now gates
-required trace artifacts, refuses synthetic-only train promotion, refreshes
+trace-orchestrator outputs to run-scoped writable directories. Memory exports
+now use `limit=0` as an unlimited export and target
+`data/raw/agent_memory_events_2026.jsonl` explicitly, so workstation or
+AI-server PostgreSQL exports can feed the same trace gate without stale
+run-scoped ambiguity. The sidecar now gates required trace artifacts, refuses
+synthetic-only train promotion, refreshes
 agentic SFT/reward/preference/RLVR exports from each trace pass, parses typed
 teacher critiques into corrected responses/tool calls/reward components, and
 refreshes those exports again after Qwen3.6 teacher rollouts so distillation
@@ -120,23 +132,25 @@ work, but it creates brittle handoffs and makes edge deployment painful.
 OmniCoder explores a different direction:
 
 - Use a shared reasoning core across modalities.
-- Route work through sparse experts instead of waking the whole model.
+- Prefer a dense 20B-class core with depth-biased layers, fake-quant/turboquant
+  training paths, and pipeline placement across the fast GPUs.
 - Keep long context bounded with compressed memory, retrieval, and KV policies.
 - Make text, code, vision, video, audio, and action heads trainable together.
 - Export pieces to realistic local runtimes such as ONNX Runtime, Core ML,
   NNAPI-oriented runners, DirectML, ExecuTorch, llama.cpp/GGUF, and mobile app
   bundles.
 
-The practical bet is that a smaller omnimodal model with good routing, memory,
-verification, and device-aware exports can be more useful than a collection of
-large disconnected models when privacy, latency, bandwidth, and hardware budget
-matter.
+The practical bet is that a compact dense omnimodal model with good data,
+memory, verification, and device-aware exports can be more useful than a
+collection of large disconnected models when privacy, latency, bandwidth, and
+hardware budget matter.
 
 ## Current Capabilities
 
-- Sparse MoE transformer core with hierarchical routing, expert paging hooks,
-  variable-K routing experiments, capacity-aware dispatch, and mobile-minded
-  runtime switches.
+- Dense 20B-class transformer target with depth-biased placement, 1M native
+  context metadata, fake-quant/turboquant-aware training hooks, pipeline
+  sharding across RTX 3090/RTX 8000 devices, and GGUF/llama.cpp-oriented
+  release contracts.
 - Long-context mechanisms including sliding-window decode, memory slots,
   landmark/random-access attention experiments, retrieval/PQ/kNN hooks, KV
   quantization, KV retention sidecars, and learned KV compression experiments.
@@ -158,7 +172,7 @@ matter.
 
 ```text
 src/omnicoder/
-  modeling/          Core transformer, MoE, routing, attention, memory, kernels
+  modeling/          Core transformer, dense attention/memory, quant, kernels
   modeling/multimodal/
                      Image, video, audio, grounding, fusion, VQ, latent heads
   inference/         Generation loops and runtime adapters

@@ -238,6 +238,39 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     by_name = {entry["name"]: entry for entry in entries}
 
     for name in [
+        "GUI-360",
+        "AgentNet",
+        "Computer Use Large",
+        "Synthetic Computers at Scale",
+        "VideoCUA",
+        "ExeVR-53k",
+        "AgentSynth",
+        "Computer Agent Arena",
+        "Smol2Operator Aguvis Stage 1",
+        "Smol2Operator Aguvis Stage 2",
+        "TAU2-Bench Data",
+        "AReaL Tau2 Data",
+        "Tau2 Verified Airline Code Agents",
+        "APEX-Agents",
+        "APEX-SWE",
+        "WildClawBench",
+        "ClawBench",
+        "BFCL Function Calling Leaderboard",
+        "ComplexFuncBench",
+        "R2E-Gym V1",
+        "R2EGym SFT Trajectories",
+        "OpenHands CodeScout Training Rollouts",
+        "AIDev Agent PR Corpus",
+        "SWE-CI",
+        "Fixbench-RTL",
+        "SWE-Synth",
+        "R-HORIZON Training Data",
+        "Reasoning Core Formal Reasoning Env",
+        "UniRRM-RL",
+        "NVIDIA Nemotron-Math-Proofs-v1",
+        "UltraData-Math",
+        "GLM-5.1 Reasoning 1M Cleaned",
+        "MathVision 2026",
         "OpenThoughts2-1M",
         "DeepMath-103K",
         "AI-MO NuminaMath 1.5",
@@ -343,7 +376,22 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
         "NHR-Edit",
         "CrispEdit-2M",
         "BAGEL-World",
+        "EditReward-Data",
+        "UniREdit Data 100K",
+        "HPDv3",
+        "Rapidata 700K Image Preferences",
+        "BLIP3o Pretrain Long Caption",
+        "UniWorld-V1",
         "ImgEdit 1.2M",
+        "VideoGen-RewardBench",
+        "Rapidata Text-to-Video Human Preferences Veo3",
+        "Rapidata Image-to-Video Human Preference Seedance",
+        "JavisInst-Omni",
+        "JavisVerse AV FineTune",
+        "TTSDS Listening Test",
+        "SAM Audio LLM Data",
+        "Prompt2MusicBench",
+        "OpenMMReasoner RL 74K",
         "Rapidata Open Image Preferences v1 More Results",
         "Text-to-Image DPO Human Preferences Full",
         "VIBE Benchmark",
@@ -381,6 +429,27 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     ]:
         assert name in by_name
 
+    assert by_name["GUI-360"]["use_policy"] == "train"
+    assert by_name["AgentNet"]["use_policy"] == "train"
+    assert by_name["Computer Use Large"]["target_modality"] == "video"
+    assert by_name["VideoCUA"]["use_policy"] == "train"
+    assert by_name["Smol2Operator Aguvis Stage 2"]["use_policy"] == "research_internal"
+    assert by_name["TAU2-Bench Data"]["use_policy"] == "eval_only"
+    assert by_name["AReaL Tau2 Data"]["use_policy"] == "train"
+    assert by_name["Tau2 Verified Airline Code Agents"]["use_policy"] == "train"
+    assert by_name["APEX-Agents"]["use_policy"] == "eval_only"
+    assert by_name["WildClawBench"]["use_policy"] == "eval_only"
+    assert by_name["BFCL Function Calling Leaderboard"]["use_policy"] == "eval_only"
+    assert by_name["R2E-Gym V1"]["use_policy"] == "research_internal"
+    assert by_name["OpenHands CodeScout Training Rollouts"]["use_policy"] == "research_internal"
+    assert by_name["Fixbench-RTL"]["use_policy"] == "train"
+    assert by_name["R-HORIZON Training Data"]["use_policy"] == "train"
+    assert by_name["Reasoning Core Formal Reasoning Env"]["use_policy"] == "train"
+    assert by_name["UniRRM-RL"]["use_policy"] == "train"
+    assert by_name["NVIDIA Nemotron-Math-Proofs-v1"]["use_policy"] == "research_internal"
+    assert by_name["UltraData-Math"]["use_policy"] == "train"
+    assert by_name["GLM-5.1 Reasoning 1M Cleaned"]["use_policy"] == "train"
+    assert by_name["MathVision 2026"]["target_modality"] == "image"
     assert by_name["NVIDIA Nemotron-Terminal-Corpus"]["use_policy"] == "train"
     assert by_name["DeepMath-103K"]["use_policy"] == "train"
     assert by_name["AI-MO NuminaMath 1.5"]["use_policy"] == "train"
@@ -439,6 +508,22 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     assert by_name["NHR-Edit"]["use_policy"] == "train"
     assert by_name["CrispEdit-2M"]["use_policy"] == "train"
     assert by_name["BAGEL-World"]["use_policy"] == "train"
+    assert by_name["ImgEdit 1.2M"]["hf_id"] == "sysuyy/ImgEdit"
+    assert by_name["ImgEdit 1.2M"]["use_policy"] == "train"
+    assert by_name["EditReward-Data"]["use_policy"] == "research_internal"
+    assert by_name["UniREdit Data 100K"]["use_policy"] == "train"
+    assert by_name["HPDv3"]["use_policy"] == "train"
+    assert by_name["Rapidata 700K Image Preferences"]["use_policy"] == "train"
+    assert by_name["BLIP3o Pretrain Long Caption"]["use_policy"] == "train"
+    assert by_name["UniWorld-V1"]["use_policy"] == "train"
+    assert by_name["VideoGen-RewardBench"]["use_policy"] == "eval_only"
+    assert by_name["Rapidata Text-to-Video Human Preferences Veo3"]["use_policy"] == "research_internal"
+    assert by_name["JavisInst-Omni"]["use_policy"] == "train"
+    assert by_name["JavisVerse AV FineTune"]["use_policy"] == "train"
+    assert by_name["TTSDS Listening Test"]["use_policy"] == "train"
+    assert by_name["SAM Audio LLM Data"]["use_policy"] == "research_internal"
+    assert by_name["Prompt2MusicBench"]["use_policy"] == "eval_only"
+    assert by_name["OpenMMReasoner RL 74K"]["use_policy"] == "research_internal"
     assert by_name["Rapidata Open Image Preferences v1 More Results"]["use_policy"] == "train"
     assert by_name["Text-to-Image DPO Human Preferences Full"]["use_policy"] == "research_internal"
     assert by_name["ImagenWorld"]["use_policy"] == "eval_only"

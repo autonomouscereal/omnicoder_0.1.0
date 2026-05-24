@@ -206,7 +206,8 @@ def run_agent_memory_cli_export(profile: dict[str, Any], root: Path, out_dir: Pa
         return {"status": "skipped", "reason": "script_not_found", "candidates": [str(item) for item in candidates if item]}
     out_path = resolve_path(str(cfg.get("out") or out_dir / "raw" / "agent_memory_audit.jsonl"), root)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    limit = int(cfg.get("limit") or 5000)
+    raw_limit = cfg.get("limit", 5000)
+    limit = 5000 if raw_limit in (None, "") else int(raw_limit)
     cmd = [sys.executable, str(script), "--json", "audit", "--limit", str(limit)]
     if cfg.get("all_spaces", True):
         cmd.append("--all-spaces")
@@ -222,6 +223,7 @@ def run_agent_memory_cli_export(profile: dict[str, Any], root: Path, out_dir: Pa
             "script": str(script),
             "returncode": result.returncode,
             "stderr": result.stderr[-2000:],
+            "stdout": result.stdout[-2000:],
         }
     try:
         payload = json.loads(result.stdout)

@@ -58,10 +58,22 @@ collect_curate() {
   local comfy_out="data/raw/comfyui_outputs_2026/comfyui_${RUN_ID}.jsonl"
   mkdir -p "$out/logs" data/raw/codex_traces_2026 data/raw/claude_traces_2026 data/raw/hermes_traces_2026 data/raw/lmstudio_traces_2026 data/raw/comfyui_outputs_2026 data/raw
   log "export agent-memory PostgreSQL audit"
-  "$PYTHON_BIN" -m omnicoder.data_factory.curated_dataset_builder_2026 \
-    --profile "$PROFILE" \
-    --out-dir "weights/curated_datasets_2026/runs/${RUN_ID}" \
-    export-agent-memory | tee "$out/logs/agent_memory_export.json" || log "agent-memory PostgreSQL export failed; requiring pre-exported data/raw/agent_memory_events_2026.jsonl"
+  local am_export_ok=0
+  if "$PYTHON_BIN" -m omnicoder.data_factory.curated_dataset_builder_2026 \
+      --profile "$PROFILE" \
+      --out-dir "weights/curated_datasets_2026/runs/${RUN_ID}" \
+      export-agent-memory | tee "$out/logs/agent_memory_export.json"; then
+    am_export_ok=1
+  else
+    log "agent-memory PostgreSQL/CLI export failed"
+  fi
+  if [[ "$am_export_ok" != "1" && "${OMNICODER_ALLOW_AGENT_MEMORY_FALLBACK:-1}" != "1" ]]; then
+    echo "agent-memory export failed and OMNICODER_ALLOW_AGENT_MEMORY_FALLBACK is not enabled" >&2
+    exit 13
+  fi
+  if [[ "$am_export_ok" != "1" ]]; then
+    log "using pre-exported data/raw/agent_memory_events_2026.jsonl fallback"
+  fi
   require_nonempty_jsonl "data/raw/agent_memory_events_2026.jsonl" "agent_memory_events"
   log "collect Codex traces"
   "$PYTHON_BIN" -m omnicoder.data_factory.memory_trace_collectors_2026 collect-codex \
