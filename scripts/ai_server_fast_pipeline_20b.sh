@@ -14,7 +14,7 @@ RUN_TAG="${OMNICODER_RUN_TAG:-$(date -u +%Y%m%dT%H%M%SZ)}"
 CONTAINER_NAME="${OMNICODER_CONTAINER_NAME:-omnicoder_target20b_fast_${RUN_TAG}}"
 OUT_DIR="${OMNICODER_OUT_DIR:-weights/training_orchestration_2026/target20b_fast_${RUN_TAG}}"
 PROFILE="${OMNICODER_PROFILE:-profiles/training_orchestration_2026.json}"
-MODE="${OMNICODER_MODE:-run-real}"
+MODE="${OMNICODER_MODE:-run-full}"
 
 FAST_GPU_DEVICES="${OMNICODER_FAST_GPU_DEVICES:-0,4,6}"
 RANK_DEVICE_MAP="${OMNICODER_RANK_DEVICE_MAP:-0,1,2}"
@@ -38,6 +38,24 @@ ADAPTIVE_WEIGHTS="${OMNICODER_ADAPTIVE_WEIGHTS:-1}"
 MIXTURE_PLAN="${OMNICODER_MIXTURE_PLAN:-weights/training_orchestration_2026/manifests/mixture_plan.json}"
 CONTEXT_LADDER="${OMNICODER_CONTEXT_LADDER:-8192,32768,131072,262144,524288,1048576}"
 RLVR_ALGOS="${OMNICODER_RLVR_ALGOS:-grpo,dapo,offline_reward_replay}"
+LIVE_POSTTRAIN="${OMNICODER_LIVE_POSTTRAIN:-0}"
+POSTTRAIN_LR="${OMNICODER_POSTTRAIN_LR:-0}"
+POSTTRAIN_MAX_RECORDS="${OMNICODER_POSTTRAIN_MAX_RECORDS:-0}"
+FINETUNE_LR="${OMNICODER_FINETUNE_LR:-0}"
+DISTILL_PROFILE="${OMNICODER_DISTILL_PROFILE:-}"
+DISTILL_LIMIT="${OMNICODER_DISTILL_LIMIT:-0}"
+DISTILL_STEPS="${OMNICODER_DISTILL_STEPS:-0}"
+DISTILL_LR="${OMNICODER_DISTILL_LR:-0}"
+BENCHMARK_SEQ_LEN="${OMNICODER_BENCHMARK_SEQ_LEN:-0}"
+HELDOUT_MAX_RECORDS_PER_FILE="${OMNICODER_HELDOUT_MAX_RECORDS_PER_FILE:-}"
+BENCHMARK_MAX_RECORDS_PER_FILE="${OMNICODER_BENCHMARK_MAX_RECORDS_PER_FILE:-}"
+HELDOUT_SAMPLE_LOSS_TIMEOUT_SECONDS="${OMNICODER_HELDOUT_SAMPLE_LOSS_TIMEOUT_SECONDS:-0}"
+BENCHMARK_SAMPLE_LOSS_TIMEOUT_SECONDS="${OMNICODER_BENCHMARK_SAMPLE_LOSS_TIMEOUT_SECONDS:-0}"
+BENCHMARK_CYCLE="${OMNICODER_BENCHMARK_CYCLE:-}"
+BENCHMARK_MIN_TASKS="${OMNICODER_BENCHMARK_MIN_TASKS:-0}"
+BENCHMARK_PREDICTIONS="${OMNICODER_BENCHMARK_PREDICTIONS:-}"
+REQUIRE_REPORTABLE_GATE="${OMNICODER_REQUIRE_REPORTABLE_GATE:-0}"
+RERUN_HELDOUT_EVALS="${OMNICODER_RERUN_HELDOUT_EVALS:-0}"
 
 cd "$REPO"
 if [[ "$OUT_DIR" == /workspace/weights/* ]]; then
@@ -55,6 +73,58 @@ resume_args=()
 if [[ -n "$RESUME_CHECKPOINT" ]]; then
   resume_args+=(--resume-checkpoint "$RESUME_CHECKPOINT")
 fi
+
+truthy() {
+  case "${1,,}" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+append_nonzero_arg() {
+  local -n target_array="$1"
+  local flag="$2"
+  local value="$3"
+  if [[ -n "$value" && "$value" != "0" && "$value" != "0.0" ]]; then
+    target_array+=("$flag" "$value")
+  fi
+}
+
+append_nonempty_arg() {
+  local -n target_array="$1"
+  local flag="$2"
+  local value="$3"
+  if [[ -n "$value" ]]; then
+    target_array+=("$flag" "$value")
+  fi
+}
+
+shared_eval_args=()
+append_nonempty_arg shared_eval_args --heldout-max-records-per-file "$HELDOUT_MAX_RECORDS_PER_FILE"
+append_nonempty_arg shared_eval_args --benchmark-max-records-per-file "$BENCHMARK_MAX_RECORDS_PER_FILE"
+append_nonzero_arg shared_eval_args --heldout-sample-loss-timeout-seconds "$HELDOUT_SAMPLE_LOSS_TIMEOUT_SECONDS"
+append_nonzero_arg shared_eval_args --benchmark-sample-loss-timeout-seconds "$BENCHMARK_SAMPLE_LOSS_TIMEOUT_SECONDS"
+append_nonempty_arg shared_eval_args --benchmark-cycle "$BENCHMARK_CYCLE"
+append_nonzero_arg shared_eval_args --benchmark-min-tasks "$BENCHMARK_MIN_TASKS"
+append_nonempty_arg shared_eval_args --benchmark-predictions "$BENCHMARK_PREDICTIONS"
+if truthy "$REQUIRE_REPORTABLE_GATE"; then
+  shared_eval_args+=(--require-reportable-gate)
+fi
+if truthy "$RERUN_HELDOUT_EVALS"; then
+  shared_eval_args+=(--rerun-heldout-evals)
+fi
+
+shared_posttrain_args=()
+append_nonzero_arg shared_posttrain_args --posttrain-lr "$POSTTRAIN_LR"
+append_nonzero_arg shared_posttrain_args --posttrain-max-records "$POSTTRAIN_MAX_RECORDS"
+
+full_only_args=()
+append_nonempty_arg full_only_args --distill-profile "$DISTILL_PROFILE"
+append_nonzero_arg full_only_args --distill-limit "$DISTILL_LIMIT"
+append_nonzero_arg full_only_args --distill-steps "$DISTILL_STEPS"
+append_nonzero_arg full_only_args --distill-lr "$DISTILL_LR"
+append_nonzero_arg full_only_args --finetune-lr "$FINETUNE_LR"
+append_nonzero_arg full_only_args --benchmark-seq-len "$BENCHMARK_SEQ_LEN"
 
 if [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
   if [[ -z "$RESUME_CHECKPOINT" ]]; then
@@ -100,6 +170,8 @@ if [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --activation-checkpointing
     --fake-quant-chunk-rows 64
     --fake-quant-max-full-elements 16777216
+    "${shared_posttrain_args[@]}"
+    "${shared_eval_args[@]}"
     --fake-quant
   )
 else
@@ -117,7 +189,6 @@ else
     --lr "$LEARNING_RATE"
     --save-interval "$SAVE_INTERVAL"
     --posttrain-steps "$POSTTRAIN_STEPS"
-    --finetune-steps "$FINETUNE_STEPS"
     --distributed pipeline_stage
     --nproc-per-node 3
     --rank-device-map "$RANK_DEVICE_MAP"
@@ -138,8 +209,16 @@ else
     --activation-checkpointing
     --fake-quant-chunk-rows 64
     --fake-quant-max-full-elements 16777216
+    "${shared_posttrain_args[@]}"
+    "${shared_eval_args[@]}"
     --fake-quant
   )
+  if [[ "$MODE" == "run-full" ]]; then
+    common_args+=(--finetune-steps "$FINETUNE_STEPS")
+    common_args+=("${full_only_args[@]}")
+  elif truthy "$LIVE_POSTTRAIN"; then
+    common_args+=(--live-posttraining)
+  fi
 fi
 
 docker_args=(

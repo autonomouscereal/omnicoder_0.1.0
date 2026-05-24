@@ -159,6 +159,30 @@ OMNICODER_RESUME_CHECKPOINT=weights/training_orchestration_2026/target20b_pipeli
 scripts/ai_server_fast_pipeline_20b.sh
 ```
 
+The launcher defaults to `OMNICODER_MODE=run-full`. Use
+`OMNICODER_MODE=run-real` only for the narrower dense-stage plus optional
+posttraining lane. Production eval knobs are passed through:
+
+- `OMNICODER_HELDOUT_MAX_RECORDS_PER_FILE=0` evaluates every heldout row per
+  modality instead of the bounded profile default.
+- `OMNICODER_BENCHMARK_MAX_RECORDS_PER_FILE=0` does the same for checkpoint
+  benchmark sample loss.
+- `OMNICODER_HELDOUT_SAMPLE_LOSS_TIMEOUT_SECONDS` and
+  `OMNICODER_BENCHMARK_SAMPLE_LOSS_TIMEOUT_SECONDS` should be raised for long
+  evals on sharded 20B checkpoints.
+- `OMNICODER_BENCHMARK_CYCLE`, `OMNICODER_BENCHMARK_MIN_TASKS`, and
+  `OMNICODER_BENCHMARK_PREDICTIONS` wire reportable scoring once real
+  model-generated predictions exist.
+- `OMNICODER_RERUN_HELDOUT_EVALS=1` invalidates stale heldout sample-loss
+  JSON, and resumed stages also reject cached evals when checkpoint, seq_len,
+  record cap, or eval/test paths differ.
+
+Pipeline-sharded checkpoints run distributed sample-loss gates immediately.
+Reportable prediction scoring remains `pending` for those directories until a
+serving/export bridge or prediction artifact is provided; set
+`OMNICODER_REQUIRE_REPORTABLE_GATE=1` only when a run should fail closed on
+missing reportable predictions.
+
 For posttraining-only recovery, do not bend `run-real` or `run-full` into
 rerunning dense stages. Use the dedicated `run-posttraining` path after the
 active 20B container exits naturally. The resume checkpoint must already be a

@@ -31,6 +31,16 @@ probe jobs, and curation, not synchronous 20B target shards. Reportable
 benchmark gates now require authorized snapshot metadata and separate model
 outputs; smoke/contract fixtures are explicitly local-only.
 
+The canonical fast-card launcher now defaults to `run-full`, not the narrower
+`run-real` lane. Production runs can widen heldout and benchmark sample-loss
+coverage with `OMNICODER_HELDOUT_MAX_RECORDS_PER_FILE` and
+`OMNICODER_BENCHMARK_MAX_RECORDS_PER_FILE`; setting either to `0` means all
+records rather than the profile's bounded default. Sharded pipeline checkpoint
+gates run real distributed sample-loss immediately and mark reportable
+prediction scoring as pending until a serving/export path produces model
+generated predictions, so long 20B training does not fail on a missing
+interactive generation bridge.
+
 The posttraining orchestrator is fail-closed for 20B pipeline replay: a failed
 or incomplete sharded optimizer stage stops the remaining replay stack instead
 of silently continuing from an older checkpoint. The profile also enables

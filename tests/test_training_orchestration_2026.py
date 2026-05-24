@@ -222,10 +222,15 @@ def _runtime_args(**overrides):
         "pipeline_stage_schedule": "",
         "pipeline_async_streams": None,
         "allow_verifier_preset": False,
-        "heldout_max_records_per_file": 0,
-        "benchmark_max_records_per_file": 0,
+        "heldout_max_records_per_file": None,
+        "benchmark_max_records_per_file": None,
         "heldout_sample_loss_timeout_seconds": 0,
         "benchmark_sample_loss_timeout_seconds": 0,
+        "benchmark_cycle": "",
+        "benchmark_min_tasks": 0,
+        "benchmark_predictions": "",
+        "require_reportable_gate": False,
+        "rerun_heldout_evals": False,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -365,6 +370,40 @@ def test_pipeline_checkpoint_sample_loss_uses_distributed_eval(tmp_path, monkeyp
     assert "--placement-head-device" not in cmd
     assert "--activation-checkpointing" not in cmd
     assert result["returncode"] == 0
+
+
+def test_explicit_zero_sample_loss_records_means_all_records() -> None:
+    cfg = {"training_plan": {"heldout_sample_loss_max_records_per_file": 32}}
+    assert orch.sample_loss_max_records_per_file(cfg, _runtime_args(heldout_max_records_per_file=None)) == 32
+    assert orch.sample_loss_max_records_per_file(cfg, _runtime_args(heldout_max_records_per_file=0)) == 0
+
+
+def test_pipeline_checkpoint_benchmark_gate_does_not_fail_on_prediction_pending(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(eval_path, [{"text": "hello world", "modality": "text"}])
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+    }
+    manifest = {"eval_all_jsonl": str(eval_path)}
+
+    def fake_run_command(cmd: list[str], log_path: Path, timeout_seconds: int = 0) -> int:
+        out_path = Path(cmd[cmd.index("--out") + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0}}), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    result = orch.run_checkpoint_benchmark_gate(profile, manifest, tmp_path, checkpoint, "pipeline", _runtime_args())
+
+    assert result["status"] == "passed"
+    assert result["sample_loss"]["returncode"] == 0
+    assert result["reportable_gate"]["status"] == "pending"
 
 
 def test_live_posttraining_runs_native_reward_replay_not_dry_run(tmp_path, monkeypatch):

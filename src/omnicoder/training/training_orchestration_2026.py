@@ -300,6 +300,18 @@ def write_reportable_prediction_seed(task_paths: list[Path], out_path: Path) -> 
     return {"path": str(out_path), "records": len(rows)}
 
 
+def count_jsonl_rows(path: str | Path) -> int:
+    source = Path(path)
+    if not source.exists() or not source.is_file():
+        return 0
+    count = 0
+    with source.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if line.strip():
+                count += 1
+    return count
+
+
 def row_identity(row: dict[str, Any]) -> str:
     refs = row.get("artifact_refs") if isinstance(row.get("artifact_refs"), list) else []
     ref_keys = []
@@ -2029,6 +2041,12 @@ def arg_value(args: argparse.Namespace | None, name: str, default: Any = None) -
     return getattr(args, name, default)
 
 
+def truthy_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def namespace_with(args: argparse.Namespace, **updates: Any) -> argparse.Namespace:
     payload = vars(args).copy()
     payload.update(updates)
@@ -2174,9 +2192,11 @@ def sample_loss_max_records_per_file(
     plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
     gates = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
     arg_name = "benchmark_max_records_per_file" if benchmark else "heldout_max_records_per_file"
-    value = int(arg_value(args, arg_name, 0) or 0)
-    if value > 0:
-        return value
+    raw_value = getattr(args, arg_name, None) if args is not None else None
+    if raw_value is not None:
+        value = int(raw_value)
+        if value >= 0:
+            return value
     if benchmark:
         for key in ("sample_loss_max_records_per_file", "max_records_per_file"):
             configured = int(gates.get(key) or 0)
@@ -2209,7 +2229,18 @@ def sample_loss_timeout_seconds(
     return configured if configured > 0 else 3600
 
 
-def existing_sample_loss_report(out_dir: Path, modality: str) -> dict[str, Any] | None:
+def existing_sample_loss_report(
+    out_dir: Path,
+    modality: str,
+    *,
+    checkpoint: Path | None = None,
+    split_paths: dict[str, str] | None = None,
+    cfg: dict[str, Any] | None = None,
+    args: argparse.Namespace | None = None,
+    seq_len: int | None = None,
+) -> dict[str, Any] | None:
+    if truthy_value(arg_value(args, "rerun_heldout_evals", False)):
+        return None
     output_path = out_dir / "evals" / f"{modality}_heldout_sample_loss.json"
     if not output_path.exists():
         return None
@@ -2217,6 +2248,19 @@ def existing_sample_loss_report(out_dir: Path, modality: str) -> dict[str, Any] 
         payload = read_json(output_path)
     except Exception as exc:
         return {"status": "skipped", "reason": "existing_sample_loss_unreadable", "error": str(exc), "output_path": str(output_path)}
+    if checkpoint is not None and str(payload.get("checkpoint") or "") != str(checkpoint):
+        return None
+    if seq_len is not None and int(payload.get("seq_len") or 0) != int(seq_len):
+        return None
+    if cfg is not None:
+        expected_max = sample_loss_max_records_per_file(cfg, args)
+        if "max_records_per_file" not in payload or int(payload.get("max_records_per_file") or 0) != expected_max:
+            return None
+    if split_paths:
+        expected_paths = [str(Path(path)) for split in ("eval", "test") for path in [split_paths.get(split, "")] if path]
+        payload_paths = [str(Path(path)) for path in payload.get("data_paths", [])]
+        if expected_paths and payload_paths != expected_paths:
+            return None
     payload.setdefault("status", "passed")
     payload.setdefault("output_path", str(output_path))
     return payload
@@ -2647,6 +2691,9 @@ def run_sample_loss_eval(
     payload["returncode"] = code
     payload["output_path"] = str(output_path)
     payload["data_paths"] = [str(path) for path in data_paths]
+    payload["checkpoint"] = str(checkpoint)
+    payload["seq_len"] = int(seq_len)
+    payload["max_records_per_file"] = int(max_records_per_file)
     return payload
 
 
@@ -2729,9 +2776,36 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
                 else:
                     stage_report[key] = value
             stage_report.update({"status": "passed", "reason": "completed_checkpoint_present", "loss_log": str(train_log)})
-            existing_eval = existing_sample_loss_report(out_dir, modality)
+            split_paths = manifest.get("per_modality_split_jsonl", {}).get(modality, {})
+            existing_eval = existing_sample_loss_report(
+                out_dir,
+                modality,
+                checkpoint=checkpoint,
+                split_paths=split_paths,
+                cfg=cfg,
+                args=args,
+                seq_len=stage_seq_len,
+            )
             if existing_eval is not None:
                 stage_report["heldout_sample_loss"] = existing_eval
+            elif split_paths:
+                heldout_sample_loss = run_sample_loss_eval(
+                    checkpoint,
+                    modality,
+                    split_paths,
+                    out_dir,
+                    cfg=cfg,
+                    args=args,
+                    preset=preset,
+                    device=device,
+                    seq_len=stage_seq_len,
+                )
+                stage_report["heldout_sample_loss"] = heldout_sample_loss
+                if heldout_sample_loss.get("status") == "failed":
+                    stage_report["status"] = "failed"
+                    stage_report["reason"] = "heldout_sample_loss_failed"
+                    stage_reports.append(stage_report)
+                    break
             stage_reports.append(stage_report)
             continue
         if resume_completed and checkpoint.exists() and not checkpoint_is_complete(checkpoint, expected_world_size=checkpoint_expected_world_size):
@@ -3275,17 +3349,20 @@ def run_checkpoint_benchmark_gate(
                 report["status"] = "failed"
         else:
             report["sample_loss"] = {"status": "skipped", "reason": "no_eval_or_test_jsonl"}
+        require_reportable_gate = truthy_value(arg_value(args, "require_reportable_gate", False))
         report["contract_benchmark_gate"] = {
-            "status": "failed",
-            "reason": "pipeline_checkpoint_prediction_generation_pending",
+            "status": "skipped",
+            "reason": "pipeline_checkpoint_text_generation_pending",
+            "sample_loss_gate": "completed",
         }
         report["reportable_gate"] = {
-            "status": "failed",
-            "reason": "pipeline_checkpoint_prediction_generation_pending",
+            "status": "pending",
+            "reason": "pipeline_checkpoint_requires_generated_predictions_or_serving_route",
+            "required": require_reportable_gate,
         }
-        if report.get("status") != "failed":
+        if require_reportable_gate and report.get("status") != "failed":
             report["status"] = "failed"
-            report["reason"] = "pipeline_checkpoint_prediction_generation_pending"
+            report["reason"] = "pipeline_checkpoint_reportable_predictions_required"
         write_json(gate_dir / "benchmark_gate_summary.json", report)
         return report
 
@@ -3388,10 +3465,43 @@ def run_checkpoint_benchmark_gate(
         or gates_cfg.get("missing_reportable_policy")
         or "fail"
     ).lower()
+    benchmark_cycle = str(arg_value(args, "benchmark_cycle", "") or gates_cfg.get("benchmark_cycle") or "smoke")
+    benchmark_min_tasks = int(arg_value(args, "benchmark_min_tasks", 0) or gates_cfg.get("benchmark_min_tasks") or 1)
+    require_reportable_gate = truthy_value(arg_value(args, "require_reportable_gate", False))
+    benchmark_predictions_raw = str(arg_value(args, "benchmark_predictions", "") or "").strip()
+    benchmark_predictions = resolve_path(benchmark_predictions_raw, repo_root()) if benchmark_predictions_raw else None
     if reportable_paths:
         reportable_dir = gate_dir / "reportable"
         reportable_summary_path = reportable_dir / "reportable_summary.json"
-        prediction_seed = write_reportable_prediction_seed(reportable_paths, reportable_dir / "checkpoint_predictions.jsonl")
+        prediction_seed: dict[str, Any]
+        if benchmark_predictions is not None and benchmark_predictions.exists():
+            prediction_seed = {
+                "path": str(benchmark_predictions),
+                "records": count_jsonl_rows(benchmark_predictions),
+                "source": "model_generated_predictions",
+            }
+        elif benchmark_cycle == "smoke":
+            prediction_seed = write_reportable_prediction_seed(reportable_paths, reportable_dir / "checkpoint_predictions.jsonl")
+        else:
+            prediction_seed = {
+                "path": benchmark_predictions_raw,
+                "records": 0,
+                "source": "missing_model_generated_predictions",
+            }
+            report["reportable_gate"] = {
+                "status": "pending" if not require_reportable_gate else "failed",
+                "reason": "model_generated_predictions_required_for_non_smoke_reportable_gate",
+                "cycle": benchmark_cycle,
+                "configured_predictions": benchmark_predictions_raw,
+                "task_roots": [str(path) for path in reportable_paths],
+                "configured_task_roots": [str(path) for path in reportable_roots],
+                "root_sources": reportable_sources,
+                "required": require_reportable_gate,
+            }
+            if require_reportable_gate:
+                report["status"] = "failed"
+            write_json(gate_dir / "benchmark_gate_summary.json", report)
+            return report
         reportable_cmd = [
             sys.executable,
             "-m",
@@ -3406,11 +3516,11 @@ def run_checkpoint_benchmark_gate(
             str(reportable_summary_path),
             "run-reportable",
             "--cycle",
-            "smoke",
+            benchmark_cycle,
             "--run-id",
             smoke_run_id,
             "--min-tasks",
-            "1",
+            str(benchmark_min_tasks),
             "--missing-reportable-policy",
             missing_policy,
         ]
@@ -3451,6 +3561,8 @@ def run_checkpoint_benchmark_gate(
             "root_sources": reportable_sources,
             "predictions": prediction_seed,
             "status": reportable_summary.get("status"),
+            "cycle": benchmark_cycle,
+            "min_tasks": benchmark_min_tasks,
             "gate_policy": reportable_summary.get("gate_policy"),
             "gate_decision": reportable_summary.get("gate_decision"),
             "reportable": reportable_summary.get("reportable"),
@@ -3964,10 +4076,15 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--posttrain-steps", type=int, default=0)
     run.add_argument("--posttrain-lr", type=float, default=0.0)
     run.add_argument("--posttrain-max-records", type=int, default=0)
-    run.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=0)
-    run.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=0)
+    run.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=None)
+    run.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=None)
     run.add_argument("--heldout-sample-loss-timeout-seconds", dest="heldout_sample_loss_timeout_seconds", type=int, default=0)
     run.add_argument("--benchmark-sample-loss-timeout-seconds", dest="benchmark_sample_loss_timeout_seconds", type=int, default=0)
+    run.add_argument("--benchmark-cycle", dest="benchmark_cycle", default="")
+    run.add_argument("--benchmark-min-tasks", dest="benchmark_min_tasks", type=int, default=0)
+    run.add_argument("--benchmark-predictions", dest="benchmark_predictions", default="")
+    run.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
+    run.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     run.set_defaults(func=run_real)
     post = sub.add_parser(
         "run-posttraining",
@@ -4013,10 +4130,15 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--posttrain-steps", type=int, default=0)
     post.add_argument("--posttrain-lr", type=float, default=0.0)
     post.add_argument("--posttrain-max-records", type=int, default=0)
-    post.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=0)
-    post.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=0)
+    post.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=None)
+    post.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=None)
     post.add_argument("--heldout-sample-loss-timeout-seconds", dest="heldout_sample_loss_timeout_seconds", type=int, default=0)
     post.add_argument("--benchmark-sample-loss-timeout-seconds", dest="benchmark_sample_loss_timeout_seconds", type=int, default=0)
+    post.add_argument("--benchmark-cycle", dest="benchmark_cycle", default="")
+    post.add_argument("--benchmark-min-tasks", dest="benchmark_min_tasks", type=int, default=0)
+    post.add_argument("--benchmark-predictions", dest="benchmark_predictions", default="")
+    post.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
+    post.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     post.set_defaults(func=run_posttrain, live_posttraining=True)
     full = sub.add_parser("run-full")
     full.add_argument("--steps-per-stage", type=int, default=0)
@@ -4070,10 +4192,15 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--finetune-steps", type=int, default=0)
     full.add_argument("--finetune-lr", type=float, default=0.0)
     full.add_argument("--benchmark-seq-len", type=int, default=0)
-    full.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=0)
-    full.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=0)
+    full.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=None)
+    full.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=None)
     full.add_argument("--heldout-sample-loss-timeout-seconds", dest="heldout_sample_loss_timeout_seconds", type=int, default=0)
     full.add_argument("--benchmark-sample-loss-timeout-seconds", dest="benchmark_sample_loss_timeout_seconds", type=int, default=0)
+    full.add_argument("--benchmark-cycle", dest="benchmark_cycle", default="")
+    full.add_argument("--benchmark-min-tasks", dest="benchmark_min_tasks", type=int, default=0)
+    full.add_argument("--benchmark-predictions", dest="benchmark_predictions", default="")
+    full.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
+    full.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     full.set_defaults(func=run_full, live_posttraining=True)
     summ = sub.add_parser("summarize")
     summ.add_argument("--summary", default="")
