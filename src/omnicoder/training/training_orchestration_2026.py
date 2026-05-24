@@ -2848,6 +2848,33 @@ def declared_posttrain_algorithms(rl: dict[str, Any]) -> list[str]:
     return result
 
 
+def resolve_posttrain_algorithms(rl: dict[str, Any], args: argparse.Namespace | None = None) -> list[str]:
+    override = list_from_config_value(arg_value(args, "posttrain_algorithm_order", ""))
+    algorithms = override or declared_posttrain_algorithms(rl)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for algorithm in algorithms:
+        value = str(algorithm).strip()
+        if value and value not in seen:
+            seen.add(value)
+            deduped.append(value)
+    if not deduped:
+        return []
+    start = str(arg_value(args, "start_posttrain_algorithm", "") or "").strip()
+    if not start:
+        return deduped
+    if start.isdigit():
+        index = int(start)
+        if index < 1 or index > len(deduped):
+            raise ValueError(f"--start-posttrain-algorithm index must be between 1 and {len(deduped)}")
+        return deduped[index - 1 :]
+    if start not in deduped:
+        raise ValueError(
+            f"--start-posttrain-algorithm {start!r} is not in the active posttraining order: {', '.join(deduped)}"
+        )
+    return deduped[deduped.index(start) :]
+
+
 def discover_posttrain_inputs(configured_inputs: Any, root: Path) -> list[Path]:
     inputs = existing_paths(configured_inputs, root)
     if inputs:
@@ -2971,7 +2998,7 @@ def run_posttraining_stages(
     rl = cfg.get("reinforcement_learning") if isinstance(cfg.get("reinforcement_learning"), dict) else {}
     if not rl.get("enabled"):
         return {"status": "skipped", "reason": "reinforcement_learning_disabled", "stages": []}
-    algorithms = declared_posttrain_algorithms(rl)
+    algorithms = resolve_posttrain_algorithms(rl, args)
     if not algorithms:
         return {"status": "skipped", "reason": "no_declared_posttraining_algorithms", "stages": []}
     replay = rl.get("offline_reward_replay") if isinstance(rl.get("offline_reward_replay"), dict) else {}
@@ -2986,6 +3013,7 @@ def run_posttraining_stages(
     model = str(current_checkpoint) if current_checkpoint is not None else str(cfg.get("distillation", {}).get("base_model") or "Qwen/Qwen3-4B")
     live_replay = bool(arg_value(args, "live_posttraining", False))
     preset = resolve_training_preset(cfg, args)
+    guard_target_training_preset(cfg, preset, args)
     device = str(arg_value(args, "device", "") or cfg.get("training_plan", {}).get("device") or ("cuda" if torch_available() else "cpu"))
     seq_len = int(arg_value(args, "posttrain_seq_len", 0) or arg_value(args, "seq_len", 0) or cfg.get("training_plan", {}).get("seq_len") or 192)
     batch_size = int(arg_value(args, "posttrain_batch_size", 0) or arg_value(args, "batch_size", 0) or cfg.get("training_plan", {}).get("batch_size") or 1)
@@ -3647,6 +3675,84 @@ def full_run_status(*parts: dict[str, Any]) -> str:
     return "passed"
 
 
+def validate_posttraining_resume_checkpoint(cfg: dict[str, Any], checkpoint: Path, args: argparse.Namespace) -> dict[str, Any]:
+    preset = resolve_training_preset(cfg, args)
+    guard_target_training_preset(cfg, preset, args)
+    if not checkpoint.exists():
+        return {"status": "failed", "reason": "resume_checkpoint_missing", "checkpoint": str(checkpoint)}
+    expected_world_size = expected_pipeline_world_size(cfg, args) if checkpoint.is_dir() else None
+    if not checkpoint_is_complete(checkpoint, expected_world_size=expected_world_size):
+        return {
+            "status": "failed",
+            "reason": "resume_checkpoint_incomplete",
+            "checkpoint": str(checkpoint),
+            "expected_world_size": expected_world_size,
+            "completion_marker": str(checkpoint_complete_marker(checkpoint)),
+        }
+    if checkpoint.is_dir() and not uses_pipeline_stage_trainer(cfg, args):
+        return {
+            "status": "failed",
+            "reason": "sharded_resume_checkpoint_requires_pipeline_stage_trainer",
+            "checkpoint": str(checkpoint),
+        }
+    return {
+        "status": "passed",
+        "checkpoint": str(checkpoint),
+        "preset": preset,
+        "expected_world_size": expected_world_size,
+        "pipeline_stage_trainer": bool(uses_pipeline_stage_trainer(cfg, args)),
+    }
+
+
+def run_posttrain(args: argparse.Namespace) -> dict[str, Any]:
+    profile = load_profile(args.profile)
+    cfg = profile_cfg(profile)
+    out_dir = Path(args.out_dir or cfg.get("work_dir") or DEFAULT_OUT_DIR)
+    resume_checkpoint = Path(str(args.resume_checkpoint or "")).expanduser()
+    validation = validate_posttraining_resume_checkpoint(cfg, resume_checkpoint, args)
+    if validation.get("status") != "passed":
+        summary = {
+            "schema": "omnicoder.posttraining_resume_result_2026.v1",
+            "schema_version": SCHEMA_VERSION,
+            "status": "failed",
+            "created_at": now_iso(),
+            "model_contract": cfg.get("model_contract"),
+            "resume_validation": validation,
+            "posttraining": {"status": "skipped", "reason": validation.get("reason")},
+            "artifacts": {"out_dir": str(out_dir), "summary": str(out_dir / "posttraining_resume_summary.json")},
+        }
+        write_json(out_dir / "posttraining_resume_summary.json", summary)
+        return summary
+    post_args = namespace_with(args, live_posttraining=True)
+    try:
+        posttraining = run_posttraining_stages(
+            profile,
+            out_dir,
+            {"status": "passed", "final_checkpoint": str(resume_checkpoint)},
+            post_args,
+        )
+    except ValueError as exc:
+        posttraining = {"status": "failed", "reason": "invalid_posttraining_algorithm_selection", "error": str(exc)}
+    summary = {
+        "schema": "omnicoder.posttraining_resume_result_2026.v1",
+        "schema_version": SCHEMA_VERSION,
+        "status": posttraining.get("status", "failed"),
+        "created_at": now_iso(),
+        "model_contract": cfg.get("model_contract"),
+        "resume_validation": validation,
+        "posttraining": posttraining,
+        "final_checkpoint": posttraining.get("final_checkpoint") or str(resume_checkpoint),
+        "artifacts": {
+            "out_dir": str(out_dir),
+            "summary": str(out_dir / "posttraining_resume_summary.json"),
+            "initial_checkpoint": str(resume_checkpoint),
+            "final_checkpoint": posttraining.get("final_checkpoint") or str(resume_checkpoint),
+        },
+    }
+    write_json(out_dir / "posttraining_resume_summary.json", summary)
+    return summary
+
+
 def run_full(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_profile(args.profile)
     out_dir = Path(args.out_dir or profile_cfg(profile).get("work_dir") or DEFAULT_OUT_DIR)
@@ -3863,6 +3969,55 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--heldout-sample-loss-timeout-seconds", dest="heldout_sample_loss_timeout_seconds", type=int, default=0)
     run.add_argument("--benchmark-sample-loss-timeout-seconds", dest="benchmark_sample_loss_timeout_seconds", type=int, default=0)
     run.set_defaults(func=run_real)
+    post = sub.add_parser(
+        "run-posttraining",
+        aliases=["run-posttrain"],
+        help="Resume live posttraining from an existing complete 20B/1M checkpoint without rerunning dense stages",
+    )
+    post.add_argument("--resume-checkpoint", required=True)
+    post.add_argument("--posttrain-start-algorithm", "--start-posttrain-algorithm", dest="start_posttrain_algorithm", default="")
+    post.add_argument("--posttrain-algorithm-order", dest="posttrain_algorithm_order", default="")
+    post.add_argument("--seq-len", type=int, default=0)
+    post.add_argument("--batch-size", type=int, default=0)
+    post.add_argument("--preset", default="")
+    post.add_argument("--device", default="")
+    post.add_argument("--fake-quant", action="store_true")
+    post.add_argument("--distributed", default="")
+    post.add_argument("--nproc-per-node", type=int, default=0)
+    post.add_argument("--precision", default="")
+    post.add_argument("--init-dtype", default="")
+    post.add_argument("--optimizer", default="")
+    post.add_argument("--optimizer-in-backward", dest="optimizer_in_backward", action="store_true")
+    post.add_argument("--optimizer-in-backward-update", dest="optimizer_in_backward_update", default="")
+    post.add_argument("--optimizer-in-backward-grad-clip", dest="optimizer_in_backward_grad_clip", type=float, default=0.0)
+    post.add_argument("--optimizer-in-backward-clip-mode", dest="optimizer_in_backward_clip_mode", default="")
+    post.add_argument("--optimizer-in-backward-adafactor-chunk-rows", dest="optimizer_in_backward_adafactor_chunk_rows", type=int, default=0)
+    post.add_argument("--optimizer-in-backward-adafactor-clip-threshold", dest="optimizer_in_backward_adafactor_clip_threshold", type=float, default=0.0)
+    post.add_argument("--optimizer-in-backward-adafactor-decay-rate", dest="optimizer_in_backward_adafactor_decay_rate", type=float, default=0.0)
+    post.add_argument("--optimizer-in-backward-adafactor-eps1", dest="optimizer_in_backward_adafactor_eps1", type=float, default=0.0)
+    post.add_argument("--rank-device-map", dest="rank_device_map", default="")
+    post.add_argument("--placement", default="")
+    post.add_argument("--placement-devices", dest="placement_devices", default="")
+    post.add_argument("--placement-layer-counts", dest="placement_layer_counts", default="")
+    post.add_argument("--placement-head-device", dest="placement_head_device", type=int, default=-1)
+    post.add_argument("--placement-schedule", dest="placement_schedule", default="")
+    post.add_argument("--pipeline-stage-schedule", dest="pipeline_stage_schedule", default="")
+    post.add_argument("--pipeline-microbatches", dest="pipeline_microbatches", type=int, default=0)
+    post.add_argument("--pipeline-async-streams", dest="pipeline_async_streams", action="store_true", default=None)
+    post.add_argument("--no-pipeline-async-streams", dest="pipeline_async_streams", action="store_false")
+    post.add_argument("--activation-checkpointing", action="store_true")
+    post.add_argument("--cpu-offload", action="store_true")
+    post.add_argument("--fake-quant-chunk-rows", dest="fake_quant_chunk_rows", type=int, default=0)
+    post.add_argument("--fake-quant-max-full-elements", dest="fake_quant_max_full_elements", type=int, default=0)
+    post.add_argument("--allow-verifier-preset", action="store_true")
+    post.add_argument("--posttrain-steps", type=int, default=0)
+    post.add_argument("--posttrain-lr", type=float, default=0.0)
+    post.add_argument("--posttrain-max-records", type=int, default=0)
+    post.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=0)
+    post.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=0)
+    post.add_argument("--heldout-sample-loss-timeout-seconds", dest="heldout_sample_loss_timeout_seconds", type=int, default=0)
+    post.add_argument("--benchmark-sample-loss-timeout-seconds", dest="benchmark_sample_loss_timeout_seconds", type=int, default=0)
+    post.set_defaults(func=run_posttrain, live_posttraining=True)
     full = sub.add_parser("run-full")
     full.add_argument("--steps-per-stage", type=int, default=0)
     full.add_argument("--seq-len", type=int, default=0)

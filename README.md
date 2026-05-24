@@ -38,6 +38,15 @@ posttraining checkpoint retention, keeping the active and most recent complete
 pipeline shards while pruning older stage shards so long RL stacks do not fill
 the AI-server training volume mid-run.
 
+Posttraining-only recovery is a first-class path. Use
+`training-orchestration-2026 run-posttraining` or
+`OMNICODER_MODE=run-posttraining scripts/ai_server_fast_pipeline_20b.sh` with a
+complete existing `omnicoder2026_20b_1m` checkpoint and, when needed,
+`--posttrain-start-algorithm safety_negative_replay` /
+`OMNICODER_POSTTRAIN_START_ALGORITHM=safety_negative_replay`. This resumes live
+distributed reward/preference/RL replay without rerunning dense pretraining and
+without accepting incomplete sharded checkpoints.
+
 Current rebuild docs:
 
 - `docs/Omnicoder2026Redesign.md`

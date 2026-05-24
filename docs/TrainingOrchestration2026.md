@@ -159,6 +159,27 @@ OMNICODER_RESUME_CHECKPOINT=weights/training_orchestration_2026/target20b_pipeli
 scripts/ai_server_fast_pipeline_20b.sh
 ```
 
+For posttraining-only recovery, do not bend `run-real` or `run-full` into
+rerunning dense stages. Use the dedicated `run-posttraining` path after the
+active 20B container exits naturally. The resume checkpoint must already be a
+complete `omnicoder2026_20b_1m` checkpoint; sharded directories are accepted
+only when `.complete.json`, `manifest.json`, all rank files, and per-rank
+complete markers are present. This is the correct route after a failed
+posttraining stage such as a disk-full `safety_negative_replay` checkpoint
+flush: restart from the last complete checkpoint before the failure and slice
+the posttraining algorithm order at the failed algorithm.
+
+```bash
+cd /home/cereal/omnicoder_2026_work
+OMNICODER_MODE=run-posttraining \
+OMNICODER_RUN_TAG="resume_posttrain_safety_$(date -u +%Y%m%dT%H%M%SZ)" \
+OMNICODER_OUT_DIR="weights/training_orchestration_2026/resume_posttrain_safety_$(date -u +%Y%m%dT%H%M%SZ)" \
+OMNICODER_RESUME_CHECKPOINT="weights/training_orchestration_2026/<run>/checkpoints/posttrain/04_orpo_kto_simpo_pair_replay_pipeline" \
+OMNICODER_POSTTRAIN_START_ALGORITHM=safety_negative_replay \
+OMNICODER_POSTTRAIN_STEPS=32 \
+scripts/ai_server_fast_pipeline_20b.sh
+```
+
 ## Dataset And Teacher Sidecars
 
 Do not start a second synchronous 20B target run while a target container owns

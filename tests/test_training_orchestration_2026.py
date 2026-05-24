@@ -231,6 +231,17 @@ def _runtime_args(**overrides):
     return argparse.Namespace(**values)
 
 
+def _write_complete_sharded_checkpoint(path: Path, world_size: int = 3) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    rank_files = [f"rank{rank:05d}.pt" for rank in range(world_size)]
+    orch.write_json(path / ".complete.json", {"status": "complete"})
+    orch.write_json(path / "manifest.json", {"world_size": world_size, "rank_files": rank_files})
+    for rank_file in rank_files:
+        rank_path = path / rank_file
+        rank_path.write_bytes(b"checkpoint")
+        Path(str(rank_path) + ".complete.json").write_text("{}", encoding="utf-8")
+
+
 def test_pipeline_stage_launcher_uses_torchrun_without_dense_only_flags():
     cfg = {
         "training_plan": {
@@ -401,7 +412,7 @@ def test_live_posttraining_runs_native_reward_replay_not_dry_run(tmp_path, monke
     monkeypatch.setattr(orch, "run_command", fake_run_command)
     args = argparse.Namespace(
         live_posttraining=True,
-        preset="ledger_probe",
+        preset="omnicoder2026_20b_1m",
         device="cpu",
         seq_len=16,
         batch_size=1,
@@ -438,13 +449,7 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
     monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
     orch.build_real_corpus(profile, tmp_path / "out")
     checkpoint = tmp_path / "pipeline_checkpoint"
-    checkpoint.mkdir()
-    (checkpoint / ".complete.json").write_text("{}", encoding="utf-8")
-    (checkpoint / "manifest.json").write_text(json.dumps({"world_size": 3, "rank_files": ["rank00000.pt", "rank00001.pt", "rank00002.pt"]}), encoding="utf-8")
-    for rank in range(3):
-        rank_path = checkpoint / f"rank{rank:05d}.pt"
-        rank_path.write_bytes(b"checkpoint")
-        Path(str(rank_path) + ".complete.json").write_text("{}", encoding="utf-8")
+    _write_complete_sharded_checkpoint(checkpoint)
     commands: list[list[str]] = []
 
     def fake_run_command(cmd: list[str], log_path: Path) -> int:
@@ -476,7 +481,7 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
     monkeypatch.setattr(orch, "run_command", fake_run_command)
     args = argparse.Namespace(
         live_posttraining=True,
-        preset="ledger_probe",
+        preset="omnicoder2026_20b_1m",
         device="cpu",
         seq_len=16,
         batch_size=1,
@@ -539,13 +544,7 @@ def test_live_posttraining_stops_after_failed_pipeline_replay(tmp_path, monkeypa
     monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
     orch.build_real_corpus(profile, tmp_path / "out")
     checkpoint = tmp_path / "pipeline_checkpoint"
-    checkpoint.mkdir()
-    (checkpoint / ".complete.json").write_text("{}", encoding="utf-8")
-    (checkpoint / "manifest.json").write_text(json.dumps({"world_size": 3, "rank_files": ["rank00000.pt", "rank00001.pt", "rank00002.pt"]}), encoding="utf-8")
-    for rank in range(3):
-        rank_path = checkpoint / f"rank{rank:05d}.pt"
-        rank_path.write_bytes(b"checkpoint")
-        Path(str(rank_path) + ".complete.json").write_text("{}", encoding="utf-8")
+    _write_complete_sharded_checkpoint(checkpoint)
     commands: list[list[str]] = []
 
     def fake_run_command(cmd: list[str], log_path: Path) -> int:
@@ -571,7 +570,7 @@ def test_live_posttraining_stops_after_failed_pipeline_replay(tmp_path, monkeypa
     monkeypatch.setattr(orch, "run_command", fake_run_command)
     args = argparse.Namespace(
         live_posttraining=True,
-        preset="ledger_probe",
+        preset="omnicoder2026_20b_1m",
         device="cpu",
         seq_len=16,
         batch_size=1,
@@ -612,6 +611,211 @@ def test_live_posttraining_stops_after_failed_pipeline_replay(tmp_path, monkeypa
     }
     bridge_commands = [cmd for cmd in commands if "omnicoder.training.posttrain_bridge_2026" in cmd]
     assert len(bridge_commands) == 1
+
+
+def test_run_posttraining_cli_resumes_from_sharded_checkpoint_without_pretraining(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+        "pipeline_stage_schedule": "gpipe",
+        "pipeline_microbatches": 1,
+    }
+    train_jsonl = tmp_path / "tool_safety_negatives.jsonl"
+    _write_jsonl(train_jsonl, [{"prompt": "refuse destructive action", "reward": 1.0, "modality": "tool"}])
+    profile["reinforcement_learning"] = {
+        "enabled": True,
+        "offline_reward_replay": {
+            "inputs": [str(train_jsonl)],
+            "algorithms_represented": ["safety_negative_replay"],
+        },
+        "stop_on_posttrain_failure": True,
+    }
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    checkpoint = tmp_path / "stage4_checkpoint"
+    _write_complete_sharded_checkpoint(checkpoint)
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(orch, "build_real_corpus", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no curation in posttraining-only resume")))
+    monkeypatch.setattr(orch, "run_training_stages", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no dense pretraining in posttraining-only resume")))
+
+    def fake_run_command(cmd: list[str], log_path: Path) -> int:
+        commands.append(cmd)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        if "omnicoder.training.posttrain_bridge_2026" in cmd:
+            orch.write_json(
+                Path(cmd[cmd.index("--manifest") + 1]),
+                {"status": "live_optimizer_deferred", "execution": {"status": "deferred", "executor": "distributed_pipeline_reward_replay"}},
+            )
+        if "omnicoder.training.pipeline_pretrain_2026_dense" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            _write_complete_sharded_checkpoint(out_path)
+            Path(cmd[cmd.index("--log_file") + 1]).write_text('{"loss": 4.0}\n{"loss": 3.5}\n', encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    code = orch.main(
+        [
+            "--profile",
+            str(profile_path),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "run-posttraining",
+            "--resume-checkpoint",
+            str(checkpoint),
+            "--preset",
+            "omnicoder2026_20b_1m",
+            "--distributed",
+            "pipeline_stage",
+            "--nproc-per-node",
+            "3",
+            "--rank-device-map",
+            "0,1,2",
+            "--placement-layer-counts",
+            "16,16,32",
+            "--pipeline-stage-schedule",
+            "gpipe",
+            "--pipeline-microbatches",
+            "1",
+            "--posttrain-steps",
+            "2",
+        ]
+    )
+    assert code == 0
+    pipeline_cmd = next(cmd for cmd in commands if "omnicoder.training.pipeline_pretrain_2026_dense" in cmd)
+    assert pipeline_cmd[pipeline_cmd.index("--resume") + 1] == str(checkpoint)
+    assert pipeline_cmd[pipeline_cmd.index("--preset") + 1] == "omnicoder2026_20b_1m"
+    assert "--require_target_contract" in pipeline_cmd
+    assert (tmp_path / "out" / "posttraining_resume_summary.json").exists()
+
+
+def test_run_posttraining_cli_can_start_at_safety_negative_replay(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {"mode": "pipeline_stage", "nproc_per_node": 3}
+    train_dir = tmp_path / "posttrain_inputs"
+    _write_jsonl(train_dir / "tool_sft.jsonl", [{"prompt": "sft", "reward": 1.0}])
+    _write_jsonl(train_dir / "tool_safety_negatives.jsonl", [{"prompt": "safe refusal", "reward": 1.0}])
+    profile["reinforcement_learning"] = {
+        "enabled": True,
+        "offline_reward_replay": {
+            "inputs": [str(train_dir / "tool_sft.jsonl"), str(train_dir / "tool_safety_negatives.jsonl")],
+            "algorithms_represented": ["reward_weighted_sft_replay", "dpo_pair_replay", "safety_negative_replay"],
+        },
+    }
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    checkpoint = tmp_path / "stage4_checkpoint"
+    _write_complete_sharded_checkpoint(checkpoint)
+    commands: list[list[str]] = []
+
+    def fake_run_command(cmd: list[str], log_path: Path) -> int:
+        commands.append(cmd)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        if "omnicoder.training.posttrain_bridge_2026" in cmd:
+            orch.write_json(
+                Path(cmd[cmd.index("--manifest") + 1]),
+                {"status": "live_optimizer_deferred", "execution": {"status": "deferred", "executor": "distributed_pipeline_reward_replay"}},
+            )
+        if "omnicoder.training.pipeline_pretrain_2026_dense" in cmd:
+            _write_complete_sharded_checkpoint(Path(cmd[cmd.index("--out") + 1]))
+            Path(cmd[cmd.index("--log_file") + 1]).write_text('{"loss": 4.0}\n{"loss": 3.5}\n', encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    code = orch.main(
+        [
+            "--profile",
+            str(profile_path),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "run-posttraining",
+            "--resume-checkpoint",
+            str(checkpoint),
+            "--posttrain-start-algorithm",
+            "safety_negative_replay",
+            "--distributed",
+            "pipeline_stage",
+            "--nproc-per-node",
+            "3",
+        ]
+    )
+    assert code == 0
+    bridge_algorithms = [cmd[cmd.index("--algorithm") + 1] for cmd in commands if "omnicoder.training.posttrain_bridge_2026" in cmd]
+    assert bridge_algorithms == ["safety_negative_replay"]
+
+
+def test_run_posttraining_cli_rejects_incomplete_sharded_checkpoint(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {"mode": "pipeline_stage", "nproc_per_node": 3}
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    checkpoint = tmp_path / "incomplete_checkpoint"
+    checkpoint.mkdir()
+    commands: list[list[str]] = []
+    monkeypatch.setattr(orch, "run_command", lambda cmd, log_path: commands.append(cmd) or 0)
+
+    code = orch.main(
+        [
+            "--profile",
+            str(profile_path),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "run-posttraining",
+            "--resume-checkpoint",
+            str(checkpoint),
+            "--distributed",
+            "pipeline_stage",
+            "--nproc-per-node",
+            "3",
+        ]
+    )
+    assert code == 1
+    assert commands == []
+    summary = json.loads((tmp_path / "out" / "posttraining_resume_summary.json").read_text(encoding="utf-8"))
+    assert summary["resume_validation"]["reason"] == "resume_checkpoint_incomplete"
+
+
+def test_posttrain_start_algorithm_unknown_fails_before_training(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {"mode": "pipeline_stage", "nproc_per_node": 3}
+    train_jsonl = tmp_path / "tool_safety_negatives.jsonl"
+    _write_jsonl(train_jsonl, [{"prompt": "safe refusal", "reward": 1.0}])
+    profile["reinforcement_learning"] = {
+        "enabled": True,
+        "offline_reward_replay": {"inputs": [str(train_jsonl)], "algorithms_represented": ["safety_negative_replay"]},
+    }
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    checkpoint = tmp_path / "stage4_checkpoint"
+    _write_complete_sharded_checkpoint(checkpoint)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(orch, "run_command", lambda cmd, log_path: commands.append(cmd) or 0)
+
+    code = orch.main(
+        [
+            "--profile",
+            str(profile_path),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "run-posttraining",
+            "--resume-checkpoint",
+            str(checkpoint),
+            "--posttrain-start-algorithm",
+            "not_a_real_algorithm",
+            "--distributed",
+            "pipeline_stage",
+            "--nproc-per-node",
+            "3",
+        ]
+    )
+    assert code == 1
+    summary = json.loads((tmp_path / "out" / "posttraining_resume_summary.json").read_text(encoding="utf-8"))
+    assert summary["posttraining"]["reason"] == "invalid_posttraining_algorithm_selection"
+    assert "not in the active posttraining order" in summary["posttraining"]["error"]
+    assert commands == []
 
 
 def test_posttraining_checkpoint_retention_prunes_old_complete_dirs(tmp_path):

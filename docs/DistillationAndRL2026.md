@@ -94,6 +94,15 @@ successful checkpoint. The training profile also enables posttraining shard
 retention with `keep_last_successful: 2` and `delete_incomplete: true`, so long
 offline/online replay stacks do not exhaust the AI-server training volume.
 
+The recovery entry point is `training-orchestration-2026 run-posttraining`
+(`run-posttrain` is an alias). It requires `--resume-checkpoint`, enforces the
+20B target preset unless `--allow-verifier-preset` is explicitly passed for a
+non-production probe, validates complete sharded checkpoints before any
+optimizer command is launched, and supports slicing the declared algorithm list
+with `--posttrain-start-algorithm safety_negative_replay`. The AI-server
+launcher exposes the same route through `OMNICODER_MODE=run-posttraining` and
+`OMNICODER_POSTTRAIN_START_ALGORITHM`.
+
 ## Research Notes
 
 The design follows 2025-2026 post-training trends: online data weighting,
