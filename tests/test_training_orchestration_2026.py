@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import argparse
+import os
 from pathlib import Path
 
 import omnicoder.training.training_orchestration_2026 as orch
@@ -515,6 +516,129 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
     assert "--defer_optimizer" in bridge_cmd
     assert "--dry_run" not in bridge_cmd
     assert not any("omnicoder.training.reward_replay_2026" in cmd for cmd in commands)
+
+
+def test_live_posttraining_stops_after_failed_pipeline_replay(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+        "pipeline_stage_schedule": "gpipe",
+        "pipeline_microbatches": 1,
+    }
+    profile["reinforcement_learning"] = {
+        "enabled": True,
+        "offline_reward_replay": {
+            "inputs": [str(tmp_path / "out" / "agentic_tool_training_2026" / "tool_sft.jsonl")],
+            "algorithms_represented": ["reward_weighted_sft_replay", "dpo_pair_replay"],
+        },
+        "stop_on_posttrain_failure": True,
+    }
+    monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
+    orch.build_real_corpus(profile, tmp_path / "out")
+    checkpoint = tmp_path / "pipeline_checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / ".complete.json").write_text("{}", encoding="utf-8")
+    (checkpoint / "manifest.json").write_text(json.dumps({"world_size": 3, "rank_files": ["rank00000.pt", "rank00001.pt", "rank00002.pt"]}), encoding="utf-8")
+    for rank in range(3):
+        rank_path = checkpoint / f"rank{rank:05d}.pt"
+        rank_path.write_bytes(b"checkpoint")
+        Path(str(rank_path) + ".complete.json").write_text("{}", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def fake_run_command(cmd: list[str], log_path: Path) -> int:
+        commands.append(cmd)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        if "omnicoder.training.posttrain_bridge_2026" in cmd:
+            manifest_path = Path(cmd[cmd.index("--manifest") + 1])
+            orch.write_json(
+                manifest_path,
+                {
+                    "status": "live_optimizer_deferred",
+                    "execution": {"status": "deferred", "executor": "distributed_pipeline_reward_replay"},
+                },
+            )
+            return 0
+        if "omnicoder.training.pipeline_pretrain_2026_dense" in cmd:
+            replay_log = Path(cmd[cmd.index("--log_file") + 1])
+            replay_log.parent.mkdir(parents=True, exist_ok=True)
+            replay_log.write_text('{"loss": 3.0}\n{"loss": 2.9}\n', encoding="utf-8")
+            return 1
+        return 0
+
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    args = argparse.Namespace(
+        live_posttraining=True,
+        preset="ledger_probe",
+        device="cpu",
+        seq_len=16,
+        batch_size=1,
+        posttrain_steps=2,
+        posttrain_lr=1e-6,
+        posttrain_max_records=0,
+        nproc_per_node=3,
+        distributed="pipeline_stage",
+        rank_device_map="0,1,2",
+        placement_layer_counts="16,16,32",
+        pipeline_stage_schedule="gpipe",
+        pipeline_microbatches=1,
+        precision="fp16",
+        init_dtype="fp16",
+        optimizer="adafactor",
+        optimizer_in_backward=False,
+        optimizer_in_backward_update="",
+        optimizer_in_backward_grad_clip=0.0,
+        optimizer_in_backward_clip_mode="",
+        optimizer_in_backward_adafactor_chunk_rows=0,
+        optimizer_in_backward_adafactor_clip_threshold=0.0,
+        optimizer_in_backward_adafactor_decay_rate=0.0,
+        optimizer_in_backward_adafactor_eps1=0.0,
+        activation_checkpointing=False,
+        fake_quant=False,
+        fake_quant_chunk_rows=0,
+        fake_quant_max_full_elements=0,
+    )
+    result = orch.run_posttraining_stages(profile, tmp_path / "out", {"status": "passed", "final_checkpoint": str(checkpoint)}, args)
+    assert result["status"] == "failed"
+    assert result["final_checkpoint"] == str(checkpoint)
+    assert result["stages"][0]["status"] == "failed"
+    assert result["stages"][1] == {
+        "requested_algorithm": "dpo_pair_replay",
+        "status": "skipped",
+        "reason": "previous_posttraining_stage_failed",
+        "blocked_by": "reward_weighted_sft_replay",
+    }
+    bridge_commands = [cmd for cmd in commands if "omnicoder.training.posttrain_bridge_2026" in cmd]
+    assert len(bridge_commands) == 1
+
+
+def test_posttraining_checkpoint_retention_prunes_old_complete_dirs(tmp_path):
+    root = tmp_path / "out" / "checkpoints" / "posttrain"
+    keep = root / "03_keep_pipeline"
+    old_one = root / "01_old_pipeline"
+    old_two = root / "02_old_pipeline"
+    incomplete = root / "00_incomplete_pipeline"
+    for index, path in enumerate((incomplete, old_one, old_two, keep), 1):
+        path.mkdir(parents=True)
+        (path / "rank00000.pt").write_bytes(b"checkpoint")
+        if path is not incomplete:
+            orch.write_json(path / ".complete.json", {"status": "complete"})
+        os_time = 1_700_000_000 + index
+        path.touch()
+        os.utime(path, (os_time, os_time))
+
+    report = orch.prune_posttrain_checkpoints(
+        tmp_path / "out",
+        [keep],
+        {"enabled": True, "keep_last_successful": 1, "delete_incomplete": True},
+    )
+    assert report["status"] == "passed"
+    assert keep.exists()
+    assert not old_one.exists()
+    assert not old_two.exists()
+    assert not incomplete.exists()
 
 
 def test_run_full_summarizes_all_major_training_phases(tmp_path, monkeypatch):

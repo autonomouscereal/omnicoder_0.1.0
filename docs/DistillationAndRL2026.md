@@ -86,6 +86,14 @@ the manifest `live_training_passed` or `live_training_failed`. Pipeline-sharded
 checkpoints use `--defer_optimizer` so the training orchestrator can hand the
 same dataset and checkpoint to the distributed pipeline replay path.
 
+Pipeline posttraining is now guarded against stale-checkpoint continuation.
+When a live sharded replay stage returns nonzero or fails to write a complete
+multi-rank checkpoint, the orchestrator marks that stage failed and skips the
+remaining posttraining algorithms instead of resuming them from the previous
+successful checkpoint. The training profile also enables posttraining shard
+retention with `keep_last_successful: 2` and `delete_incomplete: true`, so long
+offline/online replay stacks do not exhaust the AI-server training volume.
+
 ## Research Notes
 
 The design follows 2025-2026 post-training trends: online data weighting,

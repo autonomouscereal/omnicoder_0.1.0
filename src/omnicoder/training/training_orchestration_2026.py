@@ -7,6 +7,7 @@ import json
 import mimetypes
 import os
 import signal
+import shutil
 import struct
 import subprocess
 import sys
@@ -2900,6 +2901,66 @@ def safe_filename(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in value)
 
 
+def is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def posttrain_retention_cfg(rl: dict[str, Any]) -> dict[str, Any]:
+    direct = rl.get("posttraining_checkpoint_retention")
+    if isinstance(direct, dict):
+        return direct
+    nested = rl.get("checkpoint_retention")
+    if isinstance(nested, dict) and isinstance(nested.get("posttraining"), dict):
+        return nested["posttraining"]
+    return {}
+
+
+def prune_posttrain_checkpoints(out_dir: Path, keep_paths: Iterable[Path], retention: dict[str, Any]) -> dict[str, Any]:
+    if not retention or not retention.get("enabled"):
+        return {"status": "skipped", "reason": "posttraining_checkpoint_retention_disabled"}
+    root = out_dir / "checkpoints" / "posttrain"
+    if not root.exists():
+        return {"status": "skipped", "reason": "posttraining_checkpoint_root_missing", "root": str(root)}
+    keep_last = max(0, int(retention.get("keep_last_successful") or 0))
+    delete_incomplete = bool(retention.get("delete_incomplete") or retention.get("delete_failed_incomplete"))
+    protected = {path.resolve() for path in keep_paths if path.exists() and is_relative_to(path, root)}
+    dirs = sorted((path for path in root.iterdir() if path.is_dir()), key=lambda path: path.stat().st_mtime)
+    complete_dirs = [path for path in dirs if checkpoint_is_complete(path)]
+    if keep_last:
+        protected.update(path.resolve() for path in complete_dirs[-keep_last:])
+    removed: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for path in dirs:
+        resolved = path.resolve()
+        if resolved in protected:
+            skipped.append({"path": str(path), "reason": "protected"})
+            continue
+        complete = checkpoint_is_complete(path)
+        if not complete and not delete_incomplete:
+            skipped.append({"path": str(path), "reason": "incomplete_checkpoint_retained"})
+            continue
+        if not is_relative_to(path, root):
+            skipped.append({"path": str(path), "reason": "outside_posttrain_root"})
+            continue
+        try:
+            shutil.rmtree(path)
+            removed.append({"path": str(path), "complete": complete})
+        except OSError as exc:
+            skipped.append({"path": str(path), "reason": f"remove_failed:{exc.__class__.__name__}", "detail": str(exc)})
+    return {
+        "status": "passed" if not any(item.get("reason", "").startswith("remove_failed") for item in skipped) else "failed",
+        "root": str(root),
+        "removed": removed,
+        "skipped": skipped,
+        "keep_last_successful": keep_last,
+        "delete_incomplete": delete_incomplete,
+    }
+
+
 def run_posttraining_stages(
     profile: dict[str, Any],
     out_dir: Path,
@@ -2931,11 +2992,24 @@ def run_posttraining_stages(
     steps = int(arg_value(args, "posttrain_steps", 0) or rl.get("posttrain_steps_per_algorithm") or 32)
     lr = float(arg_value(args, "posttrain_lr", 0.0) or rl.get("posttrain_learning_rate") or 1e-6)
     max_records = int(arg_value(args, "posttrain_max_records", 0) or rl.get("posttrain_max_records") or 0)
+    stop_on_failure = bool(rl.get("stop_on_posttrain_failure", True))
+    retention = posttrain_retention_cfg(rl)
     replay_final_checkpoint: Path | None = current_checkpoint
     for index, requested in enumerate(algorithms, 1):
         train_jsonl = posttrain_dataset_for_algorithm(requested, inputs)
         if train_jsonl is None:
             reports.append({"requested_algorithm": requested, "status": "failed", "reason": "no_declared_input_jsonl_found"})
+            if stop_on_failure:
+                for blocked in algorithms[index:]:
+                    reports.append(
+                        {
+                            "requested_algorithm": blocked,
+                            "status": "skipped",
+                            "reason": "previous_posttraining_stage_failed",
+                            "blocked_by": requested,
+                        }
+                    )
+                break
             continue
         safe_name = safe_filename(requested)
         manifest = out_dir / "manifests" / "posttrain" / f"{safe_name}_manifest.json"
@@ -3056,6 +3130,12 @@ def run_posttraining_stages(
                     if replay_code == 0 and complete:
                         replay_final_checkpoint = replay_out
                         report["status"] = "passed"
+                        if retention.get("enabled"):
+                            report["checkpoint_retention"] = prune_posttrain_checkpoints(
+                                out_dir,
+                                [replay_out, replay_final_checkpoint, current_checkpoint] if current_checkpoint is not None else [replay_out, replay_final_checkpoint],
+                                retention,
+                            )
                     else:
                         report["status"] = "failed"
                         report["reason"] = "pipeline_reward_replay_returned_nonzero_or_incomplete_checkpoint"
@@ -3083,6 +3163,17 @@ def run_posttraining_stages(
                     report["status"] = "failed"
                     report["reason"] = "posttrain_bridge_live_optimizer_failed"
         reports.append(report)
+        if stop_on_failure and report.get("status") == "failed":
+            for blocked in algorithms[index:]:
+                reports.append(
+                    {
+                        "requested_algorithm": blocked,
+                        "status": "skipped",
+                        "reason": "previous_posttraining_stage_failed",
+                        "blocked_by": requested,
+                    }
+                )
+            break
     status = "failed" if any(row.get("status") != "passed" for row in reports) else "passed"
     return {
         "status": status,

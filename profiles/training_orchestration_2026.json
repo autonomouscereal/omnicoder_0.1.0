@@ -938,7 +938,14 @@
     },
     "posttrain_learning_rate": 1e-06,
     "posttrain_max_records": 0,
-    "posttrain_steps_per_algorithm": 32
+    "posttrain_steps_per_algorithm": 32,
+    "stop_on_posttrain_failure": true,
+    "posttraining_checkpoint_retention": {
+      "delete_incomplete": true,
+      "enabled": true,
+      "keep_last_successful": 2,
+      "policy": "Keep the active and most recent complete posttraining shard checkpoints only; older stage checkpoints are pruned after successful promotion so long policy stacks do not fill the training volume."
+    }
   },
   "schema": "omnicoder.training_orchestration_2026.v1",
   "storage": {

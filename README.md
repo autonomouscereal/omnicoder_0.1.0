@@ -31,6 +31,13 @@ probe jobs, and curation, not synchronous 20B target shards. Reportable
 benchmark gates now require authorized snapshot metadata and separate model
 outputs; smoke/contract fixtures are explicitly local-only.
 
+The posttraining orchestrator is fail-closed for 20B pipeline replay: a failed
+or incomplete sharded optimizer stage stops the remaining replay stack instead
+of silently continuing from an older checkpoint. The profile also enables
+posttraining checkpoint retention, keeping the active and most recent complete
+pipeline shards while pruning older stage shards so long RL stacks do not fill
+the AI-server training volume mid-run.
+
 Current rebuild docs:
 
 - `docs/Omnicoder2026Redesign.md`
