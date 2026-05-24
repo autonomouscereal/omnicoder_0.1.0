@@ -248,18 +248,25 @@ python -m omnicoder.training.distillation_curriculum_2026 all \
 '
 ```
 
-Validate post-training handoff without launching a long run:
+Run a short live post-training bridge pass:
 
 ```powershell
 python "C:/Users/cereal/.Codex/skills/server-manager/ssh_client.py" --server ai --script '
 cd /path/to/omnicoder_0.1.0
 python -m omnicoder.training.posttrain_bridge_2026 \
   --algorithm grpo \
+  --model weights/training_orchestration_2026/checkpoints/08_long_context.pt \
   --train_jsonl weights/data_factory/trace_orchestrator_2026/exports/sft_traces.jsonl \
   --out_dir weights/posttrain_2026/grpo \
-  --dry_run --check_deps
+  --device cuda:0 \
+  --max_steps 32 \
+  --max_records 512
 '
 ```
+
+Use `--dry_run --check_deps` only for dependency and dataset validation. The
+live bridge now runs `reward_replay_2026`, emits a checkpoint, and records loss
+points before the stage can pass.
 
 ## Full-Harness-2026 Integration
 

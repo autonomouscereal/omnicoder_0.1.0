@@ -3711,6 +3711,71 @@
       "data/eval/reportable_2026/arc_agi3_authorized.jsonl"
     ]
   },
+  "reportable_snapshots": {
+    "agent_bfcl_v4_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "bfcl-v4-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "bfcl-v4-authorized-2026-current",
+      "source": "https://gorilla.cs.berkeley.edu/leaderboard.html",
+      "task_root": "data/eval/reportable_2026/bfcl_v4_authorized.jsonl"
+    },
+    "coding_multi_swe_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multi-swe-bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "authorized_private",
+      "snapshot_id": "multi-swe-bench-authorized-2026-current",
+      "source": "registry_private_or_authorized",
+      "task_root": "data/eval/reportable_2026/multi_swe_bench_authorized.jsonl"
+    },
+    "coding_swe_bench_live_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "swe-bench-live-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "swe-bench-live-authorized-2026-current",
+      "source": "https://github.com/microsoft/SWE-bench-Live",
+      "task_root": "data/eval/reportable_2026/swe_bench_live_authorized.jsonl"
+    },
+    "coding_swe_bench_pro_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "swe-bench-pro-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "authorized_private",
+      "snapshot_id": "swe-bench-pro-authorized-2026-current",
+      "source": "https://scale.com/blog/swe-bench-pro",
+      "task_root": "data/eval/reportable_2026/swe_bench_pro_authorized.jsonl"
+    },
+    "long_context_mrcr_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "mrcr-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "mrcr-authorized-2026-current",
+      "source": "https://github.com/hsiehjackson/RULER",
+      "task_root": "data/eval/reportable_2026/mrcr_authorized.jsonl"
+    },
+    "multimodal_mmmu_pro_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "mmmu-pro-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "mmmu-pro-authorized-2026-current",
+      "source": "https://mmmu-benchmark.github.io/",
+      "task_root": "data/eval/reportable_2026/mmmu_pro_authorized.jsonl"
+    },
+    "reasoning_arc_agi3_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "arc-agi3-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "arc-agi3-authorized-2026-current",
+      "source": "https://arcprize.org/arc-agi/3",
+      "task_root": "data/eval/reportable_2026/arc_agi3_authorized.jsonl"
+    }
+  },
   "run_cycles": {
     "nightly": {
       "cadence": "daily",

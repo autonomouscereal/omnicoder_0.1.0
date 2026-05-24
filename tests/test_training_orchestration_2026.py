@@ -375,14 +375,26 @@ def test_live_posttraining_runs_native_reward_replay_not_dry_run(tmp_path, monke
         log_path.parent.mkdir(parents=True, exist_ok=True)
         if "omnicoder.training.posttrain_bridge_2026" in cmd:
             manifest_path = Path(cmd[cmd.index("--manifest") + 1])
-            orch.write_json(manifest_path, {"status": "configured"})
-        if "omnicoder.training.reward_replay_2026" in cmd:
-            out_path = Path(cmd[cmd.index("--out") + 1])
+            bridge_dir = Path(cmd[cmd.index("--out_dir") + 1])
+            out_path = bridge_dir / "checkpoints" / "sft_live_replay.pt"
+            replay_log = bridge_dir / "logs" / "sft_live_replay.jsonl"
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_bytes(b"replayed")
-            replay_log = Path(cmd[cmd.index("--log-file") + 1])
             replay_log.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(b"replayed")
             replay_log.write_text('{"loss": 2.0}\n{"loss": 1.5}\n', encoding="utf-8")
+            orch.write_json(
+                manifest_path,
+                {
+                    "status": "live_training_passed",
+                    "execution": {
+                        "status": "passed",
+                        "executor": "reward_replay_2026",
+                        "returncode": 0,
+                        "checkpoint": str(out_path),
+                        "loss_log": str(replay_log),
+                    },
+                },
+            )
         return 0
 
     monkeypatch.setattr(orch, "run_command", fake_run_command)
@@ -398,11 +410,11 @@ def test_live_posttraining_runs_native_reward_replay_not_dry_run(tmp_path, monke
     )
     result = orch.run_posttraining_stages(profile, tmp_path / "out", {"status": "passed", "final_checkpoint": str(checkpoint)}, args)
     assert result["status"] == "passed"
-    assert result["mode"] == "native_reward_replay"
-    assert result["final_checkpoint"].endswith("01_reward_weighted_sft_replay.pt")
+    assert result["mode"] == "posttrain_bridge_live_optimizer"
+    assert result["final_checkpoint"].endswith("sft_live_replay.pt")
     bridge_cmd = next(cmd for cmd in commands if "omnicoder.training.posttrain_bridge_2026" in cmd)
     assert "--dry_run" not in bridge_cmd
-    assert any("omnicoder.training.reward_replay_2026" in cmd for cmd in commands)
+    assert not any("omnicoder.training.reward_replay_2026" in cmd for cmd in commands)
 
 
 def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tmp_path, monkeypatch):
@@ -439,7 +451,13 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
         log_path.parent.mkdir(parents=True, exist_ok=True)
         if "omnicoder.training.posttrain_bridge_2026" in cmd:
             manifest_path = Path(cmd[cmd.index("--manifest") + 1])
-            orch.write_json(manifest_path, {"status": "configured"})
+            orch.write_json(
+                manifest_path,
+                {
+                    "status": "live_optimizer_deferred",
+                    "execution": {"status": "deferred", "executor": "distributed_pipeline_reward_replay"},
+                },
+            )
         if "omnicoder.training.pipeline_pretrain_2026_dense" in cmd:
             out_path = Path(cmd[cmd.index("--out") + 1])
             out_path.mkdir(parents=True, exist_ok=True)
@@ -493,6 +511,9 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
     pipeline_cmd = next(cmd for cmd in commands if "omnicoder.training.pipeline_pretrain_2026_dense" in cmd)
     assert pipeline_cmd[pipeline_cmd.index("--resume") + 1] == str(checkpoint)
     assert pipeline_cmd[pipeline_cmd.index("--nproc_per_node") + 1] == "3"
+    bridge_cmd = next(cmd for cmd in commands if "omnicoder.training.posttrain_bridge_2026" in cmd)
+    assert "--defer_optimizer" in bridge_cmd
+    assert "--dry_run" not in bridge_cmd
     assert not any("omnicoder.training.reward_replay_2026" in cmd for cmd in commands)
 
 
@@ -648,6 +669,60 @@ def test_repo_training_profile_enables_adaptive_scheduler() -> None:
     assert scheduler["context_ladder"][-1] == 1048576
     assert "modality_coverage_deficit" in scheduler["signals"]
     assert profile["artifacts"]["mixture_plan"].endswith("mixture_plan.json")
+
+
+def test_configured_reportable_roots_ignore_core_benchmark_ids(tmp_path) -> None:
+    benchmark_profile = tmp_path / "benchmark_profile.json"
+    benchmark_profile.write_text(
+        json.dumps(
+            {
+                "reportable_core_25": ["reasoning_arc_agi3_2026"],
+                "reportable_task_roots": {
+                    "reasoning_arc_agi3_2026": ["data/eval/reportable_2026/arc_agi3_authorized.jsonl"]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = {
+        "reportable_core_25": ["should_not_be_a_path"],
+        "benchmark_gates": {"reportable_core_25": ["also_not_a_path"]},
+    }
+
+    roots, sources = orch.configured_reportable_roots(cfg, str(benchmark_profile))
+
+    assert "should_not_be_a_path" not in roots
+    assert "also_not_a_path" not in roots
+    assert "reasoning_arc_agi3_2026" not in roots
+    assert roots == ["data/eval/reportable_2026/arc_agi3_authorized.jsonl"]
+    assert sources == [f"{benchmark_profile}.reportable_task_roots"]
+
+
+def test_reportable_prediction_seed_uses_explicit_model_outputs_only(tmp_path) -> None:
+    tasks = tmp_path / "tasks.jsonl"
+    _write_jsonl(
+        tasks,
+        [
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "oracle-only",
+                "success": True,
+                "actions": 3,
+            },
+            {
+                "benchmark_id": "coding_swe_bench_live_2026",
+                "task_id": "model-patch",
+                "model_patch": "diff --git a/a.py b/a.py",
+            },
+        ],
+    )
+
+    result = orch.write_reportable_prediction_seed([tasks], tmp_path / "predictions.jsonl")
+    rows = list(orch.iter_jsonl(result["path"]))
+
+    assert result["records"] == 1
+    assert rows[0]["task_id"] == "model-patch"
+    assert rows[0]["prediction"] == "diff --git a/a.py b/a.py"
 
 
 def test_training_data_eval_layers_do_not_import_forbidden_database_libraries():

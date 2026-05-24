@@ -66,15 +66,25 @@ python -m omnicoder.training.distillation_curriculum_2026 all `
 
 python -m omnicoder.training.posttrain_bridge_2026 `
   --algorithm grpo `
+  --model weights/training_orchestration_2026/checkpoints/08_long_context.pt `
   --train_jsonl weights/data_factory/trace_orchestrator_2026/exports/sft_traces.jsonl `
   --out_dir weights/posttrain_2026/grpo `
-  --dry_run --check_deps
+  --device cuda:0 `
+  --max_steps 32 `
+  --max_records 512
 ```
 
 Console scripts are also registered:
 
 - `distill-curriculum-2026`
 - `posttrain-bridge-2026`
+
+`posttrain_bridge_2026` is no longer only a manifest validator. Without
+`--dry_run` or `--smoke`, it launches the native `reward_replay_2026` optimizer,
+writes a trained checkpoint under `--out_dir`, records the loss JSONL, and marks
+the manifest `live_training_passed` or `live_training_failed`. Pipeline-sharded
+checkpoints use `--defer_optimizer` so the training orchestrator can hand the
+same dataset and checkpoint to the distributed pipeline replay path.
 
 ## Research Notes
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -250,6 +252,29 @@ def write_manifest(path: str | Path, payload: dict[str, Any]) -> None:
     p.write_text(json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def parse_jsonl_losses(path: str | Path | None) -> list[float]:
+    if not path:
+        return []
+    p = Path(path)
+    if not p.exists():
+        return []
+    losses: list[float] = []
+    for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(row, dict) or row.get("loss") is None:
+            continue
+        try:
+            losses.append(float(row["loss"]))
+        except (TypeError, ValueError):
+            continue
+    return losses
+
+
 def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     requested_algorithm = args.algorithm.lower()
     algorithm = resolve_algorithm(requested_algorithm)
@@ -303,6 +328,9 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "num_generations": args.num_generations,
             "kl_beta": args.kl_beta,
             "temperature": args.temperature,
+            "device": getattr(args, "device", ""),
+            "profile": getattr(args, "profile", ""),
+            "max_records": int(getattr(args, "max_records", 0) or 0),
         },
         "status": "dry_run_ok" if dry_run else "smoke_ok" if smoke else "configured",
     }
@@ -339,8 +367,122 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
     return manifest
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Configure/dry-run 2026 post-training algorithms for Omnicoder")
+def default_output_checkpoint(args: argparse.Namespace, manifest: dict[str, Any]) -> Path:
+    explicit = str(getattr(args, "output_checkpoint", "") or "").strip()
+    if explicit:
+        return Path(explicit)
+    return Path(args.out_dir) / "checkpoints" / f"{manifest['algorithm']}_live_replay.pt"
+
+
+def default_loss_log(args: argparse.Namespace, manifest: dict[str, Any]) -> Path:
+    explicit = str(getattr(args, "log_file", "") or "").strip()
+    if explicit:
+        return Path(explicit)
+    return Path(args.out_dir) / "logs" / f"{manifest['algorithm']}_live_replay.jsonl"
+
+
+def reward_replay_command(args: argparse.Namespace, manifest: dict[str, Any], checkpoint: Path, loss_log: Path) -> list[str]:
+    seq_len = int(getattr(args, "reward_seq_len", 0) or getattr(args, "max_seq_len", 4096) or 4096)
+    max_steps = int(getattr(args, "max_steps", 0) or 1)
+    batch_size = int(getattr(args, "per_device_train_batch_size", 1) or 1)
+    max_records = int(getattr(args, "max_records", 0) or 0)
+    lr = float(getattr(args, "learning_rate", 1e-6) or 1e-6)
+    profile = str(getattr(args, "profile", "") or "ledger_probe")
+    device = str(getattr(args, "device", "") or "cpu")
+    return [
+        sys.executable,
+        "-m",
+        "omnicoder.training.reward_replay_2026",
+        "--checkpoint",
+        str(args.model),
+        "--train-jsonl",
+        str(args.train_jsonl),
+        "--out",
+        str(checkpoint),
+        "--profile",
+        profile,
+        "--device",
+        device,
+        "--seq-len",
+        str(seq_len),
+        "--batch-size",
+        str(batch_size),
+        "--steps",
+        str(max_steps),
+        "--lr",
+        str(lr),
+        "--max-records",
+        str(max_records),
+        "--log-file",
+        str(loss_log),
+    ]
+
+
+def run_live_command(cmd: list[str], log_path: Path) -> subprocess.CompletedProcess[str]:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w", encoding="utf-8", errors="ignore") as handle:
+        handle.write("$ " + " ".join(cmd) + "\n")
+        handle.flush()
+        return subprocess.run(cmd, stdout=handle, stderr=subprocess.STDOUT, text=True)
+
+
+def execute_live_bridge(args: argparse.Namespace, manifest: dict[str, Any]) -> dict[str, Any]:
+    if bool(getattr(args, "dry_run", False)) or bool(getattr(args, "smoke", False)):
+        return manifest
+    if manifest.get("status") == "missing_dependencies":
+        manifest["execution"] = {
+            "status": "skipped",
+            "reason": "missing_dependencies",
+            "missing_dependencies": manifest.get("missing_dependencies", []),
+        }
+        return manifest
+    if bool(getattr(args, "defer_optimizer", False)):
+        manifest["status"] = "live_optimizer_deferred"
+        manifest["execution"] = {
+            "status": "deferred",
+            "executor": "distributed_pipeline_reward_replay",
+            "reason": str(getattr(args, "defer_reason", "") or "distributed_or_external_live_optimizer_will_run_after_bridge"),
+        }
+        return manifest
+
+    model_path = Path(str(args.model))
+    if not model_path.exists():
+        manifest["status"] = "live_training_failed"
+        manifest["execution"] = {
+            "status": "failed",
+            "executor": "reward_replay_2026",
+            "reason": "model_checkpoint_missing",
+            "checkpoint": str(model_path),
+        }
+        return manifest
+
+    checkpoint = default_output_checkpoint(args, manifest)
+    loss_log = default_loss_log(args, manifest)
+    command_log = Path(args.out_dir) / "logs" / f"{manifest['algorithm']}_bridge_command.log"
+    cmd = reward_replay_command(args, manifest, checkpoint, loss_log)
+    result = run_live_command(cmd, command_log)
+    losses = parse_jsonl_losses(loss_log)
+    checkpoint_exists = checkpoint.exists()
+    passed = result.returncode == 0 and checkpoint_exists
+    manifest["status"] = "live_training_passed" if passed else "live_training_failed"
+    manifest["execution"] = {
+        "status": "passed" if passed else "failed",
+        "executor": "reward_replay_2026",
+        "command": cmd,
+        "returncode": int(result.returncode),
+        "checkpoint": str(checkpoint),
+        "checkpoint_exists": checkpoint_exists,
+        "loss_log": str(loss_log),
+        "command_log": str(command_log),
+        "loss_points": len(losses),
+        "loss_first": losses[0] if losses else None,
+        "loss_last": losses[-1] if losses else None,
+    }
+    return manifest
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Configure or run 2026 post-training algorithms for Omnicoder")
     parser.add_argument("--algorithm", required=True, choices=algorithm_choices())
     parser.add_argument("--model", default="Qwen/Qwen3-4B")
     parser.add_argument("--train_jsonl", default=None)
@@ -359,17 +501,29 @@ def main() -> None:
     parser.add_argument("--num_generations", type=int, default=8)
     parser.add_argument("--kl_beta", type=float, default=0.02)
     parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--profile", default="ledger_probe")
+    parser.add_argument("--max_records", type=int, default=0)
+    parser.add_argument("--reward_seq_len", type=int, default=0)
+    parser.add_argument("--output_checkpoint", default="")
+    parser.add_argument("--log_file", default="")
+    parser.add_argument("--defer_optimizer", action="store_true")
+    parser.add_argument("--defer_reason", default="")
     parser.add_argument("--check_deps", action="store_true")
     parser.add_argument("--dry_run", action="store_true")
     parser.add_argument("--smoke", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     manifest = build_manifest(args)
+    manifest = execute_live_bridge(args, manifest)
     manifest_path = args.manifest or str(Path(args.out_dir) / f"{args.algorithm}_manifest.json")
     write_manifest(manifest_path, manifest)
     manifest["manifest"] = manifest_path
     print(json.dumps(manifest, ensure_ascii=True, sort_keys=True))
+    if manifest.get("status") == "live_training_failed":
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

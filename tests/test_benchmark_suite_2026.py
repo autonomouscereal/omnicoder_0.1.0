@@ -389,19 +389,29 @@ def _reportable_profile(tmp_path: Path) -> tuple[Path, Path]:
             "benchmark_id": "reasoning_arc_agi3_2026",
             "task_id": "arc-env-1",
             "dataset_revision": "arc-agi3-authorized-2026-05",
+            "snapshot_id": "arc-agi3-authorized-2026-05-smoke",
+            "snapshot_authorization": "authorized_private",
+            "snapshot_sha256": "sha256:arc-agi3-smoke",
+            "authorization_ref": "internal-authorized-eval-ledger",
             "source": "https://arcprize.org/arc-agi/3",
             "reportable": True,
             "success": True,
             "actions": 4,
             "human_actions": 2,
+            "model_actions": ["inspect_grid", "submit_solution"],
         },
         {
             "benchmark_id": "coding_swe_bench_live_2026",
             "task_id": "swe-live-1",
             "dataset_revision": "swe-live-authorized-2026-05",
+            "snapshot_id": "swe-live-authorized-2026-05-smoke",
+            "snapshot_authorization": "authorized_private",
+            "snapshot_sha256": "sha256:swe-live-smoke",
+            "authorization_ref": "internal-authorized-eval-ledger",
             "source": "https://arxiv.org/abs/2505.23419",
             "reportable": True,
             "patch": "diff --git a/a.py b/a.py",
+            "model_patch": "diff --git a/a.py b/a.py",
             "patch_applies": True,
             "tests_pass": True,
         },
@@ -409,6 +419,10 @@ def _reportable_profile(tmp_path: Path) -> tuple[Path, Path]:
             "benchmark_id": "multimodal_mmmu_pro_2026",
             "task_id": "mmmu-pro-1",
             "dataset_revision": "mmmu-pro-authorized-2026-05",
+            "snapshot_id": "mmmu-pro-authorized-2026-05-smoke",
+            "snapshot_authorization": "authorized_private",
+            "snapshot_sha256": "sha256:mmmu-pro-smoke",
+            "authorization_ref": "internal-authorized-eval-ledger",
             "source": "https://mmmu-benchmark.github.io/",
             "reportable": True,
             "question": "Which option matches the diagram?",
@@ -498,6 +512,91 @@ def test_run_reportable_scores_arc_swe_and_mmmu_with_real_oracles(
         assert row["mode"] == "reportable"
         assert row["score_json"]["reportable_score"] is True
         assert row["score_json"]["contract_only"] is False
+
+
+def test_run_reportable_rejects_reportable_true_without_authorized_snapshot(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    profile_path, tasks = _reportable_profile(tmp_path)
+    rows = _jsonl_rows(tasks)
+    for key in ("snapshot_id", "snapshot_authorization", "snapshot_sha256", "authorization_ref"):
+        rows[0].pop(key, None)
+    tasks.write_text(json.dumps(rows[0]) + "\n", encoding="utf-8")
+
+    assert (
+        runner.main(
+            [
+                "--profile",
+                str(profile_path),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "run-reportable",
+                "--adapter",
+                "reasoning_arc_agi3_2026",
+                "--tasks",
+                str(tasks),
+                "--run-id",
+                "missing-snapshot-fixture",
+            ]
+        )
+        == 0
+    )
+
+    payload = _json_from_stdout(capsys)
+    result = _jsonl_rows(Path(payload["results"]))[0]
+    assert payload["status"] == "needs_data"
+    assert result["status"] == "local_only"
+    assert result["score_json"]["reportable_score"] is False
+
+
+def test_run_reportable_accepts_authorized_snapshot_descriptor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    profile_path, tasks = _reportable_profile(tmp_path)
+    rows = _jsonl_rows(tasks)
+    arc = rows[0]
+    for key in ("snapshot_id", "snapshot_authorization", "snapshot_sha256", "authorization_ref"):
+        arc.pop(key, None)
+    tasks.write_text(json.dumps(arc) + "\n", encoding="utf-8")
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    profile["reportable_snapshots"] = {
+        "reasoning_arc_agi3_2026": {
+            "snapshot_id": "arc-agi3-authorized-descriptor",
+            "snapshot_authorization": "authorized_private",
+            "snapshot_sha256": "sha256:descriptor",
+            "authorization_ref": "authorized-eval-ledger",
+            "dataset_revision": "arc-agi3-authorized-2026-05",
+            "source": "https://arcprize.org/arc-agi/3",
+            "task_root": str(tasks),
+        }
+    }
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+
+    assert (
+        runner.main(
+            [
+                "--profile",
+                str(profile_path),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "run-reportable",
+                "--adapter",
+                "reasoning_arc_agi3_2026",
+                "--tasks",
+                str(tasks),
+                "--run-id",
+                "descriptor-fixture",
+            ]
+        )
+        == 0
+    )
+
+    payload = _json_from_stdout(capsys)
+    result = _jsonl_rows(Path(payload["results"]))[0]
+    task_score = result["metrics_json"]["task_scores"][0]
+    assert payload["status"] == "ok"
+    assert result["score_json"]["reportable_score"] is True
+    assert task_score["snapshot_id"] == "arc-agi3-authorized-descriptor"
 
 
 def test_run_reportable_marks_missing_official_metadata_as_local_only(
@@ -605,3 +704,75 @@ def test_run_reportable_requires_model_output_not_only_gold_answer(
     assert result["status"] == "local_only"
     assert task_score["has_model_output"] is False
     assert task_score["reportable_metadata"] is False
+
+
+def test_run_reportable_requires_prediction_not_oracle_success(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    profile_path, tasks = _reportable_profile(tmp_path)
+    rows = _jsonl_rows(tasks)
+    arc = rows[0]
+    arc.pop("model_actions", None)
+    tasks.write_text(json.dumps(arc) + "\n", encoding="utf-8")
+
+    assert (
+        runner.main(
+            [
+                "--profile",
+                str(profile_path),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "run-reportable",
+                "--adapter",
+                "reasoning_arc_agi3_2026",
+                "--tasks",
+                str(tasks),
+                "--run-id",
+                "oracle-only-fixture",
+            ]
+        )
+        == 0
+    )
+
+    payload = _json_from_stdout(capsys)
+    result = _jsonl_rows(Path(payload["results"]))[0]
+    task_score = result["metrics_json"]["task_scores"][0]
+    assert payload["status"] == "needs_data"
+    assert result["status"] == "local_only"
+    assert task_score["has_model_output"] is False
+
+
+def test_run_reportable_requires_model_patch_not_oracle_patch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    profile_path, tasks = _reportable_profile(tmp_path)
+    rows = _jsonl_rows(tasks)
+    swe = rows[1]
+    swe.pop("model_patch", None)
+    tasks.write_text(json.dumps(swe) + "\n", encoding="utf-8")
+
+    assert (
+        runner.main(
+            [
+                "--profile",
+                str(profile_path),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "run-reportable",
+                "--adapter",
+                "coding_swe_bench_live_2026",
+                "--tasks",
+                str(tasks),
+                "--run-id",
+                "oracle-patch-fixture",
+            ]
+        )
+        == 0
+    )
+
+    payload = _json_from_stdout(capsys)
+    result = _jsonl_rows(Path(payload["results"]))[0]
+    task_score = result["metrics_json"]["task_scores"][0]
+    assert payload["status"] == "needs_data"
+    assert result["status"] == "local_only"
+    assert task_score["has_model_output"] is False

@@ -23,10 +23,13 @@ requirements.
 The current target lane is no longer the old sparse-MoE fused-dispatch path.
 It uses a dense KDA/CSA/HCA/mHC-inspired trunk, shared ledger-token training
 records, strict sharded checkpoints, pipeline sample-loss evaluation, and live
-pipeline reward replay for posttraining. The fast-card AI-server profile maps
-host GPUs `0,4,6` to container ranks `0,1,2` with `16,16,32` layer placement,
-putting the largest shard and final head on the RTX 8000. P40s are sidecars for
-teacher rollout, probe jobs, and curation, not synchronous 20B target shards.
+posttraining through `posttrain_bridge_2026` plus pipeline reward replay for
+sharded checkpoints. The fast-card AI-server profile maps host GPUs `0,4,6` to
+container ranks `0,1,2` with `16,16,32` layer placement, putting the largest
+shard and final head on the RTX 8000. P40s are sidecars for teacher rollout,
+probe jobs, and curation, not synchronous 20B target shards. Reportable
+benchmark gates now require authorized snapshot metadata and separate model
+outputs; smoke/contract fixtures are explicitly local-only.
 
 Current rebuild docs:
 

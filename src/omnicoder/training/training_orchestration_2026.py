@@ -223,16 +223,13 @@ def configured_reportable_roots(cfg: dict[str, Any], benchmark_profile: str) -> 
 
     gates = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
     add(cfg.get("reportable_task_roots"), "training_profile.reportable_task_roots")
-    add(cfg.get("reportable_core_25"), "training_profile.reportable_core_25")
     add(gates.get("reportable_task_roots"), "training_profile.benchmark_gates.reportable_task_roots")
-    add(gates.get("reportable_core_25"), "training_profile.benchmark_gates.reportable_core_25")
 
     benchmark_profile_path = resolve_path(benchmark_profile, repo_root())
     if benchmark_profile_path.exists():
         try:
             benchmark_cfg = read_json(benchmark_profile_path)
             add(benchmark_cfg.get("reportable_task_roots"), f"{benchmark_profile}.reportable_task_roots")
-            add(benchmark_cfg.get("reportable_core_25"), f"{benchmark_profile}.reportable_core_25")
         except Exception as exc:
             sources.append(f"{benchmark_profile}.read_error:{exc}")
 
@@ -249,6 +246,57 @@ def configured_reportable_roots(cfg: dict[str, Any], benchmark_profile: str) -> 
         seen.add(key)
         unique.append(key)
     return unique, sources
+
+
+def reportable_prediction_value(row: dict[str, Any]) -> Any:
+    for key in (
+        "prediction",
+        "model_answer",
+        "model_output",
+        "output",
+        "model_patch",
+        "model_actions",
+        "tool_call",
+        "artifact_path",
+        "output_path",
+        "generated_artifact",
+    ):
+        value = row.get(key)
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def write_reportable_prediction_seed(task_paths: list[Path], out_path: Path) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for source in task_paths:
+        candidates = sorted(source.rglob("*.jsonl")) if source.is_dir() else [source]
+        for candidate in candidates:
+            for row in iter_jsonl(candidate):
+                prediction = reportable_prediction_value(row)
+                if prediction is None:
+                    continue
+                benchmark_id = str(row.get("benchmark_id") or row.get("adapter_id") or "")
+                task_id = str(row.get("task_id") or row.get("id") or "")
+                if not task_id:
+                    task_id = stable_hash({"path": str(candidate), "line": row.get("line_number")})[:16]
+                key = f"{benchmark_id}:{task_id}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append(
+                    {
+                        "benchmark_id": benchmark_id,
+                        "task_id": task_id,
+                        "prediction": prediction,
+                        "source_task_path": str(candidate),
+                        "source_line": row.get("line_number"),
+                        "prediction_seed": "explicit_model_output_from_authorized_task_or_eval_adapter",
+                    }
+                )
+    write_jsonl(out_path, rows)
+    return {"path": str(out_path), "records": len(rows)}
 
 
 def row_identity(row: dict[str, Any]) -> str:
@@ -2892,6 +2940,7 @@ def run_posttraining_stages(
         safe_name = safe_filename(requested)
         manifest = out_dir / "manifests" / "posttrain" / f"{safe_name}_manifest.json"
         log_path = out_dir / "logs" / f"posttrain_{safe_name}.log"
+        bridge_model = str(replay_final_checkpoint) if replay_final_checkpoint is not None else str(model)
         cmd = [
             sys.executable,
             "-m",
@@ -2899,24 +2948,52 @@ def run_posttraining_stages(
             "--algorithm",
             requested,
             "--model",
-            str(model),
+            bridge_model,
             "--train_jsonl",
             str(train_jsonl),
             "--manifest",
             str(manifest),
             "--out_dir",
             str(out_dir / "posttrain" / safe_name),
+            "--profile",
+            preset,
+            "--device",
+            device,
+            "--max_seq_len",
+            str(seq_len),
+            "--reward_seq_len",
+            str(seq_len),
+            "--max_steps",
+            str(steps),
+            "--learning_rate",
+            str(lr),
+            "--per_device_train_batch_size",
+            str(batch_size),
+            "--max_records",
+            str(max_records),
         ]
+        pipeline_checkpoint = live_replay and replay_final_checkpoint is not None and replay_final_checkpoint.is_dir()
+        if pipeline_checkpoint:
+            cmd.extend(
+                [
+                    "--defer_optimizer",
+                    "--defer_reason",
+                    "pipeline_sharded_checkpoint_requires_distributed_pipeline_reward_replay",
+                ]
+            )
         if not live_replay:
             cmd.append("--dry_run")
         code = run_command(cmd, log_path)
+        bridge_manifest = read_json(manifest) if manifest.exists() else {}
+        bridge_execution = bridge_manifest.get("execution") if isinstance(bridge_manifest.get("execution"), dict) else {}
         report = {
             "requested_algorithm": requested,
             "train_jsonl": str(train_jsonl),
             "manifest": str(manifest),
             "log": str(log_path),
             "bridge_returncode": code,
-            "mode": "native_reward_replay" if live_replay else "bridge_dry_run",
+            "bridge_status": bridge_manifest.get("status"),
+            "mode": "posttrain_bridge_live_optimizer" if live_replay else "bridge_dry_run",
             "status": "passed" if code == 0 and manifest.exists() else "failed",
         }
         if live_replay:
@@ -2983,40 +3060,15 @@ def run_posttraining_stages(
                         report["status"] = "failed"
                         report["reason"] = "pipeline_reward_replay_returned_nonzero_or_incomplete_checkpoint"
             else:
-                replay_out = out_dir / "checkpoints" / "posttrain" / f"{index:02d}_{safe_name}.pt"
-                replay_log = out_dir / "logs" / f"posttrain_{index:02d}_{safe_name}_reward_replay.jsonl"
-                replay_cmd = [
-                    sys.executable,
-                    "-m",
-                    "omnicoder.training.reward_replay_2026",
-                    "--checkpoint",
-                    str(replay_final_checkpoint),
-                    "--train-jsonl",
-                    str(train_jsonl),
-                    "--out",
-                    str(replay_out),
-                    "--profile",
-                    preset,
-                    "--device",
-                    device,
-                    "--seq-len",
-                    str(seq_len),
-                    "--batch-size",
-                    str(batch_size),
-                    "--steps",
-                    str(steps),
-                    "--lr",
-                    str(lr),
-                    "--max-records",
-                    str(max_records),
-                    "--log-file",
-                    str(replay_log),
-                ]
-                replay_code = run_command(replay_cmd, out_dir / "logs" / f"posttrain_{index:02d}_{safe_name}_command.log")
+                checkpoint_value = str(bridge_execution.get("checkpoint") or "")
+                replay_out = Path(checkpoint_value) if checkpoint_value else out_dir / "posttrain" / safe_name / "checkpoints" / f"{safe_name}_live_replay.pt"
+                loss_log_value = str(bridge_execution.get("loss_log") or "")
+                replay_log = Path(loss_log_value) if loss_log_value else out_dir / "posttrain" / safe_name / "logs" / f"{safe_name}_live_replay.jsonl"
                 losses = parse_losses(replay_log)
                 report.update(
                     {
-                        "replay_returncode": replay_code,
+                        "replay_returncode": bridge_execution.get("returncode"),
+                        "executor": bridge_execution.get("executor"),
                         "checkpoint": str(replay_out),
                         "loss_log": str(replay_log),
                         "loss_points": len(losses),
@@ -3024,18 +3076,18 @@ def run_posttraining_stages(
                         "loss_last": losses[-1] if losses else None,
                     }
                 )
-                if replay_code == 0 and replay_out.exists():
+                if code == 0 and bridge_execution.get("status") == "passed" and replay_out.exists():
                     replay_final_checkpoint = replay_out
                     report["status"] = "passed"
                 else:
                     report["status"] = "failed"
-                    report["reason"] = "reward_replay_returned_nonzero"
+                    report["reason"] = "posttrain_bridge_live_optimizer_failed"
         reports.append(report)
     status = "failed" if any(row.get("status") != "passed" for row in reports) else "passed"
     return {
         "status": status,
         "input_count": len(inputs),
-        "mode": "native_reward_replay" if live_replay else "bridge_dry_run",
+        "mode": "posttrain_bridge_live_optimizer" if live_replay else "bridge_dry_run",
         "stages": reports,
         "initial_checkpoint": str(current_checkpoint) if current_checkpoint is not None else None,
         "final_checkpoint": str(replay_final_checkpoint) if replay_final_checkpoint is not None else None,
@@ -3220,6 +3272,7 @@ def run_checkpoint_benchmark_gate(
     if reportable_paths:
         reportable_dir = gate_dir / "reportable"
         reportable_summary_path = reportable_dir / "reportable_summary.json"
+        prediction_seed = write_reportable_prediction_seed(reportable_paths, reportable_dir / "checkpoint_predictions.jsonl")
         reportable_cmd = [
             sys.executable,
             "-m",
@@ -3244,6 +3297,8 @@ def run_checkpoint_benchmark_gate(
         ]
         for path in reportable_paths:
             reportable_cmd.extend(["--tasks", str(path)])
+        if int(prediction_seed.get("records") or 0) > 0:
+            reportable_cmd.extend(["--predictions", str(prediction_seed["path"])])
         reportable_code = run_command(reportable_cmd, out_dir / "logs" / f"benchmark_{safe_filename(phase)}_reportable.log")
         reportable_summary_cmd = [
             sys.executable,
@@ -3275,6 +3330,7 @@ def run_checkpoint_benchmark_gate(
             "task_roots": [str(path) for path in reportable_paths],
             "configured_task_roots": [str(path) for path in reportable_roots],
             "root_sources": reportable_sources,
+            "predictions": prediction_seed,
             "status": reportable_summary.get("status"),
             "gate_policy": reportable_summary.get("gate_policy"),
             "gate_decision": reportable_summary.get("gate_decision"),

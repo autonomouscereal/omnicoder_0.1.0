@@ -585,6 +585,90 @@ def configured_task_paths(profile: dict[str, Any], record: dict[str, Any], cycle
     return unique
 
 
+def snapshot_descriptors(profile: dict[str, Any], record: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = profile.get("reportable_snapshots")
+    if not isinstance(raw, dict):
+        return []
+    keys = [str(record.get("benchmark_id") or ""), str(record.get("adapter_id") or "")]
+    descriptors: list[dict[str, Any]] = []
+    for key in keys:
+        value = raw.get(key)
+        if isinstance(value, dict):
+            descriptors.append(value)
+        elif isinstance(value, list):
+            descriptors.extend(item for item in value if isinstance(item, dict))
+    return descriptors
+
+
+def path_matches_snapshot(candidate: Path, descriptor: dict[str, Any], root: Path) -> bool:
+    raw = descriptor.get("task_root") or descriptor.get("tasks_jsonl") or descriptor.get("path")
+    if not raw:
+        return False
+    expected = resolve_optional_path(raw, root)
+    if expected is None:
+        return False
+    try:
+        candidate_resolved = candidate.resolve()
+    except Exception:
+        candidate_resolved = candidate
+    try:
+        expected_resolved = expected.resolve()
+    except Exception:
+        expected_resolved = expected
+    if candidate_resolved == expected_resolved:
+        return True
+    if expected.exists() and expected.is_dir():
+        try:
+            candidate_resolved.relative_to(expected_resolved)
+            return True
+        except ValueError:
+            return False
+    return False
+
+
+def snapshot_for_task_path(profile: dict[str, Any], record: dict[str, Any], candidate: Path) -> dict[str, Any] | None:
+    root = repo_root()
+    for descriptor in snapshot_descriptors(profile, record):
+        if path_matches_snapshot(candidate, descriptor, root):
+            return descriptor
+    return None
+
+
+def attach_snapshot_metadata(row: dict[str, Any], descriptor: dict[str, Any] | None, candidate: Path) -> dict[str, Any]:
+    if not descriptor:
+        row.setdefault("task_source_path", str(candidate))
+        row.setdefault("task_row_sha256", stable_hash(row))
+        return row
+    for src, dst in (
+        ("snapshot_id", "snapshot_id"),
+        ("official_snapshot_id", "official_snapshot_id"),
+        ("authorized_snapshot_id", "authorized_snapshot_id"),
+        ("snapshot_sha256", "snapshot_sha256"),
+        ("dataset_revision", "dataset_revision"),
+        ("task_revision", "task_revision"),
+        ("source", "source"),
+        ("dataset_source", "dataset_source"),
+        ("authorization_ref", "authorization_ref"),
+        ("license_ref", "license_ref"),
+        ("split", "split"),
+    ):
+        value = descriptor.get(src)
+        if value not in (None, ""):
+            row.setdefault(dst, value)
+    auth = (
+        descriptor.get("snapshot_authorization")
+        or descriptor.get("authorization")
+        or descriptor.get("dataset_source_kind")
+        or descriptor.get("source_kind")
+    )
+    if auth not in (None, ""):
+        row.setdefault("snapshot_authorization", auth)
+    row.setdefault("task_source_path", str(candidate))
+    row.setdefault("source_line", row.get("line_number"))
+    row.setdefault("task_row_sha256", stable_hash(row))
+    return row
+
+
 def load_reportable_tasks(profile: dict[str, Any], record: dict[str, Any], cycle: str, cli_tasks: list[str] | None) -> list[dict[str, Any]]:
     wanted = {record["benchmark_id"], record["adapter_id"]}
     rows: list[dict[str, Any]] = []
@@ -593,6 +677,7 @@ def load_reportable_tasks(profile: dict[str, Any], record: dict[str, Any], cycle
             continue
         candidates = sorted(path.rglob("*.jsonl")) if path.is_dir() else [path]
         for candidate in candidates:
+            snapshot = snapshot_for_task_path(profile, record, candidate)
             for row in read_jsonl(candidate):
                 benchmark = str(row.get("benchmark_id") or row.get("adapter_id") or record["benchmark_id"])
                 if benchmark not in wanted:
@@ -601,6 +686,7 @@ def load_reportable_tasks(profile: dict[str, Any], record: dict[str, Any], cycle
                 row.setdefault("task_id", row.get("id") or stable_hash({"path": str(candidate), "line": row.get("line_number")})[:16])
                 row.setdefault("task_revision", row.get("dataset_revision") or row.get("revision") or "unknown")
                 row.setdefault("source", row.get("dataset_source") or row.get("source") or "")
+                row = attach_snapshot_metadata(row, snapshot, candidate)
                 rows.append(row)
     return rows
 
@@ -628,7 +714,10 @@ def task_prediction(task: dict[str, Any], predictions: dict[str, dict[str, Any]]
         for key in ("prediction", "answer", "output", "patch", "tool_call", "artifact_path"):
             if key in row:
                 return row[key]
-    for key in ("prediction", "model_answer", "model_output", "output", "patch", "tool_call", "artifact_path"):
+        for key in ("model_answer", "model_output", "model_patch", "model_actions", "output_path", "generated_artifact"):
+            if key in row:
+                return row[key]
+    for key in ("prediction", "model_answer", "model_output", "output", "model_patch", "model_actions", "tool_call", "artifact_path", "output_path", "generated_artifact"):
         if key in task:
             return task[key]
     return None
@@ -639,12 +728,50 @@ def task_has_reportable_metadata(task: dict[str, Any]) -> bool:
         return False
     revision = str(task.get("dataset_revision") or task.get("task_revision") or task.get("revision") or "").strip()
     source = str(task.get("source") or task.get("dataset_source") or "").strip()
-    return bool(source) and revision.lower() not in {"", "unknown", "none", "null"}
+    snapshot = str(
+        task.get("snapshot_id")
+        or task.get("official_snapshot_id")
+        or task.get("authorized_snapshot_id")
+        or task.get("snapshot_sha256")
+        or task.get("dataset_snapshot")
+        or ""
+    ).strip()
+    authorization = str(
+        task.get("snapshot_authorization")
+        or task.get("authorization")
+        or task.get("dataset_source_kind")
+        or task.get("source_kind")
+        or ""
+    ).strip().lower()
+    authorized_values = {
+        "official",
+        "official_release",
+        "official_current_release",
+        "authorized",
+        "authorized_mirror",
+        "authorized_private",
+        "official_or_authorized",
+        "official_or_authorized_current_release",
+    }
+    has_revision = revision.lower() not in {"", "unknown", "none", "null"}
+    return bool(source) and has_revision and bool(snapshot) and authorization in authorized_values
 
 
 def task_has_model_output(task: dict[str, Any], prediction: Any) -> bool:
     if prediction is None:
-        for key in ("success", "actions", "model_actions", "trajectory", "response", "artifact_path", "output_path", "generated_artifact"):
+        for key in (
+            "prediction",
+            "model_answer",
+            "model_output",
+            "model_patch",
+            "model_actions",
+            "trajectory",
+            "response",
+            "tool_call",
+            "artifact_path",
+            "output_path",
+            "generated_artifact",
+        ):
             value = task.get(key)
             if value not in (None, "", [], {}):
                 return True
@@ -672,7 +799,7 @@ def score_qa_task(task: dict[str, Any], prediction: Any) -> dict[str, Any]:
 
 
 def score_swe_task(task: dict[str, Any], prediction: Any) -> dict[str, Any]:
-    patch = prediction if isinstance(prediction, str) else task.get("patch") or task.get("model_patch") or ""
+    patch = prediction if isinstance(prediction, str) else task.get("model_patch") or task.get("patch") or ""
     patch_applies = boolish(task.get("patch_applies"))
     tests_pass = boolish(task.get("tests_pass") or task.get("hidden_tests_pass") or task.get("resolved"))
     if task.get("expected_patch_sha256"):
@@ -761,6 +888,7 @@ def score_reportable_task(record: dict[str, Any], task: dict[str, Any], predicti
         "metrics": scored.get("metrics") or {},
         "reportable_metadata": task_has_reportable_metadata(task) and has_output,
         "has_model_output": has_output,
+        "snapshot_id": str(task.get("snapshot_id") or task.get("official_snapshot_id") or task.get("authorized_snapshot_id") or ""),
         "input_sha256": stable_hash({k: task.get(k) for k in ("question", "prompt", "input", "image", "repo", "issue", "environment")}),
         "output_sha256": stable_hash(prediction),
     }

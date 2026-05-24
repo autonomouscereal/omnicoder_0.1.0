@@ -71,6 +71,17 @@ field, release gate, contamination flag, and output path is wired. It does not
 claim benchmark scores until a real adapter command or full benchmark adapter
 has run.
 
+Reportable mode is stricter than smoke. A task row must come from an official or
+explicitly authorized snapshot descriptor in `reportable_snapshots`, or carry
+task-level `snapshot_id`, `snapshot_authorization`, source, and revision
+metadata itself. Oracle-only rows are local-only: ARC/SWE/MMMU style task files
+must include a separate model output, patch, action trajectory, tool call, or
+artifact prediction, or the runner marks the score `local_only` even when the
+gold fields are present. The training checkpoint gate writes
+`checkpoint_predictions.jsonl` from explicit model/eval-adapter outputs and
+passes it to `run-reportable`; missing authorized snapshots still fail closed
+under the default `missing_reportable_policy`.
+
 The release registry now includes fresh RLVR and media-preference gates for
 RLVR Linearity, Nous RLVR Coding, EditReward-Bench, IESBench, Stable Video
 Infinity, and text-to-audio human preference evaluation. The latest expansion

@@ -81,3 +81,49 @@ def test_build_manifest_allows_empty_dataset_for_explicit_dry_run(tmp_path: Path
     assert manifest["status"] == "dry_run_ok"
     assert manifest["dataset"]["records_sampled"] == 0
     assert manifest["empty_dataset_allowed_by"] == "dry_run"
+
+
+def test_live_bridge_launches_reward_replay_optimizer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    train = _write_jsonl(
+        tmp_path / "rlvr.jsonl",
+        [
+            {
+                "training_kind": "terminal_rlvr",
+                "prompt": "Run tests and report the result.",
+                "verifier": {"reward": 1.0},
+                "reward": 1.0,
+            }
+        ],
+    )
+    checkpoint = tmp_path / "checkpoint.pt"
+    checkpoint.write_bytes(b"native checkpoint")
+    args = _args(str(train))
+    args.model = str(checkpoint)
+    args.out_dir = str(tmp_path / "bridge")
+    seen: dict[str, list[str]] = {}
+
+    class Result:
+        returncode = 0
+
+    def fake_run_live_command(cmd: list[str], log_path: Path) -> Result:
+        seen["cmd"] = cmd
+        out_path = Path(cmd[cmd.index("--out") + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"trained checkpoint")
+        loss_log = Path(cmd[cmd.index("--log-file") + 1])
+        loss_log.parent.mkdir(parents=True, exist_ok=True)
+        loss_log.write_text('{"loss": 2.0}\n{"loss": 1.0}\n', encoding="utf-8")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("ran\n", encoding="utf-8")
+        return Result()
+
+    monkeypatch.setattr(posttrain_bridge_2026, "run_live_command", fake_run_live_command)
+
+    manifest = posttrain_bridge_2026.execute_live_bridge(args, posttrain_bridge_2026.build_manifest(args))
+
+    assert manifest["status"] == "live_training_passed"
+    assert manifest["execution"]["executor"] == "reward_replay_2026"
+    assert manifest["execution"]["loss_points"] == 2
+    assert Path(manifest["execution"]["checkpoint"]).exists()
+    assert "omnicoder.training.reward_replay_2026" in seen["cmd"]
+    assert "--dry-run" not in seen["cmd"]
