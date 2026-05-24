@@ -19,6 +19,7 @@ ENFORCE_DATASET_MINIMA="${OMNICODER_ENFORCE_DATASET_MINIMA:-1}"
 DATASET_INCLUDE_WAVES="${OMNICODER_DATASET_INCLUDE_WAVES:-}"
 TRACE_LIMIT="${OMNICODER_TRACE_LIMIT:-0}"
 LMSTUDIO_TRACE_LIMIT="${OMNICODER_LMSTUDIO_TRACE_LIMIT:-100000}"
+LOCAL_TRACE_SOURCE="${OMNICODER_LOCAL_TRACE_SOURCE:-weights/curated_datasets_2026/runs/${RUN_ID}_local_traces}"
 ACTION="${1:-all}"
 
 cd "$ROOT"
@@ -240,6 +241,24 @@ PY
   log "agentic tool training exports refreshed in $out"
 }
 
+local_trace_bundle() {
+  local out="weights/curated_datasets_2026/runs/${RUN_ID}_local_traces"
+  mkdir -p "weights/data_factory/runs/${RUN_ID}"
+  log "build strict-date local Codex/Claude/agent-memory trace bundle"
+  "$PYTHON_BIN" -m omnicoder.data_factory.curated_dataset_builder_2026 \
+    --profile "$PROFILE" \
+    --out-dir "$out" \
+    export-local-traces | tee "weights/data_factory/runs/${RUN_ID}/local_trace_export.stdout.json"
+  require_nonempty_jsonl "$out/raw/normalized_traces.jsonl" "strict_local_normalized_traces"
+  if [[ -s "$out/jsonl/train_agentic_focus.jsonl" ]]; then
+    LOCAL_TRACE_SOURCE="$out"
+  fi
+  if truthy "$PROMOTE_LATEST"; then
+    ln -sfn "$ROOT/$out" weights/curated_datasets_2026/latest_local_traces
+  fi
+  log "local trace bundle dir: $out"
+}
+
 build_jobs_if_present() {
   local records="$1"
   local job_type="$2"
@@ -280,6 +299,7 @@ teacher_jobs() {
   mkdir -p "$job_dir"
   log "build agentic/math/code/tool teacher jobs"
   build_jobs_if_present "${CURATED_DATASET_SOURCE}/jsonl/train_agentic_focus.jsonl" agentic_math_code_tool_critique "$job_dir/agentic_jobs.jsonl"
+  build_jobs_if_present "${LOCAL_TRACE_SOURCE}/jsonl/train_agentic_focus.jsonl" strict_local_trace_replay_critique "$job_dir/local_trace_jobs.jsonl"
   build_jobs_if_present "${CURATED_DATASET_SOURCE}/jsonl/train_code.jsonl" code_repair_reasoning_critique "$job_dir/code_jobs.jsonl"
   build_jobs_if_present "${CURATED_DATASET_SOURCE}/jsonl/train_tool.jsonl" tool_call_replay_reward_critique "$job_dir/tool_jobs.jsonl"
   build_jobs_if_present "${EXTERNAL_DATASET_SOURCE}/jsonl/math_reasoning.jsonl" math_rlvr_answer_critique "$job_dir/math_jobs.jsonl"
@@ -476,6 +496,7 @@ case "$ACTION" in
   collect-curate) collect_curate ;;
   external-expansion) external_expansion ;;
   agentic-tool-training) agentic_tool_training ;;
+  local-traces) local_trace_bundle ;;
   teacher-jobs) teacher_jobs ;;
   modality-teacher-jobs) modality_teacher_jobs ;;
   p40-teacher) p40_teacher_rollouts ;;
@@ -483,6 +504,7 @@ case "$ACTION" in
   all)
     preflight
     collect_curate
+    local_trace_bundle
     agentic_tool_training
     external_expansion
     teacher_jobs

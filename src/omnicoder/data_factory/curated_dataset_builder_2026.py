@@ -332,6 +332,8 @@ def collect_trace_rows(profile: dict[str, Any], root: Path, out_dir: Path) -> tu
     source_date = str(profile.get("source_date") or cfg.get("source_date") or time.strftime("%Y-%m-%d", time.gmtime()))
     per_source_limit = int(cfg.get("per_trace_source_limit") or 0)
     total_limit = int(cfg.get("trace_limit") or 0)
+    strict_dates = bool(cfg.get("strict_trace_dates", False))
+    reject_unknown_dates = bool(cfg.get("reject_unknown_trace_dates", False))
     rows: list[dict[str, Any]] = []
     source_inventory: list[dict[str, Any]] = []
     for entry in entries:
@@ -347,6 +349,8 @@ def collect_trace_rows(profile: dict[str, Any], root: Path, out_dir: Path) -> tu
             min_year=min_year,
             max_year=max_year,
             limit=per_source_limit,
+            strict_dates=strict_dates,
+            reject_unknown_dates=reject_unknown_dates,
         )
         for row in collected:
             lineage = row.get("lineage") if isinstance(row.get("lineage"), dict) else {}
@@ -357,6 +361,33 @@ def collect_trace_rows(profile: dict[str, Any], root: Path, out_dir: Path) -> tu
         if total_limit and len(rows) >= total_limit:
             break
     return rows, agent_memory_export, source_inventory
+
+
+def export_local_traces(profile_path: Path, out_dir: Path | None = None) -> dict[str, Any]:
+    root = repo_root()
+    profile = read_json(profile_path)
+    training_profile = load_training_profile(profile, root)
+    plan = training_plan(training_profile)
+    target_dir = out_dir or resolve_path(str(builder_cfg(profile).get("out_dir") or DEFAULT_OUT_DIR), root)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    trace_rows, agent_memory_export, source_inventory = collect_trace_rows(profile, root, target_dir)
+    trace_group, trace_stats = curate_trace_rows(trace_rows, profile, root, target_dir, plan)
+    rows_by_modality = dedupe_and_limit(trace_group, plan)
+    all_splits, per_modality = split_rows(rows_by_modality, plan)
+    manifest = write_dataset_outputs(
+        target_dir,
+        all_splits,
+        per_modality,
+        profile,
+        training_profile,
+        plan,
+        source_inventory,
+        trace_stats,
+        agent_memory_export,
+    )
+    manifest["export_kind"] = "local_traces_only"
+    write_json(target_dir / "local_trace_export_manifest.json", manifest)
+    return manifest
 
 
 def text_to_modality(record: dict[str, Any], text: str, curated: dict[str, Any], cfg: dict[str, Any]) -> str:
@@ -994,12 +1025,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("build")
     sub.add_parser("export-agent-memory")
+    sub.add_parser("export-local-traces")
     args = parser.parse_args(argv)
     out_dir = Path(args.out_dir) if args.out_dir else None
     if args.command == "build":
         manifest = build_dataset(resolve_path(args.profile, repo_root()), out_dir)
     elif args.command == "export-agent-memory":
         manifest = export_agent_memory_only(resolve_path(args.profile, repo_root()), out_dir)
+    elif args.command == "export-local-traces":
+        manifest = export_local_traces(resolve_path(args.profile, repo_root()), out_dir)
     else:
         raise SystemExit(f"unknown command: {args.command}")
     print(json.dumps(manifest, ensure_ascii=True, sort_keys=True))

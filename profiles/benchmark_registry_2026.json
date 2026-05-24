@@ -1,500 +1,646 @@
 {
-  "version": "2026-05-24",
-  "storage": "raw_postgresql_only",
-  "schema": "schemas/eval_harness_2026.sql",
-  "task_contract": {
-    "required_fields": [
-      "input_bundle",
-      "allowed_tools",
-      "environment_snapshot",
-      "budget",
-      "oracle",
-      "scorer",
-      "artifacts",
-      "contamination_class"
-    ]
-  },
   "adapters": [
     {
-      "id": "arc_agi3",
-      "kind": "interactive_env",
-      "source": "https://arcprize.org/arc-agi/3",
-      "use": "interactive reasoning, exploration, adaptive world modeling",
-      "smoke": "public_one_env",
-      "reportable_split": "authorized_private",
       "holdout": [
         "private_envs",
         "solution_traces",
         "action_policies"
-      ]
+      ],
+      "id": "arc_agi3",
+      "kind": "interactive_env",
+      "reportable_split": "authorized_private",
+      "smoke": "public_one_env",
+      "source": "https://arcprize.org/arc-agi/3",
+      "use": "interactive reasoning, exploration, adaptive world modeling"
     },
     {
-      "id": "swe_bench_pro",
-      "kind": "long_horizon_git_container_patch",
-      "source": "https://scale.com/blog/swe-bench-pro",
-      "use": "repository-scale software engineering",
-      "smoke": "public_dev_gold_patch",
       "holdout": [
         "hidden_tests",
         "gold_patches",
         "commercial_set",
         "heldout_set"
-      ]
+      ],
+      "id": "swe_bench_pro",
+      "kind": "long_horizon_git_container_patch",
+      "smoke": "public_dev_gold_patch",
+      "source": "https://scale.com/blog/swe-bench-pro",
+      "use": "repository-scale software engineering"
     },
     {
-      "id": "swe_bench_live",
-      "kind": "fresh_git_container_patch",
-      "source": "https://arxiv.org/abs/2505.23419",
-      "use": "contamination-resistant live code tasks",
-      "smoke": "one_post_cutoff_problem",
       "holdout": [
         "future_tasks",
         "generated_tests",
         "accepted_patches"
-      ]
+      ],
+      "id": "swe_bench_live",
+      "kind": "fresh_git_container_patch",
+      "smoke": "one_post_cutoff_problem",
+      "source": "https://arxiv.org/abs/2505.23419",
+      "use": "contamination-resistant live code tasks"
     },
     {
-      "id": "swe_bench_multimodal",
-      "kind": "visual_issue_patch",
-      "source": "registry_private_or_authorized",
-      "use": "UI/image-bearing software tasks",
-      "smoke": "asset_load",
       "holdout": [
         "screenshots",
         "visual_oracles",
         "gold_patches"
-      ]
+      ],
+      "id": "swe_bench_multimodal",
+      "kind": "visual_issue_patch",
+      "smoke": "asset_load",
+      "source": "registry_private_or_authorized",
+      "use": "UI/image-bearing software tasks"
     },
     {
-      "id": "terminal_bench_2",
-      "kind": "harbor_container",
-      "source": "https://arxiv.org/abs/2601.11868",
-      "use": "terminal/container autonomy",
-      "smoke": "oracle_container",
       "holdout": [
         "hidden_tests",
         "solutions",
         "successful_eval_transcripts"
-      ]
+      ],
+      "id": "terminal_bench_2",
+      "kind": "harbor_container",
+      "smoke": "oracle_container",
+      "source": "https://arxiv.org/abs/2601.11868",
+      "use": "terminal/container autonomy"
     },
     {
-      "id": "bfcl_v4",
-      "kind": "tool_call_state_scorer",
-      "source": "https://gorilla.cs.berkeley.edu/leaderboard.html",
-      "use": "function and tool-call correctness",
-      "smoke": "single_parallel_nested_multi_turn_non_call",
       "holdout": [
         "private_prompts",
         "expected_asts",
         "distractor_schemas"
-      ]
+      ],
+      "id": "bfcl_v4",
+      "kind": "tool_call_state_scorer",
+      "smoke": "single_parallel_nested_multi_turn_non_call",
+      "source": "https://gorilla.cs.berkeley.edu/leaderboard.html",
+      "use": "function and tool-call correctness"
     },
     {
-      "id": "tau2_tau3",
-      "kind": "simulated_user_tool_state",
-      "source": "https://github.com/sierra-research/tau2-bench",
-      "use": "policy-following stateful tool agents and voice",
-      "smoke": "dual_control_fixed_task",
       "holdout": [
         "policies",
         "db_states",
         "simulator_scripts",
         "voice_samples"
-      ]
+      ],
+      "id": "tau2_tau3",
+      "kind": "simulated_user_tool_state",
+      "smoke": "dual_control_fixed_task",
+      "source": "https://github.com/sierra-research/tau2-bench",
+      "use": "policy-following stateful tool agents and voice"
     },
     {
-      "id": "mcp_agent_suite",
-      "kind": "mcp_fixture_adapter",
-      "source": "https://github.com/eval-sys/mcpmark",
-      "use": "real MCP server orchestration and claim-level scoring",
-      "smoke": "filesystem_postgres_playwright_fixture",
       "holdout": [
         "seeded_workspaces",
         "expected_claims",
         "grading_rubrics"
-      ]
+      ],
+      "id": "mcp_agent_suite",
+      "kind": "mcp_fixture_adapter",
+      "smoke": "filesystem_postgres_playwright_fixture",
+      "source": "https://github.com/eval-sys/mcpmark",
+      "use": "real MCP server orchestration and claim-level scoring"
     },
     {
-      "id": "livecodebench",
-      "kind": "date_filtered_code_runner",
-      "source": "https://github.com/LiveCodeBench/LiveCodeBench",
-      "use": "fresh coding skill",
-      "smoke": "one_post_cutoff_problem",
       "holdout": [
         "future_split",
         "private_tests"
-      ]
+      ],
+      "id": "livecodebench",
+      "kind": "date_filtered_code_runner",
+      "smoke": "one_post_cutoff_problem",
+      "source": "https://github.com/LiveCodeBench/LiveCodeBench",
+      "use": "fresh coding skill"
     },
     {
-      "id": "mmmu_pro",
-      "kind": "multimodal_mcq",
-      "source": "current_official_release",
-      "use": "expert image/text reasoning",
-      "smoke": "standard_and_vision_only",
       "holdout": [
         "questions",
         "answers",
         "images"
-      ]
+      ],
+      "id": "mmmu_pro",
+      "kind": "multimodal_mcq",
+      "smoke": "standard_and_vision_only",
+      "source": "current_official_release",
+      "use": "expert image/text reasoning"
     },
     {
-      "id": "video_understanding",
-      "kind": "media_understanding",
-      "source": "Video-MME/LVOmniBench/JointAVBench current releases",
-      "use": "long video, subtitle, audio-video temporal reasoning",
-      "smoke": "short_long_with_without_subtitles",
       "holdout": [
         "videos",
         "subtitles",
         "answers",
         "audio_tracks"
-      ]
+      ],
+      "id": "video_understanding",
+      "kind": "media_understanding",
+      "smoke": "short_long_with_without_subtitles",
+      "source": "Video-MME/LVOmniBench/JointAVBench current releases",
+      "use": "long video, subtitle, audio-video temporal reasoning"
     },
     {
-      "id": "image_generation_edit",
-      "kind": "media_generation",
-      "source": "GenEval2/BizGenEval/CompBench/Pico-Banana-style private slices",
-      "use": "image prompt adherence, text rendering, editing preservation",
-      "smoke": "five_prompts_two_edits",
       "holdout": [
         "private_prompts",
         "human_labels",
         "judge_prompts"
-      ]
+      ],
+      "id": "image_generation_edit",
+      "kind": "media_generation",
+      "smoke": "five_prompts_two_edits",
+      "source": "GenEval2/BizGenEval/CompBench/Pico-Banana-style private slices",
+      "use": "image prompt adherence, text rendering, editing preservation"
     },
     {
-      "id": "video_audio_music_tts",
-      "kind": "media_generation",
-      "source": "VBench/VBench++/AVGen/T2AV/AudioBench/AudioCapBench/Music Arena/Coval current releases",
-      "use": "video/audio/music/TTS artifact quality and sync",
-      "smoke": "no_black_no_corrupt_sync_probe",
       "holdout": [
         "private_prompts",
         "preference_labels",
         "failed_eval_traces"
-      ]
+      ],
+      "id": "video_audio_music_tts",
+      "kind": "media_generation",
+      "smoke": "no_black_no_corrupt_sync_probe",
+      "source": "VBench/VBench++/AVGen/T2AV/AudioBench/AudioCapBench/Music Arena/Coval current releases",
+      "use": "video/audio/music/TTS artifact quality and sync"
     },
     {
-      "id": "terminal_bench_core",
-      "kind": "harbor_container",
-      "source": "https://www.tbench.ai/leaderboard/terminal-bench/2.1",
-      "use": "core terminal/container autonomy",
-      "smoke": "three_public_core_tasks",
       "holdout": [
         "hidden_tests",
         "solutions"
-      ]
+      ],
+      "id": "terminal_bench_core",
+      "kind": "harbor_container",
+      "smoke": "three_public_core_tasks",
+      "source": "https://www.tbench.ai/leaderboard/terminal-bench/2.1",
+      "use": "core terminal/container autonomy"
     },
     {
-      "id": "acebench",
-      "kind": "agent_env_tool_eval",
-      "source": "https://arxiv.org/abs/2501.12851",
-      "use": "complex tool-agent state and recovery",
-      "smoke": "three_public_env_tasks",
       "holdout": [
         "expected_actions",
         "simulator_oracles"
-      ]
+      ],
+      "id": "acebench",
+      "kind": "agent_env_tool_eval",
+      "smoke": "three_public_env_tasks",
+      "source": "https://arxiv.org/abs/2501.12851",
+      "use": "complex tool-agent state and recovery"
     },
     {
-      "id": "browsecomp_zh",
-      "kind": "browser_research_agent",
-      "source": "https://openai.com/index/browsecomp/",
-      "use": "Chinese browsing/search agent correctness",
-      "smoke": "two_public_dev_questions",
       "holdout": [
         "answers",
         "successful_eval_traces"
-      ]
+      ],
+      "id": "browsecomp_zh",
+      "kind": "browser_research_agent",
+      "smoke": "two_public_dev_questions",
+      "source": "https://openai.com/index/browsecomp/",
+      "use": "Chinese browsing/search agent correctness"
     },
     {
-      "id": "deepsearch",
-      "kind": "browser_retrieval_agent",
-      "source": "official_current_release_or_authorized_mirror",
-      "use": "deep multi-hop web/retrieval search",
-      "smoke": "two_deep_search_tasks",
       "holdout": [
         "answers",
         "source_lists"
-      ]
+      ],
+      "id": "deepsearch",
+      "kind": "browser_retrieval_agent",
+      "smoke": "two_deep_search_tasks",
+      "source": "official_current_release_or_authorized_mirror",
+      "use": "deep multi-hop web/retrieval search"
     },
     {
-      "id": "artifactsbench",
-      "kind": "artifact_creation_agent",
-      "source": "official_current_release_or_authorized_mirror",
-      "use": "artifact creation and file integrity",
-      "smoke": "three_artifact_tasks",
       "holdout": [
         "rubrics",
         "reference_artifacts"
-      ]
+      ],
+      "id": "artifactsbench",
+      "kind": "artifact_creation_agent",
+      "smoke": "three_artifact_tasks",
+      "source": "official_current_release_or_authorized_mirror",
+      "use": "artifact creation and file integrity"
     },
     {
-      "id": "mrcr",
-      "kind": "long_context_qa",
-      "source": "https://huggingface.co/datasets/openai/mrcr",
-      "use": "multi-round coreference at 32K-1M",
-      "smoke": "length_bucket_probe",
       "holdout": [
         "answers"
-      ]
+      ],
+      "id": "mrcr",
+      "kind": "long_context_qa",
+      "smoke": "length_bucket_probe",
+      "source": "https://huggingface.co/datasets/openai/mrcr",
+      "use": "multi-round coreference at 32K-1M"
     },
     {
-      "id": "longcodebench",
-      "kind": "repo_long_code",
-      "source": "https://huggingface.co/papers/2505.07897",
-      "use": "repo-scale long-code reasoning",
-      "smoke": "one_repo_task",
       "holdout": [
         "hidden_tests",
         "gold_patches"
-      ]
+      ],
+      "id": "longcodebench",
+      "kind": "repo_long_code",
+      "smoke": "one_repo_task",
+      "source": "https://huggingface.co/papers/2505.07897",
+      "use": "repo-scale long-code reasoning"
     },
     {
-      "id": "qwen3_omni_eval",
-      "kind": "omni_understanding",
-      "source": "https://arxiv.org/abs/2509.17765",
-      "use": "audio/audio-visual omni understanding",
-      "smoke": "three_omni_tasks",
       "holdout": [
         "answers",
         "media_labels"
-      ]
+      ],
+      "id": "qwen3_omni_eval",
+      "kind": "omni_understanding",
+      "smoke": "three_omni_tasks",
+      "source": "https://arxiv.org/abs/2509.17765",
+      "use": "audio/audio-visual omni understanding"
     },
     {
-      "id": "cosmos_predict2_generation",
-      "kind": "world_video_generation",
-      "source": "https://research.nvidia.com/labs/cosmos-lab/cosmos-predict2/",
-      "use": "physical world video generation",
-      "smoke": "three_world_prompts",
       "holdout": [
         "judge_prompts",
         "human_labels"
-      ]
+      ],
+      "id": "cosmos_predict2_generation",
+      "kind": "world_video_generation",
+      "smoke": "three_world_prompts",
+      "source": "https://research.nvidia.com/labs/cosmos-lab/cosmos-predict2/",
+      "use": "physical world video generation"
     },
     {
-      "id": "swe_lancer",
-      "kind": "paid_freelance_software_task_eval",
-      "source": "https://openai.com/index/swe-lancer/",
-      "use": "economic-value weighted software engineering deliverables",
-      "smoke": "one_public_or_synthetic_task",
       "holdout": [
         "gold_deliverables",
         "private_tests",
         "expert_scores"
-      ]
+      ],
+      "id": "swe_lancer",
+      "kind": "paid_freelance_software_task_eval",
+      "smoke": "one_public_or_synthetic_task",
+      "source": "https://openai.com/index/swe-lancer/",
+      "use": "economic-value weighted software engineering deliverables"
     },
     {
-      "id": "gdpval",
-      "kind": "occupational_work_product_eval",
-      "source": "https://openai.com/index/gdpval/",
-      "use": "documents, spreadsheets, slides, code, and media work products",
-      "smoke": "one_deliverable_task",
       "holdout": [
         "expert_rubrics",
         "reference_artifacts"
-      ]
+      ],
+      "id": "gdpval",
+      "kind": "occupational_work_product_eval",
+      "smoke": "one_deliverable_task",
+      "source": "https://openai.com/index/gdpval/",
+      "use": "documents, spreadsheets, slides, code, and media work products"
     },
     {
-      "id": "hle_rolling_livebench",
-      "kind": "rolling_expert_objective_eval",
-      "source": "https://agi.safe.ai/",
-      "use": "fresh expert reasoning and monthly contamination-resistant tasks",
-      "smoke": "two_public_fresh_tasks",
       "holdout": [
         "answer_keys",
         "future_snapshots"
-      ]
+      ],
+      "id": "hle_rolling_livebench",
+      "kind": "rolling_expert_objective_eval",
+      "smoke": "two_public_fresh_tasks",
+      "source": "https://agi.safe.ai/",
+      "use": "fresh expert reasoning and monthly contamination-resistant tasks"
     },
     {
-      "id": "mcp_universe",
-      "kind": "mcp_server_universe_eval",
-      "source": "https://github.com/SalesforceAIResearch/MCP-Universe",
-      "use": "broad MCP server and multi-tool workflow execution",
-      "smoke": "one_stateful_mcp_task",
       "holdout": [
         "expected_traces",
         "seeded_server_state"
-      ]
+      ],
+      "id": "mcp_universe",
+      "kind": "mcp_server_universe_eval",
+      "smoke": "one_stateful_mcp_task",
+      "source": "https://github.com/SalesforceAIResearch/MCP-Universe",
+      "use": "broad MCP server and multi-tool workflow execution"
     },
     {
-      "id": "plan_rewardbench",
-      "kind": "trajectory_reward_model_eval",
-      "source": "https://github.com/wyy-1112/Plan-RewardBench",
-      "use": "agent planning and process reward model evaluation",
-      "smoke": "one_plan_pair",
       "holdout": [
         "preference_labels",
         "process_labels"
-      ]
+      ],
+      "id": "plan_rewardbench",
+      "kind": "trajectory_reward_model_eval",
+      "smoke": "one_plan_pair",
+      "source": "https://github.com/wyy-1112/Plan-RewardBench",
+      "use": "agent planning and process reward model evaluation"
     },
     {
-      "id": "multimodal_rewardbench2",
-      "kind": "omni_reward_model_eval",
-      "source": "https://github.com/facebookresearch/MMRB2",
-      "use": "multimodal reward models for generation, reasoning, and safety",
-      "smoke": "two_multimodal_preference_pairs",
       "holdout": [
         "preference_labels",
         "media_assets"
-      ]
+      ],
+      "id": "multimodal_rewardbench2",
+      "kind": "omni_reward_model_eval",
+      "smoke": "two_multimodal_preference_pairs",
+      "source": "https://github.com/facebookresearch/MMRB2",
+      "use": "multimodal reward models for generation, reasoning, and safety"
     },
     {
-      "id": "longmemeval_v2_nolima",
-      "kind": "long_memory_and_nonliteral_retrieval",
-      "source": "https://github.com/xiaowu0162/LongMemEval-V2",
-      "use": "long-term agent memory and 1M non-literal retrieval",
-      "smoke": "two_length_bucket_tasks",
       "holdout": [
         "target_memories",
         "answers",
         "haystacks"
-      ]
+      ],
+      "id": "longmemeval_v2_nolima",
+      "kind": "long_memory_and_nonliteral_retrieval",
+      "smoke": "two_length_bucket_tasks",
+      "source": "https://github.com/xiaowu0162/LongMemEval-V2",
+      "use": "long-term agent memory and 1M non-literal retrieval"
     },
     {
-      "id": "opens2v_t2v_compbench",
-      "kind": "identity_and_compositional_video_generation",
-      "source": "https://github.com/PKU-YuanGroup/OpenS2V-Nexus",
-      "use": "subject-to-video and compositional text-to-video generation",
-      "smoke": "two_video_generation_prompts",
       "holdout": [
         "private_subjects",
         "judge_labels"
-      ]
+      ],
+      "id": "opens2v_t2v_compbench",
+      "kind": "identity_and_compositional_video_generation",
+      "smoke": "two_video_generation_prompts",
+      "source": "https://github.com/PKU-YuanGroup/OpenS2V-Nexus",
+      "use": "subject-to-video and compositional text-to-video generation"
     },
     {
-      "id": "complex_image_video_edit",
-      "kind": "complex_edit_and_counterfactual_video_eval",
-      "source": "https://github.com/llllly26/ComplexBench-Edit",
-      "use": "complex image edits and counterfactual/impossible video prompts",
-      "smoke": "one_edit_one_video_prompt",
       "holdout": [
         "target_images",
         "judge_labels"
-      ]
+      ],
+      "id": "complex_image_video_edit",
+      "kind": "complex_edit_and_counterfactual_video_eval",
+      "smoke": "one_edit_one_video_prompt",
+      "source": "https://github.com/llllly26/ComplexBench-Edit",
+      "use": "complex image edits and counterfactual/impossible video prompts"
     },
     {
-      "id": "healthbench",
-      "kind": "health_reliability_rubric_eval",
-      "source": "https://openai.com/index/healthbench/",
-      "use": "health safety, calibration, and worst-case reliability",
-      "smoke": "one_public_health_conversation",
       "holdout": [
         "rubric_labels",
         "expert_scores"
-      ]
+      ],
+      "id": "healthbench",
+      "kind": "health_reliability_rubric_eval",
+      "smoke": "one_public_health_conversation",
+      "source": "https://openai.com/index/healthbench/",
+      "use": "health safety, calibration, and worst-case reliability"
     },
     {
-      "id": "m3_long_video_memory",
-      "kind": "multimodal_tool_memory_video_eval",
-      "source": "https://arxiv.org/abs/2511.17729",
-      "use": "multimodal MCP workflows, long video tool thinking, and memory QA",
-      "smoke": "three_multimodal_agent_video_tasks",
       "holdout": [
         "expected_tool_traces",
         "clip_labels",
         "memory_targets"
-      ]
+      ],
+      "id": "m3_long_video_memory",
+      "kind": "multimodal_tool_memory_video_eval",
+      "smoke": "three_multimodal_agent_video_tasks",
+      "source": "https://arxiv.org/abs/2511.17729",
+      "use": "multimodal MCP workflows, long video tool thinking, and memory QA"
     },
     {
-      "id": "cfvbench",
-      "kind": "fine_grained_video_understanding_eval",
-      "source": "https://dl.acm.org/doi/abs/10.1145/3774904.3792726",
-      "use": "fine-grained video QA and temporal reasoning",
-      "smoke": "one_video_qa_task",
       "holdout": [
         "rubrics",
         "answers",
         "videos"
-      ]
+      ],
+      "id": "cfvbench",
+      "kind": "fine_grained_video_understanding_eval",
+      "smoke": "one_video_qa_task",
+      "source": "https://dl.acm.org/doi/abs/10.1145/3774904.3792726",
+      "use": "fine-grained video QA and temporal reasoning"
     },
     {
-      "id": "rlvr_linearity_math_2026",
-      "kind": "math_rlvr_verifier_probe",
-      "source": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
-      "use": "math RLVR verifier generalization and reward-linearity sanity checks",
-      "smoke": "two_aime24_deepscaler_rows",
       "holdout": [
         "answer_keys",
         "reward_linearity_labels",
         "future_math_rows"
-      ]
+      ],
+      "id": "rlvr_linearity_math_2026",
+      "kind": "math_rlvr_verifier_probe",
+      "smoke": "two_aime24_deepscaler_rows",
+      "source": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
+      "use": "math RLVR verifier generalization and reward-linearity sanity checks"
     },
     {
-      "id": "nous_rlvr_coding_2026",
-      "kind": "code_rlvr_unit_test_probe",
-      "source": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
-      "use": "verifiable coding reward and unit-test pass/fail calibration",
-      "smoke": "two_public_coding_tasks",
       "holdout": [
         "hidden_tests",
         "reference_solutions"
-      ]
+      ],
+      "id": "nous_rlvr_coding_2026",
+      "kind": "code_rlvr_unit_test_probe",
+      "smoke": "two_public_coding_tasks",
+      "source": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
+      "use": "verifiable coding reward and unit-test pass/fail calibration"
     },
     {
-      "id": "editreward_bench_2026",
-      "kind": "image_edit_reward_model_eval",
-      "source": "https://huggingface.co/datasets/EditScore/EditReward-Bench",
-      "use": "image-edit reward model calibration across expert human annotations",
-      "smoke": "two_edit_preference_pairs",
       "holdout": [
         "expert_labels",
         "media_assets",
         "judge_prompts"
-      ]
+      ],
+      "id": "editreward_bench_2026",
+      "kind": "image_edit_reward_model_eval",
+      "smoke": "two_edit_preference_pairs",
+      "source": "https://huggingface.co/datasets/EditScore/EditReward-Bench",
+      "use": "image-edit reward model calibration across expert human annotations"
     },
     {
-      "id": "iesbench_image_edit_safety_2026",
-      "kind": "image_edit_safety_eval",
-      "source": "https://huggingface.co/datasets/CSU-JPG/IESBench",
-      "use": "image editing safety, refusal, and harmful-edit detection",
-      "smoke": "two_image_edit_safety_items",
       "holdout": [
         "safety_labels",
         "reference_images"
-      ]
+      ],
+      "id": "iesbench_image_edit_safety_2026",
+      "kind": "image_edit_safety_eval",
+      "smoke": "two_image_edit_safety_items",
+      "source": "https://huggingface.co/datasets/CSU-JPG/IESBench",
+      "use": "image editing safety, refusal, and harmful-edit detection"
     },
     {
-      "id": "svi_benchmark_2026",
-      "kind": "image_to_video_storyline_eval",
-      "source": "https://huggingface.co/datasets/epfl-vita/svi-benchmark",
-      "use": "stable video infinity prompt-stream/storyline consistency",
-      "smoke": "one_storyline_prompt_stream",
       "holdout": [
         "frame_assets",
         "prompt_stream_labels",
         "human_scores"
-      ]
+      ],
+      "id": "svi_benchmark_2026",
+      "kind": "image_to_video_storyline_eval",
+      "smoke": "one_storyline_prompt_stream",
+      "source": "https://huggingface.co/datasets/epfl-vita/svi-benchmark",
+      "use": "stable video infinity prompt-stream/storyline consistency"
     },
     {
-      "id": "text_to_audio_pref_bench_2026",
-      "kind": "audio_generation_preference_eval",
-      "source": "https://huggingface.co/datasets/Rapidata/text-2-audio-human-preference-benchmark",
-      "use": "text-to-audio preference reward and artifact quality calibration",
-      "smoke": "two_audio_preference_pairs",
       "holdout": [
         "audio_assets",
         "human_preference_labels"
-      ]
+      ],
+      "id": "text_to_audio_pref_bench_2026",
+      "kind": "audio_generation_preference_eval",
+      "smoke": "two_audio_preference_pairs",
+      "source": "https://huggingface.co/datasets/Rapidata/text-2-audio-human-preference-benchmark",
+      "use": "text-to-audio preference reward and artifact quality calibration"
+    },
+    {
+      "holdout": [
+        "private_envs",
+        "solution_replays",
+        "human_demonstrations"
+      ],
+      "id": "arc_agi3_interactive_2026",
+      "kind": "interactive_reasoning_env_eval",
+      "smoke": "two_public_arc_agi3_envs",
+      "source": "https://arcprize.org/arc-agi/3",
+      "use": "interactive ARC-AGI-3 task success, step efficiency, and replay quarantine"
+    },
+    {
+      "holdout": [
+        "oracle_tests",
+        "successful_transcripts",
+        "task_answers"
+      ],
+      "id": "terminal_bench_2_1_2026",
+      "kind": "terminal_agent_eval",
+      "smoke": "two_public_terminal_bench_2_1_tasks",
+      "source": "https://www.tbench.ai/leaderboard/terminal-bench/2.1",
+      "use": "containerized CLI task success and unsafe action regression gate"
+    },
+    {
+      "holdout": [
+        "answers",
+        "final_state_oracles",
+        "successful_browser_traces"
+      ],
+      "id": "browsergym_webarena_verified_2026",
+      "kind": "browser_agent_eval",
+      "smoke": "two_public_webarena_tasks",
+      "source": "https://github.com/ServiceNow/BrowserGym",
+      "use": "browser state/action success across WebArena VisualWebArena and WorkArena style tasks"
+    },
+    {
+      "holdout": [
+        "vm_credentials",
+        "verified_trajectories",
+        "screen_state_oracles"
+      ],
+      "id": "osworld_desktop_2026",
+      "kind": "desktop_gui_agent_eval",
+      "smoke": "one_public_vm_task",
+      "source": "https://os-world.github.io/",
+      "use": "desktop GUI state/action task success and credential quarantine"
+    },
+    {
+      "holdout": [
+        "current_release_answers",
+        "private_judge_material"
+      ],
+      "id": "livebench_math_2026",
+      "kind": "rolling_math_reasoning_eval",
+      "smoke": "two_public_math_items",
+      "source": "https://github.com/LiveBench/LiveBench",
+      "use": "rolling contemporary math reasoning without stale benchmark leakage"
+    },
+    {
+      "holdout": [
+        "validation_answers",
+        "test_answers",
+        "image_assets"
+      ],
+      "id": "mmmu_pro_split_2026",
+      "kind": "multimodal_exam_eval",
+      "smoke": "standard_and_vision_dev_items",
+      "source": "https://huggingface.co/datasets/MMMU/MMMU_Pro",
+      "use": "standard 10-choice and vision-only MMMU-Pro multimodal exam gate"
+    },
+    {
+      "holdout": [
+        "answers",
+        "subtitle_variants",
+        "video_assets"
+      ],
+      "id": "video_mme_v2_grouped_2026",
+      "kind": "long_video_understanding_eval",
+      "smoke": "two_public_video_mme_v2_items",
+      "source": "https://github.com/MME-Benchmarks/Video-MME-v2",
+      "use": "grouped non-linear long-video reasoning with subtitle/audio mode tracking"
+    },
+    {
+      "holdout": [
+        "audio_assets",
+        "answer_keys",
+        "judge_prompts"
+      ],
+      "id": "audiobench_mmau_2026",
+      "kind": "audio_understanding_eval",
+      "smoke": "two_public_audio_reasoning_items",
+      "source": "https://github.com/AudioLLMs/AudioBench",
+      "use": "speech audio music and sound reasoning metrics across AudioBench/MMAU style tasks"
+    },
+    {
+      "holdout": [
+        "human_scores",
+        "prompt_labels",
+        "generated_reference_videos"
+      ],
+      "id": "vbench2_intrinsic_faithfulness_2026",
+      "kind": "video_generation_faithfulness_eval",
+      "smoke": "two_vbench2_prompt_outputs",
+      "source": "https://vchitect.github.io/VBench-2.0-project/",
+      "use": "video human fidelity controllability creativity physics and commonsense generation gate"
+    },
+    {
+      "holdout": [
+        "safety_labels",
+        "human_scores"
+      ],
+      "id": "vbenchpp_trustworthiness_2026",
+      "kind": "video_generation_trustworthiness_eval",
+      "smoke": "two_trustworthiness_prompts",
+      "source": "https://github.com/Vchitect/VBench",
+      "use": "video generation safety trustworthiness and corruption-rate gate"
+    },
+    {
+      "holdout": [
+        "human_preference_labels",
+        "audio_assets"
+      ],
+      "id": "music_arena_2026",
+      "kind": "music_generation_preference_eval",
+      "smoke": "two_public_music_preference_pairs",
+      "source": "https://www.musicarena.ai/",
+      "use": "rolling text-to-music human preference and monthly release evaluation"
+    },
+    {
+      "holdout": [
+        "released_task_answers",
+        "media_assets"
+      ],
+      "id": "omni_any_to_any_unim_2026",
+      "kind": "any_to_any_multimodal_eval",
+      "smoke": "contract_only_until_authorized_release",
+      "source": "https://arxiv.org/abs/2603.05075",
+      "use": "interleaved text image audio video document code and 3D any-to-any evaluation"
+    },
+    {
+      "holdout": [
+        "expected_asts",
+        "private_cases"
+      ],
+      "id": "bfcl_v4_tool_calling_2026",
+      "kind": "tool_calling_ast_eval",
+      "smoke": "two_public_bfcl_v4_calls",
+      "source": "https://gorilla.cs.berkeley.edu/leaderboard",
+      "use": "function/tool selection AST argument exactness and multi-turn API behavior"
+    },
+    {
+      "holdout": [
+        "server_states",
+        "expected_tool_sequences",
+        "successful_traces"
+      ],
+      "id": "mcpmark_mcp_universe_2026",
+      "kind": "mcp_agent_workflow_eval",
+      "smoke": "two_public_mcp_workflows",
+      "source": "https://github.com/eval-sys/mcpmark",
+      "use": "MCP server workflow success tool recovery and state consistency gate"
     }
   ],
+  "contamination_controls": [
+    "record_dataset_commit_or_revision",
+    "record_docker_digest_and_scorer_commit",
+    "separate_public_dev_from_reportable_eval",
+    "never_expose_gold_patches_hidden_tests_or_answer_keys_to_agent",
+    "hash_prompt_artifacts_and_outputs",
+    "report_model_only_model_plus_agent_and_model_plus_agent_plus_tools_separately",
+    "successful_eval_trajectories_go_to_quarantine_until_benchmark_retired"
+  ],
+  "cycles": {
+    "nightly": "10-20 percent stratified slice plus one fresh/live task batch",
+    "release": "full authorized suites plus locked blind private evals",
+    "smoke": "20-50 tasks under 60 minutes"
+  },
   "release_gates": {
-    "must_pass": [
-      "no_credential_leakage",
-      "no_destructive_out_of_sandbox_actions",
-      "no_hidden_test_access",
-      "no_benchmark_prompt_memorization_signal",
-      "reproducible_run_logs"
-    ],
-    "coding": [
-      "swe_bench_pro",
-      "swe_bench_live",
-      "terminal_bench_2",
-      "longcodebench",
-      "swe_lancer",
-      "rlvr_linearity_math_2026",
-      "nous_rlvr_coding_2026"
-    ],
     "agent": [
       "bfcl_v4",
       "tau2_tau3",
@@ -508,18 +654,22 @@
       "gdpval",
       "mcp_universe",
       "plan_rewardbench",
-      "m3_long_video_memory"
+      "m3_long_video_memory",
+      "arc_agi3_interactive_2026",
+      "browsergym_webarena_verified_2026",
+      "osworld_desktop_2026",
+      "bfcl_v4_tool_calling_2026",
+      "mcpmark_mcp_universe_2026"
     ],
-    "omnimodal_reasoning": [
-      "mmmu_pro",
-      "video_understanding",
-      "qwen3_omni_eval",
-      "mrcr",
-      "hle_rolling_livebench",
-      "multimodal_rewardbench2",
-      "longmemeval_v2_nolima",
-      "cfvbench",
-      "text_to_audio_pref_bench_2026"
+    "coding": [
+      "swe_bench_pro",
+      "swe_bench_live",
+      "terminal_bench_2",
+      "longcodebench",
+      "swe_lancer",
+      "rlvr_linearity_math_2026",
+      "nous_rlvr_coding_2026",
+      "terminal_bench_2_1_2026"
     ],
     "generation": [
       "image_generation_edit",
@@ -530,21 +680,48 @@
       "healthbench",
       "editreward_bench_2026",
       "iesbench_image_edit_safety_2026",
-      "svi_benchmark_2026"
+      "svi_benchmark_2026",
+      "vbench2_intrinsic_faithfulness_2026",
+      "vbenchpp_trustworthiness_2026",
+      "music_arena_2026"
+    ],
+    "must_pass": [
+      "no_credential_leakage",
+      "no_destructive_out_of_sandbox_actions",
+      "no_hidden_test_access",
+      "no_benchmark_prompt_memorization_signal",
+      "reproducible_run_logs"
+    ],
+    "omnimodal_reasoning": [
+      "mmmu_pro",
+      "video_understanding",
+      "qwen3_omni_eval",
+      "mrcr",
+      "hle_rolling_livebench",
+      "multimodal_rewardbench2",
+      "longmemeval_v2_nolima",
+      "cfvbench",
+      "text_to_audio_pref_bench_2026",
+      "livebench_math_2026",
+      "mmmu_pro_split_2026",
+      "video_mme_v2_grouped_2026",
+      "audiobench_mmau_2026",
+      "omni_any_to_any_unim_2026"
     ]
   },
-  "cycles": {
-    "smoke": "20-50 tasks under 60 minutes",
-    "nightly": "10-20 percent stratified slice plus one fresh/live task batch",
-    "release": "full authorized suites plus locked blind private evals"
+  "schema": "schemas/eval_harness_2026.sql",
+  "storage": "raw_postgresql_only",
+  "task_contract": {
+    "required_fields": [
+      "input_bundle",
+      "allowed_tools",
+      "environment_snapshot",
+      "budget",
+      "oracle",
+      "scorer",
+      "artifacts",
+      "contamination_class"
+    ]
   },
-  "contamination_controls": [
-    "record_dataset_commit_or_revision",
-    "record_docker_digest_and_scorer_commit",
-    "separate_public_dev_from_reportable_eval",
-    "never_expose_gold_patches_hidden_tests_or_answer_keys_to_agent",
-    "hash_prompt_artifacts_and_outputs",
-    "report_model_only_model_plus_agent_and_model_plus_agent_plus_tools_separately",
-    "successful_eval_trajectories_go_to_quarantine_until_benchmark_retired"
-  ]
+  "version": "2026-05-24"
 }

@@ -12,6 +12,17 @@ from typing import Any, Iterable, Sequence
 
 SCHEMA = "omnicoder.memory_trace.v1"
 TEXT_SUFFIXES = {".jsonl", ".json", ".log", ".txt", ".md"}
+DEFAULT_EXCLUDE_SUBSTRINGS = (
+    ".env",
+    ".git",
+    ".ssh",
+    ".cred_key",
+    ".cred_vault",
+    "__pycache__",
+    "node_modules",
+    "private_key",
+    "weights",
+)
 SENSITIVE_KEY_PARTS = (
     "api_key",
     "apikey",
@@ -101,11 +112,15 @@ def iter_files(inputs: Sequence[Path], suffixes: set[str] | None = None) -> Iter
     allowed = suffixes or TEXT_SUFFIXES
     for root in inputs:
         if root.is_file() and root.suffix.lower() in allowed:
-            yield root
+            text = str(root)
+            if not any(part in text for part in DEFAULT_EXCLUDE_SUBSTRINGS):
+                yield root
         elif root.is_dir():
             for item in sorted(root.rglob("*")):
                 if item.is_file() and item.suffix.lower() in allowed:
-                    yield item
+                    text = str(item)
+                    if not any(part in text for part in DEFAULT_EXCLUDE_SUBSTRINGS):
+                        yield item
 
 
 def iter_jsonish_records(inputs: Sequence[Path]) -> Iterable[dict[str, Any]]:
@@ -257,6 +272,40 @@ def year_from_timestamp(value: str | None) -> int | None:
 def include_by_year(record: dict[str, Any], min_year: int, max_year: int) -> bool:
     year = year_from_timestamp(created_at_from(record))
     return year is None or min_year <= year <= max_year
+
+
+def year_from_path(path_value: Any) -> int | None:
+    if not path_value:
+        return None
+    text = str(path_value)
+    matches = [int(match.group(1)) for match in re.finditer(r"(?<!\d)(20[2-9]\d)(?!\d)", text)]
+    if matches:
+        return matches[-1]
+    try:
+        path = Path(text)
+        if path.exists():
+            return datetime.fromtimestamp(path.stat().st_mtime).year
+    except Exception:
+        return None
+    return None
+
+
+def include_by_date_policy(
+    record: dict[str, Any],
+    min_year: int,
+    max_year: int,
+    *,
+    strict_dates: bool = False,
+    reject_unknown_dates: bool = False,
+) -> bool:
+    if not strict_dates:
+        return include_by_year(record, min_year, max_year)
+    year = year_from_timestamp(created_at_from(record))
+    if year is None:
+        year = year_from_path(record.get("path") or record.get("source_path"))
+    if year is None:
+        return not reject_unknown_dates
+    return min_year <= year <= max_year
 
 
 def source_date_for(record: dict[str, Any], fallback: str | None) -> str | None:
@@ -514,10 +563,18 @@ def collect_records(
     min_year: int,
     max_year: int,
     limit: int,
+    strict_dates: bool = False,
+    reject_unknown_dates: bool = False,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for event in iter_jsonish_records(inputs):
-        if not include_by_year(event, min_year, max_year):
+        if not include_by_date_policy(
+            event,
+            min_year,
+            max_year,
+            strict_dates=strict_dates,
+            reject_unknown_dates=reject_unknown_dates,
+        ):
             continue
         row = row_builder(event, bucket, split, source_date_for(event, source_date))
         if row is not None:
@@ -538,12 +595,20 @@ def stream_collect_records(
     min_year: int,
     max_year: int,
     limit: int,
+    strict_dates: bool = False,
+    reject_unknown_dates: bool = False,
 ) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     written = 0
     with out.open("w", encoding="utf-8") as handle:
         for event in iter_jsonish_records(inputs):
-            if not include_by_year(event, min_year, max_year):
+            if not include_by_date_policy(
+                event,
+                min_year,
+                max_year,
+                strict_dates=strict_dates,
+                reject_unknown_dates=reject_unknown_dates,
+            ):
                 continue
             row = row_builder(event, bucket, split, source_date_for(event, source_date))
             if row is None:
@@ -662,6 +727,8 @@ def add_collect_args(parser: argparse.ArgumentParser, default_out: str, default_
     parser.add_argument("--min-year", type=int, default=2025)
     parser.add_argument("--max-year", type=int, default=2026)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--strict-dates", action="store_true", help="Require records to resolve to the requested 2025-2026 date window")
+    parser.add_argument("--reject-unknown-dates", action="store_true", help="Reject records with no timestamp, path date, or mtime year")
 
 
 def run_collect(args: argparse.Namespace, row_builder: Any, defaults: Sequence[Path]) -> dict[str, Any]:
@@ -678,6 +745,8 @@ def run_collect(args: argparse.Namespace, row_builder: Any, defaults: Sequence[P
         min_year=args.min_year,
         max_year=args.max_year,
         limit=args.limit,
+        strict_dates=bool(getattr(args, "strict_dates", False)),
+        reject_unknown_dates=bool(getattr(args, "reject_unknown_dates", False)),
     )
     return {
         "status": "ok",
@@ -702,6 +771,19 @@ def build_parser() -> argparse.ArgumentParser:
     generic = sub.add_parser("collect-generic", help="Collect generic agent JSON/JSONL/log traces such as Hermes and LM Studio exports")
     add_collect_args(generic, "weights/data_factory/memory_traces_generic_2026.jsonl", "generic_agent_trace")
     generic.add_argument("--collector", default="generic_agent_trace")
+
+    local = sub.add_parser("collect-local-traces", help="Collect Codex, Claude, and agent-memory traces into a sealed local bundle")
+    local.add_argument("--codex-input", action="append")
+    local.add_argument("--claude-input", action="append")
+    local.add_argument("--agent-memory-input", action="append")
+    local.add_argument("--out-dir", default="weights/data_factory/local_trace_bundle_2026")
+    local.add_argument("--bucket", default="agentic_trace_sft_2026")
+    local.add_argument("--split", default="train", choices=["train", "validation", "eval_holdout", "quarantine"])
+    local.add_argument("--source-date", default=None)
+    local.add_argument("--min-year", type=int, default=2025)
+    local.add_argument("--max-year", type=int, default=2026)
+    local.add_argument("--limit", type=int, default=0)
+    local.add_argument("--allow-unknown-dates", action="store_true")
 
     merge = sub.add_parser("merge", help="Merge collector JSONL files")
     merge.add_argument("--input", action="append", required=True)
@@ -740,6 +822,52 @@ def main(argv: Sequence[str] | None = None) -> None:
             ),
             [],
         )
+    elif args.command == "collect-local-traces":
+        out_dir = Path(args.out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        sources = [
+            ("codex", resolve_inputs(args.codex_input, default_codex_inputs()), codex_event_row),
+            ("claude", resolve_inputs(args.claude_input, default_claude_inputs()), claude_or_agent_memory_row),
+            ("agent_memory", resolve_inputs(args.agent_memory_input, []), agent_memory_event_row),
+        ]
+        outputs: dict[str, Any] = {}
+        merged_inputs: list[Path] = []
+        for label, inputs, builder in sources:
+            existing = [path for path in inputs if path.exists()]
+            if not existing:
+                outputs[label] = {"status": "skipped", "reason": "no_inputs"}
+                continue
+            out = out_dir / f"{label}_traces.jsonl"
+            records = stream_collect_records(
+                existing,
+                builder,
+                out,
+                bucket=args.bucket,
+                split=args.split,
+                source_date=args.source_date,
+                min_year=args.min_year,
+                max_year=args.max_year,
+                limit=args.limit,
+                strict_dates=True,
+                reject_unknown_dates=not args.allow_unknown_dates,
+            )
+            outputs[label] = {"status": "ok", "out": str(out), "records": records, "inputs": [str(path) for path in existing]}
+            if records:
+                merged_inputs.append(out)
+        merged_out = out_dir / "merged_local_traces.jsonl"
+        rows = merge_rows(merged_inputs, dedupe=True) if merged_inputs else []
+        merged_records = write_jsonl(rows, merged_out)
+        result = {
+            "status": "ok",
+            "out_dir": str(out_dir),
+            "outputs": outputs,
+            "merged": str(merged_out),
+            "records": merged_records,
+            "stats": stats_for_rows([merged_out]) if merged_records else {"status": "ok", "records": 0},
+            "strict_dates": True,
+            "reject_unknown_dates": not args.allow_unknown_dates,
+        }
+        (out_dir / "local_trace_bundle_manifest.json").write_text(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     elif args.command == "merge":
         inputs = resolve_inputs(args.input, [])
         require_inputs(inputs)

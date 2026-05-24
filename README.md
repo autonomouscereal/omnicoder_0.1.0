@@ -103,6 +103,14 @@ mix:
   SVI, MieDB, OpenVE-3M, DocVQA 2026, ChartMuseum, Kirundi and Indonesian
   TTS/speech rows, TrueMuse, tokenized omni/Emu3 review rows, and
   StoryBench/OmniBench reward/eval holdouts.
+- Seventh-wave May 24, 2026 additions now cover OpenThoughts-Agent v1 SFT/RL,
+  Edge-Agent WebSearch, Exgentic traces, CUDA-Agent-Ops, AI CUDA Engineer,
+  CodeX-2M Thinking, GitHub code review, INTELLECT-2 RL, DeepSeek-ProverBench,
+  MathArena model-output verifier rows, ECHO/TRIG/MIGE/ReShape/DLE/Inter-Edit,
+  OpenS2V-5M, VEFX, VideoGen-Eval, VABench, OmniVideoBench, UniM,
+  FysicsWorld, MME-Unify, Zero-To-CAD, ASID-1M, VisCoR, CMI-Pref, VoxEval,
+  LongSpeech, UltraEval-Audio, and ATTM 2026. These are tagged as
+  `seventh_wave_agentic_math_code_omni_2026_05_24` for delta materialization.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for
@@ -127,10 +135,11 @@ dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
   --enforce-requirements build
 
 dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
-  --out-dir weights/external_datasets_2026/runs/fifth_sixth_wave_delta \
+  --out-dir weights/external_datasets_2026/runs/fresh_wave_delta \
   --download --max-records-per-dataset 512 \
   --include-wave fifth_wave_agentic_rlvr_multimodal_2026_05_24 \
   --include-wave sixth_wave_formal_code_media_2026_05_24 \
+  --include-wave seventh_wave_agentic_math_code_omni_2026_05_24 \
   build
 
 agentic-tool-train-2026 --profile profiles/agentic_tool_training_2026.json build
@@ -149,7 +158,10 @@ trace-orchestrator outputs to run-scoped writable directories. Memory exports
 now use `limit=0` as an unlimited export and target
 `data/raw/agent_memory_events_2026.jsonl` explicitly, so workstation or
 AI-server PostgreSQL exports can feed the same trace gate without stale
-run-scoped ambiguity. The sidecar now gates required trace artifacts, refuses
+run-scoped ambiguity. The sidecar also has a strict `local-traces` lane that
+exports Codex/Claude/agent-memory rows through 2025-2026 date gating and secret
+quarantine before they become agentic training rows. The sidecar now gates
+required trace artifacts, refuses
 synthetic-only train promotion, refreshes
 agentic SFT/reward/preference/RLVR exports from each trace pass, parses typed
 teacher critiques into corrected responses/tool calls/reward components, and

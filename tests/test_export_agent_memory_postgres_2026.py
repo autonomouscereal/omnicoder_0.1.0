@@ -48,7 +48,8 @@ def test_normalize_record_redacts_secret_fields() -> None:
     normalized = exporter.normalize_record(row)
 
     assert normalized["event_type"] == "PostToolUse"
-    assert normalized["metadata"]["password"] == "<redacted>"
+    assert normalized["metadata"]["password"] == "[REDACTED:sensitive_field]"
+    assert normalized["secret_redaction"]["has_secret"] is True
     assert "abc123456789012345" not in json.dumps(normalized)
 
 

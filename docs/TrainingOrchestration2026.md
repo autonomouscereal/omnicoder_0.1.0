@@ -172,14 +172,18 @@ cd /home/cereal/omnicoder_2026_work
 scripts/ai_server_dataset_training_sidecars_2026.sh preflight
 
 # Trace mining, ComfyUI artifact indexing, external dataset expansion,
-# teacher-job sharding, modality-teacher jobs, and P40 teacher rollouts.
+# strict local trace export, teacher-job sharding, modality-teacher jobs,
+# and P40 teacher rollouts.
 OMNICODER_MAX_RECORDS_PER_DATASET=1024 \
 OMNICODER_TEACHER_LIMIT=256 \
 scripts/ai_server_dataset_training_sidecars_2026.sh all
 
+# Build only the strict 2025-2026 Codex/Claude/agent-memory local trace bundle.
+scripts/ai_server_dataset_training_sidecars_2026.sh local-traces
+
 # Fresh registry-wave delta without reprocessing the entire registry.
-OMNICODER_RUN_ID=external_fifth_sixth_wave_delta_$(date -u +%Y%m%dT%H%M%SZ) \
-OMNICODER_DATASET_INCLUDE_WAVES=fifth_wave_agentic_rlvr_multimodal_2026_05_24,sixth_wave_formal_code_media_2026_05_24 \
+OMNICODER_RUN_ID=external_fresh_wave_delta_$(date -u +%Y%m%dT%H%M%SZ) \
+OMNICODER_DATASET_INCLUDE_WAVES=fifth_wave_agentic_rlvr_multimodal_2026_05_24,sixth_wave_formal_code_media_2026_05_24,seventh_wave_agentic_math_code_omni_2026_05_24 \
 OMNICODER_ENFORCE_DATASET_MINIMA=0 \
 OMNICODER_MAX_RECORDS_PER_DATASET=512 \
 scripts/ai_server_dataset_training_sidecars_2026.sh external-expansion
@@ -195,6 +199,7 @@ scripts/ai_server_dataset_training_sidecars_2026.sh status
 The sidecar runner writes run-scoped outputs under:
 
 - `weights/curated_datasets_2026/runs/<run_id>`
+- `weights/curated_datasets_2026/runs/<run_id>_local_traces`
 - `weights/external_datasets_2026/runs/<run_id>`
 - `weights/data_factory/trace_orchestrator_2026/teacher_jobs/<run_id>`
 - `weights/data_factory/runs/teacher_jobs/<run_id>/modality`

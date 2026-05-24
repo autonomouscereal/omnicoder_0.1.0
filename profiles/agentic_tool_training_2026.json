@@ -1,64 +1,12 @@
 {
-  "profile_name": "agentic_tool_training_2026",
-  "version": "2026-05-23",
-  "purpose": "Agentic tool-calling training lane for Omnicoder 2026: SFT, preference, reward, RLVR, safety negatives, and q4-ready post-training manifests.",
-  "storage": {
-    "primary": "jsonl",
-    "mirror": "raw_postgresql",
-    "schema": "schemas/agentic_tool_training_2026.sql"
-  },
   "agentic_tool_training": {
+    "dry_run": true,
     "enabled": true,
     "input_jsonl": "weights/data_factory/trace_orchestrator_2026/jsonl/contamination_scanned.jsonl",
-    "out_dir": "weights/agentic_tool_training_2026",
-    "model": "Qwen/Qwen3-4B",
-    "min_quality": 0.35,
     "limit": 0,
-    "safety_negatives": true,
-    "dry_run": true,
-    "stages": [
-      "tool_sft",
-      "tool_reward",
-      "tool_preference",
-      "tool_rlvr",
-      "tool_safety_negative",
-      "q4_recovery_ready"
-    ],
-    "source_families": [
-      "codex_traces",
-      "claude_code_traces",
-      "agent_memory_events",
-      "hermes_harness_traces",
-      "bfcl_v4_style_function_calls",
-      "tau3_style_user_simulation",
-      "mcpmark_style_workflows",
-      "terminal_bench_style_shell_tasks",
-      "browsecomp_style_web_search",
-      "paperbench_research_replication",
-      "mle_bench_lite_competitions",
-      "osworld_screenspot_gui",
-      "xbench_deepsearch",
-      "finsearchcomp_global",
-      "artifactsbench_creation"
-    ],
-    "tool_families": [
-      "function_call",
-      "mcp",
-      "terminal",
-      "browser",
-      "filesystem",
-      "raw_postgresql",
-      "comfyui_media",
-      "lm_studio_openai_compatible",
-      "server_manager",
-      "credential_vault_reference",
-      "gui_mouse_keyboard",
-      "browser_playwright",
-      "citation_retrieval",
-      "python_notebook",
-      "ci_test_runner",
-      "artifact_validator"
-    ],
+    "min_quality": 0.35,
+    "model": "Qwen/Qwen3-4B",
+    "out_dir": "weights/agentic_tool_training_2026",
     "reward_axes": [
       "tool_schema_valid",
       "argument_exactness",
@@ -85,75 +33,34 @@
       "process_reward_label",
       "rollout_length_efficiency",
       "overthinking_penalty",
-      "user_simulator_success"
+      "user_simulator_success",
+      "browser_state_prediction",
+      "desktop_state_prediction",
+      "gpu_kernel_speedup",
+      "formal_proof_verifier_pass",
+      "secret_quarantine_passed",
+      "strict_date_gate_passed"
     ],
     "reward_weights": {
-      "quality": 0.15,
-      "schema_valid": 0.12,
       "argument_exactness": 0.12,
-      "state_consistency": 0.12,
-      "outcome_passed": 0.22,
       "domain_verifier": 0.2,
+      "outcome_passed": 0.22,
+      "quality": 0.15,
+      "risk_penalty": -0.35,
       "rollout_efficiency": 0.07,
-      "risk_penalty": -0.35
+      "schema_valid": 0.12,
+      "state_consistency": 0.12
     },
     "rlvr_domains": {
-      "math": {
-        "enabled": true,
-        "export": "math_rlvr.jsonl",
-        "checks": [
-          "final_answer_exact",
-          "symbolic_equivalence",
-          "numeric_tolerance",
-          "no_answer_key_leak"
-        ],
-        "reward_axes": [
-          "math_answer_exact",
-          "reasoning_step_validity",
-          "format_compliance"
-        ]
-      },
-      "code": {
-        "enabled": true,
-        "export": "code_rlvr.jsonl",
-        "checks": [
-          "unit_tests_pass",
-          "no_hidden_tests_leak",
-          "patch_applies",
-          "no_forbidden_dependency"
-        ],
-        "reward_axes": [
-          "code_tests_passed",
-          "minimal_patch",
-          "runtime_safety",
-          "style_consistency"
-        ]
-      },
-      "terminal": {
-        "enabled": true,
-        "export": "terminal_rlvr.jsonl",
-        "checks": [
-          "exit_code_zero",
-          "stdout_matches",
-          "filesystem_state_matches",
-          "no_destructive_unapproved_action"
-        ],
-        "reward_axes": [
-          "terminal_exit_success",
-          "command_relevance",
-          "state_change_correctness",
-          "recovery_after_error"
-        ]
-      },
       "browser": {
-        "enabled": true,
-        "export": "browser_rlvr.jsonl",
         "checks": [
           "answer_exact",
           "citation_supports_claim",
           "page_state_reached",
           "no_stale_source"
         ],
+        "enabled": true,
+        "export": "browser_rlvr.jsonl",
         "reward_axes": [
           "browser_answer_exactness",
           "citation_support",
@@ -161,15 +68,62 @@
           "source_freshness_2026"
         ]
       },
-      "tool": {
+      "code": {
+        "checks": [
+          "unit_tests_pass",
+          "no_hidden_tests_leak",
+          "patch_applies",
+          "no_forbidden_dependency"
+        ],
         "enabled": true,
-        "export": "tool_rlvr.jsonl",
+        "export": "code_rlvr.jsonl",
+        "reward_axes": [
+          "code_tests_passed",
+          "minimal_patch",
+          "runtime_safety",
+          "style_consistency"
+        ]
+      },
+      "math": {
+        "checks": [
+          "final_answer_exact",
+          "symbolic_equivalence",
+          "numeric_tolerance",
+          "no_answer_key_leak"
+        ],
+        "enabled": true,
+        "export": "math_rlvr.jsonl",
+        "reward_axes": [
+          "math_answer_exact",
+          "reasoning_step_validity",
+          "format_compliance"
+        ]
+      },
+      "terminal": {
+        "checks": [
+          "exit_code_zero",
+          "stdout_matches",
+          "filesystem_state_matches",
+          "no_destructive_unapproved_action"
+        ],
+        "enabled": true,
+        "export": "terminal_rlvr.jsonl",
+        "reward_axes": [
+          "terminal_exit_success",
+          "command_relevance",
+          "state_change_correctness",
+          "recovery_after_error"
+        ]
+      },
+      "tool": {
         "checks": [
           "tool_schema_valid",
           "argument_exactness",
           "state_update_consistent",
           "task_outcome_passed"
         ],
+        "enabled": true,
+        "export": "tool_rlvr.jsonl",
         "reward_axes": [
           "tool_schema_valid",
           "argument_exactness",
@@ -177,82 +131,154 @@
           "task_outcome"
         ]
       }
-    }
+    },
+    "safety_negatives": true,
+    "source_families": [
+      "codex_traces",
+      "claude_code_traces",
+      "agent_memory_events",
+      "hermes_harness_traces",
+      "bfcl_v4_style_function_calls",
+      "tau3_style_user_simulation",
+      "mcpmark_style_workflows",
+      "terminal_bench_style_shell_tasks",
+      "browsecomp_style_web_search",
+      "paperbench_research_replication",
+      "mle_bench_lite_competitions",
+      "osworld_screenspot_gui",
+      "xbench_deepsearch",
+      "finsearchcomp_global",
+      "artifactsbench_creation",
+      "openthoughts_agent_v1_sft_rl",
+      "qwen_webworlddata_browser_world_model",
+      "browsergym_webarena_visualwebarena_workarena",
+      "osworld_desktop_gui",
+      "terminal_bench_2_1",
+      "nemotron_terminal_corpus",
+      "mcpmark_mcp_universe",
+      "bfcl_v4_tool_calling",
+      "edge_agent_websearch_260k",
+      "agenttrove_agent_trajectories",
+      "cuda_agent_ops_kernel_rlvr",
+      "ai_cuda_engineer_archive",
+      "codex_claude_hermes_local_traces_strict_dates"
+    ],
+    "stages": [
+      "tool_sft",
+      "tool_reward",
+      "tool_preference",
+      "tool_rlvr",
+      "tool_safety_negative",
+      "q4_recovery_ready"
+    ],
+    "tool_families": [
+      "function_call",
+      "mcp",
+      "terminal",
+      "browser",
+      "filesystem",
+      "raw_postgresql",
+      "comfyui_media",
+      "lm_studio_openai_compatible",
+      "server_manager",
+      "credential_vault_reference",
+      "gui_mouse_keyboard",
+      "browser_playwright",
+      "citation_retrieval",
+      "python_notebook",
+      "ci_test_runner",
+      "artifact_validator",
+      "desktop_gui",
+      "web_world_model",
+      "terminal_container",
+      "cuda_kernel_profiler",
+      "lean4_verifier",
+      "audio_video_generation_judge"
+    ]
   },
+  "contamination_controls": [
+    "drop_hidden_tests_answer_keys_gold_patches",
+    "keep_successful_eval_trajectories_quarantined",
+    "hash_tool_inputs_outputs_and_artifacts",
+    "store_synthetic_secret_markers_only",
+    "train_refusal_for_unapproved_destructive_tool_use"
+  ],
   "posttraining_sequence": [
     {
-      "id": "tool_sft_cold_start",
       "algorithm": "sft",
+      "id": "tool_sft_cold_start",
       "input": "tool_sft.jsonl",
       "purpose": "Teach valid tool-call syntax, state narration, MCP/server-manager style planning, and assistant-only loss."
     },
     {
-      "id": "tool_reward_model",
       "algorithm": "reward",
+      "id": "tool_reward_model",
       "input": "tool_reward.jsonl",
       "purpose": "Train tool/process/outcome rewards over state updates, terminal results, MCP claims, safety, and artifact quality."
     },
     {
-      "id": "tool_preference_optimization",
       "algorithm": "dpo_orpo_kto_simpo",
+      "id": "tool_preference_optimization",
       "input": "tool_preference.jsonl",
       "purpose": "Prefer valid, minimal, state-aware tool use over no-call, wrong-call, unsafe-call, and over-call behavior."
     },
     {
-      "id": "tool_rlvr_grpo",
       "algorithm": "grpo_rloo",
+      "id": "tool_rlvr_grpo",
       "input": "tool_rlvr.jsonl",
       "purpose": "Use verifiable rewards for BFCL, tau, MCPMark, terminal/container tasks, code tests, and multimodal tool artifacts."
     },
     {
-      "id": "math_rlvr_grpo",
       "algorithm": "grpo_rloo",
+      "id": "math_rlvr_grpo",
       "input": "math_rlvr.jsonl",
       "purpose": "Train answer-verifiable math and symbolic-reasoning rollouts with no benchmark answer-key leakage."
     },
     {
-      "id": "code_rlvr_grpo",
       "algorithm": "grpo_rloo",
+      "id": "code_rlvr_grpo",
       "input": "code_rlvr.jsonl",
       "purpose": "Train code repair and repository task rollouts against unit-test, patch-application, and runtime-safety rewards."
     },
     {
-      "id": "terminal_rlvr_grpo",
       "algorithm": "grpo_rloo",
+      "id": "terminal_rlvr_grpo",
       "input": "terminal_rlvr.jsonl",
       "purpose": "Train shell, container, deployment, and recovery rollouts against exit-code, stdout, and filesystem-state rewards."
     },
     {
-      "id": "browser_rlvr_grpo",
       "algorithm": "grpo_rloo",
+      "id": "browser_rlvr_grpo",
       "input": "browser_rlvr.jsonl",
       "purpose": "Train browser/research/citation tasks with evidence support, freshness, and reached-page-state rewards."
     },
     {
-      "id": "tool_safety_negative_alignment",
       "algorithm": "kto_or_safety_sft",
+      "id": "tool_safety_negative_alignment",
       "input": "tool_safety_negatives.jsonl",
       "purpose": "Penalize credential exposure, protected evaluation leakage, destructive actions, and prompt-injection obedience."
     },
     {
-      "id": "tool_dapo_stability",
       "algorithm": "dapo_dr_grpo_lspo",
+      "id": "tool_dapo_stability",
       "input": "tool_rlvr.jsonl",
       "purpose": "Stabilize long tool rollouts with dynamic sampling, length tracking, and overlong shaping."
     },
     {
-      "id": "browser_research_rlvr",
       "algorithm": "retool_toolrl_cispo",
+      "id": "browser_research_rlvr",
       "input": "tool_rlvr.jsonl",
       "purpose": "Train browser/retrieval/citation tasks with exact-answer and evidence rewards."
     },
     {
-      "id": "agent_process_reward_model",
       "algorithm": "agentprm",
+      "id": "agent_process_reward_model",
       "input": "tool_reward.jsonl",
       "purpose": "Train step-level process rewards for tool planning, correction, and reranking."
     }
   ],
+  "profile_name": "agentic_tool_training_2026",
+  "purpose": "Agentic tool-calling training lane for Omnicoder 2026: SFT, preference, reward, RLVR, safety negatives, and q4-ready post-training manifests.",
   "release_gate_links": [
     "agent_bfcl_v4_2026",
     "agent_tau3_2026",
@@ -261,11 +287,10 @@
     "safety_tool_security_2026",
     "deployment_performance_2026"
   ],
-  "contamination_controls": [
-    "drop_hidden_tests_answer_keys_gold_patches",
-    "keep_successful_eval_trajectories_quarantined",
-    "hash_tool_inputs_outputs_and_artifacts",
-    "store_synthetic_secret_markers_only",
-    "train_refusal_for_unapproved_destructive_tool_use"
-  ]
+  "storage": {
+    "mirror": "raw_postgresql",
+    "primary": "jsonl",
+    "schema": "schemas/agentic_tool_training_2026.sql"
+  },
+  "version": "2026-05-23"
 }

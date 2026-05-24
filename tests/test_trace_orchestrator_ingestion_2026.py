@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 
 from omnicoder.data_factory import curated_dataset_builder_2026 as builder
+from omnicoder.data_factory import export_agent_memory_postgres_2026 as pg_export
+from omnicoder.data_factory import export_sft_jsonl
+from omnicoder.data_factory import memory_trace_collectors_2026 as collectors
 from omnicoder.data_factory import trace_orchestrator_2026 as traces
 
 
@@ -230,3 +233,79 @@ def test_trace_orchestrator_assigns_source_step_indices(tmp_path: Path, monkeypa
 
     assert [row["lineage"]["source_index"] for row in rows] == [1, 2]
     assert [row["lineage"]["step_index"] for row in rows] == [1, 2]
+
+
+def test_agent_memory_postgres_normalize_redacts_and_flags_secret() -> None:
+    row = {
+        "created_at": "2026-05-24T00:00:00Z",
+        "event": "PostToolUse",
+        "content": "Bearer abcdefghijklmnopqrstuvwxyz12345",
+        "metadata": {"password": "super-secret-value"},
+    }
+
+    normalized = pg_export.normalize_record(row)
+
+    assert normalized["secret_redaction"]["has_secret"] is True
+    assert "super-secret-value" not in json.dumps(normalized)
+    assert "abcdefghijklmnopqrstuvwxyz12345" not in json.dumps(normalized)
+
+
+def test_memory_trace_strict_dates_rejects_2024_and_unknown(tmp_path: Path) -> None:
+    source = tmp_path / "traces.jsonl"
+    _write_jsonl(
+        source,
+        [
+            {"created_at": "2024-12-31T23:59:00Z", "content": "old trace"},
+            {"created_at": "2026-05-24T10:00:00Z", "content": "fresh trace"},
+        ],
+    )
+
+    rows = collectors.collect_records(
+        [source],
+        collectors.generic_agent_event_row,
+        bucket="agentic_trace_sft_2026",
+        split="train",
+        source_date="2026-05-24",
+        min_year=2025,
+        max_year=2026,
+        limit=0,
+        strict_dates=True,
+        reject_unknown_dates=True,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["target_json"]["content"] == "fresh trace"
+    assert collectors.include_by_date_policy(
+        {"content": "unknown date trace"},
+        2025,
+        2026,
+        strict_dates=True,
+        reject_unknown_dates=True,
+    ) is False
+
+
+def test_export_sft_rejects_secret_redaction_flag(tmp_path: Path) -> None:
+    source = tmp_path / "curated.jsonl"
+    _write_jsonl(
+        source,
+        [
+            {
+                "input_json": {"messages": [{"role": "user", "content": "hello"}]},
+                "target_json": {"content": "safe"},
+                "quality": {"score": 1.0},
+                "secret_redaction": {"has_secret": True},
+            },
+            {
+                "input_json": {"messages": [{"role": "user", "content": "hello"}]},
+                "target_json": {"content": "safe answer"},
+                "quality": {"score": 1.0},
+                "secret_redaction": {"has_secret": False},
+            },
+        ],
+    )
+    out = tmp_path / "sft.jsonl"
+
+    count = export_sft_jsonl.export_offline(source, out, min_quality=0.1, allow_contaminated=False)
+
+    assert count == 1
+    assert "safe answer" in out.read_text(encoding="utf-8")

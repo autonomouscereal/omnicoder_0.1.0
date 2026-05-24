@@ -73,11 +73,16 @@ has run.
 
 The release registry now includes fresh RLVR and media-preference gates for
 RLVR Linearity, Nous RLVR Coding, EditReward-Bench, IESBench, Stable Video
-Infinity, and text-to-audio human preference evaluation. These are eval/release
-gates only; their hidden labels, media assets, and successful trajectories do
-not enter training exports. The broad suite profile also includes corresponding
-contract adapters under reasoning, coding, generation, and safety gates so
-nightly/release planning sees the same coverage.
+Infinity, and text-to-audio human preference evaluation. The latest expansion
+also adds ARC-AGI-3 interactive tasks, Terminal-Bench 2.1, BrowserGym/WebArena,
+OSWorld, LiveBench math, split MMMU-Pro standard/vision gates, Video-MME-v2,
+AudioBench/MMAU, VBench 2.0 faithfulness, VBench trustworthiness, Music Arena,
+BFCL v4, and MCPMark/MCP-Universe contracts. These are eval/release gates only;
+their hidden labels, media assets, private states, answer keys, and successful
+trajectories do not enter training exports. The broad suite profile includes
+matching contract adapters under reasoning, agent/tool, multimodal,
+generation, and safety gates so nightly/release planning sees the same
+coverage.
 
 ## Workflows
 

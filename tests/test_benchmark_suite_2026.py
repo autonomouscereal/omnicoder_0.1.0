@@ -120,6 +120,44 @@ def test_suite_profile_includes_fresh_rlvr_and_media_preference_adapters() -> No
     assert adapters["safety_iesbench_image_edit_2026"]["axis"] == "safety_tool_security"
 
 
+def test_profiles_include_seventh_wave_agentic_omni_release_gates() -> None:
+    root = Path(__file__).resolve().parents[1]
+    registry = json.loads((root / "profiles" / "benchmark_registry_2026.json").read_text(encoding="utf-8"))
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    registry_adapters = {adapter["id"]: adapter for adapter in registry["adapters"]}
+    suite_adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    for adapter_id in [
+        "arc_agi3_interactive_2026",
+        "terminal_bench_2_1_2026",
+        "browsergym_webarena_verified_2026",
+        "osworld_desktop_2026",
+        "livebench_math_2026",
+        "mmmu_pro_split_2026",
+        "video_mme_v2_grouped_2026",
+        "audiobench_mmau_2026",
+        "vbench2_intrinsic_faithfulness_2026",
+        "music_arena_2026",
+    ]:
+        assert adapter_id in registry_adapters
+    for adapter_id in [
+        "reasoning_arc_agi3_interactive_2026",
+        "agent_terminal_bench_2_1_2026",
+        "agent_browsergym_webarena_verified_2026",
+        "agent_osworld_desktop_2026",
+        "reasoning_livebench_math_2026",
+        "multimodal_mmmu_pro_standard_2026",
+        "multimodal_video_mme_v2_grouped_2026",
+        "multimodal_audiobench_mmau_2026",
+        "generation_vbench2_intrinsic_faithfulness_2026",
+        "generation_music_arena_2026",
+    ]:
+        assert adapter_id in suite_adapters
+    assert "agent_terminal_bench_2_1_2026" in suite["release_gates"]["agent_tool_release"]
+    assert "multimodal_video_mme_v2_grouped_2026" in suite["release_gates"]["multimodal_understanding_release"]
+    assert "generation_music_arena_2026" in suite["release_gates"]["generation_release"]
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")

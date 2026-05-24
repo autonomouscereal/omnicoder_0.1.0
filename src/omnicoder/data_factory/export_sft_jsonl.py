@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
+from omnicoder.data_factory import curation_layers_2026
 from omnicoder.data_factory.postgres import transaction
 
 
@@ -155,6 +156,9 @@ def _record_order(record: dict[str, Any], fallback: int) -> tuple[str, int]:
 
 
 def eligible(record: dict[str, Any], min_quality: float, allow_contaminated: bool) -> bool:
+    secret_redaction = record.get("secret_redaction") if isinstance(record.get("secret_redaction"), dict) else {}
+    if secret_redaction.get("has_secret"):
+        return False
     quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
     if quality:
         if float(quality.get("score") or 0.0) < min_quality:
@@ -168,6 +172,11 @@ def eligible(record: dict[str, Any], min_quality: float, allow_contaminated: boo
     if not allow_contaminated and contamination.get("status") == "contaminated":
         return False
     return bool(_messages_from(record))
+
+
+def contains_secret_payload(value: Any) -> bool:
+    serialized = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
+    return bool(curation_layers_2026.redact_secrets(serialized).get("has_secret"))
 
 
 def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -200,6 +209,8 @@ def export_offline(input_path: Path, out_path: Path, min_quality: float, allow_c
                     "quality": record.get("quality", {}),
                 },
             }
+            if contains_secret_payload(payload):
+                continue
             handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
             count += 1
             if limit and count >= limit:
@@ -267,7 +278,10 @@ def export_trace_conversations(input_path: Path, out_path: Path, min_quality: fl
                     "avg": sum(scores) / len(scores),
                     "max": max(scores),
                 }
-            handle.write(json.dumps({"messages": messages, "metadata": group["metadata"]}, ensure_ascii=True) + "\n")
+            payload = {"messages": messages, "metadata": group["metadata"]}
+            if contains_secret_payload(payload):
+                continue
+            handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
             count += 1
             if limit and count >= limit:
                 break

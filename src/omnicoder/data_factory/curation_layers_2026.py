@@ -26,6 +26,7 @@ SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("private_key_block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL)),
     ("connection_uri", re.compile(r"(?i)\b(postgres|postgresql|mysql|redis|mongodb)://[^:\s]+:[^@\s]+@[^)\s]+")),
 )
+SECRET_KEY_RE = re.compile(r"(?i)(api[_-]?key|authorization|bearer|client[_-]?secret|cookie|credential|passphrase|password|passwd|private[_-]?key|refresh[_-]?token|secret|token)")
 
 CODE_MARKERS: dict[str, tuple[str, ...]] = {
     "python": ("def ", "import ", "from ", "async def ", "pytest", "Traceback", "__name__"),
@@ -212,6 +213,51 @@ def redact_secrets(text: str) -> dict[str, Any]:
         "secret_types": sorted({item["secret_type"] for item in findings}),
         "findings": findings,
         "redacted_text": redacted,
+    }
+
+
+def redact_json_value(value: Any, path: str = "$") -> tuple[Any, dict[str, Any]]:
+    """Redact secrets in arbitrary JSON-like payloads and return audit metadata."""
+    findings: list[dict[str, Any]] = []
+    secret_types: Counter[str] = Counter()
+
+    def visit(item: Any, item_path: str) -> Any:
+        if isinstance(item, dict):
+            redacted: dict[str, Any] = {}
+            for key, child in item.items():
+                key_text = str(key)
+                child_path = f"{item_path}.{key_text}"
+                if SECRET_KEY_RE.search(key_text):
+                    child_hash = stable_hash(json.dumps(child, ensure_ascii=True, sort_keys=True, default=str))
+                    findings.append(
+                        {
+                            "secret_type": "sensitive_field",
+                            "path": child_path,
+                            "hash": child_hash,
+                        }
+                    )
+                    secret_types["sensitive_field"] += 1
+                    redacted[key_text] = "[REDACTED:sensitive_field]"
+                else:
+                    redacted[key_text] = visit(child, child_path)
+            return redacted
+        if isinstance(item, list):
+            return [visit(child, f"{item_path}[{index}]") for index, child in enumerate(item)]
+        if isinstance(item, str):
+            result = redact_secrets(item)
+            if result["has_secret"]:
+                for finding in result["findings"]:
+                    findings.append({**finding, "path": item_path})
+                    secret_types[str(finding["secret_type"])] += 1
+            return result["redacted_text"]
+        return item
+
+    redacted = visit(value, path)
+    return redacted, {
+        "has_secret": bool(findings),
+        "secret_count": len(findings),
+        "secret_types": sorted(secret_types),
+        "findings": findings,
     }
 
 
@@ -490,19 +536,8 @@ def write_curated_jsonl(input_path: Path, out_path: Path, args: argparse.Namespa
 
 
 def _redact_json_value(value: Any) -> Any:
-    if isinstance(value, str):
-        return redact_secrets(value)["redacted_text"]
-    if isinstance(value, dict):
-        redacted: dict[str, Any] = {}
-        for key, item in value.items():
-            if re.search(r"(?i)(api[_-]?key|password|passwd|secret|token|private[_-]?key)", str(key)):
-                redacted[str(key)] = "[REDACTED:field]"
-            else:
-                redacted[str(key)] = _redact_json_value(item)
-        return redacted
-    if isinstance(value, list):
-        return [_redact_json_value(item) for item in value]
-    return value
+    redacted, _audit = redact_json_value(value)
+    return redacted
 
 
 def curated_to_training_example(record: dict[str, Any], accepted_splits: set[str], min_quality: float) -> dict[str, Any] | None:

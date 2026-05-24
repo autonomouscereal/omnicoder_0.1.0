@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from omnicoder.data_factory import memory_trace_collectors_2026
+from omnicoder.data_factory import curation_layers_2026
 
 
 DEFAULT_OUT = "data/raw/agent_memory_events_2026.jsonl"
@@ -147,7 +148,20 @@ def normalize_record(row: dict[str, Any]) -> dict[str, Any]:
     payload.setdefault("event_type", payload.get("event") or payload.get("type") or payload.get("memory_kind"))
     payload.setdefault("content", payload.get("prompt") or payload.get("text") or payload.get("message"))
     payload.setdefault("source_uri", payload.get("source") or payload.get("source_path"))
-    return redact(payload)
+    redacted, secret_audit = curation_layers_2026.redact_json_value(payload)
+    if isinstance(redacted, dict):
+        redacted["secret_redaction"] = secret_audit
+        return redacted
+    return {"content": redacted, "secret_redaction": secret_audit}
+
+
+def assert_no_secret_patterns(path: Path) -> None:
+    if not path.exists():
+        return
+    for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+        result = curation_layers_2026.redact_secrets(line)
+        if result.get("has_secret"):
+            raise RuntimeError(f"secret pattern survived export in {path} line {line_number}")
 
 
 def export_rows(cfg: dict[str, Any], out_path: Path) -> dict[str, Any]:
@@ -160,9 +174,13 @@ def export_rows(cfg: dict[str, Any], out_path: Path) -> dict[str, Any]:
     all_spaces = bool(cfg.get("all_spaces", True))
     requested_space = str(cfg.get("space") or "")
     require_date_filter = bool(cfg.get("require_date_filter", True))
+    reject_secret_rows = bool(cfg.get("reject_secret_rows", True))
+    quarantine_path = Path(str(cfg.get("quarantine_out") or out_path.with_suffix(out_path.suffix + ".quarantine.jsonl")))
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    quarantine_path.parent.mkdir(parents=True, exist_ok=True)
     conn = connect(cfg)
     count = 0
+    quarantined = 0
     try:
         with conn:
             with conn.cursor() as cur:
@@ -181,7 +199,7 @@ def export_rows(cfg: dict[str, Any], out_path: Path) -> dict[str, Any]:
                     all_spaces=all_spaces,
                 )
                 offset = 0
-                with out_path.open("w", encoding="utf-8") as handle:
+                with out_path.open("w", encoding="utf-8") as handle, quarantine_path.open("w", encoding="utf-8") as quarantine:
                     while True:
                         remaining = limit - count if limit > 0 else page_size
                         if remaining <= 0:
@@ -200,22 +218,31 @@ def export_rows(cfg: dict[str, Any], out_path: Path) -> dict[str, Any]:
                             break
                         for row in rows:
                             item = dict(row)
-                            handle.write(json.dumps(normalize_record(item), ensure_ascii=True, sort_keys=True, default=str) + "\n")
-                            count += 1
+                            normalized = normalize_record(item)
+                            if reject_secret_rows and (normalized.get("secret_redaction") or {}).get("has_secret"):
+                                quarantine.write(json.dumps(normalized, ensure_ascii=True, sort_keys=True, default=str) + "\n")
+                                quarantined += 1
+                            else:
+                                handle.write(json.dumps(normalized, ensure_ascii=True, sort_keys=True, default=str) + "\n")
+                                count += 1
                         offset += len(rows)
                         if len(rows) < batch_size:
                             break
     finally:
         conn.close()
+    assert_no_secret_patterns(out_path)
     return {
         "status": "ok",
         "out": str(out_path),
+        "quarantine_out": str(quarantine_path),
         "records": count,
+        "quarantined_records": quarantined,
         "table": f"{schema}.{table}",
         "date_floor": date_floor,
         "all_spaces": all_spaces,
         "space": requested_space or None,
         "limit": limit,
+        "reject_secret_rows": reject_secret_rows,
     }
 
 

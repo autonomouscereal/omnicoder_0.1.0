@@ -181,6 +181,17 @@ Current high-value registry families:
   2025, and ARC-AGI-2 public-training seeds. These are tagged with
   `registry_wave` so the AI server can materialize only the fresh wave as a
   delta run while the full registry remains the promotion gate.
+- Seventh-wave additions: OpenThoughts-Agent v1 SFT/RL, Edge-Agent WebSearch
+  260K, Exgentic agent traces, CUDA-Agent-Ops, AI CUDA Engineer Archive,
+  CodeX-2M Thinking, GitHub CodeReview, Open-RL, INTELLECT-2 RL,
+  DeepSeek-ProverBench, MathArena model-output verifier rows, ECHO 2025,
+  TRIG, MIGEBench, ReShapeBench, DeepLookEditBench, Inter-Edit, OpenS2V-5M,
+  VEFX, VideoGen-Eval, VABench, OmniVideoBench, UniM, FysicsWorld, MME-Unify,
+  Zero-To-CAD, ASID-1M, VisCoR, CMI-Pref, VoxEval, LongSpeech,
+  UltraEval-Audio, and ATTM 2026. The wave is tagged
+  `seventh_wave_agentic_math_code_omni_2026_05_24` and is designed to add more
+  real agentic, math, code, image, video, audio, music, and any-to-any coverage
+  without letting protected eval material enter train.
 
 Filtered delta materialization:
 
@@ -192,6 +203,7 @@ dataset-expansion-2026 `
   --max-records-per-dataset 512 `
   --include-wave fifth_wave_agentic_rlvr_multimodal_2026_05_24 `
   --include-wave sixth_wave_formal_code_media_2026_05_24 `
+  --include-wave seventh_wave_agentic_math_code_omni_2026_05_24 `
   build
 ```
 
@@ -219,6 +231,17 @@ full Codex/Claude audit history can be collected without silently truncating at
 12k rows. If the AI server lacks the `agent_memory_pg` credential, stage a fresh
 workstation export into `data/raw/` before starting the next sidecar instead of
 letting old run-scoped rows masquerade as current trace coverage.
+
+Local traces are now fail-closed. `builder_2026.strict_trace_dates` and
+`reject_unknown_trace_dates` are enabled by default, so Codex, Claude Code, and
+agent-memory rows must resolve to 2025-2026 through a row timestamp, path date,
+or file mtime. The PostgreSQL exporter uses the shared curation redactor, writes
+secret-bearing rows to `data/raw/agent_memory_events_2026.quarantine.jsonl`,
+and the SFT exporter rejects `secret_redaction.has_secret` again before
+writing grouped conversations. The sidecar action
+`scripts/ai_server_dataset_training_sidecars_2026.sh local-traces` builds a
+run-scoped strict bundle at
+`weights/curated_datasets_2026/runs/<run_id>_local_traces`.
 
 The registry test suite asserts unique names, HF ids, and URLs, verifies the
 expanded 2025-2026 source coverage, and checks that unsafe license markers do
