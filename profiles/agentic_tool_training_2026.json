@@ -1,0 +1,149 @@
+{
+  "profile_name": "agentic_tool_training_2026",
+  "version": "2026-05-23",
+  "purpose": "Agentic tool-calling training lane for Omnicoder 2026: SFT, preference, reward, RLVR, safety negatives, and q4-ready post-training manifests.",
+  "storage": {
+    "primary": "jsonl",
+    "mirror": "raw_postgresql",
+    "schema": "schemas/agentic_tool_training_2026.sql"
+  },
+  "agentic_tool_training": {
+    "enabled": true,
+    "input_jsonl": "weights/data_factory/trace_orchestrator_2026/jsonl/contamination_scanned.jsonl",
+    "out_dir": "weights/agentic_tool_training_2026",
+    "model": "Qwen/Qwen3-4B",
+    "min_quality": 0.35,
+    "limit": 0,
+    "safety_negatives": true,
+    "dry_run": true,
+    "stages": [
+      "tool_sft",
+      "tool_reward",
+      "tool_preference",
+      "tool_rlvr",
+      "tool_safety_negative",
+      "q4_recovery_ready"
+    ],
+    "source_families": [
+      "codex_traces",
+      "claude_code_traces",
+      "agent_memory_events",
+      "hermes_harness_traces",
+      "bfcl_v4_style_function_calls",
+      "tau3_style_user_simulation",
+      "mcpmark_style_workflows",
+      "terminal_bench_style_shell_tasks",
+      "browsecomp_style_web_search",
+      "paperbench_research_replication",
+      "mle_bench_lite_competitions",
+      "osworld_screenspot_gui",
+      "xbench_deepsearch",
+      "finsearchcomp_global",
+      "artifactsbench_creation"
+    ],
+    "tool_families": [
+      "function_call",
+      "mcp",
+      "terminal",
+      "browser",
+      "filesystem",
+      "raw_postgresql",
+      "comfyui_media",
+      "lm_studio_openai_compatible",
+      "server_manager",
+      "credential_vault_reference",
+      "gui_mouse_keyboard",
+      "browser_playwright",
+      "citation_retrieval",
+      "python_notebook",
+      "ci_test_runner",
+      "artifact_validator"
+    ],
+    "reward_axes": [
+      "tool_schema_valid",
+      "argument_exactness",
+      "state_update_consistency",
+      "task_outcome",
+      "unnecessary_call_rate",
+      "tool_error_recovery",
+      "approval_boundary_respect",
+      "credential_non_disclosure",
+      "protected_eval_exclusion",
+      "artifact_integrity",
+      "q4_consistency",
+      "citation_support",
+      "browser_answer_exactness",
+      "gui_state_transition",
+      "artifact_validity",
+      "process_reward_label",
+      "rollout_length_efficiency",
+      "overthinking_penalty",
+      "user_simulator_success"
+    ]
+  },
+  "posttraining_sequence": [
+    {
+      "id": "tool_sft_cold_start",
+      "algorithm": "sft",
+      "input": "tool_sft.jsonl",
+      "purpose": "Teach valid tool-call syntax, state narration, MCP/server-manager style planning, and assistant-only loss."
+    },
+    {
+      "id": "tool_reward_model",
+      "algorithm": "reward",
+      "input": "tool_reward.jsonl",
+      "purpose": "Train tool/process/outcome rewards over state updates, terminal results, MCP claims, safety, and artifact quality."
+    },
+    {
+      "id": "tool_preference_optimization",
+      "algorithm": "dpo_orpo_kto_simpo",
+      "input": "tool_preference.jsonl",
+      "purpose": "Prefer valid, minimal, state-aware tool use over no-call, wrong-call, unsafe-call, and over-call behavior."
+    },
+    {
+      "id": "tool_rlvr_grpo",
+      "algorithm": "grpo_rloo",
+      "input": "tool_rlvr.jsonl",
+      "purpose": "Use verifiable rewards for BFCL, tau, MCPMark, terminal/container tasks, code tests, and multimodal tool artifacts."
+    },
+    {
+      "id": "tool_safety_negative_alignment",
+      "algorithm": "kto_or_safety_sft",
+      "input": "tool_safety_negatives.jsonl",
+      "purpose": "Penalize credential exposure, protected evaluation leakage, destructive actions, and prompt-injection obedience."
+    },
+    {
+      "id": "tool_dapo_stability",
+      "algorithm": "dapo_dr_grpo_lspo",
+      "input": "tool_rlvr.jsonl",
+      "purpose": "Stabilize long tool rollouts with dynamic sampling, length tracking, and overlong shaping."
+    },
+    {
+      "id": "browser_research_rlvr",
+      "algorithm": "retool_toolrl_cispo",
+      "input": "tool_rlvr.jsonl",
+      "purpose": "Train browser/retrieval/citation tasks with exact-answer and evidence rewards."
+    },
+    {
+      "id": "agent_process_reward_model",
+      "algorithm": "agentprm",
+      "input": "tool_reward.jsonl",
+      "purpose": "Train step-level process rewards for tool planning, correction, and reranking."
+    }
+  ],
+  "release_gate_links": [
+    "agent_bfcl_v4_2026",
+    "agent_tau3_2026",
+    "agent_mcp_workflows_2026",
+    "agent_terminal_bench_2026",
+    "safety_tool_security_2026",
+    "deployment_performance_2026"
+  ],
+  "contamination_controls": [
+    "drop_hidden_tests_answer_keys_gold_patches",
+    "keep_successful_eval_trajectories_quarantined",
+    "hash_tool_inputs_outputs_and_artifacts",
+    "store_synthetic_secret_markers_only",
+    "train_refusal_for_unapproved_destructive_tool_use"
+  ]
+}

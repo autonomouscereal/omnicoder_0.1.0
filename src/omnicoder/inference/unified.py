@@ -167,5 +167,3 @@ def run_unified(inputs: Dict[str, Any], preset: str = "mobile_4gb", device: str 
 	out_ids = generate(model, input_ids, max_new_tokens=int(inputs.get("max_new_tokens", 64)))
 	out["text"] = tok.decode(out_ids[0].tolist())
 	return out
-
-

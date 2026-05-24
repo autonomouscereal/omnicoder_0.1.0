@@ -59,5 +59,3 @@ class SimpleOrthoRenderer(nn.Module):
         # Normalize to [0,1]
         rgb = torch.clamp(colors, 0.0, 1.0).permute(0,3,1,2)  # (B,3,H,W)
         return rgb
-
-

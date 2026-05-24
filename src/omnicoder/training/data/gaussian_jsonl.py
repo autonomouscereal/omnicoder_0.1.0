@@ -107,5 +107,3 @@ class GaussianJSONL(Dataset[Dict[str, Any]]):
                 "gs2d_hw": (int(g2.get("H", 224)), int(g2.get("W", 224))),
             })
         return out
-
-

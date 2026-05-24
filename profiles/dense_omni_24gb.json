@@ -1,0 +1,146 @@
+{
+  "profile_name": "omnicoder2026_native1m_24gb",
+  "status": "active-architecture-target",
+  "research_cutoff": "2026-05-23",
+  "architecture": "dense_kda_csa_hca_mhc_one_trunk_omni",
+  "native_context_target": 1048576,
+  "deployment_truth_path": "omnicoder2026 native runtime with KDA recurrent state plus CSA/HCA sparse latent KV",
+  "adoption_bridge": "qwen3-compatible GGUF for shorter-context LM Studio/llama.cpp adoption",
+  "primary_parameter_target": "20B-class dense target, sized by q4 native-1M 24GB budget rather than a fixed round number",
+  "stretch_parameter_target": "larger than 20B only after TurboQuant native-state validation proves 24GB headroom on RTX 3090",
+  "verified_source_map": {
+    "deepseek_v4": {
+      "status": "primary_verified_vendor_claimed",
+      "used_for": ["CSA", "HCA", "attention_sinks", "mHC", "YaRN 1M target", "compressed sparse retrieval"]
+    },
+    "kimi_linear": {
+      "status": "paper_and_repo_verified",
+      "used_for": ["3:1 KDA-to-global layer rhythm", "KDA/Gated-Delta recurrent-linear memory"]
+    },
+    "minimax_m2_7": {
+      "status": "primary_verified_text_agent_model",
+      "used_for": ["agentic training/reasoning comparison only"],
+      "not_used_for": ["omnimodal generation", "Lightning Attention assumptions"]
+    },
+    "qwen3_omni_gemini_omni_gpt_image_2": {
+      "status": "primary_verified",
+      "used_for": ["shared trunk plus edge codec pattern", "speech/image/video generation head requirements"]
+    },
+    "qwen3_7_qwen3_5_omni": {
+      "status": "not_primary_verified",
+      "used_for": []
+    }
+  },
+  "model": {
+    "primary_20b": {
+      "preset": "omnicoder2026_20b_1m",
+      "estimated_params_b": 20.37,
+      "q4_weight_gib_estimate": 9.49,
+      "native_1m_total_gib_estimate": 12.05,
+      "n_layers": 64,
+      "d_model": 4096,
+      "n_heads": 32,
+      "head_dim": 128,
+      "num_key_value_heads": 1,
+      "q_lora_rank": 1024,
+      "o_lora_rank": 1024,
+      "o_groups": 8,
+      "mlp_dim": 16384,
+      "layer_pattern": ["kda", "kda", "kda", "csa", "kda", "kda", "kda", "hca"],
+      "attention_ratio": "6 KDA : 1 CSA : 1 HCA per 8-layer cycle",
+      "local_window": 128,
+      "csa_compress_rate": 4,
+      "csa_top_k_blocks": 512,
+      "hca_compress_rate": 128,
+      "latent_dim": 512,
+      "tie_embeddings": true,
+      "mtp_heads": 0,
+      "flow_latent_dim": 1024,
+      "contract": "fit 24GB at q4 with compressed native state, TurboQuant path, full 330k omnimodal ledger, and native 1M context"
+    },
+    "legacy_16b": {
+      "preset": "omnicoder2026_16b_1m",
+      "n_layers": 48,
+      "d_model": 4096,
+      "n_heads": 32,
+      "head_dim": 128,
+      "num_key_value_heads": 1,
+      "q_lora_rank": 1024,
+      "o_lora_rank": 1024,
+      "o_groups": 8,
+      "mlp_dim": 16384,
+      "layer_pattern": ["kda", "kda", "kda", "csa", "kda", "kda", "kda", "hca"],
+      "local_window": 128,
+      "csa_top_k_blocks": 512,
+      "latent_dim": 512,
+      "risk": "kept as an intermediate fallback; it is no longer the main contract target"
+    },
+    "server_probe": {
+      "preset": "omnicoder2026_full_ledger_probe",
+      "n_layers": 4,
+      "d_model": 512,
+      "n_heads": 8,
+      "head_dim": 64,
+      "num_key_value_heads": 1,
+      "q_lora_rank": 128,
+      "o_lora_rank": 128,
+      "o_groups": 2,
+      "mlp_dim": 1408,
+      "layer_pattern": ["kda", "kda", "csa", "hca"],
+      "purpose": "validate construction, train loop, full 330k token ledger, sparse masks, Q4 fake quant, and AI-server deployment before scaling to primary_20b"
+    }
+  },
+  "token_space": {
+    "strategy": "single_global_vocab_typed_ranges",
+    "vocab_size": 330000,
+    "rule": "edge codecs turn raw media into ledger token IDs or continuous targets; the trunk has no learned in-trunk modality adapters",
+    "ranges": {
+      "text": [0, 128000],
+      "control": [128000, 132096],
+      "vision_semantic": [132096, 197632],
+      "vision_residual": [197632, 214016],
+      "speech_tts": [214016, 279552],
+      "audio_music": [279552, 312320],
+      "music_control": [312320, 320512],
+      "time_space": [320512, 324608],
+      "tool_agent": [324608, 328704],
+      "flow": [328704, 330000]
+    }
+  },
+  "native_1m_context": {
+    "core_mechanisms": [
+      "KDA/Gated-DeltaNet-style recurrent-linear layers with O(1) recurrent state",
+      "DeepSeek-V4-style CSA layers with local sliding attention, sinks, sparse compressed summaries, and top-k/prefix recall",
+      "DeepSeek-V4-style HCA layers with heavily compressed long-range summaries",
+      "DeepSeek-V4-style shared K=V MQA, low-rank Q, grouped low-rank O, trailing partial RoPE, and sink logits",
+      "mHC-lite residual/depth hooks with a future Sinkhorn hyper-connection slot",
+      "Q4-aware training for weights and swappable FP8/Q8/Q4/OScaR-style compressed runtime state",
+      "chunked prefill and paged native runtime"
+    ],
+    "not_allowed_as_core_claim": [
+      "full resident GQA KV at 1M on 24GB",
+      "YaRN-only extrapolation",
+      "Triton/Inductor-only correctness",
+      "MoE fused dispatch",
+      "one stock GGUF that magically provides full native 1M context"
+    ]
+  },
+  "omnimodal_policy": {
+    "shared_trunk": "text, code, tool calls, media ledger tokens, timing tokens, and continuous flow targets share the same dense trunk",
+    "edge_codecs_required": ["image/video tokenizer", "audio/speech codec", "music/audio latent codec", "file format decoders"],
+    "heads": ["shared_lm_head", "flow_head", "grounding_head", "sync_head"],
+    "teacher_distillation": ["Qwen3.6 27B local", "Qwen3-Omni", "Qwen Image/Edit", "LTX 2.3", "ACE-Step 1.5", "gpt-image-2 where licensed/API-available"]
+  },
+  "quantization": {
+    "weights": "Q4-aware training/fake quant with Q4_K_M GGUF bridge target",
+    "native_state": "KDA recurrent state fp16/q8 first; CSA/HCA latent KV fp8/q8 then q4; OScaR INT2 historical branch experimental",
+    "turboquant": "required runtime branch for q4 weights plus compressed latent KV/state; promote beyond estimator only after long-context coding/tool regression tests",
+    "high_precision": ["norms", "rope", "KDA erase/write accumulators", "mHC gates", "sparse index math"]
+  },
+  "hardware_policy": {
+    "primary_24gb": "RTX 3090",
+    "long_context_validation": "Quadro RTX 8000 48GB",
+    "p40_roles": ["llama.cpp short-context bridge", "batch teacher generation", "data preprocessing"],
+    "avoid_on_p40": ["vLLM modern CUDA path", "Triton/Inductor kernels", "FlashAttention dependency", "BF16/FP8 assumptions"]
+  }
+}

@@ -297,5 +297,3 @@ if __name__ == '__main__':
         except Exception:
             # As a last resort, exit non-zero preserving the original failure semantics
             raise
-
-

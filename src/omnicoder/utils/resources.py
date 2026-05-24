@@ -200,5 +200,3 @@ def select_device(prefer: str | None = None) -> str:
 
     # 4) CPU fallback
     return "cpu"
-
-

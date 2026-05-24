@@ -4,6 +4,8 @@ import argparse
 from pathlib import Path
 from typing import Tuple
 
+import os
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -20,8 +22,24 @@ from omnicoder.modeling.multimodal.vision_encoder import VisionBackbone
 from omnicoder.training.simple_tokenizer import get_text_tokenizer
 from omnicoder.utils.torchutils import safe_torch_save
 
+# ====================== ROOT CAUSE FIXES (training script) ======================
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:128"
+os.environ["OMNICODER_OPTIM"] = "adamw8bit"
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.set_float32_matmul_precision('high')
 
-def build_model(preset_name: str, seq_len_hint: int) -> OmniTransformer:
+
+# ====================== MEMORY LOGGING ======================
+def log_memory(tag: str = ""):
+    if not torch.cuda.is_available():
+        return
+    alloc = torch.cuda.memory_allocated() / (1024 ** 3)
+    reserved = torch.cuda.memory_reserved() / (1024 ** 3)
+    peak = torch.cuda.max_memory_allocated() / (1024 ** 3)
+    print(f"[MEM] {tag:45s} | Alloc: {alloc:6.2f} GB | Reserved: {reserved:6.2f} GB | Peak: {peak:6.2f} GB")
+
+def build_model(preset_name: str, seq_len_hint: int, quant: str,) -> OmniTransformer:
     preset = get_mobile_preset(preset_name)
     return OmniTransformer(
         vocab_size=preset.vocab_size,
@@ -36,15 +54,16 @@ def build_model(preset_name: str, seq_len_hint: int) -> OmniTransformer:
         kv_latent_dim=preset.kv_latent_dim,
         multi_query=preset.multi_query,
         multi_token=1,
+        quant=quant,
     )
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="VL pretraining: either feature-fused (default) or VQ-token fused")
     ap.add_argument("--jsonl", type=str, required=True, help="Path to JSONL with {image, text}")
-    ap.add_argument("--mobile_preset", type=str, default="mobile_4gb", choices=["mobile_4gb", "mobile_2gb"]) 
+    ap.add_argument("--mobile_preset", type=str, default="mobile_4gb", choices=["mobile_4gb", "mobile_2gb"])
     ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--batch_size", type=int, default=2)
+    ap.add_argument("--batch_size", type=int, default=1)
     ap.add_argument("--steps", type=int, default=200)
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--image_size", type=int, nargs=2, default=[224, 224])
@@ -61,7 +80,8 @@ def main() -> None:
     dl: DataLoader = dm.loader()
 
     # Model and composer
-    model = build_model(args.mobile_preset, seq_len_hint=4096)
+    model = build_model(args.mobile_preset, seq_len_hint=4096, quant="turbo_kv_4bit")
+    log_memory("After model creation (raw)")
     # Load best-known or latest checkpoint if available to avoid wasting prior training
     try:
         from omnicoder.utils.checkpoint import load_best_or_latest  # type: ignore
@@ -70,9 +90,12 @@ def main() -> None:
             print(f"[resume] loaded {loaded}")
     except Exception:
         pass
+
+    log_memory("After checkpoint load (if any)")
     composer = MultimodalComposer(d_model=model.embed.embedding_dim, vision_dim=384)
     # Ensure composer modules (vision/audio/video encoders and projectors) live on the same device as model
     composer.to(args.device)
+    log_memory("After composer creation")
     # Prefer a sidecar unified vocab map if present to enforce aligned slices
     mmc = MultiModalConfig()
     try:
@@ -98,10 +121,11 @@ def main() -> None:
         img_vq = ImageVQ(codebook_path=args.image_vq_codebook)
     model.to(args.device)
     model.train()
+    log_memory("After model.to(device) + train()")
 
     # Optimizer selection
     import os as _os
-    optim_name = _os.getenv('OMNICODER_OPTIM', 'adamw').strip().lower()
+    optim_name = _os.getenv('OMNICODER_OPTIM', 'adamw8bit').strip().lower()
     weight_decay = float(_os.getenv('OMNICODER_WEIGHT_DECAY', '0.01'))
     if optim_name in ('adamw8bit','adamw_8bit','adam8bit'):
         try:
@@ -146,6 +170,7 @@ def main() -> None:
     step = 0
     for images, input_ids in dl:
         input_ids = input_ids.to(args.device)
+        log_memory(f"Step {step:03d} - Before forward")
         # Guard against tokenizer vocab > model.vocab_size causing embedding OOB
         try:
             vocab_lim = int(getattr(model, 'vocab_size', 0))
@@ -176,14 +201,24 @@ def main() -> None:
             images = images.to(args.device)
             # Feature fusion path
             fused = composer.fuse_text_image(model_with_embed=model, input_ids=input_ids, image_bchw=images)
+            log_memory(f"Step {step:03d} - After composer.fuse")
             with _ac():
                 outputs = model(fused, use_cache=False)  # type: ignore[arg-type]
+            log_memory(f"Step {step:03d} - After model forward")
+
             logits = outputs if isinstance(outputs, torch.Tensor) else outputs[0]
             bsz, t_fused, vocab = logits.shape
             t_text = input_ids.size(1)
             t_nontext = t_fused - t_text
             text_logits = logits[:, t_nontext - 1 : t_fused - 1, :]
             text_labels = input_ids
+            # === NaN guard (add this) ===
+            if torch.isnan(text_logits).any():
+                print("!!! NaN detected in text_logits before loss !!!")
+                print("Logits stats:", text_logits.min().item(), text_logits.max().item(), text_logits.mean().item())
+                # Optional: save for debugging
+                torch.save(text_logits, "nan_logits.pt")
+                raise RuntimeError("NaN in logits — check MoE / recent changes")
             loss = ce(text_logits.reshape(-1, vocab), text_labels.reshape(-1))
             # Optional: add auxiliary alignment loss if pre-aligner provided
             if aligner is not None and vision_backbone is not None and tokenizer is not None and args.align_weight > 0.0:
@@ -220,6 +255,7 @@ def main() -> None:
             opt.zero_grad(set_to_none=True)
         step += 1
         if step % 1 == 0:
+            log_memory(f"Step {step:03d} - End of step")
             print(f"step {step} | loss {loss.item():.4f}")
         if step >= args.steps:
             break
@@ -344,5 +380,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

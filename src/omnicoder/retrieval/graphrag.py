@@ -300,5 +300,3 @@ def collect_bias_ids(triples: List[KGTriple], encode_fn, max_terms: int = 8, tai
 
 def build_graphrag() -> GraphRAG:
     return GraphRAG()
-
-

@@ -39,5 +39,3 @@ def generate_text_vllm(prompt: str, max_new_tokens: int = 64, model_id: Optional
         return outs[0].outputs[0].text
     except Exception:
         return ""
-
-

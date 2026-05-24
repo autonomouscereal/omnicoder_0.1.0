@@ -1,4 +1,4 @@
-﻿x-common: &common
+x-common: &common
   image: omnicoder:cuda
   working_dir: /workspace
   volumes:
@@ -85,8 +85,8 @@ services:
   fetch_nonhf:
     <<: *common
     command: >-
-      bash -lc "set -euo pipefail 
-      ; apt-get update && apt-get install -y --no-install-recommends aria2 unzip p7zip-full unrar || true 
+      bash -lc "set -euo pipefail
+      ; apt-get update && apt-get install -y --no-install-recommends aria2 unzip p7zip-full unrar || true
       ; python3 -m omnicoder.tools.autofetch_external --profiles /workspace/profiles/datasets.json 2>&1 | tee /workspace/tests_logs/autofetch_external.log"
 
   tests:
@@ -144,6 +144,8 @@ services:
       bash -lc "python3 -m omnicoder.tools.press_play --out_root /workspace/weights/release
       --quantize_onnx --onnx_preset generic"
     environment:
+      - TORCHINDUCTOR_USE_TRITON=0
+      - TORCHINDUCTOR_BACKEND=cuda
       - SANDBOX_REMOTE_URL=http://sandbox:8088
       - SFB_CODE_SANDBOX=1
       - OMNICODER_DUAL_SUBSTRATE=1
@@ -182,9 +184,10 @@ services:
         reservations:
           devices:
             - capabilities: [gpu]
-    gpus: all
+              device_ids: ['0']
+    # add this for debugging: TORCH_LOGS="+dynamo" TORCHDYNAMO_VERBOSE=1
     command: >-
-      bash -lc "python3 -m omnicoder.tools.lets_gooooo --budget_hours 1 --device cuda --out_root /workspace/weights 2>&1 | tee /workspace/tests_logs/lets_gooooo.log"
+      bash -lc "TORCH_LOGS="+dynamo" TORCHDYNAMO_VERBOSE=1 python3 -m omnicoder.tools.lets_gooooo --budget_hours 1 --device cuda --out_root /workspace/weights 2>&1 | tee /workspace/tests_logs/lets_gooooo.log"
     environment:
       - OMNICODER_LOG_LEVEL=INFO
       - SANDBOX_REMOTE_URL=http://sandbox:8088
@@ -254,8 +257,8 @@ services:
       bash -lc "python3 -m omnicoder.inference.runtimes.provider_bench
       --model /workspace/weights/release/text/omnicoder_decode_step.onnx
       --providers CPUExecutionProvider
-      --prompt_len 128 --gen_tokens 128 --check_fusions 
-      --threshold_json /workspace/profiles/provider_thresholds.json 
+      --prompt_len 128 --gen_tokens 128 --check_fusions
+      --threshold_json /workspace/profiles/provider_thresholds.json
       --out_json /workspace/weights/release/text/provider_bench.json"
 
   provider_bench_dml:
@@ -342,7 +345,7 @@ services:
           devices:
             - capabilities: [gpu]
     command: >-
-      bash -lc "python3 -m omnicoder.training.draft_train 
+      bash -lc "python3 -m omnicoder.training.draft_train
       --data /workspace/examples/code_eval --seq_len 512 --steps 20000 --batch_size 2
       --device cuda --teacher microsoft/phi-2 --teacher_device_map auto --teacher_dtype auto
       --student_mobile_preset mobile_2gb --lora --lora_r 16 --lora_alpha 32 --lora_dropout 0.05

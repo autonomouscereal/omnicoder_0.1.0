@@ -663,7 +663,7 @@ def sample_next_token(logits: torch.Tensor, temperature: float, top_k: int, top_
 		get_logger("omnicoder.gen").warning("sample_next_token: softmax log failed: %s", str(_e))
 	return nxt
 
-    
+
 
 from omnicoder.inference.gen_config import GenRuntimeConfig, build_runtime_config_from_env  # type: ignore
 
@@ -3313,7 +3313,7 @@ def maybe_load_checkpoint(model: OmniTransformer, ckpt_path: Optional[str]) -> d
     except Exception as e:
         log.error("torch.load failed: %s", str(e))
         raise
-    
+
     # Normalize common checkpoint formats (Lightning, DDP prefixes, nested keys)
     # - Extract nested dicts under typical keys (state_dict, model, module, ema)
     # - Strip common prefixes (model., module., student., transformer., net., backbone.)
@@ -3366,7 +3366,7 @@ def maybe_load_checkpoint(model: OmniTransformer, ckpt_path: Optional[str]) -> d
             except Exception:
                 out[k] = v
         return out
-    
+
     # Unwrap compiled wrappers (torch.compile / dynamo GraphModule) to access real module state_dict
     def _unwrap_model(m: OmniTransformer) -> OmniTransformer:
         try:
@@ -4855,7 +4855,7 @@ def main():
             _emit_cert(cert)
     except Exception:
         pass
-    
+
     return text
 
 

@@ -181,5 +181,3 @@ def sync_env_example(env_example_path: str, registry: Dict[str, EnvVar], usage: 
 
 def allowed_keys_from_registry(registry: Dict[str, EnvVar]) -> List[str]:
     return sorted(list(registry.keys()))
-
-

@@ -128,5 +128,3 @@ class ONNXAudioEncoderAdapter:
         if z.dim() > 1:
             z = z.mean(dim=tuple(range(1, z.dim())))
         return z
-
-

@@ -160,5 +160,3 @@ class ORTSDCallable:
             raise RuntimeError("Pillow required for saving images") from e
         hwc = np.transpose((img * 255.0).astype(np.uint8), (1, 2, 0))
         return Image.fromarray(hwc)
-
-

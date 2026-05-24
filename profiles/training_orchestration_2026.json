@@ -1,0 +1,1006 @@
+{
+  "schema": "omnicoder.training_orchestration_2026.v1",
+  "profile_name": "training_orchestration_2026",
+  "version": "2026-05-23",
+  "purpose": "JSONL-first orchestration profile for automated multimodal training curation, teacher work, training gates, q4 recovery, artifact integrity, and AI-server scheduling.",
+  "storage": {
+    "primary": "jsonl",
+    "mirror": "raw_postgresql",
+    "schema": "schemas/training_orchestration_2026.sql",
+    "mirror_mode": "optional_append_only_events_plus_current_state",
+    "forbidden": [
+      "orm",
+      "pydantic",
+      "sqlalchemy",
+      "sqlite",
+      "chroma"
+    ]
+  },
+  "work_dir": "weights/training_orchestration_2026",
+  "container_runtime": {
+    "required_mounts": [
+      {
+        "host": "/home/cereal/omnicoder_2026_work",
+        "container": "/workspace",
+        "mode": "rw",
+        "reason": "Repository, curated JSONL, checkpoints, logs, and run outputs."
+      },
+      {
+        "host": "/home/cereal",
+        "container": "/home/cereal",
+        "mode": "ro",
+        "reason": "Curated media artifact refs use host absolute /home/cereal paths; without this mount image/video/audio/music rows are rejected as inaccessible."
+      }
+    ],
+    "media_artifact_visibility_gate": "curate-real must report nonzero train records for image, video, audio, and music before run-real is accepted as all-modality training"
+  },
+  "model_contract": {
+    "target_profile": "omnicoder2026_20b_1m",
+    "target_parameter_class": "20B-class dense, exact size governed by q4 24GB native-1M budget",
+    "target_context_length": 1048576,
+    "target_quantization": "q4 with TurboQuant/compressed native state",
+    "budget_profile": "omnicoder2026_20b_1m",
+    "training_verifier_preset": "ledger_probe",
+    "training_verifier_role": "small full-ledger AI-server learning gate; never presented as the production-size target",
+    "target_training_role": "run-full now resolves to the 20B/1M contract unless --allow-verifier-preset is passed explicitly"
+  },
+  "real_sources": {
+    "trace_jsonl": [
+      "weights/curated_datasets_2026/latest/jsonl/train_tool.jsonl",
+      "weights/curated_datasets_2026/latest/jsonl/train_long_context.jsonl",
+      "weights/curated_datasets_2026/latest/jsonl/train_agentic_focus.jsonl",
+      "data/raw/agent_memory_events_2026.jsonl",
+      "data/raw/codex_traces_2026/codex_local_2026.jsonl",
+      "data/raw/claude_traces_2026/claude_local_2026.jsonl",
+      "weights/data_factory/trace_orchestrator_2026/exports/sft_traces.jsonl",
+      "weights/agentic_tool_training_2026/tool_sft.jsonl",
+      "weights/agentic_tool_training_2026/tool_reward.jsonl",
+      "weights/agentic_tool_training_2026/tool_preference.jsonl",
+      "weights/agentic_tool_training_2026/tool_rlvr.jsonl",
+      "weights/agentic_tool_training_2026/tool_safety_negatives.jsonl"
+    ],
+    "text_jsonl": [
+      "weights/curated_datasets_2026/latest/jsonl/train_text.jsonl",
+      "data/mm_instructions.jsonl",
+      "data/reasoning/gsm8k.jsonl",
+      "data/qa/arc_easy.jsonl",
+      "data/qa/hellaswag.jsonl",
+      "data/long_context/helmet_longproc_2026.jsonl",
+      "data/reasoning/arc_agi3_authorized_dev.jsonl",
+      "data/reasoning/gpqa_live_authorized.jsonl"
+    ],
+    "text_roots": [
+      "/home/cereal/SOC_TESTING",
+      "/home/cereal/.hermes",
+      "/home/cereal/.agents/skills",
+      "/home/cereal/.claude",
+      "/home/cereal/.lmstudio/conversations",
+      "/home/cereal/omnicoder_2026_work/weights/data_factory",
+      "/home/cereal/omnicoder_2026_work/weights/agentic_tool_training_2026"
+    ],
+    "code_jsonl": [
+      "weights/curated_datasets_2026/latest/jsonl/train_code.jsonl",
+      "data/code/mbpp.jsonl",
+      "data/code/code_to_text_ruby.jsonl",
+      "data/code/codeparrot_clean.jsonl",
+      "data/code/multi_swe_bench_authorized_dev.jsonl",
+      "data/code/swe_bench_plus_authorized_dev.jsonl",
+      "data/code/evmbench_authorized_dev.jsonl"
+    ],
+    "code_roots": [
+      "/home/cereal/SOC_TESTING",
+      "/home/cereal/.hermes",
+      "/home/cereal/.agents/skills",
+      "/home/cereal/.claude"
+    ],
+    "tool_roots": [
+      "/home/cereal/SOC_TESTING",
+      "/home/cereal/.hermes",
+      "/home/cereal/oracle/blackboard/ingested_data",
+      "/home/cereal/.agents/skills",
+      "/home/cereal/.claude",
+      "/home/cereal/.lmstudio/conversations",
+      "/home/cereal/omnicoder_2026_work/weights/agentic_tool_training_2026",
+      "/home/cereal/.codex",
+      "/home/cereal/.claude/memory_backend"
+    ],
+    "long_context_roots": [
+      "/home/cereal/SOC_TESTING",
+      "/home/cereal/.hermes",
+      "/home/cereal/.agents/skills",
+      "/home/cereal/.claude",
+      "/home/cereal/.lmstudio/conversations",
+      "/home/cereal/omnicoder_2026_work/weights/data_factory",
+      "/home/cereal/omnicoder_2026_work/weights/training_orchestration_2026"
+    ],
+    "image_jsonl": [
+      "weights/curated_datasets_2026/latest/jsonl/train_image.jsonl",
+      "data/vl_coco.jsonl",
+      "data/vl_cc.jsonl",
+      "data/vision/nemotron_image_training_v3_manifest.jsonl",
+      "data/vision/qwen_image_edit_curated.jsonl",
+      "data/vision/imgedit_authorized_dev.jsonl"
+    ],
+    "image_roots": [
+      "/home/cereal/comfyui/output",
+      "/home/cereal/SOC_TESTING",
+      "/home/cereal/.hermes",
+      "/home/cereal/comfyui/output/qwen",
+      "/home/cereal/ComfyUI/output",
+      "/home/cereal/omnicoder_2026_work/weights/media_curation/image"
+    ],
+    "audio_roots": [
+      "data/librispeech/LibriSpeech/dev-clean",
+      "data/ljspeech/LJSpeech-1.1/wavs",
+      "/home/cereal/comfyui/output/audio",
+      "/home/cereal/ComfyUI/output",
+      "/home/cereal/omnicoder_2026_work/weights/media_curation/audio"
+    ],
+    "music_roots": [
+      "data/music",
+      "/home/cereal/comfyui/output",
+      "/home/cereal/comfyui/output/ace",
+      "/home/cereal/ComfyUI/output",
+      "/home/cereal/omnicoder_2026_work/weights/media_curation/music"
+    ],
+    "video_roots": [
+      "data/video",
+      "data/webvid",
+      "/home/cereal/comfyui/output",
+      "/home/cereal/SOC_TESTING",
+      "/home/cereal/comfyui/output/ltx",
+      "/home/cereal/ComfyUI/output",
+      "/home/cereal/omnicoder_2026_work/weights/media_curation/video"
+    ],
+    "media_roots": [
+      "/home/cereal/comfyui/output"
+    ],
+    "video_jsonl": [
+      "weights/curated_datasets_2026/latest/jsonl/train_video.jsonl",
+      "data/video/avgen_bench_authorized_dev.jsonl",
+      "data/video/traceav_authorized_dev.jsonl",
+      "data/video/ltx23_curated_manifest.jsonl"
+    ],
+    "audio_jsonl": [
+      "weights/curated_datasets_2026/latest/jsonl/train_audio.jsonl",
+      "data/audio/granary_v1_1_authorized_manifest.jsonl",
+      "data/audio/amuse_authorized_dev.jsonl",
+      "data/audio/vidaudio_bench_authorized_dev.jsonl"
+    ],
+    "music_jsonl": [
+      "weights/curated_datasets_2026/latest/jsonl/train_music.jsonl",
+      "data/music/ace_step15_curated_manifest.jsonl",
+      "data/music/music_arena_authorized_dev.jsonl",
+      "data/music/vidaudio_music_authorized_dev.jsonl"
+    ]
+  },
+  "training_plan": {
+    "preset": "omnicoder2026_20b_1m",
+    "distributed_training": {
+      "mode": "pipeline_stage",
+      "nproc_per_node": 3,
+      "main_gpu_devices": [
+        "0",
+        "4",
+        "6"
+      ],
+      "rank_device_map": [
+        "0",
+        "1",
+        "2"
+      ],
+      "placement": "weighted_layers",
+      "placement_devices": [
+        "0",
+        "1",
+        "2"
+      ],
+      "placement_layer_counts": [
+        16,
+        16,
+        32
+      ],
+      "placement_head_device": 2,
+      "main_gpu_policy": "PipelineStage torchrun inside a container exposing host GPUs 0,4,6 only: container rank 0 maps to RTX 3090 with 16 layers, rank 1 maps to RTX 3090 with 16 layers, and rank 2 maps to RTX 8000 with 32 layers plus norm/output head. P40s stay out of the synchronous target path and run asynchronous sidecar jobs after the target path is stable.",
+      "pipeline_stage_schedule": "gpipe",
+      "pipeline_microbatches": 1,
+      "precision": "fp16",
+      "init_dtype": "fp16",
+      "optimizer": "adafactor",
+      "optimizer_in_backward": true,
+      "optimizer_in_backward_update": "lowmem_adafactor",
+      "optimizer_in_backward_grad_clip": 1.0,
+      "optimizer_in_backward_clip_mode": "rms",
+      "optimizer_in_backward_adafactor_chunk_rows": 256,
+      "optimizer_in_backward_adafactor_clip_threshold": 1.0,
+      "optimizer_in_backward_adafactor_decay_rate": -0.8,
+      "optimizer_in_backward_adafactor_eps1": 1e-30,
+      "activation_checkpointing": true,
+      "cpu_offload": false,
+      "fake_quant_chunk_rows": 64,
+      "fake_quant_max_full_elements": 16777216,
+      "checkpoint_format": "pipeline_stage_sharded_checkpoint_v2",
+      "p40_sidecar_devices": [
+        "1",
+        "2",
+        "3",
+        "5"
+      ],
+      "p40_sidecar_roles": [
+        "teacher/distillation batch generation",
+        "curation media hashing and codec-token materialization",
+        "short-context GGUF/llama.cpp compatibility checks",
+        "probe-scale regression sweeps that must not block the target FSDP step"
+      ]
+    },
+    "stage_order": [
+      "text",
+      "code",
+      "tool",
+      "image",
+      "video",
+      "audio",
+      "music",
+      "long_context"
+    ],
+    "required_modalities": [
+      "text",
+      "code",
+      "tool",
+      "image",
+      "video",
+      "audio",
+      "music",
+      "long_context"
+    ],
+    "max_records_per_modality": 256,
+    "max_records_per_modality_by_modality": {
+      "text": 768,
+      "code": 768,
+      "tool": 768,
+      "long_context": 768,
+      "audio": 768,
+      "image": 128,
+      "video": 128,
+      "music": 128
+    },
+    "min_records_per_modality": 1,
+    "steps_per_stage": 64,
+    "save_interval": 32,
+    "seq_len": 1024,
+    "batch_size": 1,
+    "learning_rate": 0.00002,
+    "finetune_steps": 64,
+    "finetune_learning_rate": 0.000005,
+    "device": "cuda",
+    "fake_quant": true,
+    "fake_quant_chunk_rows": 64,
+    "fake_quant_max_full_elements": 16777216,
+    "resume_between_stages": true,
+    "text_token_limit": 384,
+    "target_text_chars": 3000,
+    "heldout_sample_loss_max_records_per_file": 32,
+    "heldout_sample_loss_timeout_seconds": 3600,
+    "sample_loss_max_records_per_file": 32,
+    "sample_loss_timeout_seconds": 3600,
+    "max_text_file_bytes": 1048576,
+    "fallback_token_count": 32,
+    "max_hash_bytes": 268435456,
+    "max_media_bytes": 536870912,
+    "artifact_token_count": {
+      "image": 64,
+      "video": 64,
+      "audio": 64,
+      "music": 64,
+      "tool": 48,
+      "long_context": 48
+    }
+  },
+  "gpu_utilization_sidecar": {
+    "schema": "omnicoder.gpu_utilization_sidecar_2026.v1",
+    "enabled": true,
+    "launcher": "omnicoder.tools.gpu_sidecar_2026",
+    "dispatch_policy": "detached_nonblocking_subprocesses",
+    "devices": [
+      "1",
+      "2",
+      "3",
+      "5"
+    ],
+    "main_training_devices": [
+      "0",
+      "4",
+      "6"
+    ],
+    "out_root": "weights/training_orchestration_2026/gpu_sidecar",
+    "write_policy": "sidecar-only manifests/logs/artifacts; no writes to core trainer checkpoints",
+    "max_active_per_device": 1,
+    "omp_threads": 4,
+    "env": {
+      "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:128"
+    },
+    "jobs": [
+      {
+        "job_id": "p40_1_dataset_token_materialization",
+        "job_type": "dataset_materialization",
+        "device": "1",
+        "enabled": true,
+        "priority": 10
+      },
+      {
+        "job_id": "p40_2_teacher_distillation_jobs",
+        "job_type": "teacher_distillation",
+        "device": "2",
+        "enabled": true,
+        "priority": 20,
+        "records": "weights/curated_datasets_2026/latest/jsonl/train_tool.jsonl",
+        "limit": 512,
+        "skip_if_missing": [
+          "weights/curated_datasets_2026/latest/jsonl/train_tool.jsonl"
+        ]
+      },
+      {
+        "job_id": "p40_3_eval_shard_latest_checkpoint",
+        "job_type": "eval_shard",
+        "device": "3",
+        "enabled": true,
+        "priority": 30,
+        "checkpoint": "weights/training_orchestration_2026/checkpoints/08_long_context.pt",
+        "data_dir": "weights/training_orchestration_2026/jsonl",
+        "seq_len": 512,
+        "max_records_per_file": 64,
+        "skip_if_missing": [
+          "weights/training_orchestration_2026/checkpoints/08_long_context.pt",
+          "weights/training_orchestration_2026/jsonl"
+        ]
+      },
+      {
+        "job_id": "p40_5_probe_training_run",
+        "job_type": "training_run",
+        "device": "5",
+        "enabled": true,
+        "priority": 35,
+        "stage": "run-real",
+        "preset": "ledger_probe",
+        "distributed": "none",
+        "placement": "single",
+        "precision": "fp16",
+        "init_dtype": "fp16",
+        "optimizer": "adafactor",
+        "steps_per_stage": 4,
+        "seq_len": 192,
+        "batch_size": 1,
+        "save_interval": 0,
+        "fake_quant": true,
+        "allow_verifier_preset": true
+      },
+      {
+        "job_id": "p40_3_benchmark_canary",
+        "job_type": "benchmark_canary",
+        "device": "3",
+        "enabled": true,
+        "priority": 40,
+        "model": "sidecar_probe_or_latest",
+        "mode": "smoke",
+        "cycle": "smoke",
+        "timeout_seconds": 60
+      }
+    ]
+  },
+  "learning_checks": {
+    "min_loss_points": 4,
+    "min_relative_loss_drop": 0.0005,
+    "fail_required_modality_on_missing_records": true,
+    "emit_per_modality_loss_logs": true
+  },
+  "ai_server": {
+    "server_id": "ai",
+    "host_ref": "server-manager:ai",
+    "scheduler": "raw_postgresql_claim_queue_with_jsonl_spool",
+    "jsonl_spool_dir": "weights/training_orchestration_2026/spool",
+    "artifact_root": "weights/training_orchestration_2026/artifacts",
+    "max_concurrent_jobs": 2,
+    "resource_pools": [
+      {
+        "pool_id": "gpu_training",
+        "worker_selector": {
+          "server": "ai",
+          "accelerator": "cuda"
+        },
+        "max_active": 1,
+        "job_types": [
+          "sft",
+          "distillation",
+          "q4_recovery",
+          "benchmark_gate"
+        ]
+      },
+      {
+        "pool_id": "comfyui_media",
+        "worker_selector": {
+          "server": "ai",
+          "service": "comfyui"
+        },
+        "max_active": 1,
+        "job_types": [
+          "image_curation",
+          "video_curation",
+          "audio_curation",
+          "music_curation",
+          "multimodal_teacher"
+        ]
+      },
+      {
+        "pool_id": "cpu_jsonl_curation",
+        "worker_selector": {
+          "server": "local_or_ai",
+          "accelerator": "cpu"
+        },
+        "max_active": 4,
+        "job_types": [
+          "jsonl_ingest",
+          "dedupe",
+          "hash_scan",
+          "loss_trend_check"
+        ]
+      }
+    ]
+  },
+  "record_contracts": {
+    "jsonl_event_required_fields": [
+      "event_id",
+      "event_type",
+      "event_time",
+      "run_id",
+      "stage_id",
+      "record_id",
+      "modality",
+      "payload",
+      "artifact_refs",
+      "sha256"
+    ],
+    "training_record_required_fields": [
+      "record_id",
+      "source_id",
+      "source_date",
+      "modalities",
+      "split",
+      "quality_score",
+      "contamination_status",
+      "payload_sha256",
+      "artifact_refs"
+    ],
+    "artifact_required_fields": [
+      "artifact_id",
+      "kind",
+      "uri",
+      "sha256",
+      "byte_size",
+      "mime_type",
+      "created_at"
+    ],
+    "cleaned_dataset_manifest_required_fields": [
+      "schema",
+      "schema_version",
+      "created_at",
+      "status",
+      "records",
+      "modalities",
+      "splits",
+      "required_fields",
+      "missing_required_field_counts",
+      "contamination_status",
+      "quality_score",
+      "artifact_count",
+      "source_file_count"
+    ],
+    "posttraining_export_required_fields": [
+      "schema",
+      "training_kind",
+      "record_id",
+      "source_record_id",
+      "source_id",
+      "modality",
+      "quality_score",
+      "contamination_status"
+    ]
+  },
+  "modalities": {
+    "text": {
+      "enabled": true,
+      "formats": [
+        "instruction",
+        "dialog",
+        "reasoning_trace",
+        "long_context_document"
+      ],
+      "min_quality": 0.35
+    },
+    "code": {
+      "enabled": true,
+      "formats": [
+        "repo_patch",
+        "terminal_trace",
+        "test_result",
+        "review_finding"
+      ],
+      "min_quality": 0.4
+    },
+    "tool": {
+      "enabled": true,
+      "formats": [
+        "tool_schema",
+        "tool_call_ast",
+        "tool_observation",
+        "state_delta",
+        "trajectory"
+      ],
+      "min_quality": 0.4
+    },
+    "image": {
+      "enabled": true,
+      "formats": [
+        "caption",
+        "generation_prompt",
+        "edit_plan",
+        "critique",
+        "reward_label"
+      ],
+      "min_quality": 0.38
+    },
+    "video": {
+      "enabled": true,
+      "formats": [
+        "shot_plan",
+        "temporal_caption",
+        "image_to_video_plan",
+        "sync_critique",
+        "reward_label"
+      ],
+      "min_quality": 0.38
+    },
+    "audio": {
+      "enabled": true,
+      "formats": [
+        "speech_caption",
+        "audio_scene",
+        "transcription",
+        "alignment_label",
+        "critique"
+      ],
+      "min_quality": 0.38
+    },
+    "music": {
+      "enabled": true,
+      "formats": [
+        "music_plan",
+        "lyrics_alignment",
+        "style_label",
+        "structure_label",
+        "reward_label"
+      ],
+      "min_quality": 0.38
+    },
+    "long_context": {
+      "enabled": true,
+      "context_windows": [
+        32768,
+        131072,
+        1048576,
+        2097152
+      ],
+      "formats": [
+        "repository_bundle",
+        "multi_document_bundle",
+        "long_video_transcript",
+        "agent_session_bundle"
+      ],
+      "min_quality": 0.42
+    }
+  },
+  "pipelines": [
+    {
+      "pipeline_id": "jsonl_ingest_and_hash",
+      "stages": [
+        "load_jsonl",
+        "normalize_payload",
+        "hash_payload_and_artifacts",
+        "validate_required_fields",
+        "write_raw_postgresql_mirror"
+      ],
+      "outputs": [
+        "jsonl/events/normalized.jsonl",
+        "jsonl/manifests/artifact_hashes.jsonl"
+      ]
+    },
+    {
+      "pipeline_id": "curation_and_split",
+      "stages": [
+        "secret_redaction",
+        "license_and_source_date_check",
+        "dedupe",
+        "contamination_scan",
+        "modality_quality_score",
+        "split_assignment"
+      ],
+      "outputs": [
+        "jsonl/curated/train.jsonl",
+        "jsonl/curated/validation.jsonl",
+        "jsonl/curated/quarantine.jsonl"
+      ]
+    },
+    {
+      "pipeline_id": "distillation_jobs",
+      "stages": [
+        "teacher_selection",
+        "prompt_pack",
+        "teacher_inference",
+        "critique_parse",
+        "preference_pair_build",
+        "verifier_label_build"
+      ],
+      "outputs": [
+        "jsonl/distillation/jobs.jsonl",
+        "jsonl/distillation/responses.jsonl",
+        "jsonl/distillation/preference_pairs.jsonl"
+      ]
+    },
+    {
+      "pipeline_id": "training_and_q4_recovery",
+      "stages": [
+        "sft",
+        "multimodal_distillation",
+        "long_context_retention",
+        "preference_optimization",
+        "q4_fake_quant_recovery",
+        "q4_export_validation"
+      ],
+      "outputs": [
+        "artifacts/checkpoints",
+        "artifacts/q4_recovered",
+        "jsonl/training/loss_samples.jsonl"
+      ]
+    },
+    {
+      "pipeline_id": "benchmark_gate_release",
+      "stages": [
+        "smoke_benchmarks",
+        "loss_trend_checks",
+        "artifact_hash_gate",
+        "nightly_benchmarks",
+        "release_benchmarks",
+        "promotion_decision"
+      ],
+      "outputs": [
+        "jsonl/evals/benchmark_results.jsonl",
+        "jsonl/evals/gate_decisions.jsonl"
+      ]
+    }
+  ],
+  "curation_policy": {
+    "require_2025_2026_source_dates": true,
+    "reject_missing_source_date_unless_internal_trace": true,
+    "allowed_splits": [
+      "train",
+      "validation",
+      "eval_holdout",
+      "quarantine",
+      "rejected"
+    ],
+    "contamination": {
+      "protected_path": "data/protected/eval_holdout_2026.jsonl",
+      "threshold": 0.42,
+      "ngram": 5,
+      "quarantine_successful_eval_trajectories": true
+    },
+    "dedupe": {
+      "payload_sha256": true,
+      "artifact_sha256": true,
+      "near_duplicate_trigram": true,
+      "canonicalize_tool_traces": true
+    },
+    "secret_redaction": {
+      "enabled": true,
+      "reject_unredacted_secret_hits": true,
+      "store_secret_hash_only": true
+    }
+  },
+  "distillation": {
+    "teacher_profile": "profiles/distillation_curriculum_2026.json",
+    "teacher_job_types": [
+      "trace_critique",
+      "tool_repair",
+      "tool_call_ast_label",
+      "tool_state_delta_label",
+      "code_patch_review",
+      "reasoning_rewrite",
+      "preference_pair",
+      "reward_label",
+      "verifier_label",
+      "multimodal_alignment",
+      "image_critique",
+      "video_sync_critique",
+      "audio_critique",
+      "music_reward_label",
+      "long_context_compression"
+    ],
+    "student_profile": "profiles/dense_omni_24gb.json",
+    "base_model": "Qwen/Qwen3-4B",
+    "target_context_length": 1048576,
+    "steps": 64,
+    "learning_rate": 0.0005,
+    "per_teacher_limit": 512
+  },
+  "q4_recovery": {
+    "enabled": true,
+    "target": "q4",
+    "methods": [
+      "fake_quant_distillation",
+      "teacher_logit_consistency",
+      "answer_consistency",
+      "verifier_reward_replay",
+      "benchmark_regression_repair"
+    ],
+    "must_not_regress_axes": [
+      "coding",
+      "agent_tool",
+      "long_context",
+      "multimodal_understanding",
+      "generation",
+      "safety_tool_security"
+    ],
+    "max_relative_regression": 0.03
+  },
+  "reinforcement_learning": {
+    "enabled": true,
+    "offline_reward_replay": {
+      "trainer": "omnicoder.training.reward_replay_2026",
+      "inputs": [
+        "weights/training_orchestration_2026/agentic_tool_training_2026/tool_reward.jsonl",
+        "weights/training_orchestration_2026/agentic_tool_training_2026/tool_preference.jsonl",
+        "weights/training_orchestration_2026/agentic_tool_training_2026/tool_rlvr.jsonl",
+        "weights/training_orchestration_2026/agentic_tool_training_2026/tool_safety_negatives.jsonl",
+        "weights/agentic_tool_training_2026/tool_reward.jsonl",
+        "weights/agentic_tool_training_2026/tool_preference.jsonl",
+        "weights/agentic_tool_training_2026/tool_rlvr.jsonl",
+        "weights/agentic_tool_training_2026/tool_safety_negatives.jsonl"
+      ],
+      "algorithms_represented": [
+        "reward_weighted_sft",
+        "dpo_preference_replay",
+        "grpo_rlvr_replay",
+        "safety_negative_replay"
+      ],
+      "reward_sources": [
+        "tool_state_consistency",
+        "terminal_outcome",
+        "bfcl_style_function_call_validity",
+        "tau_style_state_update",
+        "mcp_workflow_validity",
+        "credential_and_hidden_eval_safety"
+      ],
+      "checkpoint_policy": "continue_from_latest_multimodal_checkpoint_then_re-evaluate_all_heldout_modalities"
+    },
+    "posttrain_steps_per_algorithm": 32,
+    "posttrain_learning_rate": 0.000001,
+    "posttrain_max_records": 0,
+    "policy_stack_2026": {
+      "offline": [
+        "reward_weighted_sft_replay",
+        "dpo_pair_replay",
+        "orpo_kto_simpo_pair_replay",
+        "grpo_rlvr_replay",
+        "safety_negative_replay",
+        "dpo_replay",
+        "orpo_replay",
+        "simpo_replay",
+        "kto_replay",
+        "process_reward_replay",
+        "rlaif_v_replay"
+      ],
+      "online_or_env": [
+        "grpo",
+        "dapo",
+        "tree_grpo",
+        "agentprm_process_rewards",
+        "retool_tool_integrated_rollouts",
+        "toolrl_state_update_rewards",
+        "multimodal_rlaif_v",
+        "dr_grpo",
+        "vapo",
+        "dcpo",
+        "lspo",
+        "cispo",
+        "retool",
+        "toolrl",
+        "agentprm",
+        "browser_research_rlvr",
+        "desktop_gui_rl",
+        "audio_video_generation_rl"
+      ],
+      "verifiers": [
+        "unit_tests",
+        "terminal_exit_state",
+        "tool_json_schema",
+        "state_delta_exactness",
+        "artifact_hash_presence",
+        "image_video_audio_quality_judges",
+        "secret_and_hidden_eval_filters",
+        "browsecomp_exact_answer_and_citation",
+        "paperbench_rubric",
+        "mle_submission_score",
+        "desktop_gui_state_checker",
+        "video_audio_sync_judge",
+        "cosmos_physics_consistency_judge"
+      ],
+      "rollout_acceleration": [
+        "speculative_rollout_engine_when_available",
+        "q4_fake_quant_policy",
+        "turboquant_kv_cache_probe",
+        "batched_verifier_scoring",
+        "resample_on_correct",
+        "failure_replay_buffer",
+        "teacher_critic_prefill",
+        "short_rollout_then_long_rollout_curriculum"
+      ],
+      "promotion_rule": "offline reward replay must improve or preserve heldout modality sample loss before any on-policy RL checkpoint is promoted"
+    }
+  },
+  "loss_trend_checks": {
+    "enabled": true,
+    "window_steps": 200,
+    "min_samples": 20,
+    "fail_on_nan_or_inf": true,
+    "max_smoothed_loss_increase": 0.08,
+    "max_gradient_norm": 10.0,
+    "plateau_patience_windows": 4,
+    "emit_jsonl": "jsonl/training/loss_trend_checks.jsonl"
+  },
+  "benchmark_gates": {
+    "benchmark_profile": "profiles/benchmark_suite_2026.json",
+    "missing_reportable_policy": "fail",
+    "required_cycles": [
+      "smoke",
+      "nightly",
+      "release"
+    ],
+    "global_must_pass": [
+      "raw_postgresql_schema_applies",
+      "jsonl_records_validate_required_fields",
+      "no_credential_leakage",
+      "no_hidden_test_or_answer_key_exposure",
+      "successful_eval_trajectories_quarantined",
+      "artifact_hashes_recorded",
+      "loss_trend_checks_pass",
+      "q4_recovery_regression_within_limit"
+    ],
+    "release_axes": [
+      "coding",
+      "agent_tool",
+      "reasoning",
+      "long_context",
+      "multimodal_understanding",
+      "image_generation",
+      "video_generation",
+      "audio_generation",
+      "music_generation",
+      "safety_tool_security",
+      "deployment_performance"
+    ],
+    "expanded_2026_required_benchmark_count": 91,
+    "must_cover_new_axes": [
+      "multilingual_repo_repair",
+      "browser_research",
+      "paper_replication",
+      "ml_engineering",
+      "desktop_gui",
+      "long_audio_visual",
+      "joint_audio_video_generation",
+      "turboquant_1m_kv",
+      "terminal_core",
+      "acebench_agent_env",
+      "browsecomp_zh",
+      "deep_search",
+      "finance_search",
+      "artifact_creation",
+      "gaia_text_only",
+      "hle_tools",
+      "mrcr",
+      "longproc",
+      "longcodebench",
+      "cl_bench",
+      "loogle_v2",
+      "qwen3_omni_eval",
+      "qwen35_omni_eval",
+      "t2i_reasonbench",
+      "unigenbench_plus",
+      "cosmos_predict2",
+      "mediaperf",
+      "swe_lancer",
+      "gdpval",
+      "hle_rolling",
+      "livebench",
+      "mcp_universe",
+      "plan_rewardbench",
+      "multimodal_rewardbench2",
+      "multimodal_rewardbench",
+      "longmemeval_v2",
+      "nolima_1m",
+      "opens2v_nexus",
+      "t2v_compbench",
+      "impossible_videos_ipv",
+      "complexbench_edit",
+      "healthbench",
+      "m3_bench_mcp",
+      "longvt",
+      "m3_bench_memory",
+      "cfvbench"
+    ]
+  },
+  "artifact_integrity": {
+    "hash_algorithm": "sha256",
+    "hash_every_payload": true,
+    "hash_every_media_asset": true,
+    "hash_checkpoints": true,
+    "require_byte_size": true,
+    "manifest_path": "weights/training_orchestration_2026/manifests/artifacts.jsonl",
+    "reject_missing_hash_on_promotion": true
+  },
+  "jsonl_outputs": {
+    "event_log": "weights/training_orchestration_2026/jsonl/events.jsonl",
+    "curated_records": "weights/training_orchestration_2026/jsonl/curated_records.jsonl",
+    "cleaned_dataset_manifest": "weights/training_orchestration_2026/manifests/cleaned_dataset_manifest.json",
+    "artifact_manifest": "weights/training_orchestration_2026/manifests/artifacts.jsonl",
+    "source_files_manifest": "weights/training_orchestration_2026/manifests/source_files.jsonl",
+    "dataset_blend_manifest": "weights/training_orchestration_2026/manifests/dataset_blend_manifest.json",
+    "posttraining_curation_manifest": "weights/training_orchestration_2026/agentic_tool_training_2026/manifests/posttraining_curation_manifest.json",
+    "teacher_jobs": "weights/training_orchestration_2026/jsonl/teacher_jobs.jsonl",
+    "loss_samples": "weights/training_orchestration_2026/jsonl/loss_samples.jsonl",
+    "benchmark_results": "weights/training_orchestration_2026/jsonl/benchmark_results.jsonl",
+    "gate_decisions": "weights/training_orchestration_2026/jsonl/gate_decisions.jsonl",
+    "scheduler_events": "weights/training_orchestration_2026/jsonl/scheduler_events.jsonl"
+  },
+  "postgres": {
+    "enabled": false,
+    "mode": "optional_raw_mirror",
+    "schema": "schemas/training_orchestration_2026.sql",
+    "connection_env": "OMNICODER_PG_DSN",
+    "write_policy": "parameterized_raw_sql_only",
+    "fail_on_mirror_error": false
+  },
+  "promotion_policy": {
+    "promote_only_from_jsonl_manifest": true,
+    "require_postgres_mirror_when_enabled": true,
+    "require_all_artifact_hashes": true,
+    "require_benchmark_gate_pass": true,
+    "require_loss_trend_pass": true,
+    "require_q4_recovery_gate_for_q4_exports": true
+  },
+  "notes": [
+    "The JSONL event log is the source of truth; PostgreSQL is an optional raw SQL mirror for querying and scheduling state.",
+    "All database access for this profile must use parameterized raw PostgreSQL through psycopg2, asyncpg, psql, or equivalent direct drivers.",
+    "No ORM, Pydantic, SQLAlchemy, SQLite, Chroma, or backup database path is part of this orchestration contract."
+  ],
+  "curated_dataset_families_2026": {
+    "policy": "Only train on authorized/permissive/internal traces after dedupe, secret scan, benchmark decontamination, and artifact hash validation. Benchmark dev/eval rows stay quarantined unless explicitly marked trainable.",
+    "text_code_agent": [
+      "Codex/Claude/Hermes agent traces from local hooks and agent_memory PostgreSQL export",
+      "Multi-SWE-bench authorized development tasks converted to repair traces, not hidden eval answers",
+      "SWE-Bench++ generated repo tasks with oracle tests withheld from training",
+      "BrowseComp/MM-BrowseComp style browsing traces generated from non-eval synthetic tasks",
+      "PaperBench/MLE-Bench scaffolding traces from self-generated mini tasks only"
+    ],
+    "image_video_audio_music": [
+      "ComfyUI Qwen image and image-edit outputs with prompt/edit/critique/reward labels",
+      "LTX 2.3 text-to-video and image-to-video artifacts with temporal captions and sync critiques",
+      "ACE-Step 1.5 music/audio generations with lyrics, style, stem, tempo, and reward labels",
+      "NVIDIA-style staged image/video/audio mixtures: caption/OCR/VQA, ASR, sound/music/speech understanding, long video omni reasoning",
+      "VidAudio/AVGen-style synthetic prompts generated outside protected eval splits for joint audio-video alignment"
+    ],
+    "long_context": [
+      "Native 1M context trace bundles, repo bundles, multi-document bundles, long video transcripts, and tool-state histories",
+      "DeepSeek-V4-style long-context stress traces with KV/cache/perf metadata and TurboQuant q3.5/q4 variants",
+      "TraceAV-style long audio-visual trajectory QA generated from private/internal media only"
+    ]
+  }
+}

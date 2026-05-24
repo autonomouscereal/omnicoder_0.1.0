@@ -80,5 +80,3 @@ def serialize_synthesized(
         f"{prefix}.w2.weight": out["w2"].squeeze(0),  # (D,M)
         f"{prefix}.w2.bias": out["b2"].squeeze(0),     # (D,)
     }
-
-

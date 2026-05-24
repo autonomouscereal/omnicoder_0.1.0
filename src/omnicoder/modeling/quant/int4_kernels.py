@@ -1,3 +1,5 @@
+# int4_kernels.py
+
 from __future__ import annotations
 
 """Int4 matmul kernel registry per provider.
@@ -132,6 +134,3 @@ def matmul_int4(x: torch.Tensor, packed_w: torch.Tensor, scale: torch.Tensor, ze
     name = (backend or get_backend_name()).lower()
     kernel = _REGISTRY.get(name) or _REGISTRY["cpu"]
     return kernel(x, packed_w, scale, zero)
-
-
-

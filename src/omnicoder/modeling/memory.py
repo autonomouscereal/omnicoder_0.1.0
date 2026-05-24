@@ -1,5 +1,6 @@
 import torch, torch.nn as nn, torch.nn.functional as F
-
+from omnicoder.utils.torchutils import safe_concat as _safe_concat  # type: ignore
+import torch.nn.functional as F
 
 class RecurrentMemory(nn.Module):
     """
@@ -11,12 +12,12 @@ class RecurrentMemory(nn.Module):
 
     The compressor is cheap and export-friendly; it avoids recurrence in favor of
     per-window aggregation, suitable for decode loops with sliding windows.
-    
+
     HISTORY (why earlier versions hurt CG/TPS):
     - Forward wrote `last_mem` inside the graph to expose activations for aux losses. Under
       torch.compile + CUDA Graphs, this introduced side effects that changed the weakref set
       across warmup and replay, triggering cudagraph AssertionError and blocking CG engagement.
-    
+
     CURRENT (why this is better):
     - We keep the attribute for API compatibility but do not assign to it during forward.
       Callers can recompute auxiliary losses from returned tensors outside compiled regions.
@@ -172,7 +173,6 @@ class CompressiveKV(nn.Module):
                     pass
                 k_mem.append(k_seg)
                 v_mem.append(v_seg)
-        from omnicoder.utils.torchutils import safe_concat as _safe_concat  # type: ignore
         k_mem_t = _safe_concat(k_mem, 2)
         v_mem_t = _safe_concat(v_mem, 2)
         return self.post_k(k_mem_t), self.post_v(v_mem_t)
@@ -184,7 +184,6 @@ def compressive_aux_loss(mem: torch.Tensor, hidden: torch.Tensor, reduce: bool =
     Computes cosine distance between each slot and the global mean of hidden states:
     hidden: (B,T,C), mem: (B,M,C)
     """
-    import torch.nn.functional as F
     h_mean = hidden.mean(dim=1, keepdim=True)  # (B,1,C)
     mem_n = F.normalize(mem, dim=-1)
     h_n = F.normalize(h_mean, dim=-1)
@@ -229,4 +228,3 @@ class LandmarkIndexer(nn.Module):
         lm = self.post(lm)
         # Do not assign last_landmarks during forward; return output only
         return lm
-

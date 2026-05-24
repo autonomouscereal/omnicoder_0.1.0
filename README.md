@@ -12,6 +12,32 @@ multimodal tokenization, mobile/runtime exports, verifier loops, reward
 training, and small runnable canaries in one place. Weights and newer training
 work may live outside this public tree until they are ready to publish.
 
+## 2026 Dense Rebuild Status
+
+The active rebuild is now tracked under the `omnicoder2026_20b_1m` contract:
+a dense, 20B-class, native-1M-context omnimodal agent model. The exact
+parameter count is governed by the 24GB Q4 deployment budget, all-modality
+heads, TurboQuant-style compressed state, and native 1,048,576-token context
+requirements.
+
+The current target lane is no longer the old sparse-MoE fused-dispatch path.
+It uses a dense KDA/CSA/HCA/mHC-inspired trunk, shared ledger-token training
+records, strict sharded checkpoints, pipeline sample-loss evaluation, and live
+pipeline reward replay for posttraining. The fast-card AI-server profile maps
+host GPUs `0,4,6` to container ranks `0,1,2` with `16,16,32` layer placement,
+putting the largest shard and final head on the RTX 8000. P40s are sidecars for
+teacher rollout, probe jobs, and curation, not synchronous 20B target shards.
+
+Current rebuild docs:
+
+- `docs/Omnicoder2026Redesign.md`
+- `docs/TrainingOrchestration2026.md`
+- `docs/Omnicoder2026RebuildUpdate.md`
+- `docs/DatasetCuration2026.md`
+- `docs/DistillationAndRL2026.md`
+- `docs/BenchmarkSuite2026.md`
+- `docs/AgenticToolTraining2026.md`
+
 ## Why This Exists
 
 Most multimodal systems are pipelines: an LLM delegates to an image model, an

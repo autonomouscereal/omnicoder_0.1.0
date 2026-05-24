@@ -1,3 +1,21 @@
+## 0.2.0-2026-rebuild (2026-05-24)
+
+### Added
+- Documented the active 2026 dense 20B-class native-1M omnimodal rebuild in the README.
+- Added 2026 architecture, orchestration, dataset curation, distillation/RL, benchmark, and agentic tool-training docs.
+- Added 2026 profiles, raw PostgreSQL schemas, AI-server launch scripts, dense model/training/eval/data-factory modules, and focused 2026 tests.
+
+### Changed
+- Shifted the documented production target away from the old sparse-MoE/SFB/ONNX-first path toward the dense KDA/CSA/HCA/mHC-inspired `omnicoder2026_20b_1m` contract.
+- Documented the fast-card sharding plan: host GPUs `0,4,6`, container ranks `0,1,2`, and `16,16,32` layer placement with the RTX 8000 owning the largest shard.
+- Documented P40 usage as sidecar teacher/probe/curation work instead of synchronous target training.
+- Tightened training orchestration around strict sharded checkpoint completeness, pipeline sample-loss evaluation, and live pipeline reward replay.
+
+### Verification
+- Focused local orchestration tests: `17 passed`.
+- Local changed-module `py_compile` passed for the 2026 modules.
+- AI-server script syntax and sharded-checkpoint completeness probes passed.
+
 ## 0.1.9-post (2025-08-20)
 
 - Resource auto-scaling override: When `OMNICODER_AUTO_RESOURCES=1`, forcibly set `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, and `TORCH_NUM_THREADS` to the detected recommendation even if the base image set them to 1. This fixes underutilization in Docker where the runtime inherited `*NUM_THREADS=1`.

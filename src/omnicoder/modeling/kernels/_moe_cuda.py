@@ -46,5 +46,3 @@ def fused_dispatch(
         work_x,
         work_w,
     )
-
-

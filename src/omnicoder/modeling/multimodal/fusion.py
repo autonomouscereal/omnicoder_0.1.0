@@ -677,5 +677,3 @@ class MultimodalComposer(nn.Module):
             except Exception:
                 pass
         return fused, side
-
-

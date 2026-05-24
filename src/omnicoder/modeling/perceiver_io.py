@@ -62,5 +62,3 @@ class PerceiverIOTower(nn.Module):
         # Materialize broadcast to (B,T,DL) without .expand
         pooled = torch.repeat_interleave(lat.mean(dim=1, keepdim=True), repeats=int(t), dim=1)
         return self.to_io(pooled)
-
-

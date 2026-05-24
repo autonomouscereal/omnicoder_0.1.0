@@ -1,0 +1,433 @@
+{
+  "schema": "omnicoder.distillation_curriculum_2026.v1",
+  "profile_name": "distillation_curriculum_2026",
+  "source_date": "2026-05-23",
+  "work_dir": "weights/distillation_2026",
+  "records": "weights/data_factory/trace_orchestrator_2026/jsonl/contamination_scanned.jsonl",
+  "sft_jsonl": "weights/data_factory/trace_orchestrator_2026/exports/sft_traces.jsonl",
+  "teacher_registry": {
+    "qwen3.6_27b_q4_local": {
+      "enabled": true,
+      "provider": "lm_studio_openai_compatible",
+      "endpoint_env": "LMSTUDIO_BASE_URL",
+      "model_alias": "qwen3.6-27b-q4",
+      "modalities": [
+        "text",
+        "code",
+        "agent_trace",
+        "tool"
+      ],
+      "job_types": [
+        "trace_critique",
+        "tool_repair",
+        "tool_call_ast_label",
+        "tool_state_delta_label",
+        "tool_plan_repair",
+        "trajectory_preference_pair",
+        "code_patch_review",
+        "reasoning_rewrite",
+        "preference_pair",
+        "reward_label",
+        "verifier_label"
+      ],
+      "priority": 10
+    },
+    "qwen3_omni_optional": {
+      "enabled": true,
+      "provider": "openai_compatible_or_local",
+      "endpoint_env": "QWEN_OMNI_BASE_URL",
+      "model_alias": "qwen3-omni",
+      "modalities": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "agent_trace"
+      ],
+      "job_types": [
+        "multimodal_alignment",
+        "speech_caption",
+        "audio_video_understanding",
+        "cross_modal_reward"
+      ],
+      "priority": 20
+    },
+    "qwen_image_generate": {
+      "enabled": true,
+      "provider": "comfyui",
+      "endpoint_env": "COMFYUI_BASE_URL",
+      "model_alias": "qwen-image",
+      "modalities": [
+        "image",
+        "text"
+      ],
+      "job_types": [
+        "image_prompt",
+        "image_critique",
+        "image_reward_label"
+      ],
+      "priority": 30
+    },
+    "qwen_image_edit": {
+      "enabled": true,
+      "provider": "comfyui",
+      "endpoint_env": "COMFYUI_BASE_URL",
+      "model_alias": "qwen-image-edit",
+      "modalities": [
+        "image",
+        "text"
+      ],
+      "job_types": [
+        "image_edit_plan",
+        "image_edit_critique",
+        "edit_preservation_reward"
+      ],
+      "priority": 30
+    },
+    "ltx_2_3": {
+      "enabled": true,
+      "provider": "comfyui",
+      "endpoint_env": "COMFYUI_BASE_URL",
+      "model_alias": "ltx-2.3",
+      "modalities": [
+        "video",
+        "image",
+        "text"
+      ],
+      "job_types": [
+        "video_prompt",
+        "shot_plan",
+        "video_sync_critique",
+        "image_to_video_plan",
+        "temporal_reward_label"
+      ],
+      "priority": 35
+    },
+    "ace_step_1_5": {
+      "enabled": true,
+      "provider": "comfyui",
+      "endpoint_env": "COMFYUI_BASE_URL",
+      "model_alias": "ace-step-1.5",
+      "modalities": [
+        "music",
+        "audio",
+        "text"
+      ],
+      "job_types": [
+        "music_plan",
+        "lyrics_alignment",
+        "audio_critique",
+        "music_reward_label"
+      ],
+      "priority": 35
+    },
+    "deepseek_v4_optional": {
+      "enabled": true,
+      "provider": "external_openai_compatible",
+      "endpoint_env": "DEEPSEEK_BASE_URL",
+      "model_alias": "deepseek-v4",
+      "modalities": [
+        "text",
+        "code",
+        "agent_trace",
+        "tool"
+      ],
+      "job_types": [
+        "hard_reasoning_verifier",
+        "code_patch_review",
+        "tool_repair",
+        "tool_call_ast_label",
+        "tool_state_delta_label",
+        "trajectory_preference_pair",
+        "rlvr_oracle"
+      ],
+      "priority": 40
+    },
+    "minimax_2_7_optional": {
+      "enabled": true,
+      "provider": "external_openai_compatible",
+      "endpoint_env": "MINIMAX_BASE_URL",
+      "model_alias": "minimax-2.7",
+      "modalities": [
+        "text",
+        "agent_trace",
+        "tool",
+        "long_context"
+      ],
+      "job_types": [
+        "long_context_compression",
+        "trace_critique",
+        "preference_pair",
+        "reward_label"
+      ],
+      "priority": 45
+    },
+    "kimi_k2_6_optional": {
+      "enabled": true,
+      "provider": "external_openai_compatible",
+      "endpoint_env": "KIMI_BASE_URL",
+      "model_alias": "kimi-k2.6",
+      "modalities": [
+        "text",
+        "code",
+        "agent_trace",
+        "long_context"
+      ],
+      "job_types": [
+        "long_context_compression",
+        "code_patch_review",
+        "verifier_label",
+        "preference_pair"
+      ],
+      "priority": 45
+    },
+    "composer_2_5_optional": {
+      "enabled": true,
+      "provider": "external_or_local",
+      "endpoint_env": "COMPOSER_BASE_URL",
+      "model_alias": "composer-2.5",
+      "modalities": [
+        "music",
+        "audio",
+        "text"
+      ],
+      "job_types": [
+        "music_plan",
+        "audio_critique",
+        "style_transfer_reward"
+      ],
+      "priority": 50
+    },
+    "gemini_omni_optional": {
+      "enabled": true,
+      "provider": "external_multimodal",
+      "endpoint_env": "GEMINI_BASE_URL",
+      "model_alias": "gemini-omni",
+      "modalities": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "agent_trace"
+      ],
+      "job_types": [
+        "multimodal_alignment",
+        "audio_video_understanding",
+        "image_critique",
+        "cross_modal_reward"
+      ],
+      "priority": 55
+    },
+    "gemma_4_optional": {
+      "enabled": true,
+      "provider": "external_or_local",
+      "endpoint_env": "GEMMA_BASE_URL",
+      "model_alias": "gemma-4",
+      "modalities": [
+        "text",
+        "code",
+        "agent_trace"
+      ],
+      "job_types": [
+        "small_teacher_consistency",
+        "reasoning_rewrite",
+        "preference_pair"
+      ],
+      "priority": 60
+    },
+    "grok_optional": {
+      "enabled": true,
+      "provider": "external_openai_compatible",
+      "endpoint_env": "GROK_BASE_URL",
+      "model_alias": "grok",
+      "modalities": [
+        "text",
+        "code",
+        "agent_trace",
+        "tool"
+      ],
+      "job_types": [
+        "adversarial_critique",
+        "reward_label",
+        "tool_repair",
+        "tool_plan_repair",
+        "trajectory_preference_pair"
+      ],
+      "priority": 65
+    },
+    "gpt_image_2_optional": {
+      "enabled": true,
+      "provider": "external_image",
+      "endpoint_env": "OPENAI_BASE_URL",
+      "model_alias": "gpt-image-2",
+      "modalities": [
+        "image",
+        "text"
+      ],
+      "job_types": [
+        "image_generation_reference",
+        "image_edit_reference",
+        "image_reward_label"
+      ],
+      "priority": 70
+    },
+    "deepseek_v4_flash_optional": {
+      "enabled": true,
+      "provider": "external_openai_compatible",
+      "endpoint_env": "DEEPSEEK_BASE_URL",
+      "model_alias": "deepseek-v4-flash",
+      "modalities": [
+        "text",
+        "code",
+        "agent_trace",
+        "long_context"
+      ],
+      "job_types": [
+        "million_context_trace_critique",
+        "rlvr_oracle",
+        "tool_repair",
+        "code_patch_review",
+        "kv_efficiency_label"
+      ],
+      "priority": 42
+    },
+    "nemotron_3_nano_omni_optional": {
+      "enabled": true,
+      "provider": "external_or_local",
+      "endpoint_env": "NEMOTRON_OMNI_BASE_URL",
+      "model_alias": "nemotron-3-nano-omni",
+      "modalities": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "long_context",
+        "agent_trace"
+      ],
+      "job_types": [
+        "long_video_omni_reasoning_label",
+        "document_qa_label",
+        "audio_visual_alignment",
+        "media_token_reduction_label"
+      ],
+      "priority": 52
+    },
+    "minimax_m2_7_optional": {
+      "enabled": true,
+      "provider": "external_openai_compatible",
+      "endpoint_env": "MINIMAX_BASE_URL",
+      "model_alias": "minimax-m2.7",
+      "modalities": [
+        "text",
+        "code",
+        "agent_trace",
+        "tool",
+        "long_context"
+      ],
+      "job_types": [
+        "agent_harness_repair",
+        "multi_agent_role_adherence_label",
+        "terminal_bench_failure_analysis",
+        "toolathon_style_reward"
+      ],
+      "priority": 46
+    }
+  },
+  "job_plan": {
+    "per_teacher_limit": 512,
+    "skip_contaminated": true,
+    "skip_secret_rejected": true,
+    "min_quality": 0.35,
+    "include_eval_holdout": false,
+    "emit_per_teacher_files": true
+  },
+  "posttraining": {
+    "base_model": "Qwen/Qwen3-4B",
+    "student_profile": "dense_omni_24gb",
+    "context_length": 1048576,
+    "quantization_target": "q4",
+    "stages": [
+      {
+        "id": "sft_cold_start",
+        "algorithm": "sft",
+        "bridge": "sft_qlora_2026",
+        "dataset": "sft_jsonl",
+        "purpose": "Format, tool schema, trace following, first-pass omnimodal instruction behavior."
+      },
+      {
+        "id": "teacher_critique_distill",
+        "algorithm": "multi_teacher_distillation",
+        "dataset": "distillation_jobs",
+        "purpose": "Collect corrected answers, critiques, verifier labels, preference pairs, and modal plans."
+      },
+      {
+        "id": "reward_modeling",
+        "algorithm": "reward_model",
+        "bridge": "posttrain_bridge_2026",
+        "dataset": "teacher_reward_labels",
+        "purpose": "Train process/outcome rewards for code, tool use, image/video/audio quality, safety, and contamination."
+      },
+      {
+        "id": "preference_optimization",
+        "algorithm": "dpo_orpo_kto_simpo",
+        "bridge": "posttrain_bridge_2026",
+        "dataset": "preference_pairs",
+        "purpose": "Align answers and tool behavior before on-policy RL."
+      },
+      {
+        "id": "rlvr_agentic",
+        "algorithm": "grpo_dapo_tree_grpo",
+        "bridge": "posttrain_bridge_2026",
+        "dataset": "verifiable_env_rollouts",
+        "purpose": "Use verifiable rewards for code tests, terminal tasks, tool state, ARC-like worlds, and multimodal judges."
+      },
+      {
+        "id": "on_policy_multimodal_distill",
+        "algorithm": "video_opd_distribution_matching",
+        "bridge": "posttrain_bridge_2026",
+        "dataset": "image_video_audio_teacher_rollouts",
+        "purpose": "Reduce train/inference mismatch for image/video/audio/music outputs."
+      },
+      {
+        "id": "long_context_retention",
+        "algorithm": "long_context_sft_plus_rlvr",
+        "dataset": "million_context_traces",
+        "purpose": "Native 1M context curriculum with retrieval-free trace retention and compression rewards."
+      },
+      {
+        "id": "quantization_aware_recovery",
+        "algorithm": "qat_fake_quant_distill",
+        "dataset": "mixed_sft_preference_rl",
+        "purpose": "Recover quality under q4 deployment with teacher-logit/answer consistency and verifier rewards."
+      },
+      {
+        "id": "browser_research_rlvr",
+        "algorithm": "browsecomp_style_grpo_rlvr",
+        "bridge": "posttrain_bridge_2026",
+        "dataset": "browser_research_agents",
+        "purpose": "Train persistent web/tool search, citation support, uncertainty calibration, and answer-key isolation."
+      },
+      {
+        "id": "desktop_gui_agent_rl",
+        "algorithm": "osworld_screenspot_process_reward",
+        "bridge": "posttrain_bridge_2026",
+        "dataset": "desktop_gui_agent_traces",
+        "purpose": "Train screen grounding, state drift control, and tool/action correctness."
+      },
+      {
+        "id": "audio_video_generation_alignment",
+        "algorithm": "avgen_vidaudio_rlaif_v",
+        "bridge": "posttrain_bridge_2026",
+        "dataset": "joint_audio_video_generation",
+        "purpose": "Train text-to-audio-video, video-to-audio, speech/singing/music consistency, and perceptual-quality rewards."
+      },
+      {
+        "id": "turboquant_kv_recovery",
+        "algorithm": "turboquant_kv_qat_probe",
+        "bridge": "posttrain_bridge_2026",
+        "dataset": "long_context_1m",
+        "purpose": "Preserve retrieval/agent quality under q4 weights plus q3.5/q4 KV compression for 1M context."
+      }
+    ]
+  }
+}

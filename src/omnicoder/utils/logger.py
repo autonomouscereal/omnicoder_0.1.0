@@ -137,5 +137,3 @@ def flush_all_log_buffers() -> None:
                 continue
     except Exception:
         logging.getLogger('omnicoder.log').warning('flush_all_log_buffers failed', exc_info=True)
-
-

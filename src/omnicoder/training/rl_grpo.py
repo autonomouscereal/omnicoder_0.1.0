@@ -53,6 +53,15 @@ except Exception:
     def get_cudagraph_step_marker():
         return None
 
+# === FIX: Disable CUDA graphs for GRPO training (prevents internal assert) ===
+import torch._inductor.config as inductor_config
+inductor_config.triton.cudagraphs = False
+
+# ==================== TEMPORARY DEBUG ====================
+# torch.autograd.set_detect_anomaly(True)
+# print(">>> Anomaly detection ENABLED - will point to the exact inplace op")
+# =======================================================
+
 
 @dataclass
 class Sampled:
@@ -92,161 +101,55 @@ def _sample(
     require_grad: bool = False,
     temperature: float = 1.0,
 ) -> Sampled:
-    # Build initial ids on the target device; avoid .item() and Python int conversions
-    # Root-cause note: device-side assert was triggered when the tokenizer returned an empty
-    # sequence, propagating a (B,0) input through embedding/gather paths. We fix by seeding
-    # a single BOS token when encode() yields empty.
     _seq = tok.encode(text)
     if not _seq:
         _seq = [0]
     input_ids = torch.tensor([_seq], dtype=torch.long, device=device)
-    # Guard against tokenizer/model vocab mismatches: clamp ids into [0, V) using aten-only ops
+
+    # Vocab clamp (aten-only)
     try:
-        _V_cands = []
-        try:
-            ve = int(getattr(getattr(model, 'embed', None), 'num_embeddings', 0))
-            if ve > 0:
-                _V_cands.append(ve)
-        except Exception:
-            pass
-        try:
-            vl = int(getattr(getattr(model, 'lm_head', None).weight, 'shape', [0])[0])  # type: ignore[union-attr]
-            if vl > 0:
-                _V_cands.append(vl)
-        except Exception:
-            pass
-        try:
-            vt = int(getattr(tok, 'vocab_size', 0))
-            if vt > 0:
-                _V_cands.append(vt)
-        except Exception:
-            pass
-        _V_eff = min(_V_cands) if _V_cands else None
-        if (_V_eff is not None) and (_V_eff > 0):
-            _zero_ids = torch.ops.aten.mul.Scalar(input_ids, 0)
-            _Vt_ids = torch.ops.aten.add.Scalar(_zero_ids, int(_V_eff))
-            _Vmax_ids = torch.ops.aten.sub.Tensor(_Vt_ids, 1)
-            input_ids = torch.ops.aten.maximum.default(input_ids, _zero_ids)
-            input_ids = torch.ops.aten.minimum.default(input_ids, _Vmax_ids)
+        _V = int(getattr(getattr(model, 'lm_head', None).weight, 'shape', [32000])[0])
+        _zero = torch.ops.aten.mul.Scalar(input_ids, 0)
+        input_ids = torch.ops.aten.maximum.default(input_ids, _zero)
+        input_ids = torch.ops.aten.minimum.default(input_ids, torch.ops.aten.sub.Tensor(torch.ops.aten.add.Scalar(_zero, _V), 1))
     except Exception:
         pass
-    out_ids_t: List[torch.Tensor] = []  # accumulate 1x1 tensors and cat once to avoid Python int extraction
+
+    out_ids_t: List[torch.Tensor] = []
     logps: List[torch.Tensor] = []
-    last_accept: torch.Tensor | None = None
     past_kv = None
-    # IMPORTANT [Graph-safe sampling]
-    # We previously used torch.distributions.Categorical (object allocation + internal buffers),
-    # and wrapped a branch in torch.no_grad() for the cached path. That still left stray storages
-    # in cudagraph pools during the first compiled backward capture under AOTAutograd on some builds.
-    # Here we replace it with direct ops only (softmax + multinomial + log_softmax.gather) and
-    # do not use no_grad. This keeps everything aten-first with no object buffers.
-    mk = get_cudagraph_step_marker()
-    if require_grad:
-        # Use decode mode with KV caching for graph-stable sampling under autograd.
-        # This keeps shapes/static topology identical across steps and avoids dynamic full-seq graphs.
-        for _ in range(max_new):
-            try:
-                if callable(mk):
-                    mk()
-            except Exception:
-                pass
-            step_in = input_ids[:, -1:] if input_ids.size(1) > 1 else input_ids
-            outputs = model(step_in, past_kv=past_kv, use_cache=True)
-            if isinstance(outputs, tuple):
-                logits, past_kv = outputs[0], outputs[1]
-                try:
-                    v_logits = outputs[3]
-                    v_probs = torch.softmax(v_logits[:, -1, :], dim=-1)
-                except Exception:
-                    v_probs = None
-            else:
-                logits = outputs
-            logits = logits / float(temperature) if float(temperature) > 0 else logits
-            probs = torch.softmax(logits[:, -1, :], dim=-1)
-            # Avoid NaNs and ensure a valid probability distribution
-            probs = torch.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
-            probs = probs / (probs.sum(dim=-1, keepdim=True) + 1e-9)
-            nxt = torch.multinomial(probs, 1, replacement=True)
-            # Clamp to vocab bounds derived from current logits size (robust against lm_head/vocab mismatches)
-            try:
-                _V_step = int(logits.shape[-1])
-                _zero_nx = torch.ops.aten.mul.Scalar(nxt, 0)
-                _Vt_nx = torch.ops.aten.add.Scalar(_zero_nx, int(_V_step))
-                _Vmax_nx = torch.ops.aten.sub.Tensor(_Vt_nx, 1)
-                nxt = torch.ops.aten.maximum.default(nxt, _zero_nx)
-                nxt = torch.ops.aten.minimum.default(nxt, _Vmax_nx)
-            except Exception:
-                pass
-            logp = torch.log_softmax(logits[:, -1, :], dim=-1).gather(-1, nxt).squeeze(-1)
-            if 'v_probs' in locals() and v_probs is not None:
-                try:
-                    _Vv_step = int(v_logits.shape[-1])
-                    _zero_v = torch.ops.aten.mul.Scalar(nxt, 0)
-                    _Vt_v = torch.ops.aten.add.Scalar(_zero_v, int(_Vv_step))
-                    _Vmax_v = torch.ops.aten.sub.Tensor(_Vt_v, 1)
-                    nxt_v = torch.ops.aten.maximum.default(nxt, _zero_v)
-                    nxt_v = torch.ops.aten.minimum.default(nxt_v, _Vmax_v)
-                except Exception:
-                    nxt_v = nxt
-                last_accept = v_probs.gather(-1, nxt_v).reshape(1)
-            input_ids = torch.cat([input_ids, nxt], dim=1)
-            out_ids_t.append(nxt.squeeze(-1).to(torch.long))
-            logps.append(logp.squeeze(0))
-    else:
-        for _ in range(max_new):
-            try:
-                if callable(mk):
-                    mk()
-            except Exception:
-                pass
-            step_in = input_ids[:, -1:] if input_ids.size(1) > 1 else input_ids
-            outputs = model(step_in, past_kv=past_kv, use_cache=True)
-            if isinstance(outputs, tuple):
-                logits, past_kv = outputs[0], outputs[1]
-                try:
-                    v_logits = outputs[3]
-                    v_probs = torch.softmax(v_logits[:, -1, :], dim=-1)
-                except Exception:
-                    v_probs = None
-            else:
-                logits = outputs
-            logits = logits / float(temperature) if float(temperature) > 0 else logits
-            probs = torch.softmax(logits[:, -1, :], dim=-1)
-            probs = torch.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
-            probs = probs / (probs.sum(dim=-1, keepdim=True) + 1e-9)
-            nxt = torch.multinomial(probs, 1, replacement=True)
-            # Clamp to current logits-size bounds
-            try:
-                _V_step = int(logits.shape[-1])
-                _zero_nx = torch.ops.aten.mul.Scalar(nxt, 0)
-                _Vt_nx = torch.ops.aten.add.Scalar(_zero_nx, int(_V_step))
-                _Vmax_nx = torch.ops.aten.sub.Tensor(_Vt_nx, 1)
-                nxt = torch.ops.aten.maximum.default(nxt, _zero_nx)
-                nxt = torch.ops.aten.minimum.default(nxt, _Vmax_nx)
-            except Exception:
-                pass
-            logp = torch.log_softmax(logits[:, -1, :], dim=-1).gather(-1, nxt).squeeze(-1)
-            if 'v_probs' in locals() and v_probs is not None:
-                try:
-                    _Vv_step = int(v_logits.shape[-1])
-                    _zero_v = torch.ops.aten.mul.Scalar(nxt, 0)
-                    _Vt_v = torch.ops.aten.add.Scalar(_zero_v, int(_Vv_step))
-                    _Vmax_v = torch.ops.aten.sub.Tensor(_Vt_v, 1)
-                    nxt_v = torch.ops.aten.maximum.default(nxt, _zero_v)
-                    nxt_v = torch.ops.aten.minimum.default(nxt_v, _Vmax_v)
-                except Exception:
-                    nxt_v = nxt
-                last_accept = v_probs.gather(-1, nxt_v).reshape(1)
-            input_ids = torch.cat([input_ids, nxt], dim=1)
-            out_ids_t.append(nxt.squeeze(-1).to(torch.long))
-            logps.append(logp.squeeze(0))
-    ids_t = torch.stack(out_ids_t, dim=0) if len(out_ids_t) > 0 else torch.empty((0,), dtype=torch.long, device=device)
-    if last_accept is None:
-        last_accept = (ids_t[:1] * 0).to(torch.float32)  # tensor scalar 0 from lineage
+
+    for _ in range(max_new):
+        step_in = input_ids[:, -1:]
+        outputs = model(step_in, past_kv=past_kv, use_cache=True)
+
+        if isinstance(outputs, tuple):
+            logits, past_kv = outputs[0], outputs[1]
+        else:
+            logits = outputs
+
+        # Temperature scaling (aten)
+        inv_temp = torch.ops.aten.reciprocal.default(torch.ops.aten.add.Scalar(torch.ops.aten.mul.Scalar(logits, 0), max(temperature, 1e-6)))
+        logits = torch.ops.aten.mul.Tensor(logits, inv_temp)
+
+        probs = torch.ops.aten.softmax.int(logits[:, -1, :], -1)
+        probs = torch.ops.aten.nan_to_num.default(probs, 0.0, 0.0, 0.0)
+        probs = torch.ops.aten.div.Tensor(probs, torch.ops.aten.add.Tensor(torch.ops.aten.sum.dim_IntList(probs, [-1], True), 1e-9))
+
+        nxt = torch.multinomial(probs, 1, replacement=True)
+        logp = torch.ops.aten.gather.default(torch.ops.aten.log_softmax.int(logits[:, -1, :], -1), -1, nxt).squeeze(-1)
+
+        input_ids = torch.ops.aten.cat.default((input_ids, nxt), 1)
+        out_ids_t.append(nxt.squeeze(-1).to(torch.long))
+        logps.append(logp.squeeze(0))
+
+    ids_t = torch.stack(out_ids_t, dim=0) if out_ids_t else torch.empty((0,), dtype=torch.long, device=device)
+    logps_t = torch.stack(logps, dim=0) if logps else torch.empty((0,), dtype=input_ids.dtype, device=device)
+
     return Sampled(
         ids=ids_t,
-        logprobs=(torch.stack(logps, dim=0) if len(logps) > 0 else torch.empty((0,), dtype=input_ids.dtype, device=device)),
-        accept_prob=last_accept.to(torch.float32)
+        logprobs=logps_t,
+        accept_prob=torch.zeros(1, device=device, dtype=torch.float32)
     )
 
 
@@ -831,5 +734,3 @@ print(passed, total)
 
 if __name__ == '__main__':
     main()
-
-

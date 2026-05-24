@@ -184,7 +184,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Unified multimodal training over mixed inputs/targets in shared latent space")
     ap.add_argument("--jsonl", type=str, required=True)
     ap.add_argument("--gaussian_jsonl", type=str, default=os.getenv("OMNICODER_GAUSSIAN_JSONL", ""))
-    ap.add_argument("--mobile_preset", type=str, default="mobile_4gb", choices=["mobile_4gb","mobile_2gb"]) 
+    ap.add_argument("--mobile_preset", type=str, default="mobile_4gb", choices=["mobile_4gb","mobile_2gb"])
     ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--batch_size", type=int, default=1)
     ap.add_argument("--steps", type=int, default=600)
@@ -429,5 +429,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

@@ -231,5 +231,3 @@ class GaussianSplatRenderer2D(nn.Module):
 			except Exception:
 				pass
 		return rgb
-
-

@@ -107,5 +107,3 @@ if __name__ == '__main__':
     cfg = TrainConfig(dim=args.dim, vocab=args.vocab, lr=args.lr, steps=args.steps, batch_size=args.batch, out_path=args.out)
     path = train_from_jsonl(cfg, data_path=args.data)
     print(path)
-
-

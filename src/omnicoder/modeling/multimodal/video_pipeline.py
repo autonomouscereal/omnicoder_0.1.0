@@ -368,6 +368,3 @@ def cm_verifier_score_from_frames(frames: List[np.ndarray], text_embed: torch.Te
     with torch.no_grad():
         s = cmv(txt_vec, img_vec)
     return float(s.squeeze().mean().item())
- 
-
-

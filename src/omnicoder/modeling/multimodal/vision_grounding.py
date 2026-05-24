@@ -131,4 +131,3 @@ class SimpleSegHead(nn.Module):
             logits = torch.nn.functional.pad(logits, (0, pad), value=float('-inf'))
         mask = torch.sigmoid(torch.ops.aten.reshape.default(logits, (B, 1, h, w)))
         return mask
-

@@ -198,5 +198,3 @@ class ToTMCTS:
         for n in path:
             n.N += 1.0
             n.W += float(v)
-
-

@@ -264,5 +264,3 @@ def build_default_registry() -> ToolRegistry:
             return {"error": f"sympy unavailable or failed: {e}"}
     reg.register("solve", _solve)
     return reg
-
-

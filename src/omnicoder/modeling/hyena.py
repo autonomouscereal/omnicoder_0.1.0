@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from omnicoder.utils.torchutils import safe_concat2 as _safe_cat  # type: ignore
 
 class HyenaMixer1D(nn.Module):
     """
@@ -87,11 +87,9 @@ class HyenaMixer1D(nn.Module):
         gated_first = torch.ops.aten.mul.Tensor(convolved_first_half, gate_from_second)
         gate_from_first = torch.ops.aten.sigmoid.default(convolved_first_half)
         gated_second = torch.ops.aten.mul.Tensor(convolved_second_half, gate_from_first)
-        from omnicoder.utils.torchutils import safe_concat2 as _safe_cat  # type: ignore
+
         concatenated_gated = _safe_cat(gated_first, gated_second, 1)  # (B, C*expansion, T)
         # Project back to model hidden dimension and restore (B, T, C)
         projected_channels_first = self.out_proj(concatenated_gated)
         output_sequence = torch.ops.aten.permute.default(projected_channels_first, [0, 2, 1])
         return output_sequence
-
-

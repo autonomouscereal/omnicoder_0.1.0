@@ -166,5 +166,3 @@ def quantize_module_int4_linear(module: nn.Module) -> int:
         else:
             replaced += quantize_module_int4_linear(child)
     return replaced
-
-

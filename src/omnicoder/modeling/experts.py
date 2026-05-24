@@ -38,5 +38,3 @@ class ExpertFFN(nn.Module):
 		x = self.act_fn(x)
 		x = self.fc2(x)
 		return x
-
-

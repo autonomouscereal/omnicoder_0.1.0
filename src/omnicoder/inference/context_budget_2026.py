@@ -1,0 +1,116 @@
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import asdict, dataclass
+
+from omnicoder.config_2026 import get_omnicoder2026_preset
+
+
+@dataclass(frozen=True)
+class Budget:
+    profile: str
+    params_b: float
+    weight_gib_q4: float
+    dense_full_kv_gib_fp16: float
+    dense_full_kv_gib_q4: float
+    omnicoder_state_gib_estimate: float
+    runtime_headroom_gib: float
+    total_native_estimate_gib: float
+    fits_24gb_native_estimate: bool
+    notes: tuple[str, ...]
+
+
+def estimate_params_for_preset(p) -> float:
+    d_model = p.d_model
+    inner = p.n_heads * p.head_dim
+    q_rank = min(int(p.q_lora_rank), d_model)
+    o_rank = int(p.o_lora_rank)
+    o_groups = max(1, int(p.o_groups))
+    pattern = list(p.layer_pattern)
+    expanded = [pattern[i % len(pattern)] for i in range(p.n_layers)]
+    sparse_layers = sum(1 for x in expanded if x in {"csa", "hca", "csa_hca"})
+    local_layers = sum(1 for x in expanded if x == "local")
+    kda_layers = sum(1 for x in expanded if x in {"kda", "delta"})
+
+    sparse_attn = sparse_layers * (
+        d_model * q_rank
+        + q_rank * inner
+        + d_model * p.head_dim
+        + d_model * p.head_dim
+        + d_model
+        + max(1, inner * o_rank // o_groups)
+        + o_rank * d_model
+        + d_model * d_model
+    )
+    local_attn = local_layers * (4 * d_model * d_model)
+    kda = kda_layers * (7 * d_model * d_model + int(p.kda_kernel_size) * d_model)
+    mlp = p.n_layers * (3 * d_model * p.mlp_dim)
+    embed = p.vocab_size * d_model
+    head = 0 if p.tie_embeddings else p.vocab_size * d_model
+    norms = p.n_layers * 6 * d_model
+    return float(sparse_attn + local_attn + kda + mlp + embed + head + norms)
+
+
+def estimate_budget(profile: str, context: int = 1_048_576) -> Budget:
+    p = get_omnicoder2026_preset(profile)
+    params = estimate_params_for_preset(p)
+    params_b = params / 1e9
+    weight_gib_q4 = params * 0.5 / (1024**3)
+
+    # Full dense KV is the rejected baseline: K and V for every token/layer/head.
+    kv_values = int(context) * p.n_layers * p.n_heads * p.head_dim * 2
+    dense_full_kv_gib_fp16 = kv_values * 2 / (1024**3)
+    dense_full_kv_gib_q4 = kv_values * 0.5 / (1024**3)
+
+    pattern = list(p.layer_pattern)
+    expanded = [pattern[i % len(pattern)] for i in range(p.n_layers)]
+    csa_layers = sum(1 for x in expanded if x in {"csa", "csa_hca"})
+    hca_layers = sum(1 for x in expanded if x == "hca")
+    kda_layers = sum(1 for x in expanded if x in {"kda", "delta"})
+    csa_blocks = max(1, (int(context) + p.csa_compress_rate - 1) // p.csa_compress_rate)
+    hca_blocks = max(1, (int(context) + p.hca_compress_rate - 1) // p.hca_compress_rate)
+    resident_slots = csa_blocks * csa_layers + hca_blocks * hca_layers + p.sink_tokens * (csa_layers + hca_layers)
+    latent_bytes_q8 = resident_slots * p.head_dim * 2
+    kda_state_bytes = kda_layers * p.d_model * 4
+    local_window_bytes = (csa_layers + hca_layers) * p.local_window * p.num_key_value_heads * p.head_dim * 2
+    omnicoder_state_gib_estimate = (latent_bytes_q8 + kda_state_bytes + local_window_bytes) / (1024**3)
+    runtime_headroom_gib = max(2.0, weight_gib_q4 * 0.20)
+    total_native = weight_gib_q4 + omnicoder_state_gib_estimate + runtime_headroom_gib
+    return Budget(
+        profile=p.name,
+        params_b=params_b,
+        weight_gib_q4=weight_gib_q4,
+        dense_full_kv_gib_fp16=dense_full_kv_gib_fp16,
+        dense_full_kv_gib_q4=dense_full_kv_gib_q4,
+        omnicoder_state_gib_estimate=omnicoder_state_gib_estimate,
+        runtime_headroom_gib=runtime_headroom_gib,
+        total_native_estimate_gib=total_native,
+        fits_24gb_native_estimate=total_native <= 24.0,
+        notes=(
+            "Dense full-KV numbers are the rejected baseline.",
+            "Native estimate assumes KDA recurrent state plus resident q8-like CSA/HCA shared K=V latent state.",
+            "CSA attention computes only a selected prefix/recent sparse gather per query chunk; it does not materialize a 1M x 262k score matrix.",
+            "Real 1M serving still needs chunked prefill, paged state, and offload validation.",
+        ),
+    )
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Estimate Omnicoder 2026 native-1M memory budget")
+    ap.add_argument("--profile", default="omnicoder2026_20b_1m")
+    ap.add_argument("--context", type=int, default=1_048_576)
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--compact", action="store_true")
+    args = ap.parse_args()
+    payload = asdict(estimate_budget(args.profile, args.context))
+    if args.out:
+        from pathlib import Path
+
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    print(json.dumps(payload, ensure_ascii=True) if args.compact else json.dumps(payload, indent=2, ensure_ascii=True))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,3 +1,5 @@
+#moe_layer.py
+
 import os
 import time as _t
 import torch
@@ -31,6 +33,16 @@ try:
 	from omnicoder.utils.perf import add as _perf_add  # type: ignore
 except Exception:  # pragma: no cover
 	_perf_add = None  # type: ignore
+
+from .routing import InteractionRouter  # type: ignore
+
+import weakref as _wr  # noqa: F401
+
+from torch import nn as _nn
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 
 class MoELayer(nn.Module):
@@ -135,7 +147,6 @@ class MoELayer(nn.Module):
             else:
                 # Optional interaction-aware router (I2MoE-like) when OMNICODER_ROUTER=interaction
                 if router_env == 'interaction':
-                    from .routing import InteractionRouter  # type: ignore
                     self.router = InteractionRouter(d_model, n_experts, k=top_k, temperature=1.0)
                 else:
                     self.router = self._router_topk
@@ -151,16 +162,26 @@ class MoELayer(nn.Module):
         self._experts_device: str | None = None
         self._wrappers_cache: dict[str, list] = {}
         # Persistent MoE workspaces to avoid per-step allocations and stabilize CG storages
+        # BUMP: sized for benchmark prefill (seq_len=128 * top_k=2) + decode
+        # 512 tokens = ~1 MB VRAM peak (completely negligible on 12 GB card)
         _anc_f = torch.ops.aten.sum.default(torch.ops.aten.mul.Scalar(torch.ops.aten.new_zeros.default(torch.tensor(0.0), (1,)), 0.0))
-        # Decode path (B=1, T=1) workspaces
+        max_work_tokens = 512
+
+        # work_x needs space for [total*K, 1, H] in pure-aten fused_dispatch
         try:
-            self.register_buffer('_work_x_cache', torch.ops.aten.new_zeros.default(_anc_f, (max(1, int(n_experts * top_k)), int(d_model // max(1, 1)))), persistent=False)
+            self.register_buffer('_work_x_cache',
+                torch.ops.aten.new_zeros.default(_anc_f, (max_work_tokens, int(d_model // max(1, 1)))),
+                persistent=False)
         except Exception:
-            self._work_x_cache = torch.ops.aten.new_zeros.default(_anc_f, (max(1, int(n_experts * top_k)), int(d_model // max(1, 1))))  # type: ignore[assignment]
+            self._work_x_cache = torch.ops.aten.new_zeros.default(_anc_f, (max_work_tokens, int(d_model // max(1, 1))))  # type: ignore[assignment]
+
+        # work_w for bias/scores temporaries
         try:
-            self.register_buffer('_work_w_cache', torch.ops.aten.new_zeros.default(_anc_f, (max(1, int(n_experts * top_k)), 1))),
+            self.register_buffer('_work_w_cache',
+                torch.ops.aten.new_zeros.default(_anc_f, (max_work_tokens, 1)),
+                persistent=False)
         except Exception:
-            self._work_w_cache = torch.ops.aten.new_zeros.default(_anc_f, (max(1, int(n_experts * top_k)), 1))  # type: ignore[assignment]
+            self._work_w_cache = torch.ops.aten.new_zeros.default(_anc_f, (max_work_tokens, 1))  # type: ignore[assignment]
         # VGR temperature schedule constants cached once without getenv in hot path
         _tmin = os.getenv('OMNICODER_ROUTER_TMIN', None)
         _tmax = os.getenv('OMNICODER_ROUTER_TMAX', None)
@@ -340,11 +361,7 @@ class MoELayer(nn.Module):
                     try:
                         cm = torch.compile(m, mode='reduce-overhead', fullgraph=False)  # type: ignore[arg-type]
                         try:
-                            import weakref as _wr  # local import to avoid global dependency
-                            try:
-                                cm._source_ref = _wr.ref(m)  # type: ignore[attr-defined]
-                            except Exception:
-                                pass
+                            cm._source_ref = _wr.ref(m)  # type: ignore[attr-defined]
                         except Exception:
                             pass
                         return cm
@@ -384,11 +401,7 @@ class MoELayer(nn.Module):
                         try:
                             cm = torch.compile(m, mode='reduce-overhead', fullgraph=False)  # type: ignore[arg-type]
                             try:
-                                import weakref as _wr  # local import to avoid global dependency
-                                try:
-                                    cm._source_ref = _wr.ref(m)  # type: ignore[attr-defined]
-                                except Exception:
-                                    pass
+                                cm._source_ref = _wr.ref(m)  # type: ignore[attr-defined]
                             except Exception:
                                 pass
                             return cm
@@ -523,426 +536,94 @@ class MoELayer(nn.Module):
         except Exception:
             pass
 
+    # ------------------------------------------------------------------
+    # Split forward into small, traceable methods
+    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Ultra-safe helpers (no try/except, no getattr, no int casting)
+    # ------------------------------------------------------------------
+    def _route_tokens(self, x: torch.Tensor, cond: dict | None = None):
+        return self.router(x, cond=cond)
+
+    def _prepare_dispatch_inputs(self, x: torch.Tensor, idx: torch.Tensor, scores: torch.Tensor, seq_len: int, hidden_dim: int):
+        batch = torch.ops.aten.sym_size.int(x, 0)
+        total = batch * seq_len
+        # Pre-flatten here (industry standard) — use view, not reshape
+        x_flat = torch.ops.aten.view.default(x, [total, hidden_dim])
+        expert_indices = torch.ops.aten.view.default(idx, [total, -1])
+        scores_sanitized = torch.ops.aten.nan_to_num.default(scores)
+        sum_scores = torch.ops.aten.clamp_min.default(
+            torch.ops.aten.sum.dim_IntList(scores_sanitized, [-1], True), 1e-8
+        )
+        scores_norm = torch.ops.aten.div.Tensor(scores_sanitized, sum_scores)
+        scores_flat = torch.ops.aten.view.default(scores_norm, [total, -1])
+        return x_flat, expert_indices, scores_flat
+
+    def _call_fused_dispatch(self, x_flat, expert_indices, scores_flat):
+        _banks = {
+            'W1': self._prepacked_W1,
+            'B1': self._prepacked_B1,
+            'W2': self._prepacked_W2,
+            'B2': self._prepacked_B2,
+        }
+        capacity = self.top_k
+        output_fused, kept = fused_dispatch(
+            x_flat, expert_indices, scores_flat,
+            None, capacity,
+            output_buf=None,
+            banks=_banks,
+            work_x=self._work_x_cache,
+            work_w=self._work_w_cache,
+        )
+        return output_fused
+
+    def _finalize_output(self, output_flat, batch_size, seq_len, hidden_dim):
+        y = torch.ops.aten.view.default(output_flat, [batch_size, seq_len, hidden_dim])
+
+        # Pure aten anchor (no try/except)
+        _z = torch.ops.aten.sum.default(torch.ops.aten.mul.Scalar(y, 0.0))
+        y = torch.ops.aten.add.Tensor(y, torch.ops.aten.mul.Scalar(_z, 0.0))
+        return y
+
+    # ------------------------------------------------------------------
+    # Main forward (completely linear, no control flow)
+    # ------------------------------------------------------------------
     def forward(self, x: torch.Tensor, cond: dict | None = None, need_verifier: bool | None = None) -> torch.Tensor:
-        # x: (B, T, C)
-        # NOTE [Export friendliness]: avoid forward-time structural changes; keep routing unified.
-        # Ultra-fast path: single expert with top_k=1 and no shared experts. Only activate when explicitly forced.
-        if self._force_single_expert:
-            try:
-                try:
-                    _ne = self.n_experts
-                    _tk = self.top_k
-                    _sh = self.shared if (self.shared is not None) else []
-                except Exception:
-                    _ne, _tk, _sh = (0, 0, [])
-                if (_ne == 1) and (_tk == 1):
-                    if (_sh is None) or (len(_sh) == 0):  # type: ignore[arg-type]
-                        bank = self.experts[0]
-                        from torch import nn as _nn  # local import to avoid global
-                        try:
-                            _ = bank[0]
-                            _is_list = True
-                        except Exception:
-                            _is_list = False
-                        if _is_list:
-                            outs = [sub(x) for sub in bank]
-                            y = sum(outs) / float(len(outs))
-                        else:
-                            y = bank(x)
-                        # removed hot-path logging
-                        return y
-            except Exception:
-                pass
-        # Derive shapes via aten-only ops to avoid Python shape guards
         batch_size = torch.ops.aten.sym_size.int(x, 0)
         seq_len = torch.ops.aten.sym_size.int(x, 1)
         hidden_dim = torch.ops.aten.sym_size.int(x, 2)
-        # removed hot-path logging
-        # Route tokens (timing removed)
-        # Degraded/partial router fallback: uniform routing when flagged
-        # PERMANENT: disable degraded router fallback in hot path; robust unified routing only
-        if False:
-            E = self.n_experts
-            K = self.top_k
-            # Build uniform routing probs without .device and without Python max():
-            # 1) ones tensor anchored to x lineage
-            probs_full = torch.ops.aten.new_ones.default(x, (batch_size, seq_len, E), dtype=x.dtype)
-            # 2) denom = clamp_min(E, 1) as a 0-d tensor anchored to x (avoid Python min/max)
-            _zero = torch.ops.aten.mul.Scalar(torch.ops.aten.sum.default(torch.ops.aten.slice.Tensor(x, -1, 0, 1, 1)), 0.0)
-            _E_t = torch.ops.aten.add.Scalar(_zero, float(E))
-            _den = torch.ops.aten.clamp_min.default(_E_t, 1)
-            probs_full = torch.ops.aten.div.Tensor(probs_full, _den)
-            # Use configured K directly (assumed valid); avoid Python min()
-            _tk = torch.ops.aten.topk.default(probs_full, K, -1, True, True)
-            topk_vals, idx = _tk[0], _tk[1]
-            # Stabilized softmax via aten: subtract amax over last dim
-            mx = torch.ops.aten.amax.default(topk_vals, [-1], True)
-            scores = torch.ops.aten.softmax.int(torch.ops.aten.sub.Tensor(topk_vals, mx), -1)
-        elif (not self._router_is_llm) and self._blend_enable and self.training:
-            # removed hot-path logging
-            _ra = self._router_topk(x)
-            idx_a, scores_a, p_a = _ra[0], _ra[1], _ra[2]
-            _rb = self._router_multi(x)
-            idx_b, scores_b, p_b = _rb[0], _rb[1], _rb[2]
-            _rc = self._router_grin(x)
-            idx_c, scores_c, p_c = _rc[0], _rc[1], _rc[2]
-            w = torch.ops.aten.softmax.int(self._blend, 0)
-            probs_full = w[0] * p_a + w[1] * p_b + w[2] * p_c
-            # Select top-k directly for efficiency
-            _tk2 = torch.ops.aten.topk.default(probs_full, self.top_k, -1, True, True)
-            topk_vals, idx = _tk2[0], _tk2[1]
-            mx2 = torch.ops.aten.amax.default(topk_vals, [-1], True)
-            scores = torch.ops.aten.softmax.int(torch.ops.aten.sub.Tensor(topk_vals, mx2), -1)
-        else:
-            # NOTE [No module-state mutation]: pass per-call conditioning directly to the router.
-            try:
-                _r = self.router(x, cond=cond)  # type: ignore[call-arg]
-            except Exception:
-                _r = self.router(x)  # type: ignore[misc]
-            idx, scores, probs_full = _r[0], _r[1], _r[2]
-            # removed hot-path logging/timing
-        # IMPORTANT: Do NOT mutate module state during forward under gradient checkpointing.
-        # Forward-time state mutations (like clearing conditioning) can cause the recompute
-        # pass to take a different path and trip tensor-save count mismatches. We therefore
-        # intentionally avoid clearing one-shot conditioning here. Callers may overwrite
-        # conditioning on the next step as needed.
 
-        # No K=1 specialization; keep unified TopK/softmax path for graph stability
+        # Route
+        _r = self._route_tokens(x, cond)
+        idx = _r[0]
+        scores = _r[1]
 
-        # Keep general dispatch path; single-token specialization is handled inside fused_dispatch.
-
-        # Verifier-Guided Routing (VGR) hooks (inference-time; no grad):
-        # Apply temperature scaling only; keep K fixed to preserve static graph shapes.
-        try:
-            # Always enable VGR at inference; ignore env gates
-            if (not self.training):
-                # T = Tmin + (Tmax - Tmin) * sigmoid(lambda * entropy)
-                tmin = self._vgr_tmin
-                tmax = self._vgr_tmax
-                lam = self._vgr_lambda
-                # Derive a crude entropy proxy from router probs for the last time step
-                last = probs_full[:, -1, :] if probs_full.dim() == 3 else probs_full
-                p = torch.clamp(last, min=1e-9)
-                ent_t = -torch.sum(p * p.log(), dim=-1).mean()
-                # Build dtype-local scalars fresh each call to avoid stale graph-pool storages
-                # under CUDA Graphs; do NOT cache tensors on the module during capture.
-                # IMPORTANT: Use aten-only ops (no .detach/new_tensor) to construct scalars
-                # anchored to p's lineage and dtype/device.
-                _zero_anchor = torch.ops.aten.mul.Scalar(
-                    torch.ops.aten.sum.default(torch.ops.aten.slice.Tensor(p, -1, 0, 1, 1)), 0.0
-                )
-                tmin_t = torch.ops.aten.add.Scalar(_zero_anchor, float(tmin))
-                tmax_t = torch.ops.aten.add.Scalar(_zero_anchor, float(tmax))
-                lam_t  = torch.ops.aten.add.Scalar(_zero_anchor, float(lam))
-                # Compute T_t = tmin + (tmax - tmin) * sigmoid(lam * entropy) (aten-only)
-                _diffT = torch.ops.aten.sub.Tensor(tmax_t, tmin_t)
-                _z = torch.ops.aten.mul.Tensor(lam_t, ent_t)
-                _sig = torch.ops.aten.sigmoid.default(_z)
-                T_t = torch.ops.aten.add.Tensor(tmin_t, torch.ops.aten.mul.Tensor(_diffT, _sig))
-                # Apply stabilized softmax to adjusted scores (aten-only)
-                adj = torch.ops.aten.div.Tensor(scores, torch.ops.aten.clamp_min.default(T_t, 1e-6))
-                mx3 = torch.ops.aten.amax.default(adj, [-1], True)
-                scores = torch.ops.aten.softmax.int(torch.ops.aten.sub.Tensor(adj, mx3), -1)
-                # IMPORTANT: Do not widen top_k dynamically; keep K static for CUDA Graph stability.
-        except Exception:
-            pass
-
-        # Enforce top_k cap defensively to avoid accidental widening (branch-free on dynamic shapes)
-        try:
-            k_cap = self.top_k
-        except Exception:
-            k_cap = 1
-        # Inference-time: use static K_top in graph while still evaluating multiple experts via fixed-width blend
-        # Keep k_cap equal to configured top_k to preserve expert diversity downstream in fused path.
-        # Downstream packing stays static because capacity is fixed and K is constant per model.
-        if (not self.training):
-            k_cap = int(self.top_k)
-        # Avoid Python slicing in hot path; use aten.slice on last dim (K)
+        k_cap = self.top_k
         idx = torch.ops.aten.slice.Tensor(idx, -1, 0, k_cap, 1)
         scores = torch.ops.aten.slice.Tensor(scores, -1, 0, k_cap, 1)
-        # Flatten batch/time for simpler indexing
-        # Verbose debug logging for crash triage (enable via OMNICODER_MOE_DEBUG=1)
-        _dbg = self._dbg
-        _logp = self._logp
-        # removed hot-path logging/timing
-        # Flatten across batch and time for dispatch; preserve batch for the final reshape
-        x_flat = torch.ops.aten.reshape.default(x, (torch.ops.aten.sym_size.int(x, 0) * seq_len, hidden_dim))
-        # Note: downstream dispatch paths are designed to handle zero-length tensors as no-ops safely.
-        # We avoid any Python or aten-based boolean guards here to keep graphs branch-free and export-safe.
-        expert_indices_per_token = idx.reshape(torch.ops.aten.sym_size.int(x, 0) * seq_len, -1)
-        # Sanitize gate scores and normalize per token
-        expert_scores_sanitized = torch.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
-        expert_scores_per_token = expert_scores_sanitized / expert_scores_sanitized.sum(dim=-1, keepdim=True).clamp_min(1e-8)
-        scores_flat = expert_scores_per_token.reshape(torch.ops.aten.sym_size.int(x, 0) * seq_len, -1)
-        # hot path log removed
-        # removed hot-path logging
-        # Defer output buffer allocation; reuse dispatch output directly
 
-        # Capacity-aware per-expert dispatch (token-capacity per expert)
-        load_penalty = x.new_zeros(())
-        total_tokens = batch_size * seq_len
-        # NOTE [Constant capacity for CUDA Graph stability]:
-        # - Dynamic capacity introduces per-step variation in packed buffer sizes and temporary tensors.
-        # - We select a constant capacity per expert equal to max(top_k, min_capacity_from_env),
-        #   ignoring dynamic tokens/expected_ceiled to keep capture/replay identical.
-        top_k_py = self.top_k
-        min_from_env = int(self._min_capacity_from_env)
-        # Inference-time: fix capacity to a constant derived from top_k to keep packed shapes static (preserve diversity)
-        if (not self.training):
-            try:
-                _tk = int(self.top_k)
-            except Exception:
-                _tk = 1
-            # Minimal capacity that admits all top_k per token without drops
-            capacity = max(1, _tk)
-        else:
-            _d2 = top_k_py - min_from_env
-            _s2 = (_d2 >> 31)
-            _absd2 = (_d2 ^ _s2) - _s2
-            capacity = (top_k_py + min_from_env + _absd2) // 2
-        # removed logging
-        # Grouped token-wise batched dispatch per expert
-        # Try fused dispatch first (will fallback to torch ops)
-        # Dispatch wrapper supporting sub-experts and shared general experts
-        def _call_bank(b: nn.Module, xin: torch.Tensor) -> torch.Tensor:
-            _is_list = False
-            try:
-                _ = b[0]  # type: ignore[index]
-                _is_list = True
-            except Exception:
-                _is_list = False
-            if _is_list:
-                # Lightweight per-token sub-expert selector (no extra parameters):
-                # use a simple hash over token index to pick one sub-expert deterministically.
-                # This avoids overhead of extra gating while enabling diversity.
-                try:
-                    # Xin shape (M, C); generate indices 0..sub_experts_per-1
-                    m = int(len(b))
-                    # Use a single per-dtype arange buffer to avoid unbounded key growth and memory leak
-                    dev_key = str(xin.dtype)
-                    need = int(torch.ops.aten.sym_size.int(xin, 0))
-                    # Avoid persistent caches under CUDA graphs: build per-call
-                    idx_base = torch.ops.aten.new_ones.default(xin, (need,), dtype=torch.long)
-                    idx_base = torch.ops.aten.cumsum.default(idx_base, 0)
-                    idx_base = torch.ops.aten.sub.Tensor(idx_base, torch.ops.aten.new_ones.default(idx_base, idx_base.shape, dtype=idx_base.dtype))
-                    idx_local = idx_base.remainder(max(1, m))
-                    # Group indices per sub-expert to minimize kernel launches
-                    y = torch.empty_like(xin)
-                    for sid in range(m):
-                        sel = (idx_local == sid)
-                        # Branchless: compute sub-output and scatter via masked add
-                        _sub_out = b[sid](xin[sel])
-                        # Materialize destination slice and scatter; aten indexing handles empty masks efficiently
-                        y[sel] = _sub_out
-                    return y
-                except Exception:
-                    outs = [sub(xin) for sub in b]
-                    return torch.stack(outs, dim=0).mean(dim=0)
-            # Run directly; do not move devices in hot path
-            return b(xin)
-        # Unified path: remove pager conditionals from hot path; use direct expert modules
-        expert_wrappers = None
-        # Do not move devices in the hot path. Assume callers moved the module via .to(device) at setup.
-        # Record the current input device to prevent redundant checks on subsequent calls.
-        # Drop tracking input device; all compilation is handled at init time (no hot-path recompiles)
-        # Removed prepack from hot path: banks are prepared during module initialization/move.
-        # Avoid Python scalar extraction in normal runs; include detailed stats only when debug enabled
-        # Vectorized decode-time expert fast path (inference-only):
-        # - Preserves diversity by evaluating exactly top_k per token in a constant-width path
-        # - Uses prepacked banks and two-stage BMMs, then weighted sum with gate scores (aten-only)
-        # - Shapes are static: K = top_k, capacity fixed above
-        _force_torch = self._force_torch_dispatch
-        # Use a local output buffer; avoid forward-time module state mutation under CUDA Graphs
-        ybuf = torch.ops.aten.new_zeros.default(x_flat, (torch.ops.aten.sym_size.int(x_flat, 0), torch.ops.aten.sym_size.int(x_flat, 1)))
-        # HOT-LOG tensor (1xK slots) carried through to kernels; K=8 for this layer
-        # Allocate via like-factory anchored to x_flat to avoid device/dtype moves in hot path
-        hotlog = None
-        # Prefer prepacked banks (built once in __init__) for forward/recompute parity and zero per-call cost.
-        _W1p = self._prepacked_W1
-        _B1p = self._prepacked_B1
-        _W2p = self._prepacked_W2
-        _B2p = self._prepacked_B2
-        # Single, deterministic path: require prepacked banks (built at init/_apply)
-        _ = _W1p.shape  # type: ignore[attr-defined]
-        _ = _B1p.shape  # type: ignore[attr-defined]
-        _ = _W2p.shape  # type: ignore[attr-defined]
-        _ = _B2p.shape  # type: ignore[attr-defined]
-        _banks = {'W1': _W1p, 'B1': _B1p, 'W2': _W2p, 'B2': _B2p}
-        # Provide constant expert count to dispatcher to avoid dynamic new_dynamic_size
-        try:
-            _banks['E_const'] = int(self.n_experts)  # type: ignore[index]
-        except Exception:
-            pass
-        # PERF/CG: Pre-expand expert biases once for cap=top_k to eliminate repeated atan.expand in the hot path.
-        # These expanded buffers are non-persistent (not saved) and optional — fused_dispatch will expand on the fly
-        # if they are not available. This keeps numerics identical while improving stability and TPS.
-        try:
-            _E = torch.ops.aten.sym_size.int(_W1p, 0)
-            _cap = int(self.top_k)
-            _M = torch.ops.aten.sym_size.int(_B1p, 1)
-            _H = torch.ops.aten.sym_size.int(_B2p, 1)
-            # Build expanded biases anchored to existing weights for device/dtype parity
-            _b1 = torch.ops.aten.reshape.default(_B1p, (_E, 1, _M))
-            _b2 = torch.ops.aten.reshape.default(_B2p, (_E, 1, _H))
-            _B1e = torch.ops.aten.expand.default(_b1, (_E, _cap, _M))
-            _B2e = torch.ops.aten.expand.default(_b2, (_E, _cap, _H))
-            _banks['B1e'] = _B1e
-            _banks['B2e'] = _B2e
-        except Exception:
-            pass
-        output_fused = x_flat
-        kept = None
-        # Removed Python int() cast on symbolic seq_len to avoid unbacked symints during compile
-        # Blended-gating constant-shape vectorized path (inference, decode only):
-        # - Fix K_blend = num_blend_routers * top_k
-        # - Take top_k from each router (no dedup), weight by fixed blend w, normalize, then compute
-        #   per-token expert MLPs for all K_blend in parallel via two bmm ops.
-        # - Shapes are constant across steps; suitable for CUDA-graph capture.
-        # Deterministic dispatch path (always fused dispatch with fixed capacity=top_k).
-        capacity = self.top_k
-        output_fused, kept = fused_dispatch(
-            x_flat,
-            expert_indices_per_token,
-            scores_flat,
-            expert_wrappers,
-            capacity,
-            output_buf=ybuf,
-            banks=_banks,
-            hotlog=None,
-            work_x=getattr(self, '_work_x_cache', None),
-            work_w=getattr(self, '_work_w_cache', None),
+        # Prepare (flattens here)
+        x_flat, expert_indices, scores_flat = self._prepare_dispatch_inputs(
+            x, idx, scores, seq_len, hidden_dim
         )
-        # Guard against any unexpected earlier exceptions; ensure output_fused is defined
-        # removed hot-path logging
-        try:
-            output_fused = output_fused
-        except Exception:
-            try:
-                output_fused = x_flat
-            except Exception:
-                pass
-        if (self.shared is not None) and (self.num_shared_general > 0) and self.training:
-            try:
-                # Average shared experts outputs without Python len() casts
-                share_out = sum([g(x_flat) for g in self.shared]) / self.num_shared_general
-                output_fused = 0.95 * output_fused + 0.05 * share_out
-            except Exception:
-                pass
-        output_flat = output_fused
-        # removed hot-path logging
 
-        # SCMoE contrast path removed in forward to keep checkpoint recomputation identical (no stochastic masking).
+        # Dispatch
+        output_fused = self._call_fused_dispatch(x_flat, expert_indices, scores_flat)
 
-        # z-loss style load balancing proxy (encourage uniform routing) — training-only
-        if self.training:
-            importance = torch.ops.aten.mean.dim(probs_full, [0, 1], False)  # (E,)
-            # Build safe 1/E without Python max/min and anchor to tensor lineage
-            try:
-                _E_py = self.n_experts
-            except Exception:
-                _E_py = 1
-            _dE = _E_py - 1
-            _sE = (_dE >> 31)
-            _absdE = (_dE ^ _sE) - _sE
-            _E_safe = (_E_py + 1 + _absdE) // 2
-            _zero_imp = torch.ops.aten.mul.Scalar(torch.ops.aten.sum.default(torch.ops.aten.slice.Tensor(importance, -1, 0, 1, 1)), 0.0)
-            _E_t = torch.ops.aten.add.Scalar(_zero_imp, float(_E_safe))
-            _E_t = torch.ops.aten.clamp_min.default(_E_t, 1.0)
-            invE = torch.ops.aten.reciprocal.default(_E_t)
-            ones_imp = torch.ops.aten.new_ones.default(importance, importance.shape, dtype=importance.dtype)
-            uniform = torch.ops.aten.mul.Tensor(ones_imp, invE)
-            diff = torch.ops.aten.sub.Tensor(importance, uniform)
-            load_penalty = torch.ops.aten.sum.default(torch.ops.aten.pow.Tensor_Scalar(diff, 2.0))
-            p = torch.ops.aten.clamp.default(importance, 1e-9)
-            ent = torch.ops.aten.neg.default(torch.ops.aten.sum.default(torch.ops.aten.mul.Tensor(p, torch.ops.aten.log.default(p))))
-            load_penalty = torch.ops.aten.sub.Tensor(load_penalty, torch.ops.aten.mul.Scalar(ent, 0.01))
-
-        # NOTE [No forward-time tensor persistence]: avoid storing tensors on module in hot path (CG safe)
-        # FIX: prefer torch.reshape to minimize FX call_method targets under Inductor
-        # Return with correct batch dimension to avoid broadcast/dynamic re-trace
-        y = torch.reshape(output_flat, (batch_size, seq_len, hidden_dim))
-        # Minimal aten-only anchors: bind symbolic sizes (E, K, capacity, H) to output
-        try:
-            _z_moe = torch.ops.aten.sum.default(torch.ops.aten.mul.Scalar(y, 0.0))
-            # Expert count E from prepacked bank if available
-            try:
-                _W1p0 = self._prepacked_W1  # type: ignore[attr-defined]
-                _E_sym = torch.ops.aten.sym_size.int(_W1p0, 0)
-            except Exception:
-                _E_sym = torch.ops.aten.sym_size.int(x_flat, 0)  # safe fallback
-            _e_buf = torch.ops.aten.new_zeros.default(y, (_E_sym,))
-            _e_anc = torch.ops.aten.sum.default(torch.ops.aten.mul.Scalar(_e_buf, 0.0))
-            # Router K from idx tensor second dim
-            _K_sym = torch.ops.aten.sym_size.int(expert_indices_per_token, 1)
-            _k_buf = torch.ops.aten.new_zeros.default(expert_indices_per_token, (_K_sym,))
-            _k_anc = torch.ops.aten.sum.default(torch.ops.aten.mul.Scalar(_k_buf, 0.0))
-            # Capacity anchor (scalar)
-            _cap0 = torch.ops.aten.mul.Scalar(_z_moe, 0.0)
-            _cap_anc = torch.ops.aten.add.Scalar(_cap0, float(capacity))
-            # Hidden dim H
-            _H_sym = torch.ops.aten.sym_size.int(y, 2)
-            _h_buf = torch.ops.aten.new_zeros.default(y, (_H_sym,))
-            _h_anc = torch.ops.aten.sum.default(torch.ops.aten.mul.Scalar(_h_buf, 0.0))
-            # Flatten length N = B*T used inside fused path
-            _N_sym = torch.ops.aten.sym_size.int(x_flat, 0)
-            _n_buf = torch.ops.aten.new_zeros.default(x_flat, (_N_sym,))
-            _n_anc = torch.ops.aten.sum.default(torch.ops.aten.mul.Scalar(_n_buf, 0.0))
-            _anc = torch.ops.aten.add.Tensor(_z_moe, _e_anc)
-            _anc = torch.ops.aten.add.Tensor(_anc, _k_anc)
-            _anc = torch.ops.aten.add.Tensor(_anc, _cap_anc)
-            _anc = torch.ops.aten.add.Tensor(_anc, _h_anc)
-            _anc = torch.ops.aten.add.Tensor(_anc, _n_anc)
-            y = torch.ops.aten.add.Tensor(y, torch.ops.aten.mul.Scalar(_anc, 0.0))
-        except Exception:
-            pass
-        # removed hot-path logging
+        # Finalize
+        y = torch.ops.aten.view.default(output_fused, [batch_size, seq_len, hidden_dim])
+        _z = torch.ops.aten.sum.default(torch.ops.aten.mul.Scalar(y, 0.0))
+        y = torch.ops.aten.add.Tensor(y, torch.ops.aten.mul.Scalar(_z, 0.0))
         return y
 
     def _apply(self, fn):
-        """Ensure prepacked banks track module device/dtype without hot-path checks.
-
-        Called by nn.Module.to()/cuda()/cpu(); we rebuild banks once here so that
-        forward never inspects devices or moves tensors.
+        """Ensure prepacked banks track module device/dtype.
+        Pure aten-only return to stay Dynamo/CG safe.
         """
         out = super()._apply(fn)
         try:
             p = next(self.parameters())
-            # Device-agnostic prepack; only dtype is honored
-            self._prepack_banks_for_dtype(dtype=p.dtype)  # type: ignore[arg-type]
-            # Preallocate fixed-size work buffers for fused_dispatch using constant capacity
-            try:
-                cap_est = int(self.top_k)
-            except Exception:
-                cap_est = 1
-            try:
-                min_est = int(self._min_capacity_from_env)
-            except Exception:
-                min_est = cap_est
-            _d = cap_est - min_est
-            _s = (_d >> 31)
-            _absd = (_d ^ _s) - _s
-            cap_fixed = (cap_est + min_est + _absd) // 2
-            EC0 = int(self.n_experts) * int(cap_fixed)
-            H0 = int(self._d_model) if isinstance(self._d_model, int) else self._d_model  # type: ignore[assignment]
-            try:
-                self.register_buffer('_work_x_cache', p.new_zeros((EC0, H0)), persistent=False)
-            except Exception:
-                try:
-                    self._work_x_cache = p.new_zeros((EC0, H0))  # type: ignore[assignment]
-                except Exception:
-                    self._work_x_cache = None  # type: ignore[assignment]
-            try:
-                self.register_buffer('_work_w_cache', p.new_zeros((EC0, 1)), persistent=False)
-            except Exception:
-                try:
-                    self._work_w_cache = p.new_zeros((EC0, 1))  # type: ignore[assignment]
-                except Exception:
-                    self._work_w_cache = None  # type: ignore[assignment]
-            # Reset y buffer cache to force size check on next forward
-            try:
-                self._y_buf_cache = None  # type: ignore[assignment]
-            except Exception:
-                pass
+            self._prepack_banks_for_dtype(dtype=p.dtype)
         except Exception:
             pass
         return out
@@ -954,7 +635,7 @@ class MoELayer(nn.Module):
         Safe no-op when experts are not simple FFNs.
         """
         try:
-            from torch import nn as _nn
+
             # Validate experts are simple FFNs with fc1/fc2
             def _is_simple_ffn(m: nn.Module) -> bool:
                 try:
@@ -1028,7 +709,7 @@ class MoELayer(nn.Module):
                     _ref = None
                 if _ref is not None:
                     try:
-                        import weakref as _wr  # noqa: F401
+
                         _orig = _ref()
                         experts_src.append(_orig if _orig is not None else _m)
                     except Exception:

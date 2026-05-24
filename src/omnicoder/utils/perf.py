@@ -200,4 +200,3 @@ def disable_global_trace() -> None:
 		threading.settrace(None)
 	except Exception:
 		logging.getLogger('omnicoder.perf').warning('disable_global_trace failed', exc_info=True)
-

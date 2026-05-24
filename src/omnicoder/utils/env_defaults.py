@@ -28,7 +28,8 @@ def apply_core_defaults(env: dict[str, str]) -> None:
     env.setdefault("OMNICODER_USE_DYNAMO", os.getenv("OMNICODER_USE_DYNAMO", "1"))
     # Prefer CUDA fused MoE dispatcher when extension is available (safe: falls back automatically)
     env.setdefault("OMNICODER_MOE_CUDA_ENABLE", os.getenv("OMNICODER_MOE_CUDA_ENABLE", "1"))
-
+    # Default bench diagnostics off to minimize hot-path overhead unless explicitly enabled
+    env.setdefault("OMNICODER_BENCH_DIAG", os.getenv("OMNICODER_BENCH_DIAG", "0"))
     # Debug/guard defaults for runaway allocations and mem logs
     env.setdefault("OMNICODER_SHAPE_GUARD", os.getenv("OMNICODER_SHAPE_GUARD", "1"))
     env.setdefault("OMNICODER_SHAPE_MAX_ELEMS", os.getenv("OMNICODER_SHAPE_MAX_ELEMS", "200000000"))
@@ -228,5 +229,3 @@ def apply_profile(env: dict[str, str], name: str | None) -> None:
     if name in ("quality", "quality_first", "best"):
         apply_quality_profile(env)
     # Additional profiles could be added (e.g., "throughput", "debug").
-
-

@@ -433,7 +433,7 @@ def main() -> None:
             for p in t.parameters():
                 p.requires_grad_(False)
             teacher_models.append(t)
-    
+
     def _pick_teacher(step_idx: int):
         return teacher_models[step_idx % len(teacher_models)]
 
@@ -583,7 +583,7 @@ def main() -> None:
         s_logits_aligned = s_logits[:, :min_seq, :]
         t_logits_aligned = t_logits[:, :min_seq, :]
         labels_aligned = labels[:, :min_seq]
-        
+
         t_logits_shifted = t_logits_aligned[:, :-1, :].contiguous()
         s_logits_shifted = s_logits_aligned[:, :-1, :].contiguous()
         labels_shifted = labels_aligned[:, 1:].contiguous()
@@ -736,7 +736,7 @@ def main() -> None:
                 VV_la = int(la_pred.size(-1))
                 la_tgt_safe = la_tgt.clamp(min=0, max=max(0, VV_la - 1))
                 loss = loss + 0.25 * ce_loss(la_pred.reshape(-1, la_pred.size(-1)), la_tgt_safe.reshape(-1))
-        
+
         # Optional continuous latent reconstruction consistency (unsupervised proxy)
         if args.image_latent_loss and s_img_lat is not None:
             loss = loss + 0.01 * (s_img_lat[:, -1, :].pow(2).mean())

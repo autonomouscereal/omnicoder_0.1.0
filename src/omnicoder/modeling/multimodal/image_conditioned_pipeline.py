@@ -87,5 +87,3 @@ class ConditionedSDPipeline:
             width=int(size[0]),
         ).images
         return images[0]
-
-

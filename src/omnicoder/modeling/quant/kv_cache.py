@@ -269,6 +269,3 @@ def save_meta_json(meta: KvQuantMeta, path: str | Path) -> None:
     }
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(json.dumps(data, indent=2))
-
-
-

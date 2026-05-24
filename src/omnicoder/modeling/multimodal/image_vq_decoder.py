@@ -61,5 +61,3 @@ class ImageVQDecoder(nn.Module):
         code_dim: int = int(blob.get("emb_dim", codebook.size(1)))
         patch: int = int(blob.get("patch", 16))
         return ImageVQDecoder(codebook=codebook, code_dim=code_dim, patch=patch)
-
-

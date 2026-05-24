@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import torch, torch.nn as nn, torch.nn.functional as F
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 
 class GatedMambaSSM(nn.Module):
     """
@@ -28,11 +32,7 @@ class GatedMambaSSM(nn.Module):
         h = h * g
         return self.out(h)
 
-from __future__ import annotations
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 
 class GatedConvSSM(nn.Module):
@@ -66,5 +66,3 @@ class GatedConvSSM(nn.Module):
         y = self.proj_out(y)
         y = self.dropout(y)
         return y
-
-

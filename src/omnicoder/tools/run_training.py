@@ -375,6 +375,70 @@ def main() -> None:
 			except Exception as _eaf_smoke:
 				print(f"[warn] smoke autofetch skipped: {_eaf_smoke}")
 
+			# ==================== AUTO BPE TRAINING (ALL TEXT FROM ALL MODALITIES) ====================
+			# ==================== AUTO BPE TRAINING (TEXT + IMAGES + AUDIO) ====================
+			bpe_path = Path(args.out_root) / "omnicoder_bpe.json"
+
+			if not bpe_path.exists():
+				print("[BPE] Training unified BPE on text + raw images + raw audio...")
+
+				corpus: List[str] = []
+
+				# Text + Code (your previous logic)
+				for root in [os.getenv("OMNICODER_DATA_TEXT", "data/text"), os.getenv("OMNICODER_DATA_CODE", "examples/code_eval")]:
+					for f in Path(root).rglob("*"):
+						if f.suffix in {".txt", ".py", ".java", ".cpp", ".js", ".md"}:
+							try:
+								corpus.append(f.read_text(encoding="utf-8", errors="ignore"))
+							except Exception:
+								pass
+
+				# IMAGES → serialize to bytes and add to corpus
+				image_dirs = [
+					os.getenv("OMNICODER_FLOW_DATA", "examples/data/vq/images"),
+					os.getenv("OMNICODER_PREALIGN_DATA", "examples/data/vq/images"),
+				]
+				for img_dir in image_dirs:
+					for f in Path(img_dir).rglob("*"):
+						if f.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+							try:
+								img = Image.open(f).convert("RGB")
+								byte_data = pickle.dumps(np.array(img), protocol=4)
+								corpus.append(byte_data.decode("latin-1", errors="replace"))
+							except Exception:
+								pass
+
+				# AUDIO → serialize waveforms to bytes
+				audio_dirs = [
+					os.getenv("OMNICODER_AUDIO_DATA", "examples/data/vq/audio"),
+					os.getenv("OMNICODER_CLOTHO_WAVS_DIR", ""),
+				]
+				for aud_dir in audio_dirs:
+					if aud_dir:
+						for f in Path(aud_dir).rglob("*.wav"):
+							try:
+								import soundfile as sf
+								wave, sr = sf.read(f)
+								byte_data = pickle.dumps({"wave": wave, "sr": sr}, protocol=4)
+								corpus.append(byte_data.decode("latin-1", errors="replace"))
+							except Exception:
+								pass
+
+				print(f"[BPE] Collected {len(corpus)} samples (text + images + audio)")
+
+				if corpus:
+					from omnicoder.tokenizer.bpe_trainer import BPETokenizer
+					bpe = BPETokenizer(vocab_size=64000)
+					bpe.train(corpus, num_merges=55000)
+					bpe.save(str(bpe_path))
+					print(f"[BPE] ✅ Unified BPE trained and saved to {bpe_path}")
+			else:
+				print(f"[BPE] Using existing unified BPE: {bpe_path}")
+
+			os.environ["OMNICODER_BPE_PATH"] = str(bpe_path)
+			env["OMNICODER_BPE_PATH"] = str(bpe_path)
+			# ========================================================================================
+
 			print("[smoke] running single-step across major stages with wall-clock cap ...")
 			s_total = max(30, int(float(args.smoke_minutes) * 60.0)) if float(args.smoke_minutes) > 0 else 60
 			# Dynamic audio args depending on dataset type
@@ -2981,5 +3045,3 @@ def main() -> None:
 
 if __name__ == "__main__":
 	main()
-
-

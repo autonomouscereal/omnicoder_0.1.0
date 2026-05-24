@@ -59,7 +59,7 @@ if _TRITON_AVAILABLE:
 				exp_logits = tl.exp(logits - m)
 				expsum += tl.sum(exp_logits, axis=0)
 				# Accumulate weighted V
-				weights = exp_logits[:, None]
+				weights = tl.expand_dims(exp_logits, 1)
 				y_acc += tl.sum(weights * v_tile, axis=0)
 			# Normalize
 			y = y_acc / (expsum + 1e-9)
@@ -77,10 +77,11 @@ def fused_decode_step(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torc
 	BH, one, DL = q.shape
 	assert one == 1
 	T = k.size(1)
-	# Ensure contiguous last-dim for striding simplicity
-	q = q.contiguous()
-	k = k.contiguous()
-	v = v.contiguous()
+	# Ensure contiguous last-dim for striding simplicity using safe helper
+	from omnicoder.utils.torchutils import safe_make_contiguous as _safe_contig  # type: ignore
+	q = _safe_contig(q)
+	k = _safe_contig(k)
+	v = _safe_contig(v)
 	y = torch.empty((BH, 1, DL), device=q.device, dtype=q.dtype)
 	BLOCK_T = 128
 	BLOCK_D = min(128, ((DL + 31) // 32) * 32)

@@ -77,4 +77,3 @@ def fad_score(ref_dir: str, pred_dir: str, sr: int = 16000) -> Optional[float]:
 		return val
 	except Exception:
 		return None
-

@@ -187,5 +187,3 @@ class ExpertPager:
             'persist_on_evict': bool(self.persist_on_evict),
             'async_prefetch': bool(self._async_enabled),
         }
-
-

@@ -450,5 +450,3 @@ def factorize_prompt(prompt: str) -> FactorizationResult:
 	except Exception as e:
 		get_logger("omnicoder.sfb").debug("goal head blend skipped: %s", e)
 	return FactorizationResult(text=text, factors=factors, goal_priors=priors)
-
-

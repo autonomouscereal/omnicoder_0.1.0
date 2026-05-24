@@ -40,5 +40,3 @@ def build_by_name(preset_name: str, rope_scale=None, rope_base=None, multi_token
     except Exception:
         pass
     return model
-
-

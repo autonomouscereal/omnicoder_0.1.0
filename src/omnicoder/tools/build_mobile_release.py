@@ -86,7 +86,7 @@ def main() -> None:
     ap.add_argument("--teacher", type=str, default=os.getenv("OMNICODER_KD_TEACHER", "microsoft/phi-2"))
     ap.add_argument("--teacher_device_map", type=str, default=os.getenv("OMNICODER_TEACHER_DEVICE_MAP", ""), help="Pass through to KD teacher device map (e.g., auto, balanced, or explicit mapping)")
     ap.add_argument("--teacher_dtype", type=str, default=os.getenv("OMNICODER_TEACHER_DTYPE", ""), help="Pass through to KD teacher dtype (e.g., fp16, bf16, auto)")
-    ap.add_argument("--student_preset", type=str, default=os.getenv("OMNICODER_STUDENT_PRESET", "mobile_4gb"), choices=["mobile_4gb","mobile_2gb"]) 
+    ap.add_argument("--student_preset", type=str, default=os.getenv("OMNICODER_STUDENT_PRESET", "mobile_4gb"), choices=["mobile_4gb","mobile_2gb"])
     # Text export
     ap.add_argument("--quantize_onnx", action="store_true", default=(os.getenv("OMNICODER_QUANTIZE_ONNX", "0") == "1"))
     ap.add_argument("--act_scales", type=str, default=os.getenv("OMNICODER_ACT_SCALES", ""), help="Optional JSON with activation scales for Q/DQ guidance")
@@ -113,7 +113,7 @@ def main() -> None:
     ap.add_argument("--piper_url", type=str, default=os.getenv("OMNICODER_PIPER_URL", ""))
     # Bench
     ap.add_argument("--bench_device", type=str, default=os.getenv("OMNICODER_BENCH_DEVICE", "cpu"))
-    ap.add_argument("--bench_image_backend", type=str, default=os.getenv("OMNICODER_BENCH_IMAGE_BACKEND", "diffusers"), choices=["","diffusers","onnx"]) 
+    ap.add_argument("--bench_image_backend", type=str, default=os.getenv("OMNICODER_BENCH_IMAGE_BACKEND", "diffusers"), choices=["","diffusers","onnx"])
     ap.add_argument("--bench_out", type=str, default=os.getenv("OMNICODER_BENCH_OUT", "bench_summary.json"))
     # PTQ preset
     ap.add_argument("--onnx_preset", type=str, default=os.getenv("OMNICODER_ONNX_PRESET", "generic"), choices=["generic","nnapi","coreml","dml"], help="PTQ op coverage preset for ONNX int8")
@@ -281,5 +281,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

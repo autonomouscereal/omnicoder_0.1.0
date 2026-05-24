@@ -110,5 +110,3 @@ std::tuple<at::Tensor, c10::optional<at::Tensor>> fused_dispatch(
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("fused_dispatch", &fused_dispatch, "MoE fused dispatch (CUDA/ATen)");
 }
-
-

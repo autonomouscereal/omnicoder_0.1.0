@@ -122,5 +122,3 @@ def fad(pred_dir: str, ref_dir: str) -> Optional[float]:
         return float(score)
     except Exception:
         return None
-
-

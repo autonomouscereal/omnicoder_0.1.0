@@ -109,5 +109,3 @@ class SegmentationHead(nn.Module):
         m = self.to_mask(h.transpose(1, 2))  # (B,1,T)
         # Return low-res vectorized mask; caller reshapes/upsamples
         return torch.sigmoid(m)
-
-

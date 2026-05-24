@@ -180,5 +180,3 @@ def register_backend(name: str, fn: FusedMLAFn) -> None:
     if not callable(fn):
         raise TypeError('backend function must be callable')
     _REGISTRY[name.strip().lower()] = fn
-
-

@@ -436,7 +436,8 @@ def main() -> None:
         from omnicoder.training.simple_tokenizer import get_text_tokenizer  # type: ignore
         import torch  # type: ignore
         model = build_mobile_model_by_name(args.student_preset)
-        tok = get_text_tokenizer(prefer_hf=True)
+        from omnicoder.tokenizer.omni_tokenizer import OmniTokenizer
+        tok = OmniTokenizer(vocab_size=128000, bpe_path=os.getenv("OMNICODER_BPE_PATH"))
         ids = tok.encode("Hello from Press Play")
         if not isinstance(ids, list) or not ids:
             ids = [1]
@@ -621,5 +622,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

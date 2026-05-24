@@ -76,5 +76,3 @@ class AVSyncModule(nn.Module):
 
         # Return fused video features and the alignment score
         return v_fused, align
-
-

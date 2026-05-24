@@ -140,5 +140,3 @@ class CascadingMemoryController:
             except Exception:
                 pass
         return out
-
-

@@ -57,7 +57,7 @@ def _update_nf4(running: Dict[str, torch.Tensor], x: torch.Tensor, group: int) -
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Calibrate KV-cache quantization params over sample prompts")
-    ap.add_argument("--mobile_preset", type=str, default="mobile_4gb", choices=["mobile_4gb","mobile_2gb"]) 
+    ap.add_argument("--mobile_preset", type=str, default="mobile_4gb", choices=["mobile_4gb","mobile_2gb"])
     ap.add_argument("--prompts", type=str, nargs='*', default=["Hello OmniCoder!"], help="List of prompts or a path to a text file with one prompt per line")
     ap.add_argument("--max_new_tokens", type=int, default=64)
     ap.add_argument("--kvq", type=str, default="u8", choices=["u8","nf4"])
@@ -166,5 +166,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

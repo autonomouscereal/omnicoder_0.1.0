@@ -1,0 +1,525 @@
+{
+  "schema": "omnicoder.dataset_curation_2026.v1",
+  "profile_name": "dataset_curation_2026",
+  "run_name": "trace_curation_codex_claude_hermes_agent_memory_2026",
+  "source_date": "2026-05-23",
+  "work_dir": "weights/data_factory/trace_orchestrator_2026",
+  "jsonl_fallback_first": true,
+  "trace_inputs": {
+    "sources": [
+      {
+        "path": "data/raw/agent_memory_events_2026.jsonl",
+        "harness": "agent_memory"
+      },
+      {
+        "path": "data/raw/codex_traces_2026",
+        "harness": "codex"
+      },
+      {
+        "path": "data/raw/claude_traces_2026",
+        "harness": "claude"
+      },
+      {
+        "path": "data/raw/hermes_traces_2026",
+        "harness": "hermes"
+      }
+    ],
+    "patterns": [
+      "*.jsonl"
+    ],
+    "exclude_substrings": [
+      "\\.git\\",
+      "\\__pycache__\\",
+      "\\weights\\data_factory\\trace_orchestrator_2026\\"
+    ]
+  },
+  "data": {
+    "bucket": "agentic_trace_sft_2026",
+    "split": "train",
+    "limit": 0,
+    "per_file_limit": 0
+  },
+  "curation_layers": {
+    "require_2025_2026": true,
+    "min_chars": 8,
+    "dedupe": true,
+    "fallback_when_module_missing": true
+  },
+  "quality": {
+    "stage_min_score": 0.0,
+    "export_min_quality": 0.35,
+    "scorer": "heuristic_quality_v1"
+  },
+  "contamination": {
+    "protected_path": "data/protected/eval_holdout_2026.jsonl",
+    "threshold": 0.42,
+    "ngram": 5
+  },
+  "export_sft": {
+    "out": "weights/data_factory/trace_orchestrator_2026/exports/sft_traces.jsonl",
+    "min_quality": 0.35,
+    "allow_contaminated": false,
+    "group_traces": true,
+    "limit": 0
+  },
+  "teacher_jobs": {
+    "enabled": true,
+    "teacher": "qwen3.6_27b_q4_local",
+    "job_type": "trace_critique",
+    "limit": 512,
+    "out": "weights/data_factory/trace_orchestrator_2026/teacher_jobs/teacher_jobs_2026.jsonl",
+    "enqueue_postgres": false,
+    "priority": 100
+  },
+  "postgres": {
+    "enabled": false,
+    "mode": "optional_raw_hooks",
+    "namespace": "trace",
+    "license": "internal",
+    "fail_on_error": false,
+    "notes": "JSONL curation is the default. Enable only after raw PostgreSQL schemas and environment credentials are configured."
+  },
+  "manifests": {
+    "dataset_card": true,
+    "artifact_manifest": true,
+    "collected_files": true,
+    "cleaned_dataset_manifest": "weights/training_orchestration_2026/manifests/cleaned_dataset_manifest.json",
+    "source_files_manifest": "weights/training_orchestration_2026/manifests/source_files.jsonl",
+    "dataset_blend_manifest": "weights/training_orchestration_2026/manifests/dataset_blend_manifest.json",
+    "posttraining_curation_manifest": "weights/training_orchestration_2026/agentic_tool_training_2026/manifests/posttraining_curation_manifest.json"
+  },
+  "notes": [
+    "Codex and agent-memory traces use dedicated ingest modules; Claude and Hermes traces use the generic 2026 trace normalizer until dedicated modules exist.",
+    "The orchestrator attempts omnicoder.data_factory.curation_layers_2026 when present and otherwise applies the built-in 2025-2026 JSONL fallback curation layer.",
+    "No ORM, Pydantic, SQLAlchemy, SQLite, or backup database path is used by this profile."
+  ],
+  "dataset_blends_2026": {
+    "agentic_core": {
+      "sources": [
+        "codex_traces",
+        "claude_traces",
+        "hermes_traces",
+        "agent_memory_events",
+        "lmstudio_conversations"
+      ],
+      "target_fraction": 0.28,
+      "filters": [
+        "secret_scan",
+        "tool_schema_valid",
+        "outcome_or_observation_present",
+        "no_eval_holdout_overlap"
+      ]
+    },
+    "code_repair_security": {
+      "sources": [
+        "Multi-SWE-bench_dev",
+        "SWE-Bench++_dev",
+        "EVMbench_dev",
+        "local_repo_issue_traces"
+      ],
+      "target_fraction": 0.18,
+      "filters": [
+        "license_allowlist",
+        "hidden_tests_removed",
+        "repo_commit_pinned",
+        "patch_applies_or_negative_label"
+      ]
+    },
+    "browser_research_agents": {
+      "sources": [
+        "synthetic_browsecomp_style_non_eval",
+        "mm_browsecomp_style_non_eval",
+        "paperbench_mini_internal",
+        "mle_bench_lite_internal"
+      ],
+      "target_fraction": 0.12,
+      "filters": [
+        "answer_key_separate",
+        "citation_required",
+        "canary_filtered",
+        "trajectory_quarantine_on_eval_success"
+      ]
+    },
+    "image_video_audio_music": {
+      "sources": [
+        "qwen_image_outputs",
+        "qwen_image_edit_outputs",
+        "ltx_2_3_outputs",
+        "ace_step_1_5_outputs",
+        "comfyui_output_manifests"
+      ],
+      "target_fraction": 0.24,
+      "filters": [
+        "artifact_hash_present",
+        "media_nonempty",
+        "prompt_present",
+        "quality_or_reward_label_present"
+      ]
+    },
+    "long_context_1m": {
+      "sources": [
+        "repo_bundles",
+        "multi_doc_bundles",
+        "agent_session_bundles",
+        "long_av_transcripts",
+        "traceav_style_internal"
+      ],
+      "target_fraction": 0.18,
+      "filters": [
+        "length_bucketed",
+        "needle_not_from_eval",
+        "compression_summary_present",
+        "kv_perf_metadata_when_available"
+      ]
+    }
+  },
+  "cleaning_layers_2026": [
+    {
+      "id": "raw_json_schema",
+      "action": "reject_missing_payload_or_modality"
+    },
+    {
+      "id": "secret_redaction",
+      "action": "reject_or_mask_passwords_tokens_keys_before_export"
+    },
+    {
+      "id": "license_allowlist",
+      "action": "keep_internal_permissive_or_authorized_only"
+    },
+    {
+      "id": "near_dedupe",
+      "action": "sha256_exact_plus_5gram_similarity_threshold"
+    },
+    {
+      "id": "benchmark_decontamination",
+      "action": "compare_against_protected_eval_registry_and_canaries"
+    },
+    {
+      "id": "artifact_validation",
+      "action": "hash_media_byte_size_mime_and_probe_nonempty_media"
+    },
+    {
+      "id": "quality_scoring",
+      "action": "heuristic_plus_teacher_or_verifier_score_when_available"
+    },
+    {
+      "id": "split_stratification",
+      "action": "modality_source_length_and_quality_balanced_train_eval_test"
+    }
+  ],
+  "reinforcement_exports_2026": {
+    "export_dir": "weights/training_orchestration_2026/agentic_tool_training_2026",
+    "manifest": "weights/training_orchestration_2026/agentic_tool_training_2026/manifests/posttraining_curation_manifest.json",
+    "sft": "weights/training_orchestration_2026/agentic_tool_training_2026/tool_sft.jsonl",
+    "reward": "weights/training_orchestration_2026/agentic_tool_training_2026/tool_reward.jsonl",
+    "preference": "weights/training_orchestration_2026/agentic_tool_training_2026/tool_preference.jsonl",
+    "rlvr": "weights/training_orchestration_2026/agentic_tool_training_2026/tool_rlvr.jsonl",
+    "safety_negative": "weights/training_orchestration_2026/agentic_tool_training_2026/tool_safety_negatives.jsonl",
+    "algorithm_route_map": {
+      "reward_weighted_sft_replay": "sft",
+      "reward_model": "reward",
+      "agentprm_process_rewards": "reward",
+      "dpo_preference_replay": "preference",
+      "orpo_kto_simpo_pair_replay": "preference",
+      "grpo_rlvr_replay": "rlvr",
+      "browser_research_rlvr": "rlvr",
+      "desktop_gui_rl": "rlvr",
+      "multimodal_rlaif_v": "rlvr",
+      "safety_negative_replay": "safety_negative"
+    },
+    "promotion": "reward replay and heldout all-modality sample-loss eval before benchmark smoke/release gates"
+  },
+  "agent_memory_postgres_export": {
+    "enabled": true,
+    "driver": "raw_postgresql_psycopg2_or_asyncpg",
+    "vault_key": "agent_memory_pg",
+    "host": "192.168.50.222",
+    "port": 25490,
+    "database": "agent_memory",
+    "tables": [
+      "agent_memory_events"
+    ],
+    "format": "jsonl",
+    "date_floor": "2025-01-01",
+    "redact_secrets": true
+  },
+  "local_trace_roots_to_export": {
+    "codex_sessions": "C:/Users/cereal/.codex/sessions",
+    "claude_projects": "C:/Users/cereal/.claude/projects",
+    "memory_hook_log": "C:/Users/cereal/.claude/memory_backend/logs/agent_memory_hook_events.jsonl"
+  },
+  "builder_2026": {
+    "enabled": true,
+    "module": "omnicoder.data_factory.curated_dataset_builder_2026",
+    "out_dir": "weights/curated_datasets_2026/latest",
+    "training_profile": "profiles/training_orchestration_2026.json",
+    "source_date": "2026-05-23",
+    "min_year": 2025,
+    "max_year": 2026,
+    "trace_bucket": "agentic_trace_sft_2026",
+    "trace_limit": 0,
+    "per_trace_source_limit": 0,
+    "min_chars": 8,
+    "min_quality": 0.35,
+    "long_context_min_chars": 1800,
+    "max_files_per_root": 192,
+    "max_media_files_per_root": 512,
+    "max_text_file_bytes": 1048576,
+    "agent_memory_cli_export": {
+      "enabled": true,
+      "script": "C:/Users/cereal/.claude/memory_backend/agent_memory.py",
+      "out": "data/raw/agent_memory_events_2026.jsonl",
+      "limit": 12000,
+      "all_spaces": true,
+      "timeout_seconds": 180
+    },
+    "coverage_targets": {
+      "min_train_per_modality": 1,
+      "text": {
+        "min_train": 64
+      },
+      "code": {
+        "min_train": 64
+      },
+      "tool": {
+        "min_train": 64
+      },
+      "long_context": {
+        "min_train": 64
+      },
+      "image": {
+        "min_train": 16
+      },
+      "video": {
+        "min_train": 8
+      },
+      "audio": {
+        "min_train": 4
+      },
+      "music": {
+        "min_train": 4
+      }
+    },
+    "supplemental_sources": {
+      "text_roots": [
+        "/home/cereal/SOC_TESTING",
+        "/home/cereal/.hermes",
+        "/home/cereal/.agents/skills",
+        "/home/cereal/.claude",
+        "/home/cereal/omnicoder_2026_work/weights/data_factory"
+      ],
+      "code_roots": [
+        "/home/cereal/SOC_TESTING",
+        "/home/cereal/.agents/skills",
+        "/home/cereal/.claude"
+      ],
+      "long_context_roots": [
+        "/home/cereal/SOC_TESTING",
+        "/home/cereal/.hermes",
+        "/home/cereal/.agents/skills",
+        "/home/cereal/.claude",
+        "/home/cereal/omnicoder_2026_work/weights/training_orchestration_2026"
+      ],
+      "media_roots": [
+        "/home/cereal/comfyui/output",
+        "/home/cereal/ComfyUI/output"
+      ],
+      "image_roots": [
+        "/home/cereal/.hermes/cache/screenshots",
+        "/home/cereal/SOC_TESTING",
+        "/home/cereal/comfyui/output/qwen",
+        "/home/cereal/ComfyUI/output",
+        "/home/cereal/omnicoder_2026_work/weights/media_curation/image"
+      ],
+      "video_roots": [
+        "/home/cereal/comfyui/output/ltx",
+        "/home/cereal/ComfyUI/output",
+        "/home/cereal/omnicoder_2026_work/weights/media_curation/video"
+      ],
+      "audio_roots": [
+        "/home/cereal/comfyui/output/audio",
+        "/home/cereal/ComfyUI/output",
+        "/home/cereal/omnicoder_2026_work/weights/media_curation/audio"
+      ],
+      "music_roots": [
+        "/home/cereal/comfyui/output/ace",
+        "/home/cereal/ComfyUI/output",
+        "/home/cereal/omnicoder_2026_work/weights/media_curation/music"
+      ]
+    }
+  },
+  "dataset_catalog_2026": {
+    "omnimodal_understanding": [
+      {
+        "name": "OmniVinci",
+        "url": "https://research.nvidia.com/labs/twn/publication/iclr_2026_omnivinci/",
+        "modalities": [
+          "image",
+          "video",
+          "audio",
+          "text"
+        ],
+        "use": "architecture/data-recipe reference and allowed eval-style metadata only unless dataset license is separately verified",
+        "gate": "license_and_benchmark_decontam"
+      },
+      {
+        "name": "Dynin-Omni",
+        "url": "https://arxiv.org/abs/2604.00007",
+        "modalities": [
+          "text",
+          "image",
+          "speech",
+          "video"
+        ],
+        "use": "unified masked-diffusion omnimodal recipe reference",
+        "gate": "paper_reference_only"
+      },
+      {
+        "name": "E-MM1",
+        "url": "https://e-mm1.github.io/",
+        "modalities": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "point_cloud"
+        ],
+        "use": "large multimodal alignment catalog candidate",
+        "gate": "license_allowlist_and_storage_budget"
+      }
+    ],
+    "audio_music_speech": [
+      {
+        "name": "Audio-Omni / AudioEdit",
+        "url": "https://arxiv.org/abs/2604.10708",
+        "modalities": [
+          "speech",
+          "music",
+          "sound",
+          "audio_edit"
+        ],
+        "use": "audio generation/editing pair recipe and candidate data source when released",
+        "gate": "release_license_and_pair_integrity"
+      },
+      {
+        "name": "AudioGen-Omni",
+        "url": "https://arxiv.org/abs/2508.00733",
+        "modalities": [
+          "video",
+          "speech",
+          "song",
+          "audio"
+        ],
+        "use": "video-synchronized audio/speech/song generation recipe",
+        "gate": "license_and_media_probe"
+      },
+      {
+        "name": "MMAU",
+        "url": "https://mmaubench.github.io/",
+        "modalities": [
+          "audio",
+          "speech",
+          "environment",
+          "music"
+        ],
+        "use": "heldout audio reasoning benchmark, not train",
+        "gate": "eval_holdout_only"
+      }
+    ],
+    "video_audio_reasoning": [
+      {
+        "name": "LVOmniBench",
+        "url": "https://arxiv.org/abs/2603.19217",
+        "modalities": [
+          "long_video",
+          "audio",
+          "text"
+        ],
+        "use": "long audio-video understanding eval holdout",
+        "gate": "eval_holdout_only"
+      },
+      {
+        "name": "AMUSE",
+        "url": "https://machinelearning.apple.com/research/amuse",
+        "modalities": [
+          "audio",
+          "video",
+          "multi_speaker_dialogue"
+        ],
+        "use": "agentic multi-speaker audio-video alignment benchmark",
+        "gate": "eval_holdout_only"
+      },
+      {
+        "name": "MAVERIX",
+        "url": "https://maverix-benchmark.github.io/",
+        "modalities": [
+          "video",
+          "audio",
+          "subtitles"
+        ],
+        "use": "audio-visual reasoning heldout benchmark",
+        "gate": "eval_holdout_only"
+      }
+    ],
+    "video_generation": [
+      {
+        "name": "ViMix-14M",
+        "url": "https://arxiv.org/abs/2511.18382",
+        "modalities": [
+          "video",
+          "text"
+        ],
+        "use": "curated video-text candidate if license and crawl-free access are verified",
+        "gate": "license_allowlist_and_download_manifest"
+      },
+      {
+        "name": "PexelsCustom-1M",
+        "url": "https://www.microsoft.com/en-us/research/publication/a-comprehensive-ecosystem-for-open-domain-customized-video-generation/",
+        "modalities": [
+          "identity",
+          "text",
+          "video"
+        ],
+        "use": "custom video generation candidate after release/license verification",
+        "gate": "license_allowlist_and_identity_policy"
+      }
+    ],
+    "agentic_tool_reasoning": [
+      {
+        "name": "TOUCAN",
+        "url": "https://openreview.net/forum?id=UgFmrYcLOt",
+        "modalities": [
+          "text",
+          "tool",
+          "mcp",
+          "agent_trajectory"
+        ],
+        "use": "tool-agentic trajectory candidate and schema reference",
+        "gate": "license_allowlist_and_benchmark_overlap_scan"
+      },
+      {
+        "name": "ToolOmni-Data",
+        "url": "https://huggingface.co/datasets/bue0912/ToolOmni-Data",
+        "modalities": [
+          "text",
+          "tool",
+          "retrieval",
+          "grounded_execution"
+        ],
+        "use": "open-world tool-use candidate",
+        "gate": "license_allowlist_and_tool_schema_validation"
+      },
+      {
+        "name": "International Tool Calling Dataset",
+        "url": "https://arxiv.org/abs/2603.05515",
+        "modalities": [
+          "text",
+          "tool",
+          "multilingual"
+        ],
+        "use": "cross-lingual tool-calling candidate",
+        "gate": "license_allowlist_and_language_balance"
+      }
+    ]
+  }
+}

@@ -150,7 +150,7 @@ def build_model(preset_name: str, seq_len_hint: int) -> OmniTransformer:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Fused Video+Text pretraining: video+text -> CE loss on text segment")
     ap.add_argument("--jsonl", type=str, required=True, help="Path to JSONL with {video, text}")
-    ap.add_argument("--mobile_preset", type=str, default="mobile_4gb", choices=["mobile_4gb", "mobile_2gb"]) 
+    ap.add_argument("--mobile_preset", type=str, default="mobile_4gb", choices=["mobile_4gb", "mobile_2gb"])
     ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--batch_size", type=int, default=1)
     ap.add_argument("--steps", type=int, default=200)
@@ -229,5 +229,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

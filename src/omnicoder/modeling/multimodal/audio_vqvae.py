@@ -150,5 +150,3 @@ class AudioVQVAE(nn.Module):
             "hop": 16,  # two stride‑4 convs
         }
         _safe_save(blob, out_path)
-
-

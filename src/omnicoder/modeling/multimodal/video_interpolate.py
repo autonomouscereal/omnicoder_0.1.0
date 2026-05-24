@@ -30,5 +30,3 @@ class LatentInterpolator(nn.Module):
         inp = _safe_concat([z0e, z1e, taue], -1)
         out = self.mlp(inp)
         return out
-
-

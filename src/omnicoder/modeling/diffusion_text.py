@@ -16,6 +16,8 @@ from typing import Optional, Tuple
 import torch
 from torch import nn as _nn
 
+from omnicoder.utils.torchutils import safe_concat2 as _safe_cat  # type: ignore
+
 
 class DiffusionScheduler:
     """Simple cosine beta schedule over T steps for embedding-space diffusion.
@@ -45,7 +47,6 @@ class DiffusionScheduler:
         # Prepend abar[0] for alignment; use arithmetic to avoid Python indexing
         a0 = torch.ops.aten.slice.Tensor(abar, 0, 0, 1, 1)
         tail = torch.ops.aten.slice.Tensor(abar, 0, 0, (abar.shape[0] - 1), 1)
-        from omnicoder.utils.torchutils import safe_concat2 as _safe_cat  # type: ignore
         prev = _safe_cat(a0, tail, 0)
         eps = torch.ops.aten.mul.Scalar(torch.ops.aten.ones_like.default(abar), 1e-5)
         prev = torch.ops.aten.maximum.default(prev, eps)
@@ -157,7 +158,7 @@ class DiffusionTextGenerator(_nn.Module):
             ratio = torch.ops.aten.reshape.default(ratio, (1, 1, 1))
             t = torch.ops.aten.mul.Tensor(torch.ops.aten.ones_like.default(tgt[..., :1]), ratio)
             # Build noisy input concat: [prompt, tgt]
-            from omnicoder.utils.torchutils import safe_concat2 as _safe_cat  # type: ignore
+
             x = _safe_cat(prompt, tgt, 1)
             te = self.time_embedding(t, x)
             x_in = torch.ops.aten.add.Tensor(x, te)
@@ -207,5 +208,3 @@ class DiffusionTextGenerator(_nn.Module):
         ids = torch.ops.aten.argmax.default(logits, -1)
         ids = torch.ops.aten.to.dtype(ids, torch.long, False, False)
         return torch.ops.aten.reshape.default(ids, (B, gen_tokens))
-
-

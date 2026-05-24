@@ -41,7 +41,9 @@ venv/
 
 # Test logs and local logs
 tests_logs/
+src/tests_logs/
 *.log
+*.bak
 
 # Local artifacts and datasets
 weights/

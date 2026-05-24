@@ -15,6 +15,7 @@ dependencies = [
     "transformers>=4.40",
     "accelerate",
     "peft",
+    "trl>=0.26.0",
     "bitsandbytes; platform_system=='Linux'",
     "soundfile",
     "librosa",
@@ -46,6 +47,28 @@ bench-acceptance = "omnicoder.tools.bench_acceptance:main"
 router-ablate = "omnicoder.tools.router_ablate:main"
 sfb-setup = "omnicoder.tools.sfb_setup:main"
 sfb-sidecars-demo = "omnicoder.tools.sfb_sidecars_demo:main"
+pretrain-2026-dense = "omnicoder.training.pretrain_2026_dense:main"
+train-2026 = "omnicoder.training.orchestrator_2026:main"
+full-harness-2026 = "omnicoder.training.full_harness_2026:main"
+run-registry-2026 = "omnicoder.training.run_registry_2026:main"
+metrics-2026 = "omnicoder.training.metrics_2026:main"
+sft-qlora-2026 = "omnicoder.training.sft_qlora_2026:main"
+distill-curriculum-2026 = "omnicoder.training.distillation_curriculum_2026:main"
+posttrain-bridge-2026 = "omnicoder.training.posttrain_bridge_2026:main"
+agentic-tool-train-2026 = "omnicoder.training.agentic_tool_training_2026:main"
+generate-2026 = "omnicoder.inference.generate_2026:main"
+eval-2026 = "omnicoder.eval.harness_2026:main"
+benchmark-suite-2026 = "omnicoder.eval.benchmark_suite_2026:main"
+training-orchestration-2026 = "omnicoder.training.training_orchestration_2026:main"
+gpu-sidecar-2026 = "omnicoder.tools.gpu_sidecar_2026:main"
+ingest-2026 = "omnicoder.data_factory.ingest_2026:main"
+teacher-jobs-2026 = "omnicoder.data_factory.teacher_jobs_2026:main"
+curate-2026 = "omnicoder.data_factory.curation_layers_2026:main"
+trace-orchestrator-2026 = "omnicoder.data_factory.trace_orchestrator_2026:main"
+memory-traces-2026 = "omnicoder.data_factory.memory_trace_collectors_2026:main"
+codec-registry-2026 = "omnicoder.codecs.codec_registry_2026:main"
+gguf-bridge-2026 = "omnicoder.export.gguf_bridge_2026:main"
+context-budget-2026 = "omnicoder.inference.context_budget_2026:main"
 
 [project.optional-dependencies]
 onnx = [

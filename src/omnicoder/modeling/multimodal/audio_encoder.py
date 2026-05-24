@@ -75,5 +75,3 @@ class AudioBackbone(nn.Module):
         if self.return_pooled:
             pooled = self.pooler(tokens.transpose(1, 2)).squeeze(-1)  # (B, C)
         return tokens, pooled
-
-

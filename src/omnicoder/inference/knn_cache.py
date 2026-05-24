@@ -283,5 +283,3 @@ class KNNCache:
             return True
         except Exception:
             return False
-
-

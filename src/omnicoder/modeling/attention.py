@@ -44,6 +44,9 @@ try:
 except Exception:
     _ins = None  # type: ignore
 from .kernels.mla_providers import resolve_backend
+
+from .quant.quant import TurboQuant, apply_weight_quantization, get_quant_config, QuantLevel
+
 """
 HISTORY (why previous anchors broke CG/TPS):
 - Earlier revisions built debug/shape anchors via ad-hoc aten.sum(mul(x,0)) chains inline.
@@ -70,7 +73,7 @@ try:
     from .hyena import HyenaMixer1D as _Hyena
 except Exception:
     _Hyena = None
- 
+
 try:
     from .memory import LandmarkIndexer  # type: ignore
 except Exception:
@@ -87,6 +90,10 @@ try:
 except Exception:  # pragma: no cover
     def _allow_in_graph(f):  # type: ignore
         return f
+
+import math as _m
+
+from .memory import CompressiveKV  # type: ignore
 
 # Graph-safe wall-clock timer shim. We avoid direct use inside compiled regions
 # by reading time in Python only at log/telemetry boundaries to keep graphs pure.
@@ -144,7 +151,6 @@ class _ApplyRoPE4D(nn.Module):
         # No persistent output buffers in compiled regions to avoid AOT view/input mutation issues
         # Precompute RoPE scalars for fast paths (Python floats; safe outside hot aten-only regions)
         try:
-            import math as _m
             self._rope_neg_log_base_py = -_m.log(float(self.rope_base))
             self._rope_inv_scale_py = 1.0 / float(self.rope_scale if self.rope_scale != 0.0 else 1e-6)
         except Exception:
@@ -152,7 +158,6 @@ class _ApplyRoPE4D(nn.Module):
             self._rope_inv_scale_py = 1.0
         # Precompute Python scalars for hot path
         try:
-            import math as _m
             self._neg_log_base_py = -_m.log(float(rope_base))
             self._inv_scale_py = 1.0 / float(rope_scale if rope_scale != 0.0 else 1e-6)
         except Exception:
@@ -253,7 +258,6 @@ class _ApplyRoPE3D(nn.Module):
         self.rope_base = rope_base
         # Precompute Python scalars for hot path
         try:
-            import math as _m
             self._neg_log_base_py = -_m.log(float(rope_base))
             self._inv_scale_py = 1.0 / float(rope_scale if rope_scale != 0.0 else 1e-6)
         except Exception:
@@ -401,7 +405,6 @@ class LatentKVAttention(nn.Module):
         # RoPE: precompute scalar constants once (Python floats) and sin/cos tables at init.
         # These are anchored to module weights for device/dtype safety and indexed via aten in forward.
         try:
-            import math as _m
             self._rope_neg_log_base_py = -_m.log(float(self.rope_base))
             self._rope_inv_scale_py = 1.0 / float(self.rope_scale if self.rope_scale != 0.0 else 1e-6)
         except Exception:
@@ -429,7 +432,6 @@ class LatentKVAttention(nn.Module):
         # Precompute inverse sqrt(Dh) once as a Python float to avoid per-call sqrt/reciprocal in hot paths.
         # Used via aten.mul.Scalar with a tensor anchor; safe for compile/CG and export.
         try:
-            import math as _math  # type: ignore
             self._inv_sqrt_kv: float = float(1.0 / _math.sqrt(float(self.kv_latent_dim)))
         except Exception:
             self._inv_sqrt_kv = float(1.0)
@@ -530,8 +532,11 @@ class LatentKVAttention(nn.Module):
         # blocked CUDA Graph engagement. Allocating them once here and resizing on demand keeps
         # storages stable across steps while the outputs returned from forward remain ephemeral.
         try:
-            # Precompute fixed indices and causal triangle once at init at max_seq_len
-            Tfix = int(self.max_seq_len)
+            # Precompute a bounded static mask cache. Native 1M context must not
+            # allocate a max_seq_len x max_seq_len triangle at construction time.
+            # Long-context paths use bounded prefill/decode windows instead.
+            _mask_cap = int(os.getenv("OMNICODER_STATIC_MASK_MAX", "8192"))
+            Tfix = int(min(int(self.max_seq_len), max(128, _mask_cap)))
             anchor = self.o_proj.weight
             one_row = torch.ops.aten.add.Scalar(torch.ops.aten.new_zeros.default(anchor, (Tfix,)), 1)
             idx = torch.ops.aten.cumsum.default(one_row, 0)
@@ -550,9 +555,9 @@ class LatentKVAttention(nn.Module):
             self._scratch_logits = None  # type: ignore[assignment]
             self._scratch_y = None  # type: ignore[assignment]
 
-        # DO NOT precompute a block-diagonal Q→latent mapping (C→H*DL).
+        # DO NOT precompute a block-diagonal Qâ†’latent mapping (Câ†’H*DL).
         # We tried a fused flat-Q matmul replacing per-head q_to_latent GEMMs and it REGRESSED TPS in this env.
-        # Keep per-head Linear for Q→latent. Do not reintroduce the fused block-diagonal path.
+        # Keep per-head Linear for Qâ†’latent. Do not reintroduce the fused block-diagonal path.
 
         # Remove internal circular KV cache tensors entirely to avoid large unused VRAM allocs and
         # forward-time mutations under compile/CG. We keep only scalar trackers for compatibility.
@@ -629,7 +634,10 @@ class LatentKVAttention(nn.Module):
             self._att_triton_decode = False
         self._att_sdp_pref = 'flash'
         self._att_use_fa3 = True
-        # DO NOT USE functional SDPA in this environment — empirically regresses TPS (already observed).
+
+        self.turboquant = None
+
+        # DO NOT USE functional SDPA in this environment â€” empirically regresses TPS (already observed).
         # Keep aten-only explicit path. This flag remains permanently False.
         self._use_f_sdpa_fullseq = False
         # REVERT: Multi-query unification regressed TPS here; restore original branching in forward.
@@ -642,7 +650,7 @@ class LatentKVAttention(nn.Module):
         self.window_size = int(window_size) if (window_size is not None and int(window_size) > 0) else None
         # Bound decode-step attention to a reasonable recent window by default to avoid O(T^2) blow-up.
         # This applies only when seqlen==1 (decode hot path) and does not affect full-sequence passes.
-        # Reduce default decode window from 64 → 16 to bound K/V tail without impacting quality.
+        # Reduce default decode window from 64 â†’ 16 to bound K/V tail without impacting quality.
         self.decode_window = 16
         # Fixed prefill compute length (static across steps) to keep CUDA Graph shapes constant
         try:
@@ -667,14 +675,13 @@ class LatentKVAttention(nn.Module):
         self.compressive_slots = int(compressive_slots) if int(compressive_slots) > 0 else 0
         if self.compressive_slots > 0:
             try:
-                from .memory import CompressiveKV  # type: ignore
                 self.compress_kv = CompressiveKV(latent_dim=self.kv_latent_dim, slots=self.compressive_slots)
             except Exception:
                 self.compress_kv = None
         else:
             self.compress_kv = None
         # DECODE WINDOW WORK BUFFERS (non-persistent): reuse per-step to avoid allocations
-        # NOTE: These buffers are small (1×H×W×DL) and zeroed each decode step. They prevent
+        # NOTE: These buffers are small (1Ã—HÃ—WÃ—DL) and zeroed each decode step. They prevent
         # transient expand+slice_scatter builds of size (B,H,W,DL) on every token.
         # IMPORTANT: We keep them non-persistent to avoid state serialization and mark sizes at init.
         try:
@@ -812,7 +819,7 @@ class LatentKVAttention(nn.Module):
                 row_full = torch.ops.aten.slice_scatter.default(row_full, Wlh_T, 1, cs, ce, 1)
                 # 2) Scatter the row_full into the big matrix rows [rs:re]
                 full = torch.ops.aten.slice_scatter.default(full, row_full, 0, rs, re, 1)
-            # Compose with o_proj: need W_o^T (C,C). Combined M = (block(Wlh_T)) @ W_o^T → (H*DL, C)
+            # Compose with o_proj: need W_o^T (C,C). Combined M = (block(Wlh_T)) @ W_o^T â†’ (H*DL, C)
             Wo = self.o_proj.weight  # (C_out, C_in=C)
             Wo_T = torch.ops.aten.transpose.int(Wo, 0, 1)  # (C, C)
             M = torch.ops.aten.mm.default(full, Wo_T)  # (H*DL, C)
@@ -908,11 +915,11 @@ class LatentKVAttention(nn.Module):
             pass
         return out
 
-    # NOTE [Do-not-add: fused Q→latent block-diagonal path]
+    # NOTE [Do-not-add: fused Qâ†’latent block-diagonal path]
     # Rationale:
-    # - A precomputed (C→H*DL) block-diagonal matrix applied to flat Q regressed TPS in this environment
+    # - A precomputed (Câ†’H*DL) block-diagonal matrix applied to flat Q regressed TPS in this environment
     #   despite fewer function calls. Likely causes: worse cache locality vs per-head GEMMs, larger matmul
-    #   tiling inefficiency, and extra reshapes. We intentionally keep per-head Linear for Q→latent.
+    #   tiling inefficiency, and extra reshapes. We intentionally keep per-head Linear for Qâ†’latent.
     # - Do not reintroduce unless benchmarks prove a win across decode/full.
 
     def _get_band_mask(self, seqlen: int, total_len: int, window: int, ref: torch.Tensor) -> torch.Tensor:
@@ -987,7 +994,7 @@ class LatentKVAttention(nn.Module):
         # Use unified safe anchor to generate the "1" flag (1 + 0*anchor) in aten only
         _one_dbg_att = torch.ops.aten.add.Scalar(_safe_anchor(x), 1.0)
         _cg_dbg_att = torch.ops.aten.slice_scatter.default(_cg_dbg_att, torch.ops.aten.unsqueeze.default(_one_dbg_att, 0), 0, 0, 1, 1)
-        
+
         _t1 = 0.0
         # Avoid Python slicing (operator.getitem) which can create builtin targets in FX/Inductor
         query_linear_output = torch.ops.aten.slice.Tensor(fused_qkv_output, -1, 0, self.d_model, 1)
@@ -1152,7 +1159,7 @@ class LatentKVAttention(nn.Module):
             # Ensure last_landmarks is defined in a compile-safe way (no locals() usage)
             # Define last_landmarks explicitly to avoid LOAD_FAST/locals() compile issues
             last_landmarks = None  # set a default; upstream may overwrite when available
-            # 1) Landmarks (map to per-head Dh then latent DL) — fixed count
+            # 1) Landmarks (map to per-head Dh then latent DL) â€” fixed count
             Lk_fixed = int(getattr(self, '_lm_fixed_count', 0))
             k_lmk_lat = torch.ops.aten.new_zeros.default(key_padded, (_B, _H, Lk_fixed, _DL))
             v_lmk_lat = torch.ops.aten.new_zeros.default(value_padded, (_B, _H, Lk_fixed, _DL))
@@ -1368,6 +1375,10 @@ class LatentKVAttention(nn.Module):
         # Append current token at last position [W-1:W)
         key_latent_windowed = torch.ops.aten.slice_scatter.default(key_latent_windowed, key_current_multihead, 2, window_length - 1, window_length, 1)
         value_latent_windowed = torch.ops.aten.slice_scatter.default(value_latent_windowed, value_current_multihead, 2, window_length - 1, window_length, 1)
+
+        if self.turboquant is not None and use_cache:
+            key_latent_windowed, value_latent_windowed = self.turboquant(key_latent_windowed, value_latent_windowed)
+
         # Aliases for landmark/prepend helpers (lint-safe, descriptive)
         k_lat = key_latent_windowed
         v_lat = value_latent_windowed
@@ -1502,7 +1513,7 @@ class LatentKVAttention(nn.Module):
 
         # Attention: unified explicit aten path (decode/full unified to fixed window and T==1)
         #
-        # SINGLE-PATH ATEN ATTENTION — EXPLICIT, ATEN-ONLY, QUALITY-PRESERVING
+        # SINGLE-PATH ATEN ATTENTION â€” EXPLICIT, ATEN-ONLY, QUALITY-PRESERVING
         # -------------------------------------------------------------------------------------------
         # Rationale:
         # - Use a single aten path for both decode and full-seq by building a fixed-length window over K/V.
@@ -1517,7 +1528,7 @@ class LatentKVAttention(nn.Module):
         #   reduce retraces under torch.compile by avoiding dynamic time dimensions.
         # Implementation notes:
         # - We explicitly reshape to (B*H, 1, Dh)/(B*H, L, Dh), compute logits = q @ k^T / sqrt(Dh), softmax,
-        #   then y = probs @ v, and finally reshape/transposed back to (B, T=1, H, Dh) → (B, H, T=1, Dh).
+        #   then y = probs @ v, and finally reshape/transposed back to (B, T=1, H, Dh) â†’ (B, H, T=1, Dh).
         # - Windowing (if configured) is applied identically via aten.slice/constant_pad_nd.
         # - No .contiguous() is forced; bmm tolerates non-contiguous strides.
         #

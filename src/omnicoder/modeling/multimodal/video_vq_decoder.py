@@ -54,5 +54,3 @@ class VideoVQDecoder(nn.Module):
             except Exception:
                 pass
         return VideoVQDecoder(codebook=cb, code_dim=code_dim, patch=patch)
-
-

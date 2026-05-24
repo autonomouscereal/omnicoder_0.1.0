@@ -1,0 +1,71 @@
+{
+  "profile_name": "training_harness_2026",
+  "run_name": "omnicoder2026_full_harness",
+  "recipe": "native_trace_sft_full_ledger_probe_for_20b_contract",
+  "preset": "ledger_probe",
+  "budget_profile": "omnicoder2026_20b_1m",
+  "source_date": "2026-05-23",
+  "registry_root": "weights/runs_2026",
+  "work_dir": "weights/harness_2026",
+  "benchmark_registry": "profiles/benchmark_registry_2026.json",
+  "data": {
+    "trace_input": "data/raw/agent_memory_events_2026.jsonl",
+    "media_root": null,
+    "limit": 1000,
+    "sft_limit": 256,
+    "min_quality": 0.35,
+    "group_traces": true,
+    "contamination_threshold": 0.42,
+    "contamination_ngram": 5
+  },
+  "native_train": {
+    "seq_len": 64,
+    "batch_size": 1,
+    "steps": 3,
+    "max_records": 16,
+    "device": "cuda",
+    "aux_probe": true,
+    "fake_quant": false,
+    "compile": false
+  },
+  "eval": {
+    "benchmark": "registry_smoke"
+  },
+  "teacher_jobs": {
+    "enabled": true,
+    "teacher": "qwen3.6_27b_q4_local",
+    "job_type": "trace_critique",
+    "limit": 64
+  },
+  "agentic_tool_training": {
+    "enabled": true,
+    "profile": "profiles/agentic_tool_training_2026.json",
+    "input_jsonl": "",
+    "out_dir": "",
+    "model": "Qwen/Qwen3-4B",
+    "min_quality": 0.35,
+    "limit": 0,
+    "dry_run": true
+  },
+  "sft_qlora": {
+    "enabled": false,
+    "dry_run": true,
+    "model": "Qwen/Qwen3-4B",
+    "max_seq_len": 4096,
+    "max_steps": 1000,
+    "learning_rate": 0.0001,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 16,
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "target_modules": "all-linear",
+    "load_in_4bit": true,
+    "packing": true,
+    "assistant_only_loss": true
+  },
+  "notes": [
+    "JSONL registry is the default because it is portable across workstation and AI server.",
+    "Raw PostgreSQL mirroring can be enabled after applying schemas/training_runs_2026.sql to an Omnicoder database.",
+    "This harness intentionally separates eval-protected artifacts from exported training JSONL."
+  ]
+}

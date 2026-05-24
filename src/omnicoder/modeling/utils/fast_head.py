@@ -216,5 +216,3 @@ def attach_fast_head(model: nn.Module) -> None:
             model._fast_head = FastHeadShortlist(model.lm_head, sub_dims=sub_dims)
     except Exception:
         pass
-
-

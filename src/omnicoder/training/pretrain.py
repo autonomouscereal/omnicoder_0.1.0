@@ -297,7 +297,7 @@ def main():
             dl = DataLoader(safe_ds, batch_size=int(args.batch_size), shuffle=True, num_workers=0, pin_memory=pin)
 
     # Example preset usage (if present in env):
-    preset_name = os.getenv('OMNICODER_PRESET', 'mobile_4gb')
+    preset_name = args.mobile_preset or os.getenv('OMNICODER_PRESET', 'mobile_4gb')
     try:
         preset = get_mobile_preset(preset_name)
     except Exception as e:

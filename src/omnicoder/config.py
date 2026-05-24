@@ -11,7 +11,78 @@ def get_mobile_preset(name: str):
         return MobilePreset()
     if name_l == "mobile_2gb":
         return MobilePreset2GB()
-    # High-capacity sparse MoE variants (≥16 experts/layer) for DS‑MoE curriculum
+    if name_l == "dense_1b_smoke":
+        p = MobilePreset()
+        p.name = "dense_1b_smoke"
+        p.n_layers = 24
+        p.d_model = 1536
+        p.n_heads = 12
+        p.mlp_dim = 4096
+        p.moe_experts = 1
+        p.moe_top_k = 1
+        p.moe_group_sizes = []
+        p.moe_sub_experts_per = 1
+        p.moe_shared_general = 0
+        p.kv_latent_dim = 128
+        p.default_window_size = 4096
+        p.max_seq_len = 32768
+        p.vocab_size = 270592
+        return p
+    if name_l in ("dense_omni_24gb", "dense_3b_24gb"):
+        p = MobilePreset()
+        p.name = "dense_omni_24gb"
+        p.n_layers = 40
+        p.d_model = 2304
+        p.n_heads = 18
+        p.mlp_dim = 6144
+        p.moe_experts = 1
+        p.moe_top_k = 1
+        p.moe_group_sizes = []
+        p.moe_sub_experts_per = 1
+        p.moe_shared_general = 0
+        p.kv_latent_dim = 192
+        # Native long-context target. Training can still use short curriculum
+        # sequence lengths; this is the model/runtime contract for RoPE and
+        # validation gates.
+        p.default_window_size = 16384
+        p.max_seq_len = 1048576
+        p.vocab_size = 270592
+        return p
+    if name_l == "dense_native1m_probe":
+        p = MobilePreset()
+        p.name = "dense_native1m_probe"
+        p.n_layers = 4
+        p.d_model = 512
+        p.n_heads = 8
+        p.mlp_dim = 1408
+        p.moe_experts = 1
+        p.moe_top_k = 1
+        p.moe_group_sizes = []
+        p.moe_sub_experts_per = 1
+        p.moe_shared_general = 0
+        p.kv_latent_dim = 64
+        p.default_window_size = 4096
+        p.max_seq_len = 1048576
+        p.vocab_size = 270592
+        return p
+    if name_l == "dense_7b_research":
+        p = MobilePreset()
+        p.name = "dense_7b_research"
+        p.n_layers = 48
+        p.d_model = 3072
+        p.n_heads = 24
+        p.mlp_dim = 8192
+        p.moe_experts = 1
+        p.moe_top_k = 1
+        p.moe_group_sizes = []
+        p.moe_sub_experts_per = 1
+        p.moe_shared_general = 0
+        p.kv_latent_dim = 256
+        p.default_window_size = 8192
+        p.max_seq_len = 262144
+        p.vocab_size = 270592
+        return p
+    # High-capacity sparse MoE variants (â‰¥16 experts/layer) for DSâ€‘MoE curriculum
     if name_l == "mobile_4gb_moe16":
         p = MobilePreset()
         p.name = "mobile_4gb_moe16"
@@ -114,7 +185,7 @@ class MobilePreset:
     """Configuration presets for constrained mobile deployment.
 
     The "mobile_4gb" preset is a conservative default intended to fit in
-    ~2–4GB RAM with 4-bit weights and small KV cache when paired with
+    ~2â€“4GB RAM with 4-bit weights and small KV cache when paired with
     int4/gguf or ExecuTorch/CoreML backends.
     """
     name: str = "mobile_4gb"

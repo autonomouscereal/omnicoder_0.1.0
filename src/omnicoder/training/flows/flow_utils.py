@@ -38,5 +38,3 @@ def sample_vp_params(batch_size: int, device: torch.device) -> tuple[torch.Tenso
 # VE (variance exploding) – reuse log-uniform sigma
 def sample_ve_sigma(batch_size: int, device: torch.device, sigma_min: float = 0.01, sigma_max: float = 50.0) -> torch.Tensor:
     return sample_sigma(batch_size, device, sigma_min, sigma_max)
-
-

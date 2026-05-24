@@ -343,5 +343,3 @@ class ImageVQVAE(nn.Module):
         # idx: (B, Hq, Wq) -> (B, T)
         b, h, w = idx.shape
         return idx.reshape(b, h * w)
-
-

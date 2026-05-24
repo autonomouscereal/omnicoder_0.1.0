@@ -1,58 +1,32 @@
-# Core
-numpy
-transformers
-tokenizers
-accelerate
-peft
-safetensors
-datasets
+# --- Core & Build Fixes ---
+setuptools<70.0.0
+numpy==1.22.0
+cython
+pyworld>=0.3.0
+psycopg2-binary
 
-# Diffusion / image generation
-diffusers[torch]
+# --- AI / Modern Stack ---
+transformers>=4.38.0
+tokenizers>=0.15.0
+accelerate>=0.27.0
+peft>=0.9.0
+diffusers[torch]>=0.26.0
+datasets>=2.17.0
+trl>=0.26.0
 
-# ONNX / optimization (GPU)
-optimum
-# Latest stack compatible with ONNX >=1.17 and protobuf >=5
-protobuf>=5
-onnx>=1.17
-onnxruntime-gpu
-onnxruntime-tools
-onnxscript>=0.2.3
-
-# Vision backbones and image utils
-timm
-pillow
-opencv-python
-scikit-image
-
-# Retrieval / evaluation
-faiss-cpu
-open-clip-torch
-clean-fid
-jiwer
-# FVD: pytorch-fvd wheels are frequently unavailable; include torch-fidelity as a fallback for FID/IS
-torch-fidelity
-
-# Audio / ASR / TTS
+# --- Audio (The Git Fix) ---
 encodec
-TTS
+TTS @ git+https://github.com/coqui-ai/TTS.git
 faster-whisper
 soundfile
 librosa
 
-# Logic / solver
-z3-solver
+# --- Retrieval & Vision ---
+faiss-cpu>=1.7.0
+open-clip-torch>=2.20.0
+scikit-image>=0.20.0
+opencv-python>=4.8.0
+pillow>=10.0.0
 
-# Serving / tooling
-fastapi
-uvicorn
-pytest
-pytest-timeout
-torchmetrics
-
-# SFB heavy deps handled via isolated runtime (installed in container venv)
-penman
-
-# SRL backend for SFB (explicitly requested)
-allennlp
-allennlp-models
+# --- The Heavy Backend ---
+# Pinning AllenNLP to a version that actually works with Python 3.10

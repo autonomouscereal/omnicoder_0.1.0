@@ -75,5 +75,3 @@ def concat_kv_window(
     k = concat_window(pages_k, window)
     v = concat_window(pages_v, window)
     return k, v
-
-

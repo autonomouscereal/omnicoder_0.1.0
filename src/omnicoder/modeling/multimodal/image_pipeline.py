@@ -342,4 +342,3 @@ def _cm_verifier_score_from_image(image, text_embed: torch.Tensor) -> float:
         return float(s.squeeze().mean().item())
     except Exception:
         return 1.0
-
