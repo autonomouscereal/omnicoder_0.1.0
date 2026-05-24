@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 
 from omnicoder.data_factory import dataset_expansion_2026 as expansion
@@ -107,6 +109,68 @@ def test_dataset_expansion_falls_back_to_distillation_seeds_after_hf_failure(tmp
     )
     assert manifest["records"]["research_internal"] == 1
     assert manifest["modalities"]["image"] == 1
+    assert manifest["datasets"][0]["synthetic_seed_only"] is True
+
+
+def test_huggingface_iteration_errors_do_not_abort_expansion(monkeypatch) -> None:
+    class BrokenDataset:
+        def __iter__(self):
+            raise ImportError("missing optional decoder")
+
+    def fake_load_dataset(*args, **kwargs):
+        return BrokenDataset()
+
+    module = types.ModuleType("datasets")
+    module.load_dataset = fake_load_dataset
+    monkeypatch.setitem(sys.modules, "datasets", module)
+    rows, status = expansion.rows_from_huggingface(
+        {"hf_id": "unit/broken", "splits": ["train"]},
+        limit=4,
+        streaming=True,
+    )
+
+    assert rows == []
+    assert status["status"] == "failed"
+    assert "iteration failed" in status["errors"][0]
+
+
+def test_huggingface_registry_options_are_passed_without_token_leak(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    def fake_load_dataset(*args, **kwargs):
+        calls.append({"args": args, "kwargs": kwargs})
+        return [{"prompt": "p", "target": "t"}]
+
+    module = types.ModuleType("datasets")
+    module.load_dataset = fake_load_dataset
+    monkeypatch.setitem(sys.modules, "datasets", module)
+    monkeypatch.setenv("HF_UNIT_TOKEN", "secret-token")
+
+    rows, status = expansion.rows_from_huggingface(
+        {
+            "hf_id": "unit/options",
+            "config": "cfg",
+            "revision": "abc123",
+            "data_files": {"train": "data/*.jsonl"},
+            "verification_mode": "no_checks",
+            "trust_remote_code": False,
+            "token_env": "HF_UNIT_TOKEN",
+            "splits": ["train"],
+        },
+        limit=1,
+        streaming=True,
+    )
+
+    assert len(rows) == 1
+    assert calls[0]["args"][:2] == ("unit/options", "cfg")
+    assert calls[0]["kwargs"]["revision"] == "abc123"
+    assert calls[0]["kwargs"]["data_files"] == {"train": "data/*.jsonl"}
+    assert calls[0]["kwargs"]["verification_mode"] == "no_checks"
+    assert calls[0]["kwargs"]["trust_remote_code"] is False
+    assert calls[0]["kwargs"]["token"] == "secret-token"
+    assert status["token_env"] == "HF_UNIT_TOKEN"
+    assert status["token_used"] is True
+    assert "secret-token" not in json.dumps(status)
 
 
 def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> None:
@@ -118,8 +182,18 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     for name in [
         "OpenThoughts2-1M",
         "DeepCoder-Preview-Dataset",
+        "NVIDIA Nemotron-RL Agentic SWE Pivot",
+        "Scale-SWE",
+        "Nebius SWE-rebench OpenHands Trajectories",
+        "NVIDIA OpenCodeReasoning-2",
         "NVIDIA Nemotron-Terminal-Corpus",
         "Hermes Function Calling V1",
+        "Tool Use Multiturn Reasoning",
+        "OmniEdit-Filtered-1.2M",
+        "OmniGen2 X2I2",
+        "Common Voice 21.0",
+        "ACE-Step Songs",
+        "Visual-CoT",
         "MultiEdit",
         "NVIDIA Granary",
         "AR-Omni-Instruct-v0.1",
@@ -127,5 +201,9 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
         assert name in by_name
 
     assert by_name["NVIDIA Nemotron-Terminal-Corpus"]["use_policy"] == "train"
+    assert by_name["Scale-SWE"]["use_policy"] == "train"
+    assert by_name["SWE-Compass"]["use_policy"] == "benchmark_holdout"
+    assert by_name["CoderForge-Preview"]["use_policy"] == "research_internal"
+    assert by_name["OmniEdit-Filtered-1.2M"]["use_policy"] == "train"
     assert by_name["AR-Omni-Instruct-v0.1"]["use_policy"] == "research_internal"
     assert by_name["Open-MM-RL"]["use_policy"] == "blocked_until_review"

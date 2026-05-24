@@ -26,6 +26,70 @@ DEFAULT_TEACHERS = {
 }
 
 
+def first_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, list):
+        parts = [first_text(item) for item in value[:16]]
+        return "\n".join(part for part in parts if part)
+    if isinstance(value, dict):
+        for key in ("content", "text", "prompt", "instruction", "question", "answer", "response", "completion"):
+            if key in value:
+                text = first_text(value[key])
+                if text:
+                    return text
+    return ""
+
+
+def prompt_from_record(record: dict[str, Any]) -> str:
+    input_json = record.get("input_json") if isinstance(record.get("input_json"), dict) else {}
+    messages = input_json.get("messages") if isinstance(input_json.get("messages"), list) else record.get("messages")
+    text = first_text(messages)
+    if text:
+        return text
+    return first_text(input_json) or first_text(record.get("prompt")) or first_text(record.get("instruction"))
+
+
+def target_from_record(record: dict[str, Any]) -> str:
+    target_json = record.get("target_json") if isinstance(record.get("target_json"), dict) else {}
+    return first_text(target_json) or first_text(record.get("target")) or first_text(record.get("response")) or first_text(record.get("messages"))
+
+
+def build_job_input(record: dict[str, Any]) -> dict[str, Any]:
+    input_json = record.get("input_json") if isinstance(record.get("input_json"), dict) else {}
+    target_json = record.get("target_json") if isinstance(record.get("target_json"), dict) else {}
+    source_payload = record.get("source_payload") if isinstance(record.get("source_payload"), dict) else {}
+    token_ids = record.get("token_ids") if isinstance(record.get("token_ids"), list) else []
+    return {
+        "input": input_json,
+        "target": target_json,
+        "prompt": prompt_from_record(record),
+        "target_text": target_from_record(record),
+        "messages": input_json.get("messages") if isinstance(input_json.get("messages"), list) else record.get("messages"),
+        "lineage": record.get("lineage", {}),
+        "dataset": {
+            "name": record.get("dataset_name") or source_payload.get("dataset_name"),
+            "family": record.get("dataset_family") or source_payload.get("dataset_family"),
+            "training_bucket": record.get("training_bucket"),
+            "license_tier": record.get("license_tier") or source_payload.get("license_tier"),
+            "use_policy": record.get("use_policy") or source_payload.get("use_policy"),
+        },
+        "curriculum_axes": record.get("curriculum_axes", []),
+        "modalities": record.get("modalities", []),
+        "modality": record.get("modality"),
+        "quality": record.get("quality", {}),
+        "contamination": record.get("contamination", {}),
+        "tool_calls": record.get("tool_calls", []),
+        "tool_results": record.get("tool_results", []),
+        "token_count": len(token_ids),
+        "token_id_sample": token_ids[:64],
+        "source_payload": source_payload,
+        "instruction": "Return localized critique, corrected action/content, verifier labels, and safety/contamination notes.",
+    }
+
+
 def build_jobs(records_path: str, teacher: str, job_type: str, limit: int = 0) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
     for line in Path(records_path).read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -36,12 +100,7 @@ def build_jobs(records_path: str, teacher: str, job_type: str, limit: int = 0) -
             {
                 "teacher_name": teacher,
                 "job_type": job_type,
-                "input_json": {
-                    "input": obj.get("input_json", {}),
-                    "target": obj.get("target_json", {}),
-                    "lineage": obj.get("lineage", {}),
-                    "instruction": "Return localized critique, corrected action/content, verifier labels, and safety/contamination notes.",
-                },
+                "input_json": build_job_input(obj),
             }
         )
         if limit and len(jobs) >= limit:

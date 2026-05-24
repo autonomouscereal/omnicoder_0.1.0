@@ -51,7 +51,6 @@
       "weights/curated_datasets_2026/latest/jsonl/train_agentic_focus.jsonl",
       "weights/external_datasets_2026/latest/jsonl/agentic_tool_reasoning.jsonl",
       "weights/external_datasets_2026/latest/jsonl/terminal_browser_agents.jsonl",
-      "weights/external_datasets_2026/latest/jsonl/research_internal_all_external.jsonl",
       "weights/data_factory/teacher_rollouts/latest/qwen36_agentic_math_code_tool.jsonl",
       "data/raw/agent_memory_events_2026.jsonl",
       "data/raw/codex_traces_2026/codex_local_2026.jsonl",
@@ -368,7 +367,7 @@
         "device": "1,2,3",
         "enabled": true,
         "priority": 25,
-        "records": "weights/data_factory/trace_orchestrator_2026/teacher_jobs/latest/shard_gpu*.jsonl",
+        "records": "weights/data_factory/runs/teacher_jobs/latest/shard_gpu*.jsonl",
         "output": "weights/data_factory/teacher_rollouts/latest/qwen36_agentic_math_code_tool.jsonl",
         "base_urls": [
           "http://127.0.0.1:18084/v1",

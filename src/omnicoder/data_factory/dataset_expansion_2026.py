@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import time
 from collections import Counter, defaultdict
 from itertools import islice
@@ -273,6 +274,23 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
     if not isinstance(splits, list) or not splits:
         splits = ["train"]
     config = entry.get("config")
+    revision = entry.get("revision")
+    data_files = entry.get("data_files")
+    verification_mode = entry.get("verification_mode")
+    trust_remote_code = entry.get("trust_remote_code")
+    token_env = entry.get("token_env")
+    token_value = os.environ.get(str(token_env), "") if token_env else ""
+    load_kwargs: dict[str, Any] = {"streaming": streaming}
+    if revision:
+        load_kwargs["revision"] = str(revision)
+    if data_files:
+        load_kwargs["data_files"] = data_files
+    if verification_mode:
+        load_kwargs["verification_mode"] = str(verification_mode)
+    if trust_remote_code is not None:
+        load_kwargs["trust_remote_code"] = bool(trust_remote_code)
+    if token_value:
+        load_kwargs["token"] = token_value
     rows: list[dict[str, Any]] = []
     errors: list[str] = []
     per_split: dict[str, int] = {}
@@ -282,21 +300,24 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
             break
         try:
             if config:
-                dataset = load_dataset(str(hf_id), str(config), split=str(split), streaming=streaming)
+                dataset = load_dataset(str(hf_id), str(config), split=str(split), **load_kwargs)
             else:
-                dataset = load_dataset(str(hf_id), split=str(split), streaming=streaming)
+                dataset = load_dataset(str(hf_id), split=str(split), **load_kwargs)
         except Exception as exc:
             errors.append(f"{split}: {repr(exc)}")
             continue
         take = remaining if limit > 0 else 0
         count = 0
-        iterator = dataset if take <= 0 else islice(dataset, take)
-        for raw in iterator:
-            if isinstance(raw, dict):
-                item = dict(raw)
-                item.setdefault("_hf_split", str(split))
-                rows.append(item)
-                count += 1
+        try:
+            iterator = dataset if take <= 0 else islice(dataset, take)
+            for raw in iterator:
+                if isinstance(raw, dict):
+                    item = dict(raw)
+                    item.setdefault("_hf_split", str(split))
+                    rows.append(item)
+                    count += 1
+        except Exception as exc:
+            errors.append(f"{split}: iteration failed: {repr(exc)}")
         per_split[str(split)] = count
         if limit > 0:
             remaining -= count
@@ -306,6 +327,12 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
         "source": "huggingface",
         "hf_id": str(hf_id),
         "config": config,
+        "revision": revision,
+        "data_files": data_files,
+        "verification_mode": verification_mode,
+        "trust_remote_code": bool(trust_remote_code) if trust_remote_code is not None else None,
+        "token_env": str(token_env) if token_env else None,
+        "token_used": bool(token_value),
         "streaming": streaming,
         "records": len(rows),
         "per_split": per_split,
@@ -326,14 +353,20 @@ def materialize_source_rows(entry: dict[str, Any], root: Path, args: argparse.Na
         if seeds:
             if limit > 0:
                 seeds = seeds[:limit]
-            return seeds, {"status": "ok", "source": "distillation_prompts_after_hf_attempt", "records": len(seeds), "huggingface_status": hf_status}
+            return seeds, {
+                "status": "ok",
+                "source": "distillation_prompts_after_hf_attempt",
+                "records": len(seeds),
+                "synthetic_seed_only": True,
+                "huggingface_status": hf_status,
+            }
         if hf_status.get("status") == "failed":
             return hf_rows, hf_status
     seeds = synthetic_seed_rows(entry)
     if limit > 0:
         seeds = seeds[:limit]
     if seeds:
-        return seeds, {"status": "ok", "source": "distillation_prompts", "records": len(seeds), "fallback_after": local_status}
+        return seeds, {"status": "ok", "source": "distillation_prompts", "records": len(seeds), "synthetic_seed_only": True, "fallback_after": local_status}
     return [], {"status": "skipped", "reason": "no_rows", "local": local_status}
 
 

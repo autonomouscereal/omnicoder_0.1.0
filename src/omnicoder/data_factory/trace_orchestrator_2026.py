@@ -425,7 +425,7 @@ def normalize_file(path: Path, harness: str, profile: dict[str, Any]) -> list[di
         rows = ingest_2026.build_training_records(path, bucket, split, source_date)
         if per_file_limit:
             rows = rows[:per_file_limit]
-    for row in rows:
+    for source_index, row in enumerate(rows, 1):
         row.setdefault("bucket", bucket)
         row.setdefault("split", split)
         row.setdefault("source_date", source_date)
@@ -433,6 +433,8 @@ def normalize_file(path: Path, harness: str, profile: dict[str, Any]) -> list[di
         if isinstance(lineage, dict):
             lineage["source_harness"] = harness
             lineage["source_file"] = str(path)
+            lineage.setdefault("source_index", source_index)
+            lineage.setdefault("step_index", source_index)
             lineage["normalizer_module"] = HARNESS_MODULES.get(harness, HARNESS_MODULES["generic"])
             lineage.setdefault("record_hash", stable_hash(row))
         row["trace_orchestrator"] = {

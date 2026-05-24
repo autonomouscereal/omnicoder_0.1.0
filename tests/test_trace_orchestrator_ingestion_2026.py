@@ -170,3 +170,30 @@ def test_agent_memory_export_uses_server_or_workstation_script_candidates(tmp_pa
     assert result["status"] == "ok"
     assert result["records"] == 1
     assert "pytest passed" in out.read_text(encoding="utf-8")
+
+
+def test_trace_orchestrator_assigns_source_step_indices(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    source = root / "data" / "raw" / "local_agent.jsonl"
+    _write_jsonl(
+        source,
+        [
+            {"session_id": "s1", "role": "user", "content": "Run the test."},
+            {"session_id": "s1", "role": "assistant", "content": "I will run pytest.", "tool_name": "shell_command"},
+        ],
+    )
+    profile = {
+        "profile_name": "unit_trace_order",
+        "work_dir": str(root / "weights" / "trace"),
+        "source_date": "2026-05-24",
+        "trace_inputs": {"sources": [{"path": str(source), "harness": "local_agent"}], "patterns": ["*.jsonl"]},
+        "data": {"bucket": "agentic_trace_sft_2026", "split": "train"},
+    }
+    _write_json(root / "profile.json", profile)
+    monkeypatch.setattr(traces, "repo_root", lambda: root)
+
+    manifest = traces.run_pipeline(root / "profile.json")
+    rows = [json.loads(line) for line in Path(manifest["outputs"]["normalized"]).read_text(encoding="utf-8").splitlines()]
+
+    assert [row["lineage"]["source_index"] for row in rows] == [1, 2]
+    assert [row["lineage"]["step_index"] for row in rows] == [1, 2]

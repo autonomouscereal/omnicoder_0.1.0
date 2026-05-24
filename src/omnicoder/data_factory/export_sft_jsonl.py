@@ -71,15 +71,40 @@ def _message_events_from(record: dict[str, Any]) -> list[dict[str, str]]:
             content = str(message.get("content") or "").strip()
             if role in {"user", "assistant", "system", "tool"} and content:
                 events.append({"role": role, "content": content})
-    if events:
-        return events
-    content = str(input_json.get("content") or record.get("text") or "").strip()
-    if content:
-        events.append({"role": "user", "content": content})
+    content = ""
+    if not events:
+        content = str(input_json.get("content") or record.get("text") or "").strip()
+        if content:
+            events.append({"role": "user", "content": content})
     target = str(target_json.get("content") or target_json.get("completion") or target_json.get("answer") or "").strip()
     if target and target != content:
         events.append({"role": "assistant", "content": target})
+    tool_calls = record.get("tool_calls") if isinstance(record.get("tool_calls"), list) else []
+    for tool_call in tool_calls:
+        if isinstance(tool_call, dict):
+            events.append({"role": "assistant", "content": json.dumps({"tool_call": tool_call}, ensure_ascii=True, sort_keys=True)})
+    tool_results = record.get("tool_results") if isinstance(record.get("tool_results"), list) else []
+    for tool_result in tool_results:
+        if isinstance(tool_result, dict):
+            events.append({"role": "tool", "content": json.dumps(tool_result, ensure_ascii=True, sort_keys=True)})
     return events
+
+
+def _record_order(record: dict[str, Any], fallback: int) -> tuple[str, int]:
+    lineage = record.get("lineage") if isinstance(record.get("lineage"), dict) else {}
+    timestamp = str(record.get("created_at") or lineage.get("created_at") or record.get("source_date") or "")
+    raw_step = (
+        lineage.get("step_index")
+        or lineage.get("source_index")
+        or record.get("step_index")
+        or record.get("line_number")
+        or fallback
+    )
+    try:
+        step = int(raw_step)
+    except (TypeError, ValueError):
+        step = fallback
+    return (timestamp, step)
 
 
 def eligible(record: dict[str, Any], min_quality: float, allow_contaminated: bool) -> bool:
@@ -137,7 +162,7 @@ def export_offline(input_path: Path, out_path: Path, min_quality: float, allow_c
 
 def export_trace_conversations(input_path: Path, out_path: Path, min_quality: float, allow_contaminated: bool, limit: int = 0) -> int:
     grouped: dict[str, dict[str, Any]] = {}
-    for record in _jsonl(input_path):
+    for fallback_index, record in enumerate(_jsonl(input_path), 1):
         if not eligible(record, min_quality, allow_contaminated):
             continue
         trace_id = _trace_id(record)
@@ -156,7 +181,7 @@ def export_trace_conversations(input_path: Path, out_path: Path, min_quality: fl
                 },
             },
         )
-        group["messages"].extend(_message_events_from(record))
+        group.setdefault("events", []).append({"order": _record_order(record, fallback_index), "messages": _message_events_from(record)})
         group["metadata"]["record_count"] += 1
         group["metadata"]["lineages"].append(record.get("lineage", {}))
         quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
@@ -167,7 +192,14 @@ def export_trace_conversations(input_path: Path, out_path: Path, min_quality: fl
     count = 0
     with out_path.open("w", encoding="utf-8") as handle:
         for group in grouped.values():
-            messages = _compact_messages(group["messages"])
+            ordered_messages: list[dict[str, str]] = []
+            events = group.pop("events", [])
+            if events:
+                for event in sorted(events, key=lambda item: item["order"]):
+                    ordered_messages.extend(event["messages"])
+            else:
+                ordered_messages = group["messages"]
+            messages = _compact_messages(ordered_messages)
             roles = {message["role"] for message in messages}
             if len(messages) < 2 or "assistant" not in roles:
                 continue
