@@ -1,4 +1,5 @@
 * text=auto
+*.sh text eol=lf
 
 # Treat common ML artifacts as binary to avoid diffs
 *.pt binary
