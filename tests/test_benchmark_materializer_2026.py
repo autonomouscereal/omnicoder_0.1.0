@@ -407,6 +407,7 @@ def test_materializer_normalizes_ttsds2_listening_rows() -> None:
             "system": "valle_v2",
             "rating_type": "mos",
             "value": 4,
+            "annotator": "10de3a4ff444823253dfb8fc9037856b",
         },
         {"kind": "audio_generation", "source": "fixture"},
         {"adapter_kind": "tts_generation_eval"},
@@ -417,7 +418,7 @@ def test_materializer_normalizes_ttsds2_listening_rows() -> None:
     )
 
     assert task is not None
-    assert task["task_id"] == "valle_v2_1"
+    assert task["task_id"] == "valle_v2_1:10de3a4ff444823253dfb8fc9037856b"
     assert task["audio"] == "noisy/valle_v2/example.wav"
     assert task["answer"] == 4
     assert task["expected_artifact_kind"] == "audio_generation"

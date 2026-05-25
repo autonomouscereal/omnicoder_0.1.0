@@ -1079,6 +1079,8 @@ def normalize_task(
             "_source_index",
         ),
     )
+    if benchmark_id == "generation_ttsds2_2026" and raw.get("id") not in (None, "", [], {}) and raw.get("annotator") not in (None, "", [], {}):
+        task_id = f"{raw.get('id')}:{raw.get('annotator')}"
     prompt = first_value(
         raw,
         (
