@@ -780,6 +780,7 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
         posttrain_steps=2,
         posttrain_lr=1e-6,
         posttrain_max_records=0,
+        save_interval=1,
         nproc_per_node=3,
         distributed="pipeline_stage",
         rank_device_map="0,1,2",
@@ -809,6 +810,7 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
     pipeline_cmd = next(cmd for cmd in commands if "omnicoder.training.pipeline_pretrain_2026_dense" in cmd)
     assert pipeline_cmd[pipeline_cmd.index("--resume") + 1] == str(checkpoint)
     assert pipeline_cmd[pipeline_cmd.index("--nproc_per_node") + 1] == "3"
+    assert pipeline_cmd[pipeline_cmd.index("--save_interval") + 1] == "1"
     bridge_cmd = next(cmd for cmd in commands if "omnicoder.training.posttrain_bridge_2026" in cmd)
     assert "--defer_optimizer" in bridge_cmd
     assert "--dry_run" not in bridge_cmd

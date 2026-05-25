@@ -3592,6 +3592,7 @@ def run_posttraining_stages(
     steps = int(arg_value(args, "posttrain_steps", 0) or rl.get("posttrain_steps_per_algorithm") or 32)
     lr = float(arg_value(args, "posttrain_lr", 0.0) or rl.get("posttrain_learning_rate") or 1e-6)
     max_records = int(arg_value(args, "posttrain_max_records", 0) or rl.get("posttrain_max_records") or 0)
+    save_interval = int(arg_value(args, "save_interval", 0) or cfg.get("training_plan", {}).get("save_interval") or 0)
     stop_on_failure = bool(rl.get("stop_on_posttrain_failure", True))
     retention = posttrain_retention_cfg(rl)
     replay_final_checkpoint: Path | None = current_checkpoint
@@ -3722,6 +3723,8 @@ def run_posttraining_stages(
                         "--resume",
                         str(replay_final_checkpoint),
                     ]
+                    if save_interval > 0:
+                        replay_cmd.extend(["--save_interval", str(save_interval)])
                     append_pretrain_runtime_args(replay_cmd, cfg, args)
                     if bool(arg_value(args, "fake_quant", False) or cfg.get("training_plan", {}).get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled")):
                         replay_cmd.append("--fake_quant")
@@ -4889,6 +4892,7 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--posttrain-steps", type=int, default=0)
     post.add_argument("--posttrain-lr", type=float, default=0.0)
     post.add_argument("--posttrain-max-records", type=int, default=0)
+    post.add_argument("--save-interval", type=int, default=0)
     post.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=None)
     post.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=None)
     post.add_argument("--heldout-sample-loss-timeout-seconds", dest="heldout_sample_loss_timeout_seconds", type=int, default=0)

@@ -237,6 +237,7 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --seq-len "$SEQ_LEN"
     --batch-size "$BATCH_SIZE"
     --posttrain-steps "$POSTTRAIN_STEPS"
+    --save-interval "$SAVE_INTERVAL"
     --distributed pipeline_stage
     --nproc-per-node 3
     --rank-device-map "$RANK_DEVICE_MAP"
