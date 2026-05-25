@@ -4965,6 +4965,107 @@
         "smoke": "one tricky TTS prompt"
       },
       "task_format": "jsonl_tts_generation_prompt"
+    },
+    {
+      "adapter_kind": "stateful_enterprise_memory_agent_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_state_bench_2026",
+      "holdout_policy": [
+        "hide_test_task_success_conditions",
+        "reset_stateful_sandboxes",
+        "separate_train_trajectories_from_test_tasks",
+        "quarantine_successful_test_transcripts"
+      ],
+      "metrics": [
+        "task_completion_rate",
+        "pass_at_5_reliability",
+        "ux_score",
+        "cost_per_task",
+        "tool_state_integrity"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "database_state",
+        "agent_memory"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://github.com/microsoft/STATE-Bench",
+      "splits": {
+        "nightly": "domain-balanced travel/customer-support/shopping slice",
+        "release": "locked STATE-Bench test tasks with fresh sandbox state",
+        "smoke": "one stateful policy task plus one memory-retrieval task"
+      },
+      "task_format": "jsonl_stateful_tool_memory_episode"
+    },
+    {
+      "adapter_kind": "long_horizon_agent_memory_eval",
+      "axis": "long_context",
+      "benchmark_id": "long_context_ama_bench_2026",
+      "context_windows": [
+        32768,
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_answer_key_until_scoring",
+        "preserve_long_trajectory_order",
+        "record_context_tokens",
+        "separate_memory_retrieval_from_answer_generation"
+      ],
+      "metrics": [
+        "open_answer_judge_score",
+        "mcq_accuracy",
+        "evidence_recall",
+        "trajectory_token_coverage",
+        "latency_per_query"
+      ],
+      "modalities": [
+        "text",
+        "agent_memory",
+        "long_context"
+      ],
+      "release_gate": "long_context_release",
+      "source": "https://huggingface.co/datasets/AMA-bench/AMA-bench",
+      "splits": {
+        "nightly": "domain-balanced AMA-Bench test slice",
+        "release": "locked AMA-Bench official test snapshot",
+        "smoke": "one long trajectory plus one QA pair"
+      },
+      "task_format": "jsonl_agent_memory_trajectory_qa"
+    },
+    {
+      "adapter_kind": "source_distributed_multimodal_memory_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_smmbench_2026",
+      "holdout_policy": [
+        "hide_answer_keys",
+        "hash_source_artifacts",
+        "preserve_source_boundaries",
+        "quarantine_successful_multisource_traces"
+      ],
+      "metrics": [
+        "cross_source_reasoning_accuracy",
+        "conflict_resolution_accuracy",
+        "preference_reasoning_accuracy",
+        "memory_grounded_action_accuracy",
+        "source_evidence_precision"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "table",
+        "screenshot",
+        "agent_memory"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/HuacanChai/SMMBench",
+      "splits": {
+        "nightly": "capability-balanced SMMBench public slice",
+        "release": "locked SMMBench snapshot with source hashes",
+        "smoke": "one cross-source multimodal memory item"
+      },
+      "task_format": "jsonl_source_distributed_multimodal_memory"
     }
   ],
   "contamination_controls": [
@@ -5049,7 +5150,8 @@
       "agent_webbench_2026",
       "agent_livemcpbench_2026",
       "agent_sra_bench_2026",
-      "agent_skillret_2026"
+      "agent_skillret_2026",
+      "agent_state_bench_2026"
     ],
     "coding_release": [
       "coding_swe_bench_pro_2026",
@@ -5131,7 +5233,8 @@
       "long_context_graphwalks_2026",
       "long_context_sagascale_2026",
       "long_context_academiceval_2026",
-      "long_context_memoryagentbench_2026"
+      "long_context_memoryagentbench_2026",
+      "long_context_ama_bench_2026"
     ],
     "multimodal_understanding_release": [
       "multimodal_mmmu_pro_2026",
@@ -5173,7 +5276,8 @@
       "multimodal_river_video_interaction_2026",
       "multimodal_omnigaia_2026",
       "multimodal_omnirag_agent_2026",
-      "multimodal_vstat_visual_state_tracking_2026"
+      "multimodal_vstat_visual_state_tracking_2026",
+      "multimodal_smmbench_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",
@@ -5950,7 +6054,8 @@
       "https://github.com/princeton-pli/LongProc",
       "https://github.com/adobe-research/NoLiMa",
       "https://huggingface.co/datasets/amodaresi/NoLiMa",
-      "https://huggingface.co/datasets/openai/graphwalks"
+      "https://huggingface.co/datasets/openai/graphwalks",
+      "https://huggingface.co/datasets/AMA-bench/AMA-bench"
     ],
     "multimodal_understanding": [
       "https://github.com/MMMU-Benchmark/MMMU",
@@ -5969,7 +6074,8 @@
       "https://huggingface.co/datasets/ShadenA/MathNet",
       "https://huggingface.co/datasets/video-reasoning/morse-500",
       "https://huggingface.co/datasets/vector-institute/sonic-o1",
-      "https://huggingface.co/datasets/wulin222/MME-Unify"
+      "https://huggingface.co/datasets/wulin222/MME-Unify",
+      "https://huggingface.co/datasets/HuacanChai/SMMBench"
     ],
     "omni_eval_2026": [
       "https://arxiv.org/abs/2509.17765",
@@ -5993,7 +6099,8 @@
       "https://github.com/eval-sys/mcpmark",
       "https://mcpmark.ai/docs",
       "https://github.com/mbzuai-oryx/Agent-X",
-      "https://omni-bench.github.io/"
+      "https://omni-bench.github.io/",
+      "https://github.com/microsoft/STATE-Bench"
     ],
     "reasoning_2026": [
       "https://matharena.ai/",

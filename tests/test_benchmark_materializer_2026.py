@@ -714,9 +714,12 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "generation_oneig_bench_2026",
         "agent_agencybench_2026",
         "agent_locobench_agent_2026",
+        "agent_state_bench_2026",
         "safety_tool_security_2026",
         "deployment_turboquant_kv_1m_2026",
         "deployment_performance_2026",
+        "long_context_ama_bench_2026",
+        "multimodal_smmbench_2026",
     }
     assert required.issubset(materializer.KNOWN_BENCHMARKS)
     voicebench = materializer.KNOWN_BENCHMARKS["generation_audio_speech_2026"]["hf"][0]
@@ -752,12 +755,22 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["agent_sra_bench_2026"]["hf"][0]["id"] == "WeihangSu/SRA-Bench"
     assert materializer.KNOWN_BENCHMARKS["agent_skillret_2026"]["hf"][0]["config"] == "queries"
     assert materializer.KNOWN_BENCHMARKS["long_context_memoryagentbench_2026"]["hf"][0]["id"] == "ai-hyz/MemoryAgentBench"
+    assert materializer.KNOWN_BENCHMARKS["long_context_memoryagentbench_2026"]["hf"][0]["splits"] == [
+        "Accurate_Retrieval",
+        "Test_Time_Learning",
+        "Long_Range_Understanding",
+        "Conflict_Resolution",
+    ]
+    assert "config" not in materializer.KNOWN_BENCHMARKS["long_context_memoryagentbench_2026"]["hf"][0]
     assert materializer.KNOWN_BENCHMARKS["multimodal_omnigaia_2026"]["hf"] == ["RUC-NLPIR/OmniGAIA"]
     assert materializer.KNOWN_BENCHMARKS["multimodal_omnirag_agent_2026"]["hf"][0]["config"] == "Daily-Omni"
-    assert materializer.KNOWN_BENCHMARKS["multimodal_vstat_visual_state_tracking_2026"]["hf"] == [
-        "VSTAT-NeurIPS2026/VSTAT"
-    ]
+    vstat = materializer.KNOWN_BENCHMARKS["multimodal_vstat_visual_state_tracking_2026"]["hf"][0]
+    assert vstat["id"] == "VSTAT-NeurIPS2026/VSTAT"
+    assert "vstat_qa_clean.json" in vstat["files"]
     assert materializer.KNOWN_BENCHMARKS["generation_tricky_tts_2026"]["hf"] == ["Trelis/tricky-tts-public"]
+    assert materializer.KNOWN_BENCHMARKS["agent_state_bench_2026"]["git"] == "https://github.com/microsoft/STATE-Bench.git"
+    assert materializer.KNOWN_BENCHMARKS["long_context_ama_bench_2026"]["hf"][0]["id"] == "AMA-bench/AMA-bench"
+    assert materializer.KNOWN_BENCHMARKS["multimodal_smmbench_2026"]["hf"][0]["id"] == "HuacanChai/SMMBench"
     rtv = materializer.KNOWN_BENCHMARKS["multimodal_rtv_bench_2026"]["hf"][0]
     assert rtv["id"] == "RTVBench/RTV-Bench"
     assert rtv["files"] == ["*.json", "*.jsonl", "*.csv"]

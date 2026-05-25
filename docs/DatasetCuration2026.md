@@ -220,6 +220,21 @@ Current high-value registry families:
   converted through a non-answer-key training derivative. Toucan, OpenThoughts
   Agent, and AVGen-Bench were already present in earlier waves, so the eleventh
   wave reuses those entries instead of duplicating HF IDs.
+- Twelfth-wave May 25, 2026 additions: AMA-Bench Agent Memory and SMMBench
+  Source-Distributed Multimodal Memory. The wave is tagged
+  `twelfth_wave_agent_memory_state_2026_05_25` and keeps both sources in the
+  eval-holdout lane. AMA-Bench adds long-horizon trajectory QA for agent memory;
+  SMMBench adds source-distributed multimodal memory over independently
+  originated image/table/screenshot/document-style artifacts. STATE-Bench is
+  wired in the benchmark suite as a stateful tool/memory evaluation rather than
+  as train data, because its value is the locked enterprise task loop and
+  state-mutating scoring contract.
+
+The external loader now casts HF `Audio`, `Video`, and `Image` features with
+`decode=False` before iteration. That keeps metadata rows from VSTAT, Tricky
+TTS, SMMBench, and similar imagefolder/audio/video datasets usable on curation
+sidecars without requiring `torchcodec` or eagerly decoding media during task
+row extraction.
 
 `mixture_controller_2026` turns curation metadata into scheduler inputs for the
 training profile. It caps synthetic ratios, includes provenance/license/quality

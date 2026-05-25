@@ -196,6 +196,13 @@ mix:
   `eleventh_wave_agentic_omni_eval_2026_05_25`. The benchmark materializer now
   treats HF file patterns as strict metadata-only constraints so public-dev
   benchmark pulls do not accidentally download full video/audio corpora.
+- Twelfth-wave May 25, 2026 additions add AMA-Bench and SMMBench under
+  `twelfth_wave_agent_memory_state_2026_05_25`, plus STATE-Bench as a
+  benchmark-suite gate. These extend long-horizon agent memory, source-
+  distributed multimodal memory, and stateful enterprise tool-use evaluation.
+  HF image/audio/video features are cast metadata-only during curation and
+  benchmark materialization so rows can be extracted without media codec
+  failures.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for

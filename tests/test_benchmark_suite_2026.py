@@ -248,6 +248,24 @@ def test_suite_profile_includes_eleventh_wave_agentic_omni_benchmark_gates() -> 
     assert adapters["generation_tricky_tts_2026"]["axis"] == "audio_generation"
 
 
+def test_suite_profile_includes_twelfth_wave_agent_memory_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    expected = {
+        "agent_state_bench_2026": "agent_tool_release",
+        "long_context_ama_bench_2026": "long_context_release",
+        "multimodal_smmbench_2026": "multimodal_understanding_release",
+    }
+    for adapter_id, gate in expected.items():
+        assert adapter_id in adapters
+        assert adapter_id in suite["release_gates"][gate]
+
+    assert adapters["agent_state_bench_2026"]["source"] == "https://github.com/microsoft/STATE-Bench"
+    assert adapters["long_context_ama_bench_2026"]["context_windows"][-1] == 1048576
+    assert "agent_memory" in adapters["multimodal_smmbench_2026"]["modalities"]
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")

@@ -139,6 +139,16 @@ loading after a file-pattern miss; this prevents media-heavy suites such as
 RTV-Bench from pulling hundreds of videos when only JSON/CSV task descriptors
 are needed for public-dev regression.
 
+The May 25 twelfth-wave benchmark additions add STATE-Bench, AMA-Bench, and
+SMMBench. STATE-Bench is routed through the agent-tool gate for stateful
+enterprise memory/tool tasks with sandbox state assertions; AMA-Bench is routed
+through the long-context gate for long-horizon agent-memory trajectory QA; and
+SMMBench is routed through the multimodal-understanding gate for
+source-distributed multimodal memory. HF materialization now disables image,
+audio, and video decoding where the `datasets` feature type supports it, so
+public-dev benchmark rows can be extracted on curation sidecars without
+requiring media codecs just to read task metadata.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \

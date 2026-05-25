@@ -429,6 +429,31 @@ def rows_from_text_payload(text: str, fmt: str) -> list[dict[str, Any]]:
         return rows
     if normalized == "json":
         payload = json.loads(text)
+        def flatten(value: Any) -> list[dict[str, Any]]:
+            if isinstance(value, list):
+                out: list[dict[str, Any]] = []
+                for item in value:
+                    out.extend(flatten(item))
+                return out
+            if isinstance(value, dict):
+                if any(value.get(key) not in (None, "", [], {}) for key in ("question", "prompt", "instruction", "task", "problem")):
+                    return [dict(value)]
+                for key in ("data", "rows", "examples", "records", "items", "questions", "tasks"):
+                    child = value.get(key)
+                    if isinstance(child, (list, dict)):
+                        rows = flatten(child)
+                        if rows:
+                            return rows
+                out = []
+                for child in value.values():
+                    if isinstance(child, (list, dict)):
+                        out.extend(flatten(child))
+                return out
+            return []
+
+        flattened = flatten(payload)
+        if flattened:
+            return flattened
         if isinstance(payload, list):
             return [dict(item) for item in payload if isinstance(item, dict)]
         if isinstance(payload, dict):
@@ -494,9 +519,13 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
     if not hf_id:
         return [], {"status": "skipped", "reason": "no_hf_id"}
     try:
-        from datasets import load_dataset  # type: ignore
+        import datasets as datasets_module  # type: ignore
     except Exception as exc:
         return [], {"status": "failed", "reason": "datasets_import_failed", "error": repr(exc)}
+    load_dataset = datasets_module.load_dataset
+    audio_cls = getattr(datasets_module, "Audio", None)
+    video_cls = getattr(datasets_module, "Video", None)
+    image_cls = getattr(datasets_module, "Image", None)
     splits = entry.get("splits")
     if isinstance(splits, str):
         splits = [splits]
@@ -535,6 +564,17 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
         except Exception as exc:
             errors.append(f"{split}: {repr(exc)}")
             continue
+        for column, feature in getattr(dataset, "features", {}).items():
+            feature_name = feature.__class__.__name__
+            try:
+                if feature_name == "Audio" and audio_cls is not None:
+                    dataset = dataset.cast_column(column, audio_cls(decode=False))
+                elif feature_name == "Video" and video_cls is not None:
+                    dataset = dataset.cast_column(column, video_cls(decode=False))
+                elif feature_name == "Image" and image_cls is not None:
+                    dataset = dataset.cast_column(column, image_cls(decode=False))
+            except Exception as exc:
+                errors.append(f"{split}:{column}: media decode disable failed: {repr(exc)}")
         take = remaining if limit > 0 else 0
         count = 0
         try:

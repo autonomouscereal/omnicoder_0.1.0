@@ -168,6 +168,11 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "agent_tool",
         "splits": ["train", "test", "validation"],
     },
+    "agent_state_bench_2026": {
+        "source": "https://github.com/microsoft/STATE-Bench",
+        "git": "https://github.com/microsoft/STATE-Bench.git",
+        "kind": "agent_tool",
+    },
     "coding_swe_bench_live_2026": {
         "source": "https://huggingface.co/datasets/SWE-bench-Live/SWE-bench-Live",
         "git": "https://github.com/microsoft/SWE-bench-Live.git",
@@ -367,13 +372,24 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "long_context_memoryagentbench_2026": {
         "source": "https://huggingface.co/datasets/ai-hyz/MemoryAgentBench",
         "hf": [
-            {"id": "ai-hyz/MemoryAgentBench", "config": "Accurate_Retrieval", "splits": ["test", "train"]},
-            {"id": "ai-hyz/MemoryAgentBench", "config": "Test_Time_Learning", "splits": ["test", "train"]},
-            {"id": "ai-hyz/MemoryAgentBench", "config": "Long_Range_Understanding", "splits": ["test", "train"]},
-            {"id": "ai-hyz/MemoryAgentBench", "config": "Conflict_Resolution", "splits": ["test", "train"]},
+            {
+                "id": "ai-hyz/MemoryAgentBench",
+                "splits": [
+                    "Accurate_Retrieval",
+                    "Test_Time_Learning",
+                    "Long_Range_Understanding",
+                    "Conflict_Resolution",
+                ],
+            },
         ],
         "kind": "long_context",
-        "splits": ["test", "train"],
+        "splits": ["Accurate_Retrieval", "Test_Time_Learning", "Long_Range_Understanding", "Conflict_Resolution"],
+    },
+    "long_context_ama_bench_2026": {
+        "source": "https://huggingface.co/datasets/AMA-bench/AMA-bench",
+        "hf": [{"id": "AMA-bench/AMA-bench", "splits": ["test"]}],
+        "kind": "long_context",
+        "splits": ["test"],
     },
     "multimodal_mmmu_pro_2026": {
         "source": "https://huggingface.co/datasets/MMMU/MMMU_Pro",
@@ -533,8 +549,25 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     },
     "multimodal_vstat_visual_state_tracking_2026": {
         "source": "https://huggingface.co/datasets/VSTAT-NeurIPS2026/VSTAT",
-        "hf": ["VSTAT-NeurIPS2026/VSTAT"],
+        "hf": [
+            {
+                "id": "VSTAT-NeurIPS2026/VSTAT",
+                "files": [
+                    "vstat_qa_clean.json",
+                    "youtube_metadata.json",
+                    "youtube_resolutions.json",
+                    "redactions.json",
+                ],
+            }
+        ],
         "kind": "video",
+        "splits": ["train"],
+    },
+    "multimodal_smmbench_2026": {
+        "source": "https://huggingface.co/datasets/HuacanChai/SMMBench",
+        "git": "https://github.com/FatCatCHC/SMMBench.git",
+        "hf": [{"id": "HuacanChai/SMMBench", "splits": ["train"]}],
+        "kind": "multimodal_agent_memory",
         "splits": ["train"],
     },
     "multimodal_maverix_av_reasoning_2026": {
@@ -957,6 +990,37 @@ def read_json_rows(path: Path, limit: int) -> list[dict[str, Any]]:
         payload = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
     except Exception:
         return []
+
+    def flatten(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, list):
+            out: list[dict[str, Any]] = []
+            for item in value:
+                out.extend(flatten(item))
+                if len(out) >= limit:
+                    break
+            return out[:limit]
+        if isinstance(value, dict):
+            if any(value.get(key) not in (None, "", [], {}) for key in ("question", "prompt", "task_description", "instruction", "problem_statement")):
+                return [value]
+            for key in ("data", "examples", "questions", "items", "tasks", "records", "validation", "test", "train"):
+                child = value.get(key)
+                if isinstance(child, (list, dict)):
+                    rows = flatten(child)
+                    if rows:
+                        return rows[:limit]
+            out = []
+            for child in value.values():
+                if isinstance(child, (list, dict)):
+                    out.extend(flatten(child))
+                    if len(out) >= limit:
+                        break
+            return out[:limit]
+        return []
+
+    flattened = flatten(payload)
+    if flattened:
+        return flattened[:limit]
+
     candidates: Any = payload
     if isinstance(payload, dict):
         if any(payload.get(key) not in (None, "", [], {}) for key in ("question", "prompt", "task_description", "instruction", "problem_statement")):
@@ -1314,6 +1378,14 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
         from datasets import Audio, load_dataset  # type: ignore
     except Exception as exc:
         return [], [f"datasets package unavailable: {exc}"]
+    try:
+        from datasets import Video  # type: ignore
+    except Exception:
+        Video = None  # type: ignore[assignment]
+    try:
+        from datasets import Image  # type: ignore
+    except Exception:
+        Image = None  # type: ignore[assignment]
 
     for entry in spec.get("hf") or []:
         if isinstance(entry, dict):
@@ -1342,6 +1414,10 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
                 for column, feature in getattr(ds, "features", {}).items():
                     if feature.__class__.__name__ == "Audio":
                         ds = ds.cast_column(column, Audio(decode=False))
+                    elif feature.__class__.__name__ == "Video" and Video is not None:
+                        ds = ds.cast_column(column, Video(decode=False))
+                    elif feature.__class__.__name__ == "Image" and Image is not None:
+                        ds = ds.cast_column(column, Image(decode=False))
                 rows: list[dict[str, Any]] = []
                 for idx, item in enumerate(ds):
                     if isinstance(item, dict):

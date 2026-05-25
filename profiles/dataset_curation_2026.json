@@ -23176,7 +23176,7 @@
         "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
         "source_year": 2026,
         "splits": [
-          "test"
+          "train"
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/WeihangSu/SRA-Bench",
@@ -23562,6 +23562,99 @@
         ],
         "target_modality": "long_context",
         "url": "https://huggingface.co/datasets/ai-hyz/MemoryAgentBench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "long_horizon_agent_memory",
+          "trajectory_retention",
+          "qa_over_agent_history",
+          "benchmark_holdout"
+        ],
+        "family": "long_context",
+        "field_map": {
+          "id": [
+            "episode_id",
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "task",
+            "trajectory",
+            "qa_pairs"
+          ],
+          "target": [
+            "qa_pairs",
+            "success",
+            "task_type",
+            "domain"
+          ],
+          "trajectory": [
+            "trajectory"
+          ]
+        },
+        "hf_id": "AMA-bench/AMA-bench",
+        "last_verified": "2026-05-25",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 512,
+        "name": "AMA-Bench Agent Memory",
+        "registry_wave": "twelfth_wave_agent_memory_state_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "long_context",
+        "url": "https://huggingface.co/datasets/AMA-bench/AMA-bench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "source_distributed_multimodal_memory",
+          "cross_source_reasoning",
+          "conflict_resolution",
+          "memory_grounded_action_prediction",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "question_id"
+          ],
+          "media": [
+            "image",
+            "images",
+            "screenshot",
+            "table"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "query",
+            "context"
+          ],
+          "target": [
+            "answer",
+            "label",
+            "choices",
+            "metadata"
+          ]
+        },
+        "hf_id": "HuacanChai/SMMBench",
+        "last_verified": "2026-05-25",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 1024,
+        "name": "SMMBench Source-Distributed Multimodal Memory",
+        "registry_wave": "twelfth_wave_agent_memory_state_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "image",
+        "url": "https://huggingface.co/datasets/HuacanChai/SMMBench",
         "use_policy": "eval_only"
       }
     ],
