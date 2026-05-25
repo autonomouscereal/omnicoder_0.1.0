@@ -325,7 +325,25 @@ def training_bucket_for_record(entry: dict[str, Any], record: dict[str, Any]) ->
     bucket = source_use_bucket(entry)
     if bucket == "train" and bool(record.get("synthetic_seed")):
         return "research_internal"
+    if bucket == "train":
+        status = contamination_status_for_record(entry, record)
+        if status not in {"clean", "clear"}:
+            return "research_internal"
     return bucket
+
+
+def contamination_status_for_record(entry: dict[str, Any], record: dict[str, Any]) -> str:
+    for source in (record, entry):
+        contamination = source.get("contamination") if isinstance(source, dict) else None
+        if isinstance(contamination, dict):
+            status = str(contamination.get("status") or "").strip().lower()
+            if status:
+                return status
+        for key in ("contamination_status", "protected_benchmark_scan", "benchmark_contamination_status"):
+            value = source.get(key) if isinstance(source, dict) else None
+            if value not in (None, "", [], {}):
+                return str(value).strip().lower()
+    return "unknown"
 
 
 def registry_cfg(profile: dict[str, Any]) -> dict[str, Any]:
@@ -680,11 +698,17 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
         prompt = "Learn this external long-context span with retained anchors and retrieval-critical dependencies."
     source_uri = str(entry.get("url") or entry.get("hf_id") or entry.get("name") or family)
     raw_id = field_text(record, field_map.get("id") or ["id", "task_id", "problem_id", "instance_id", "ID", "uid"]) or f"row-{row_index}"
+    contamination_status = contamination_status_for_record(entry, record)
     source_payload = {
         "source_id": stable_hash({"dataset": entry.get("name"), "raw_id": raw_id, "row_index": row_index}),
         "source_date": str(entry.get("source_date") or "2026-05-24"),
         "quality": {"score": float(entry.get("quality_score") or 0.82), "label": "accepted_external_2026"},
-        "contamination": {"status": "unknown", "note": "external registry row requires downstream protected benchmark scan"},
+        "contamination": {
+            "status": contamination_status,
+            "note": "external registry row requires downstream protected benchmark scan"
+            if contamination_status == "unknown"
+            else "external registry row passed declared protected benchmark scan",
+        },
         "dataset_name": entry.get("name"),
         "dataset_family": family,
         "hf_id": entry.get("hf_id"),
@@ -720,6 +744,7 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     row["license_tier"] = str(entry.get("license_tier") or "unknown")
     row["use_policy"] = str(entry.get("use_policy") or "blocked_until_review")
     row["training_bucket"] = training_bucket_for_record(entry, record)
+    row["contamination_status"] = contamination_status
     row["synthetic_seed_only"] = bool(record.get("synthetic_seed"))
     row["media_refs"] = mapped_structured_values(
         record,

@@ -239,6 +239,13 @@ Current high-value registry families:
   STATE-Bench is wired in the benchmark suite as a stateful tool/memory
   evaluation rather than as train data, because its value is the locked
   enterprise task loop and state-mutating scoring contract.
+- Fifteenth-wave May 25, 2026 additions add trainable clean slices for
+  AgentWorldModel-1K, WebGym Tasks, and AudioMCQ StrongAC Gemini CoT, plus
+  eval-holdout/reportable contracts for Tool-Genesis, MCP Security Bench,
+  AgentIF, OmniAgentBench, BeyondSWE, ContextBench, CCBench, NVIDIA
+  ComputeEval, ParseBench, and OfficeQA. The expansion writer now refuses to
+  put train-policy rows into the train aggregate unless row or source metadata
+  says the protected-benchmark scan is `clean` or `clear`.
 - Thirteenth-wave May 25, 2026 additions: Agentic-MME, ABC-Bench,
   LongBench-Pro, MEGA-Bench, StepEval-Audio-360, and IndiMathBench are
   registered as eval/benchmark-holdout sources under
@@ -272,6 +279,7 @@ dataset-expansion-2026 `
   --include-wave seventh_wave_agentic_math_code_omni_2026_05_24 `
   --include-wave eighth_wave_agentic_curation_training_2026_05_24 `
   --include-wave tenth_wave_curated_benchmarks_2026_05_25 `
+  --include-wave fifteenth_wave_agentic_coding_security_audio_2026_05_25 `
   build
 ```
 

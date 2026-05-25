@@ -4073,6 +4073,197 @@
       "task_format": "jsonl_mcpverse_tool_task"
     },
     {
+      "adapter_kind": "mcp_world_model_rl_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_world_model_rl_2026",
+      "context_windows": [
+        32768,
+        131072
+      ],
+      "holdout_policy": [
+        "hide_verifier_code_until_scoring",
+        "reset_database_state_per_task",
+        "snapshot_mcp_environment_code",
+        "quarantine_successful_rollouts"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "state_transition_accuracy",
+        "verifier_pass_rate",
+        "tool_plan_validity"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "database",
+        "code"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/Snowflake/AgentWorldModel-1K",
+      "splits": {
+        "nightly": "synthetic MCP environment balanced slice",
+        "release": "locked AWM executable environment snapshot",
+        "smoke": "one SQL-backed MCP environment task"
+      },
+      "task_format": "jsonl_mcp_world_model_task"
+    },
+    {
+      "adapter_kind": "tool_creation_unit_test_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_tool_genesis_2026",
+      "holdout_policy": [
+        "hide_unit_tests_until_scoring",
+        "hash_tool_schema_and_tests",
+        "separate_creation_prompt_from_reference_tools"
+      ],
+      "metrics": [
+        "unit_test_pass_rate",
+        "tool_schema_validity",
+        "task_coverage_score",
+        "api_contract_accuracy"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "code",
+        "tests"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/tool-genesis/Tool-Genesis-Benchmark",
+      "splits": {
+        "nightly": "server-class balanced public slice",
+        "release": "locked Tool-Genesis test snapshot",
+        "smoke": "one stateless tool-creation task"
+      },
+      "task_format": "jsonl_tool_creation_unit_test_task"
+    },
+    {
+      "adapter_kind": "agent_instruction_following_constraint_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_agentif_2025",
+      "holdout_policy": [
+        "hide_constraint_rubrics_until_scoring",
+        "preserve_tool_function_signatures",
+        "quarantine_successful_constraint_traces"
+      ],
+      "metrics": [
+        "constraint_pass_rate",
+        "tool_call_compliance",
+        "instruction_following_accuracy",
+        "format_adherence"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "code"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/THU-KEG/AgentIF",
+      "splits": {
+        "nightly": "constraint-family balanced AgentIF test slice",
+        "release": "locked AgentIF authorized snapshot",
+        "smoke": "one public constraint-following tool task"
+      },
+      "task_format": "jsonl_agent_instruction_following_task"
+    },
+    {
+      "adapter_kind": "browsergym_visual_web_agent_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_webgym_tasks_2026",
+      "context_windows": [
+        32768,
+        131072
+      ],
+      "holdout_policy": [
+        "seal_test_split_actions",
+        "hash_webpage_state",
+        "quarantine_successful_browser_traces"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "action_accuracy",
+        "trajectory_efficiency",
+        "web_state_recovery_rate"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "browser",
+        "tool_schema"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/microsoft/webgym_tasks",
+      "splits": {
+        "nightly": "OOD test slice with public task states",
+        "release": "locked WebGym authorized test snapshot",
+        "smoke": "one visual web navigation task"
+      },
+      "task_format": "jsonl_browser_agent_task"
+    },
+    {
+      "adapter_kind": "omnimodal_mobile_agent_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_omniagentbench_2026",
+      "holdout_policy": [
+        "hide_gold_actions_until_scoring",
+        "hash_audio_and_screenshot_assets",
+        "quarantine_successful_mobile_traces",
+        "license_review_required"
+      ],
+      "metrics": [
+        "mobile_task_success_rate",
+        "audio_grounding_accuracy",
+        "screenshot_action_accuracy",
+        "tool_trace_validity"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "audio",
+        "mobile",
+        "tool_schema"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
+      "splits": {
+        "nightly": "license-reviewed public descriptor slice",
+        "release": "locked authorized OmniAgentBench snapshot",
+        "smoke": "one audio+screenshot mobile task"
+      },
+      "task_format": "jsonl_omnimodal_mobile_agent_task"
+    },
+    {
+      "adapter_kind": "mcp_security_attack_resilience_eval",
+      "axis": "safety_tool_security",
+      "benchmark_id": "safety_mcp_security_bench_2026",
+      "holdout_policy": [
+        "hide_attack_labels_until_scoring",
+        "isolate_mcp_servers",
+        "record_attack_success_rate",
+        "quarantine_compromised_traces"
+      ],
+      "metrics": [
+        "attack_success_rate_inverse",
+        "tool_boundary_violation_rate",
+        "prompt_injection_refusal_rate",
+        "safe_completion_rate"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "mcp",
+        "security"
+      ],
+      "release_gate": "safety_security_release",
+      "source": "https://huggingface.co/datasets/DongsenZhang/MSB",
+      "splits": {
+        "nightly": "attack-family balanced MSB manifest slice",
+        "release": "locked executable MSB pipeline snapshot",
+        "smoke": "one prompt-injection and one tool-response attack"
+      },
+      "task_format": "jsonl_mcp_security_attack_task"
+    },
+    {
       "adapter_kind": "desktop_gui_vision_action_eval",
       "axis": "agent_tool",
       "benchmark_id": "agent_ui_vision_2026",
@@ -5264,6 +5455,139 @@
       "task_format": "jsonl_backend_coding_agent_task"
     },
     {
+      "adapter_kind": "cross_repo_coding_agent_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_beyondswe_2026",
+      "context_windows": [
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_gold_patches",
+        "hide_test_runner_outputs_until_scoring",
+        "record_external_resource_usage",
+        "quarantine_successful_repo_trajectories"
+      ],
+      "metrics": [
+        "patch_applies",
+        "hidden_tests_pass_rate",
+        "cross_repo_reference_success",
+        "docs_to_repo_completion_rate"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "repository",
+        "browser",
+        "long_context"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/AweAI-Team/BeyondSWE",
+      "splits": {
+        "nightly": "task-type balanced BeyondSWE public slice",
+        "release": "locked BeyondSWE container snapshot",
+        "smoke": "one cross-repo task"
+      },
+      "task_format": "jsonl_cross_repo_patch_task"
+    },
+    {
+      "adapter_kind": "coding_context_reuse_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_contextbench_2026",
+      "context_windows": [
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_gold_context_until_scoring",
+        "hide_gold_patches",
+        "record_retrieval_precision_recall",
+        "quarantine_successful_context_traces"
+      ],
+      "metrics": [
+        "context_recall",
+        "context_precision",
+        "patch_success_rate",
+        "token_efficiency_delta"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "repository",
+        "long_context"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/Contextbench/ContextBench",
+      "splits": {
+        "nightly": "language-balanced ContextBench slice",
+        "release": "locked ContextBench verified snapshot",
+        "smoke": "one prior-context reuse task"
+      },
+      "task_format": "jsonl_context_reuse_patch_task"
+    },
+    {
+      "adapter_kind": "small_repo_coding_agent_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_ccbench_2026",
+      "holdout_policy": [
+        "hide_gold_patches",
+        "use_official_codecrafters_test_runner",
+        "record_timeout_and_stage_progress",
+        "quarantine_successful_repo_trajectories"
+      ],
+      "metrics": [
+        "stage_pass_rate",
+        "final_success_rate",
+        "timeout_rate",
+        "files_touched"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "repository",
+        "terminal"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://ccbench.org/",
+      "splits": {
+        "nightly": "language/task balanced CCBench slice",
+        "release": "locked CCBench task and jobs snapshot",
+        "smoke": "one small-repo feature task"
+      },
+      "task_format": "jsonl_small_repo_feature_task"
+    },
+    {
+      "adapter_kind": "cuda_kernel_performance_coding_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_computeeval_cuda_2026",
+      "holdout_policy": [
+        "hide_reference_kernels",
+        "pin_cuda_driver_and_architecture",
+        "record_speedup_and_correctness",
+        "quarantine_successful_kernel_traces"
+      ],
+      "metrics": [
+        "correctness_pass_rate",
+        "median_speedup",
+        "compile_success_rate",
+        "memory_safety_pass_rate"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "cuda",
+        "terminal"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/nvidia/compute-eval",
+      "splits": {
+        "nightly": "CUDA task-family balanced public slice",
+        "release": "locked NVIDIA ComputeEval authorized snapshot",
+        "smoke": "one CUDA kernel correctness/performance task"
+      },
+      "task_format": "jsonl_cuda_performance_task"
+    },
+    {
       "adapter_kind": "long_context_bilingual_pro_eval",
       "axis": "long_context",
       "benchmark_id": "long_context_longbench_pro_2026",
@@ -5300,6 +5624,42 @@
         "smoke": "one 8k and one 256k bilingual item"
       },
       "task_format": "jsonl_longbench_pro_task"
+    },
+    {
+      "adapter_kind": "enterprise_document_grounded_reasoning_eval",
+      "axis": "long_context",
+      "benchmark_id": "long_context_officeqa_2026",
+      "context_windows": [
+        32768,
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_answer_key_until_scoring",
+        "hash_pdf_and_table_assets",
+        "separate_parsed_document_views",
+        "quarantine_successful_document_traces"
+      ],
+      "metrics": [
+        "grounded_answer_accuracy",
+        "evidence_precision",
+        "table_chart_reasoning_accuracy",
+        "document_retrieval_f1"
+      ],
+      "modalities": [
+        "text",
+        "document",
+        "tables",
+        "long_context"
+      ],
+      "release_gate": "long_context_release",
+      "source": "https://huggingface.co/datasets/databricks/officeqa",
+      "splits": {
+        "nightly": "document-type balanced public descriptor slice",
+        "release": "locked OfficeQA authorized snapshot",
+        "smoke": "one grounded table/document QA task"
+      },
+      "task_format": "jsonl_enterprise_document_qa_task"
     },
     {
       "adapter_kind": "mega_bench_realworld_multimodal_eval",
@@ -5361,6 +5721,68 @@
         "smoke": "one audio conversation item"
       },
       "task_format": "jsonl_audio_conversation_understanding_task"
+    },
+    {
+      "adapter_kind": "document_parse_agent_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_parsebench_2026",
+      "holdout_policy": [
+        "hide_reference_markdown_until_scoring",
+        "hash_document_assets",
+        "record_parser_and_render_version",
+        "quarantine_successful_parse_traces"
+      ],
+      "metrics": [
+        "markdown_structure_f1",
+        "table_extraction_accuracy",
+        "chart_text_grounding",
+        "layout_order_accuracy"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "document",
+        "tables"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/llamaindex/ParseBench",
+      "splits": {
+        "nightly": "document-layout balanced public slice",
+        "release": "locked ParseBench authorized snapshot",
+        "smoke": "one document parsing task"
+      },
+      "task_format": "jsonl_document_parse_task"
+    },
+    {
+      "adapter_kind": "audio_mcq_reasoning_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_audiomcq_strongac_2026",
+      "holdout_policy": [
+        "hold_out_eval_questions",
+        "hash_audio_assets",
+        "hide_reasoning_rationales_until_scoring",
+        "quarantine_successful_audio_traces"
+      ],
+      "metrics": [
+        "mcq_accuracy",
+        "audio_event_grounding",
+        "speech_music_sound_accuracy",
+        "rationale_consistency"
+      ],
+      "modalities": [
+        "audio",
+        "music",
+        "speech",
+        "text"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/Harland/AudioMCQ-StrongAC-GeminiCoT",
+      "splits": {
+        "nightly": "source-domain balanced public slice",
+        "release": "locked AudioMCQ authorized heldout snapshot",
+        "smoke": "one audio MCQ reasoning task"
+      },
+      "task_format": "jsonl_audio_mcq_reasoning_task"
     },
     {
       "adapter_kind": "lean4_formal_math_eval",
@@ -5478,6 +5900,11 @@
       "agent_skillret_2026",
       "agent_state_bench_2026",
       "agent_mcpverse_2026",
+      "agent_world_model_rl_2026",
+      "agent_tool_genesis_2026",
+      "agent_agentif_2025",
+      "agent_webgym_tasks_2026",
+      "agent_omniagentbench_2026",
       "agent_ui_vision_2026",
       "agent_tobench_mm_toolbench_2026"
     ],
@@ -5501,7 +5928,11 @@
       "coding_verisoftbench_2026",
       "coding_swe_mera_2026",
       "coding_ale_bench_2026",
-      "coding_abc_bench_2026"
+      "coding_abc_bench_2026",
+      "coding_beyondswe_2026",
+      "coding_contextbench_2026",
+      "coding_ccbench_2026",
+      "coding_computeeval_cuda_2026"
     ],
     "deployment_performance_release": [
       "deployment_performance_2026",
@@ -5564,7 +5995,8 @@
       "long_context_academiceval_2026",
       "long_context_memoryagentbench_2026",
       "long_context_ama_bench_2026",
-      "long_context_longbench_pro_2026"
+      "long_context_longbench_pro_2026",
+      "long_context_officeqa_2026"
     ],
     "multimodal_understanding_release": [
       "multimodal_mmmu_pro_2026",
@@ -5611,7 +6043,9 @@
       "multimodal_smmbench_2026",
       "multimodal_agentic_mme_2026",
       "multimodal_megabench_2026",
-      "multimodal_stepeval_audio_360_2026"
+      "multimodal_stepeval_audio_360_2026",
+      "multimodal_parsebench_2026",
+      "multimodal_audiomcq_strongac_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",
@@ -5630,6 +6064,7 @@
     ],
     "safety_security_release": [
       "safety_tool_security_2026",
+      "safety_mcp_security_bench_2026",
       "generation_mvad_authenticity_2026",
       "safety_healthbench_2026",
       "safety_iesbench_image_edit_2026"
@@ -5701,6 +6136,21 @@
     "agent_mcp_workflows_2026": [
       "data/eval/reportable_2026/mcpmark_authorized.jsonl"
     ],
+    "agent_world_model_rl_2026": [
+      "data/eval/reportable_2026/agent_world_model_rl_authorized.jsonl"
+    ],
+    "agent_tool_genesis_2026": [
+      "data/eval/reportable_2026/tool_genesis_authorized.jsonl"
+    ],
+    "agent_agentif_2025": [
+      "data/eval/reportable_2026/agentif_authorized.jsonl"
+    ],
+    "agent_webgym_tasks_2026": [
+      "data/eval/reportable_2026/webgym_tasks_authorized.jsonl"
+    ],
+    "agent_omniagentbench_2026": [
+      "data/eval/reportable_2026/omniagentbench_authorized.jsonl"
+    ],
     "agent_paperbench_2026": [
       "data/eval/reportable_2026/paperbench_authorized.jsonl"
     ],
@@ -5740,6 +6190,18 @@
     "coding_swe_lancer_2026": [
       "data/eval/reportable_2026/swe_lancer_authorized.jsonl"
     ],
+    "coding_beyondswe_2026": [
+      "data/eval/reportable_2026/beyondswe_authorized.jsonl"
+    ],
+    "coding_contextbench_2026": [
+      "data/eval/reportable_2026/contextbench_authorized.jsonl"
+    ],
+    "coding_ccbench_2026": [
+      "data/eval/reportable_2026/ccbench_authorized.jsonl"
+    ],
+    "coding_computeeval_cuda_2026": [
+      "data/eval/reportable_2026/computeeval_cuda_authorized.jsonl"
+    ],
     "generation_audio_speech_2026": [
       "data/eval/reportable_2026/audio_speech_authorized.jsonl"
     ],
@@ -5761,6 +6223,9 @@
     "long_context_longcodebench_2026": [
       "data/eval/reportable_2026/longcodebench_authorized.jsonl"
     ],
+    "long_context_officeqa_2026": [
+      "data/eval/reportable_2026/officeqa_authorized.jsonl"
+    ],
     "long_context_mrcr_2026": [
       "data/eval/reportable_2026/mrcr_authorized.jsonl"
     ],
@@ -5778,6 +6243,12 @@
     ],
     "multimodal_mmmu_pro_2026": [
       "data/eval/reportable_2026/mmmu_pro_authorized.jsonl"
+    ],
+    "multimodal_parsebench_2026": [
+      "data/eval/reportable_2026/parsebench_authorized.jsonl"
+    ],
+    "multimodal_audiomcq_strongac_2026": [
+      "data/eval/reportable_2026/audiomcq_strongac_authorized.jsonl"
     ],
     "multimodal_video_understanding_2026": [
       "data/eval/reportable_2026/video_mme_v2_authorized.jsonl"
@@ -5820,6 +6291,9 @@
     ],
     "safety_tool_security_2026": [
       "data/eval/reportable_2026/tool_security_authorized.jsonl"
+    ],
+    "safety_mcp_security_bench_2026": [
+      "data/eval/reportable_2026/mcp_security_bench_authorized.jsonl"
     ],
     "deployment_turboquant_kv_1m_2026": [
       "data/eval/reportable_2026/turboquant_kv_1m_authorized.jsonl"
@@ -5891,6 +6365,51 @@
       "snapshot_id": "mcpmark-authorized-2026-current",
       "source": "https://github.com/eval-sys/mcpmark",
       "task_root": "data/eval/reportable_2026/mcpmark_authorized.jsonl"
+    },
+    "agent_world_model_rl_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agent-world-model-rl-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agent-world-model-rl-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/Snowflake/AgentWorldModel-1K",
+      "task_root": "data/eval/reportable_2026/agent_world_model_rl_authorized.jsonl"
+    },
+    "agent_tool_genesis_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "tool-genesis-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "tool-genesis-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/tool-genesis/Tool-Genesis-Benchmark",
+      "task_root": "data/eval/reportable_2026/tool_genesis_authorized.jsonl"
+    },
+    "agent_agentif_2025": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agentif-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agentif-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/THU-KEG/AgentIF",
+      "task_root": "data/eval/reportable_2026/agentif_authorized.jsonl"
+    },
+    "agent_webgym_tasks_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "webgym-tasks-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "webgym-tasks-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/microsoft/webgym_tasks",
+      "task_root": "data/eval/reportable_2026/webgym_tasks_authorized.jsonl"
+    },
+    "agent_omniagentbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "omniagentbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "omniagentbench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
+      "task_root": "data/eval/reportable_2026/omniagentbench_authorized.jsonl"
     },
     "agent_paperbench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6009,6 +6528,42 @@
       "source": "https://github.com/openai/SWELancer-Benchmark",
       "task_root": "data/eval/reportable_2026/swe_lancer_authorized.jsonl"
     },
+    "coding_beyondswe_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "beyondswe-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "beyondswe-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/AweAI-Team/BeyondSWE",
+      "task_root": "data/eval/reportable_2026/beyondswe_authorized.jsonl"
+    },
+    "coding_contextbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "contextbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "contextbench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/Contextbench/ContextBench",
+      "task_root": "data/eval/reportable_2026/contextbench_authorized.jsonl"
+    },
+    "coding_ccbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "ccbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "ccbench-authorized-2026-current",
+      "source": "https://ccbench.org/",
+      "task_root": "data/eval/reportable_2026/ccbench_authorized.jsonl"
+    },
+    "coding_computeeval_cuda_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "computeeval-cuda-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "computeeval-cuda-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/nvidia/compute-eval",
+      "task_root": "data/eval/reportable_2026/computeeval_cuda_authorized.jsonl"
+    },
     "generation_audio_speech_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "audio-speech-authorized-2026-current",
@@ -6072,6 +6627,15 @@
       "source": "https://huggingface.co/papers/2505.07897",
       "task_root": "data/eval/reportable_2026/longcodebench_authorized.jsonl"
     },
+    "long_context_officeqa_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "officeqa-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "officeqa-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/databricks/officeqa",
+      "task_root": "data/eval/reportable_2026/officeqa_authorized.jsonl"
+    },
     "long_context_mrcr_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "mrcr-authorized-2026-current",
@@ -6125,6 +6689,24 @@
       "snapshot_id": "mmmu-pro-authorized-2026-current",
       "source": "https://mmmu-benchmark.github.io/",
       "task_root": "data/eval/reportable_2026/mmmu_pro_authorized.jsonl"
+    },
+    "multimodal_parsebench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "parsebench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "parsebench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/llamaindex/ParseBench",
+      "task_root": "data/eval/reportable_2026/parsebench_authorized.jsonl"
+    },
+    "multimodal_audiomcq_strongac_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "audiomcq-strongac-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "audiomcq-strongac-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/Harland/AudioMCQ-StrongAC-GeminiCoT",
+      "task_root": "data/eval/reportable_2026/audiomcq_strongac_authorized.jsonl"
     },
     "multimodal_video_understanding_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6251,6 +6833,15 @@
       "snapshot_id": "tool-security-authorized-2026-current",
       "source": "internal_red_team_jsonl_and_authorized_public_slices",
       "task_root": "data/eval/reportable_2026/tool_security_authorized.jsonl"
+    },
+    "safety_mcp_security_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "mcp-security-bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "mcp-security-bench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/DongsenZhang/MSB",
+      "task_root": "data/eval/reportable_2026/mcp_security_bench_authorized.jsonl"
     },
     "deployment_turboquant_kv_1m_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",

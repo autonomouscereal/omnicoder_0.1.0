@@ -324,11 +324,13 @@ python -m omnicoder.data_factory.benchmark_materializer_2026 \
   audit-profile \
   --fail-core25 \
   --fail-missing-materializers \
-  --fail-known-not-profile
+  --fail-known-not-profile \
+  --fail-missing-reportable-files
 ```
 
 Use it before promotion so the native-1M release lane cannot forget a core
-benchmark root, snapshot descriptor, profile record, or source materializer.
+benchmark root, snapshot descriptor, local authorized task file, profile
+record, or source materializer.
 
 `media-teacher-rollouts` consumes
 `weights/data_factory/runs/teacher_jobs/<run_id>/modality/all_modality_teacher_jobs.jsonl`

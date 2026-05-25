@@ -24212,6 +24212,612 @@
         "target_modality": "video",
         "url": "https://huggingface.co/datasets/MBZUAI/ViMUL-Bench",
         "use_policy": "eval_only"
+      },
+      {
+        "contamination_status": "clean",
+        "curriculum_axes": [
+          "mcp_world_model",
+          "agentic_rl",
+          "database_state_verifier",
+          "tool_environment_synthesis"
+        ],
+        "data_files": {
+          "train": [
+            "gen_tasks.jsonl",
+            "gen_envs.jsonl",
+            "gen_verifier.pure_code.jsonl",
+            "gen_verifier.jsonl"
+          ]
+        },
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "scenario_id",
+            "task_id",
+            "environment_id"
+          ],
+          "prompt": [
+            "task",
+            "tasks",
+            "scenario",
+            "description",
+            "requirement"
+          ],
+          "target": [
+            "env_code",
+            "code",
+            "verifier",
+            "verification_code",
+            "api_spec",
+            "schema"
+          ],
+          "verifier_labels": [
+            "verification_code",
+            "verifier",
+            "reward",
+            "checks"
+          ]
+        },
+        "hf_id": "Snowflake/AgentWorldModel-1K",
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_attribution",
+        "max_records": 2048,
+        "name": "AgentWorldModel-1K",
+        "protected_benchmark_scan": "clean",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/Snowflake-Labs/agent-world-model.git",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/Snowflake/AgentWorldModel-1K",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "mcp_tool_creation",
+          "unit_test_verified_tools",
+          "self_evolving_agent",
+          "tool_schema_grounding",
+          "benchmark_holdout"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "server_slug",
+            "server_name"
+          ],
+          "prompt": [
+            "agent_input_prompt",
+            "task_example",
+            "server_name"
+          ],
+          "target": [
+            "tool_definitions",
+            "unit_test",
+            "task_example"
+          ],
+          "tool_calls": [
+            "tool_definitions"
+          ],
+          "verifier_labels": [
+            "unit_test",
+            "num_unit_tests"
+          ]
+        },
+        "hf_id": "tool-genesis/Tool-Genesis-Benchmark",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 512,
+        "name": "Tool-Genesis Benchmark",
+        "protected_benchmark_scan": "protected_eval",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/tool-genesis/Tool-Genesis-Benchmark",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "mcp_security",
+          "prompt_injection",
+          "tool_attack_resilience",
+          "benchmark_holdout"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "case_id",
+            "agent_name",
+            "attack_id"
+          ],
+          "prompt": [
+            "system_prompt",
+            "task_tool",
+            "attack_yaml",
+            "task"
+          ],
+          "target": [
+            "attack_type",
+            "expected_behavior",
+            "case_manifest",
+            "answer"
+          ],
+          "tool_calls": [
+            "task_tool",
+            "tools"
+          ],
+          "verifier_labels": [
+            "attack_type",
+            "success",
+            "asr"
+          ]
+        },
+        "hf_id": "DongsenZhang/MSB",
+        "last_verified": "2026-05-25",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 512,
+        "name": "MCP Security Bench",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/dongsenzhang/MSB.git",
+        "source_year": 2026,
+        "configs": [
+          "agent_task",
+          "attack_task",
+          "case_manifest"
+        ],
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/DongsenZhang/MSB",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "cross_repo_coding",
+          "dependency_migration",
+          "docs_to_repo",
+          "benchmark_holdout"
+        ],
+        "family": "coding_agentic",
+        "field_map": {
+          "id": [
+            "instance_id",
+            "dataset_id"
+          ],
+          "prompt": [
+            "problem_statement",
+            "task",
+            "repo",
+            "readme"
+          ],
+          "target": [
+            "patch",
+            "f2p_patch",
+            "PASS_TO_PASS",
+            "FAIL_TO_PASS"
+          ],
+          "verifier_labels": [
+            "test_suite",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ]
+        },
+        "hf_id": "AweAI-Team/BeyondSWE",
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_eval_holdout",
+        "max_records": 500,
+        "name": "BeyondSWE",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/AweAI-Team/BeyondSWE.git",
+        "source_year": 2026,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "code",
+        "url": "https://huggingface.co/datasets/AweAI-Team/BeyondSWE",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "coding_context_reuse",
+          "retrieval_context",
+          "multi_repo_memory",
+          "benchmark_holdout"
+        ],
+        "family": "coding_agentic",
+        "field_map": {
+          "id": [
+            "instance_id",
+            "original_inst_id"
+          ],
+          "prompt": [
+            "problem_statement",
+            "gold_context",
+            "repo",
+            "language"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "f2p",
+            "p2p"
+          ],
+          "verifier_labels": [
+            "test_patch",
+            "f2p",
+            "p2p"
+          ]
+        },
+        "hf_id": "Contextbench/ContextBench",
+        "last_verified": "2026-05-25",
+        "license": "license pending source review",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "ContextBench",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "source_year": 2026,
+        "configs": [
+          "default",
+          "contextbench_verified"
+        ],
+        "splits": [
+          "train"
+        ],
+        "target_modality": "code",
+        "url": "https://huggingface.co/datasets/Contextbench/ContextBench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "small_repo_coding",
+          "codecrafters_tasks",
+          "feature_implementation",
+          "benchmark_holdout"
+        ],
+        "distillation_prompts": [
+          {
+            "instruction": "Solve small-repository feature implementation tasks with stage-aware tests and no oracle patch exposure.",
+            "target": "Return a minimal patch plan, files touched, and test execution plan."
+          }
+        ],
+        "family": "coding_agentic",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 512,
+        "name": "CCBench",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/codecrafters-io/ccbench.git",
+        "source_year": 2026,
+        "target_modality": "code",
+        "url": "https://ccbench.org/",
+        "use_policy": "eval_only"
+      },
+      {
+        "contamination_status": "clean",
+        "curriculum_axes": [
+          "web_agent",
+          "browser_actions",
+          "visual_web",
+          "rl_sft"
+        ],
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "intent",
+            "task",
+            "instruction",
+            "html",
+            "screenshot"
+          ],
+          "target": [
+            "actions",
+            "trajectory",
+            "answer",
+            "reward"
+          ],
+          "tool_calls": [
+            "actions",
+            "trajectory"
+          ]
+        },
+        "hf_id": "microsoft/webgym_tasks",
+        "last_verified": "2026-05-25",
+        "license": "CDLA-Permissive-2.0",
+        "license_tier": "permissive",
+        "max_records": 4096,
+        "name": "WebGym Tasks",
+        "protected_benchmark_scan": "clean",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/microsoft/webgym.git",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/microsoft/webgym_tasks",
+        "use_policy": "train"
+      },
+      {
+        "contamination_status": "clean",
+        "curriculum_axes": [
+          "audio_qa",
+          "chain_of_thought",
+          "speech_music_sound",
+          "strongac"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "question_id",
+            "audio_id"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "file"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "cot",
+            "reasoning"
+          ]
+        },
+        "hf_id": "Harland/AudioMCQ-StrongAC-GeminiCoT",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "max_records": 4096,
+        "name": "AudioMCQ StrongAC Gemini CoT",
+        "protected_benchmark_scan": "clean",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/inclusionAI/AudioMCQ",
+        "source_year": 2026,
+        "synthetic_provenance": "Gemini CoT annotations from the published StrongAC dataset; retain source_dataset/audio_path/gemini_cot fields for audit.",
+        "splits": [
+          "train"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/Harland/AudioMCQ-StrongAC-GeminiCoT",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "agentic_instruction_following",
+          "long_prompt_tools",
+          "constraint_following",
+          "benchmark_holdout"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "instruction",
+            "prompt",
+            "query"
+          ],
+          "target": [
+            "answer",
+            "constraints",
+            "rubric"
+          ]
+        },
+        "hf_id": "THU-KEG/AgentIF",
+        "last_verified": "2026-05-25",
+        "license": "license pending source review",
+        "license_tier": "unknown_eval_holdout",
+        "max_records": 1024,
+        "name": "AgentIF",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/THU-KEG/AgentIF.git",
+        "source_year": 2025,
+        "splits": [
+          "test",
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/THU-KEG/AgentIF",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "cuda_performance",
+          "kernel_eval",
+          "nvidia_eval_license",
+          "benchmark_holdout"
+        ],
+        "family": "coding_agentic",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "problem_id"
+          ],
+          "prompt": [
+            "problem",
+            "prompt",
+            "description"
+          ],
+          "target": [
+            "reference",
+            "expected",
+            "tests"
+          ]
+        },
+        "hf_id": "nvidia/compute-eval",
+        "last_verified": "2026-05-25",
+        "license": "NVIDIA Evaluation Dataset License",
+        "license_tier": "evaluation_license_holdout",
+        "max_records": 512,
+        "name": "NVIDIA ComputeEval",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/NVIDIA/compute-eval.git",
+        "source_year": 2026,
+        "splits": [
+          "test",
+          "train"
+        ],
+        "target_modality": "code",
+        "url": "https://huggingface.co/datasets/nvidia/compute-eval",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "document_parsing",
+          "tables_charts_layout",
+          "agentic_document_ai",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "doc_id",
+            "sample_id"
+          ],
+          "media": [
+            "image",
+            "document",
+            "pdf"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "expected",
+            "markdown"
+          ]
+        },
+        "hf_id": "llamaindex/ParseBench",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 1024,
+        "name": "ParseBench",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/run-llama/ParseBench.git",
+        "source_year": 2026,
+        "splits": [
+          "test",
+          "train"
+        ],
+        "target_modality": "image",
+        "url": "https://huggingface.co/datasets/llamaindex/ParseBench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "office_document_qa",
+          "financial_tables",
+          "long_context",
+          "benchmark_holdout"
+        ],
+        "family": "long_context",
+        "field_map": {
+          "id": [
+            "id",
+            "doc_id",
+            "question_id"
+          ],
+          "prompt": [
+            "question",
+            "document",
+            "context"
+          ],
+          "target": [
+            "answer",
+            "evidence",
+            "rationale"
+          ]
+        },
+        "hf_id": "databricks/officeqa",
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-SA-4.0",
+        "license_tier": "gated_sharealike_eval_holdout",
+        "max_records": 1024,
+        "name": "OfficeQA",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "repo": "https://github.com/databricks/officeqa.git",
+        "source_year": 2026,
+        "splits": [
+          "test",
+          "train"
+        ],
+        "target_modality": "long_context",
+        "url": "https://huggingface.co/datasets/databricks/officeqa",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "omnimodal_agent",
+          "mobile_gui",
+          "audio_screenshot_action",
+          "license_review"
+        ],
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id"
+          ],
+          "media": [
+            "audio",
+            "screenshot",
+            "image"
+          ],
+          "prompt": [
+            "instruction",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "action",
+            "answer",
+            "trajectory"
+          ]
+        },
+        "hf_id": "omniagentbench/OmniAgentBench",
+        "last_verified": "2026-05-25",
+        "license": "license pending source review",
+        "license_tier": "unknown_eval_holdout",
+        "max_records": 1024,
+        "name": "OmniAgentBench",
+        "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "test",
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
+        "use_policy": "eval_only"
       }
     ],
     "enabled": true,

@@ -37,7 +37,10 @@ def _training_profile(root: Path) -> dict:
 def test_dataset_expansion_materializes_license_tiered_rows(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
-    _write_jsonl(root / "data" / "math.jsonl", [{"problem": "Solve 2+2.", "answer": "4", "uuid": "m1"}])
+    _write_jsonl(
+        root / "data" / "math.jsonl",
+        [{"problem": "Solve 2+2.", "answer": "4", "uuid": "m1", "contamination_status": "clean"}],
+    )
     profile = {
         "external_dataset_registry_2026": {
             "training_profile": "profiles/training_orchestration_2026.json",
@@ -78,6 +81,48 @@ def test_dataset_expansion_materializes_license_tiered_rows(tmp_path: Path, monk
     assert train_row["dataset_name"] == "unit_math"
     assert train_row["training_bucket"] == "train"
     assert train_row["license_tier"] == "permissive"
+    assert train_row["contamination_status"] == "clean"
+
+
+def test_dataset_expansion_blocks_unknown_contamination_from_train(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    _write_jsonl(root / "data" / "math.jsonl", [{"problem": "Solve 5+7.", "answer": "12", "uuid": "m1"}])
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "unit_unscanned_math",
+                    "family": "math_reasoning",
+                    "target_modality": "text",
+                    "local_jsonl": "data/math.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                    "field_map": {"prompt": ["problem"], "target": ["answer"], "id": ["uuid"]},
+                }
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": False, "no_streaming": False, "max_records_per_dataset": 0})(),
+    )
+
+    train_path = root / "weights" / "external" / "jsonl" / "train_all_external.jsonl"
+    research_rows = [
+        json.loads(line)
+        for line in (root / "weights" / "external" / "jsonl" / "research_internal_all_external.jsonl").read_text().splitlines()
+    ]
+    assert manifest["records"].get("train", 0) == 0
+    assert train_path.read_text(encoding="utf-8") == ""
+    assert research_rows[0]["training_bucket"] == "research_internal"
+    assert research_rows[0]["contamination_status"] == "unknown"
 
 
 def test_dataset_expansion_falls_back_to_distillation_seeds_after_hf_failure(tmp_path: Path, monkeypatch) -> None:
@@ -119,7 +164,7 @@ def test_external_long_context_rows_preserve_large_targets(tmp_path: Path, monke
     training["training_plan"]["long_context_target_chars"] = 12000
     training["training_plan"]["long_context_text_token_limit"] = 12000
     _write_json(root / "profiles" / "training_orchestration_2026.json", training)
-    _write_jsonl(root / "data" / "long_context.jsonl", [{"prompt": "retain anchors", "answer": "Z" * 13000, "id": "lc-1"}])
+    _write_jsonl(root / "data" / "long_context.jsonl", [{"prompt": "retain anchors", "answer": "Z" * 13000, "id": "lc-1", "contamination_status": "clean"}])
     profile = {
         "external_dataset_registry_2026": {
             "training_profile": "profiles/training_orchestration_2026.json",
@@ -206,7 +251,7 @@ def test_dataset_expansion_downloads_remote_tsv_rows(tmp_path: Path, monkeypatch
 def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
-    _write_jsonl(root / "data" / "math.jsonl", [{"problem": "Solve 1+1.", "answer": "2", "uuid": "m1"}])
+    _write_jsonl(root / "data" / "math.jsonl", [{"problem": "Solve 1+1.", "answer": "2", "uuid": "m1", "contamination_status": "clean"}])
     profile = {
         "external_dataset_registry_2026": {
             "training_profile": "profiles/training_orchestration_2026.json",
@@ -258,8 +303,8 @@ def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, m
 def test_dataset_expansion_can_materialize_filtered_registry_wave_without_global_minima(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
-    _write_jsonl(root / "data" / "wave_math.jsonl", [{"problem": "Solve 3+5.", "answer": "8", "uuid": "wave-m"}])
-    _write_jsonl(root / "data" / "old_code.jsonl", [{"prompt": "Patch bug.", "answer": "done", "uuid": "old-c"}])
+    _write_jsonl(root / "data" / "wave_math.jsonl", [{"problem": "Solve 3+5.", "answer": "8", "uuid": "wave-m", "contamination_status": "clean"}])
+    _write_jsonl(root / "data" / "old_code.jsonl", [{"prompt": "Patch bug.", "answer": "done", "uuid": "old-c", "contamination_status": "clean"}])
     profile = {
         "external_dataset_registry_2026": {
             "training_profile": "profiles/training_orchestration_2026.json",
@@ -329,7 +374,7 @@ def test_dataset_expansion_can_materialize_filtered_registry_wave_without_global
 def test_dataset_expansion_family_files_are_train_safe_and_bucket_partitioned(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
-    _write_jsonl(root / "data" / "tool_train.jsonl", [{"prompt": "Call the weather tool.", "answer": "Use the tool.", "id": "t1"}])
+    _write_jsonl(root / "data" / "tool_train.jsonl", [{"prompt": "Call the weather tool.", "answer": "Use the tool.", "id": "t1", "contamination_status": "clean"}])
     profile = {
         "external_dataset_registry_2026": {
             "training_profile": "profiles/training_orchestration_2026.json",
@@ -397,6 +442,7 @@ def test_dataset_expansion_preserves_structured_tool_media_and_declared_modality
                 "results": [{"status": "ok"}],
                 "labels": [{"check": "preserve_identity", "label": "pass"}],
                 "score": 0.87,
+                "contamination_status": "clean",
             }
         ],
     )
@@ -1416,6 +1462,50 @@ def test_repo_dataset_registry_covers_fourteenth_wave_agentic_gui_video_sources(
     assert expansion.source_use_bucket(by_name["MCPVerse"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["UI-Vision"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["ViMUL-Bench"]) == "eval_holdout"
+
+
+def test_repo_dataset_registry_covers_fifteenth_wave_agentic_coding_audio_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "fifteenth_wave_agentic_coding_security_audio_2026_05_25"
+
+    expected_policy = {
+        "AgentWorldModel-1K": "train",
+        "Tool-Genesis Benchmark": "eval_only",
+        "MCP Security Bench": "eval_only",
+        "BeyondSWE": "eval_only",
+        "ContextBench": "eval_only",
+        "CCBench": "eval_only",
+        "WebGym Tasks": "train",
+        "AudioMCQ StrongAC Gemini CoT": "train",
+        "AgentIF": "eval_only",
+        "NVIDIA ComputeEval": "eval_only",
+        "ParseBench": "eval_only",
+        "OfficeQA": "eval_only",
+        "OmniAgentBench": "eval_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["use_policy"] == policy
+        assert by_name[name]["registry_wave"] == wave
+
+    assert by_name["AgentWorldModel-1K"]["hf_id"] == "Snowflake/AgentWorldModel-1K"
+    assert "gen_envs.jsonl" in by_name["AgentWorldModel-1K"]["data_files"]["train"]
+    assert by_name["Tool-Genesis Benchmark"]["protected_benchmark_scan"] == "protected_eval"
+    assert by_name["WebGym Tasks"]["license"] == "CDLA-Permissive-2.0"
+    assert by_name["AudioMCQ StrongAC Gemini CoT"]["synthetic_provenance"].startswith("Gemini CoT")
+    assert by_name["NVIDIA ComputeEval"]["license_tier"] == "evaluation_license_holdout"
+    assert by_name["ParseBench"]["hf_id"] == "llamaindex/ParseBench"
+    assert by_name["OfficeQA"]["family"] == "long_context"
+
+    for name in ("AgentWorldModel-1K", "WebGym Tasks", "AudioMCQ StrongAC Gemini CoT"):
+        assert expansion.source_use_bucket(by_name[name]) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], {}) == "train"
+        assert expansion.contamination_status_for_record(by_name[name], {}) == "clean"
+
+    for name in set(expected_policy) - {"AgentWorldModel-1K", "WebGym Tasks", "AudioMCQ StrongAC Gemini CoT"}:
+        assert expansion.source_use_bucket(by_name[name]) == "eval_holdout"
 
 
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:

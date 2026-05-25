@@ -178,6 +178,67 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/hailsham/mcpverse.git",
         "kind": "agent_tool",
     },
+    "agent_world_model_rl_2026": {
+        "source": "https://huggingface.co/datasets/Snowflake/AgentWorldModel-1K",
+        "git": "https://github.com/Snowflake-Labs/agent-world-model.git",
+        "hf": [
+            {
+                "id": "Snowflake/AgentWorldModel-1K",
+                "files": [
+                    "gen_tasks.jsonl",
+                    "gen_envs.jsonl",
+                    "gen_verifier.pure_code.jsonl",
+                    "gen_verifier.jsonl",
+                ],
+            }
+        ],
+        "kind": "agent_tool",
+        "splits": ["train"],
+    },
+    "agent_tool_genesis_2026": {
+        "source": "https://huggingface.co/datasets/tool-genesis/Tool-Genesis-Benchmark",
+        "hf": [{"id": "tool-genesis/Tool-Genesis-Benchmark", "splits": ["train"]}],
+        "kind": "agent_tool",
+        "splits": ["train"],
+    },
+    "agent_agentif_2025": {
+        "source": "https://huggingface.co/datasets/THU-KEG/AgentIF",
+        "git": "https://github.com/THU-KEG/AgentIF.git",
+        "hf": [{"id": "THU-KEG/AgentIF", "splits": ["test", "train", "validation"]}],
+        "kind": "agent_tool",
+        "splits": ["test", "train", "validation"],
+    },
+    "agent_webgym_tasks_2026": {
+        "source": "https://huggingface.co/datasets/microsoft/webgym_tasks",
+        "git": "https://github.com/microsoft/webgym.git",
+        "hf": [{"id": "microsoft/webgym_tasks", "splits": ["train", "test"]}],
+        "kind": "browser",
+        "splits": ["train", "test"],
+    },
+    "agent_omniagentbench_2026": {
+        "source": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
+        "hf": [{"id": "omniagentbench/OmniAgentBench", "splits": ["test", "train", "validation"]}],
+        "kind": "agent_tool_multimodal",
+        "splits": ["test", "train", "validation"],
+    },
+    "multimodal_audiomcq_strongac_2026": {
+        "source": "https://huggingface.co/datasets/Harland/AudioMCQ-StrongAC-GeminiCoT",
+        "git": "https://github.com/inclusionAI/AudioMCQ.git",
+        "hf": [{"id": "Harland/AudioMCQ-StrongAC-GeminiCoT", "splits": ["train"]}],
+        "kind": "audio_reasoning",
+        "splits": ["train"],
+    },
+    "safety_mcp_security_bench_2026": {
+        "source": "https://huggingface.co/datasets/DongsenZhang/MSB",
+        "git": "https://github.com/dongsenzhang/MSB.git",
+        "hf": [
+            {"id": "DongsenZhang/MSB", "config": "agent_task", "splits": ["train"]},
+            {"id": "DongsenZhang/MSB", "config": "attack_task", "splits": ["train"]},
+            {"id": "DongsenZhang/MSB", "config": "case_manifest", "splits": ["train"]},
+        ],
+        "kind": "tool_security",
+        "splits": ["train"],
+    },
     "agent_ui_vision_2026": {
         "source": "https://huggingface.co/datasets/ServiceNow/ui-vision",
         "git": "https://github.com/uivision/UI-Vision.git",
@@ -251,6 +312,41 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "coding_swe_bench_plus_2026": {
         "source": "https://arxiv.org/abs/2512.17419",
         "kind": "swe",
+    },
+    "coding_beyondswe_2026": {
+        "source": "https://huggingface.co/datasets/AweAI-Team/BeyondSWE",
+        "git": "https://github.com/AweAI-Team/BeyondSWE.git",
+        "hf": [{"id": "AweAI-Team/BeyondSWE", "splits": ["test"]}],
+        "kind": "swe",
+        "splits": ["test"],
+    },
+    "coding_contextbench_2026": {
+        "source": "https://huggingface.co/datasets/Contextbench/ContextBench",
+        "hf": [
+            {"id": "Contextbench/ContextBench", "config": "default", "splits": ["train"]},
+            {"id": "Contextbench/ContextBench", "config": "contextbench_verified", "splits": ["train"]},
+        ],
+        "kind": "swe_context",
+        "splits": ["train"],
+    },
+    "coding_ccbench_2026": {
+        "source": "https://ccbench.org/",
+        "git": "https://github.com/codecrafters-io/ccbench.git",
+        "kind": "coding",
+    },
+    "coding_computeeval_cuda_2026": {
+        "source": "https://huggingface.co/datasets/nvidia/compute-eval",
+        "git": "https://github.com/NVIDIA/compute-eval.git",
+        "hf": [{"id": "nvidia/compute-eval", "splits": ["test", "train", "validation"]}],
+        "kind": "coding",
+        "splits": ["test", "train", "validation"],
+    },
+    "long_context_officeqa_2026": {
+        "source": "https://huggingface.co/datasets/databricks/officeqa",
+        "git": "https://github.com/databricks/officeqa.git",
+        "hf": [{"id": "databricks/officeqa", "splits": ["test", "train", "validation"]}],
+        "kind": "long_context",
+        "splits": ["test", "train", "validation"],
     },
     "coding_swe_polybench_2026": {
         "source": "https://github.com/amazon-science/SWE-PolyBench",
@@ -484,6 +580,13 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         ],
         "kind": "video_audio_multilingual",
         "splits": ["train", "test", "validation"],
+    },
+    "multimodal_parsebench_2026": {
+        "source": "https://huggingface.co/datasets/llamaindex/ParseBench",
+        "git": "https://github.com/run-llama/ParseBench.git",
+        "hf": [{"id": "llamaindex/ParseBench", "splits": ["test", "train", "validation"]}],
+        "kind": "document_ai",
+        "splits": ["test", "train", "validation"],
     },
     "multimodal_mme_unify_2026": {
         "source": "https://huggingface.co/datasets/wulin222/MME-Unify",
@@ -996,6 +1099,20 @@ def snapshot_for(profile: dict[str, Any], benchmark_id: str) -> dict[str, Any]:
             if isinstance(item, dict):
                 return item
     return {}
+
+
+def snapshot_requires_operator_manifest(snapshot: dict[str, Any]) -> bool:
+    if not snapshot:
+        return False
+    authorization_ref = str(snapshot.get("authorization_ref") or "").strip().lower()
+    authorization = str(snapshot.get("snapshot_authorization") or "").strip().lower()
+    if authorization_ref in {"operator_supplied_authorized_snapshot_manifest", "operator_authorized_snapshot_manifest"}:
+        return True
+    return authorization in {"official_or_authorized_current_release", "authorized_private"} and bool(authorization_ref)
+
+
+def needs_reportable_source_override(mode: str, snapshot: dict[str, Any], override: Path | None) -> bool:
+    return mode == "reportable" and snapshot_requires_operator_manifest(snapshot) and override is None
 
 
 def reportable_root_for(profile: dict[str, Any], benchmark_id: str, out_root: Path, respect_profile_roots: bool) -> Path:
@@ -2131,15 +2248,26 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         if not spec:
             spec = {"source": record.get("source") or "profile_only", "kind": record.get("adapter_kind") or record.get("axis") or "unknown"}
         snapshot = snapshot_for(profile, benchmark_id)
-        rows_raw, errors, source_ref = collect_source_rows(
-            benchmark_id,
-            spec,
-            overrides.get(benchmark_id),
-            cache_root,
-            args.limit,
-            bool(args.download),
-            bool(args.force),
-        )
+        override = overrides.get(benchmark_id)
+        if needs_reportable_source_override(args.mode, snapshot, override):
+            rows_raw = []
+            errors = [
+                (
+                    f"{benchmark_id}: reportable mode requires an authorized local snapshot via "
+                    "--source-override; refusing to promote public downloads"
+                )
+            ]
+            source_ref = str(snapshot.get("source") or spec.get("source") or record.get("source") or benchmark_id)
+        else:
+            rows_raw, errors, source_ref = collect_source_rows(
+                benchmark_id,
+                spec,
+                override,
+                cache_root,
+                args.limit,
+                bool(args.download),
+                bool(args.force),
+            )
         rows: list[dict[str, Any]] = []
         for idx, raw in enumerate(rows_raw):
             row = normalize_task(benchmark_id, raw, spec, record, snapshot, args.mode, source_ref, idx)
@@ -2199,6 +2327,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
 
 def audit_profile(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_profile(args.profile)
+    root = repo_root()
     records = profile_record_map(profile)
     roots = profile.get("reportable_task_roots") if isinstance(profile.get("reportable_task_roots"), dict) else {}
     snapshots = profile.get("reportable_snapshots") if isinstance(profile.get("reportable_snapshots"), dict) else {}
@@ -2218,6 +2347,28 @@ def audit_profile(args: argparse.Namespace) -> dict[str, Any]:
     core_missing_snapshots = sorted(benchmark_id for benchmark_id in core_ids if benchmark_id not in snapshots)
     core_missing_materializer = sorted(benchmark_id for benchmark_id in core_ids if benchmark_id in selected_set and benchmark_id not in KNOWN_BENCHMARKS)
     reportable_without_profile = sorted((set(roots) | set(snapshots)) - set(records))
+    missing_reportable_files: list[dict[str, Any]] = []
+    for benchmark_id in selected:
+        value = roots.get(benchmark_id)
+        root_values = value if isinstance(value, list) else [value] if isinstance(value, str) else []
+        for root_value in root_values:
+            path = resolve_path(str(root_value), root)
+            missing = not path.exists() or not path.is_file()
+            rows = 0
+            if not missing:
+                try:
+                    rows = sum(1 for line in path.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
+                except Exception:
+                    rows = 0
+                missing = rows <= 0
+            if missing:
+                missing_reportable_files.append(
+                    {
+                        "benchmark_id": benchmark_id,
+                        "path": str(path),
+                        "reason": "missing" if not path.exists() else "zero_rows",
+                    }
+                )
 
     fail_reasons: list[str] = []
     if getattr(args, "fail_missing_materializers", False) and missing_materializer:
@@ -2233,6 +2384,8 @@ def audit_profile(args: argparse.Namespace) -> dict[str, Any]:
             fail_reasons.append("core25_benchmarks_missing_known_materializers")
     if getattr(args, "fail_known_not_profile", False) and known_not_profile:
         fail_reasons.append("known_materializers_missing_profile_records")
+    if getattr(args, "fail_missing_reportable_files", False) and missing_reportable_files:
+        fail_reasons.append("declared_reportable_task_roots_missing_or_empty")
 
     return {
         "schema": "omnicoder.benchmark_materializer_profile_audit_2026.v1",
@@ -2250,6 +2403,7 @@ def audit_profile(args: argparse.Namespace) -> dict[str, Any]:
         "profile_benchmarks_without_known_materializer": profile_missing_materializer,
         "known_materializers_without_profile_record": known_not_profile,
         "reportable_without_profile_record": reportable_without_profile,
+        "missing_reportable_files": missing_reportable_files,
         "core25": {
             "count": len(core_ids),
             "missing_profile_record": core_missing_profile,
@@ -2283,6 +2437,7 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--fail-core25", action="store_true", help="Exit nonzero when reportable_core_25 lacks profile roots or snapshot descriptors")
     audit.add_argument("--fail-missing-materializers", action="store_true", help="Exit nonzero for selected benchmarks with no downloader, snapshot, or task root")
     audit.add_argument("--fail-known-not-profile", action="store_true", help="Exit nonzero when KNOWN_BENCHMARKS entries are absent from the profile")
+    audit.add_argument("--fail-missing-reportable-files", action="store_true", help="Exit nonzero when declared reportable task roots are missing or empty")
     audit.set_defaults(func=lambda ns: audit_profile(ns))
     return parser
 

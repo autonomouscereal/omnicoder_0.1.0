@@ -221,6 +221,12 @@ mix:
   prediction, and multilingual audio-video reasoning while remaining
   eval-holdout by default. LongCodeBench materialization now points at the
   concrete `Steefano/LCB` HF source instead of paper-only metadata.
+- Fifteenth-wave May 25, 2026 additions add AgentWorldModel-1K, WebGym Tasks,
+  AudioMCQ StrongAC Gemini CoT, AgentIF, OmniAgentBench, BeyondSWE,
+  ContextBench, CCBench, NVIDIA ComputeEval, MCP Security Bench, ParseBench,
+  and OfficeQA. AgentWorldModel/WebGym/AudioMCQ are trainable only with clean
+  contamination metadata; Tool-Genesis and all benchmark-answer suites stay
+  eval-holdout with authorized snapshot roots for reportable scoring.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for
@@ -251,6 +257,7 @@ dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
   --include-wave sixth_wave_formal_code_media_2026_05_24 \
   --include-wave seventh_wave_agentic_math_code_omni_2026_05_24 \
   --include-wave eighth_wave_agentic_curation_training_2026_05_24 \
+  --include-wave fifteenth_wave_agentic_coding_security_audio_2026_05_25 \
   build
 
 agentic-tool-train-2026 --profile profiles/agentic_tool_training_2026.json build

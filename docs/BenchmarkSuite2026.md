@@ -169,6 +169,13 @@ formal math. TOBench remains metadata-only until executable tasks and license
 terms are published; the other rows materialize from official HF/GitHub
 sources for public-dev regression and stay held out from training.
 
+The fifteenth-wave additions add AgentWorldModel-1K, Tool-Genesis, AgentIF,
+WebGym Tasks, OmniAgentBench, MCP Security Bench, BeyondSWE, ContextBench,
+CCBench, NVIDIA ComputeEval, OfficeQA, ParseBench, and AudioMCQ StrongAC.
+Every release-gated addition has a reportable-root and snapshot descriptor, but
+the materializer now refuses reportable-mode downloads unless an operator
+supplies an authorized local snapshot via `--source-override`.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \
@@ -201,13 +208,15 @@ python -m omnicoder.data_factory.benchmark_materializer_2026 \
   audit-profile \
   --fail-core25 \
   --fail-missing-materializers \
-  --fail-known-not-profile
+  --fail-known-not-profile \
+  --fail-missing-reportable-files
 ```
 
 This now fail-closes on missing `reportable_core_25` snapshot descriptors,
-task roots, profile records, or materializer source contracts. The broader
-profile can still include exploratory contracts that need official snapshots
-before they become reportable; the core25 gate must stay fully covered.
+task roots, profile records, local authorized task files, or materializer
+source contracts. The broader profile can still include exploratory contracts
+that need official snapshots before they become reportable; the core25 gate
+must stay fully covered.
 
 ### Reportable Prediction Harness
 

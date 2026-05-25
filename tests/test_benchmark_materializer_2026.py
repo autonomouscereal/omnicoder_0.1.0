@@ -144,6 +144,41 @@ def test_materializer_writes_run_scoped_authorized_rows(tmp_path: Path) -> None:
     assert manifest["records"][0]["reportable"] is True
 
 
+def test_reportable_mode_requires_authorized_source_override(tmp_path: Path, monkeypatch) -> None:
+    profile = _profile(tmp_path / "profile.json")
+
+    def fail_collect(*_args, **_kwargs):
+        raise AssertionError("reportable materialization must not download public rows without an override")
+
+    monkeypatch.setattr(materializer, "collect_source_rows", fail_collect)
+    out_root = tmp_path / "materialized"
+
+    assert (
+        materializer.main(
+            [
+                "--profile",
+                str(profile),
+                "--out-root",
+                str(out_root),
+                "--run-id",
+                "run_reportable_blocked",
+                "--benchmark",
+                "multimodal_mmmu_pro_2026",
+                "--mode",
+                "reportable",
+                "--download",
+                "materialize",
+            ]
+        )
+        == 0
+    )
+
+    manifest = _read_json(out_root / "manifests" / "benchmark_materialization_manifest.json")
+    assert manifest["needs_data"] == 1
+    assert manifest["records"][0]["status"] == "needs_data"
+    assert "requires an authorized local snapshot" in manifest["records"][0]["errors"][0]
+
+
 def test_materializer_reads_terminal_task_toml_and_instruction(tmp_path: Path) -> None:
     root = tmp_path / "terminal"
     task_dir = root / "repair-cli"
@@ -1002,11 +1037,24 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "agent_locobench_agent_2026",
         "agent_state_bench_2026",
         "agent_mcpverse_2026",
+        "agent_world_model_rl_2026",
+        "agent_tool_genesis_2026",
+        "agent_agentif_2025",
+        "agent_webgym_tasks_2026",
+        "agent_omniagentbench_2026",
+        "safety_mcp_security_bench_2026",
         "agent_ui_vision_2026",
+        "coding_beyondswe_2026",
+        "coding_contextbench_2026",
+        "coding_ccbench_2026",
+        "coding_computeeval_cuda_2026",
         "safety_tool_security_2026",
         "deployment_turboquant_kv_1m_2026",
         "deployment_performance_2026",
         "long_context_ama_bench_2026",
+        "long_context_officeqa_2026",
+        "multimodal_audiomcq_strongac_2026",
+        "multimodal_parsebench_2026",
         "multimodal_smmbench_2026",
         "multimodal_vimul_bench_2026",
     }
@@ -1059,9 +1107,24 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["generation_tricky_tts_2026"]["hf"] == ["Trelis/tricky-tts-public"]
     assert materializer.KNOWN_BENCHMARKS["agent_state_bench_2026"]["git"] == "https://github.com/microsoft/STATE-Bench.git"
     assert materializer.KNOWN_BENCHMARKS["agent_mcpverse_2026"]["git"] == "https://github.com/hailsham/mcpverse.git"
+    awm = materializer.KNOWN_BENCHMARKS["agent_world_model_rl_2026"]["hf"][0]
+    assert awm["id"] == "Snowflake/AgentWorldModel-1K"
+    assert "gen_envs.jsonl" in awm["files"]
+    assert materializer.KNOWN_BENCHMARKS["agent_tool_genesis_2026"]["hf"][0]["id"] == "tool-genesis/Tool-Genesis-Benchmark"
+    assert materializer.KNOWN_BENCHMARKS["agent_agentif_2025"]["hf"][0]["id"] == "THU-KEG/AgentIF"
+    assert materializer.KNOWN_BENCHMARKS["agent_webgym_tasks_2026"]["hf"][0]["id"] == "microsoft/webgym_tasks"
+    assert materializer.KNOWN_BENCHMARKS["agent_omniagentbench_2026"]["hf"][0]["id"] == "omniagentbench/OmniAgentBench"
+    assert materializer.KNOWN_BENCHMARKS["safety_mcp_security_bench_2026"]["hf"][0]["config"] == "agent_task"
     assert materializer.KNOWN_BENCHMARKS["agent_ui_vision_2026"]["hf"][0]["id"] == "ServiceNow/ui-vision"
+    assert materializer.KNOWN_BENCHMARKS["coding_beyondswe_2026"]["hf"][0]["id"] == "AweAI-Team/BeyondSWE"
+    assert materializer.KNOWN_BENCHMARKS["coding_contextbench_2026"]["hf"][0]["id"] == "Contextbench/ContextBench"
+    assert materializer.KNOWN_BENCHMARKS["coding_ccbench_2026"]["git"] == "https://github.com/codecrafters-io/ccbench.git"
+    assert materializer.KNOWN_BENCHMARKS["coding_computeeval_cuda_2026"]["hf"][0]["id"] == "nvidia/compute-eval"
     assert materializer.KNOWN_BENCHMARKS["long_context_longcodebench_2026"]["hf"][0]["id"] == "Steefano/LCB"
     assert materializer.KNOWN_BENCHMARKS["long_context_ama_bench_2026"]["hf"][0]["id"] == "AMA-bench/AMA-bench"
+    assert materializer.KNOWN_BENCHMARKS["long_context_officeqa_2026"]["hf"][0]["id"] == "databricks/officeqa"
+    assert materializer.KNOWN_BENCHMARKS["multimodal_audiomcq_strongac_2026"]["hf"][0]["id"] == "Harland/AudioMCQ-StrongAC-GeminiCoT"
+    assert materializer.KNOWN_BENCHMARKS["multimodal_parsebench_2026"]["hf"][0]["id"] == "llamaindex/ParseBench"
     smmbench = materializer.KNOWN_BENCHMARKS["multimodal_smmbench_2026"]["hf"][0]
     assert smmbench["id"] == "HuacanChai/SMMBench"
     assert smmbench["revision"] == "d19ef39f8b73cea533ad34532c6ba9a70637ea25"
@@ -1149,3 +1212,49 @@ def test_audit_profile_cli_exits_nonzero_on_core25_gap(tmp_path: Path) -> None:
     )
 
     assert materializer.main(["--profile", str(profile), "--suite", "profile", "audit-profile", "--fail-core25"]) == 5
+
+
+def test_audit_profile_can_require_declared_reportable_files(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.json"
+    empty_root = tmp_path / "empty.jsonl"
+    empty_root.write_text("", encoding="utf-8")
+    _write_json(
+        profile,
+        {
+            "benchmarks": [
+                {
+                    "benchmark_id": "agent_bfcl_v4_2026",
+                    "adapter_kind": "tool_call_state_scorer",
+                    "axis": "agent_tool",
+                    "source": "fixture",
+                    "splits": {"smoke": "fixture"},
+                }
+            ],
+            "reportable_core_25": ["agent_bfcl_v4_2026"],
+            "reportable_task_roots": {"agent_bfcl_v4_2026": [str(empty_root)]},
+            "reportable_snapshots": {
+                "agent_bfcl_v4_2026": {
+                    "snapshot_id": "bfcl-authorized",
+                    "snapshot_authorization": "official_or_authorized_current_release",
+                    "dataset_revision": "bfcl-authorized",
+                    "source": "fixture",
+                }
+            },
+        },
+    )
+
+    report = materializer.audit_profile(
+        argparse.Namespace(
+            profile=str(profile),
+            benchmark=None,
+            suite="profile",
+            fail_core25=False,
+            fail_missing_materializers=False,
+            fail_known_not_profile=False,
+            fail_missing_reportable_files=True,
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["fail_reasons"] == ["declared_reportable_task_roots_missing_or_empty"]
+    assert report["missing_reportable_files"][0]["reason"] == "zero_rows"

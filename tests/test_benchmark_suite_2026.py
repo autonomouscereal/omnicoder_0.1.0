@@ -308,6 +308,36 @@ def test_suite_profile_includes_fourteenth_wave_agentic_gui_video_gates() -> Non
     assert "video" in adapters["multimodal_vimul_bench_2026"]["modalities"]
 
 
+def test_suite_profile_includes_fifteenth_wave_agentic_coding_audio_document_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    expected = {
+        "agent_world_model_rl_2026": "agent_tool_release",
+        "agent_tool_genesis_2026": "agent_tool_release",
+        "agent_agentif_2025": "agent_tool_release",
+        "agent_webgym_tasks_2026": "agent_tool_release",
+        "agent_omniagentbench_2026": "agent_tool_release",
+        "safety_mcp_security_bench_2026": "safety_security_release",
+        "coding_beyondswe_2026": "coding_release",
+        "coding_contextbench_2026": "coding_release",
+        "coding_ccbench_2026": "coding_release",
+        "coding_computeeval_cuda_2026": "coding_release",
+        "long_context_officeqa_2026": "long_context_release",
+        "multimodal_parsebench_2026": "multimodal_understanding_release",
+        "multimodal_audiomcq_strongac_2026": "multimodal_understanding_release",
+    }
+    for adapter_id, gate in expected.items():
+        assert adapter_id in adapters
+        assert adapter_id in suite["release_gates"][gate]
+
+    assert adapters["agent_webgym_tasks_2026"]["adapter_kind"] == "browsergym_visual_web_agent_eval"
+    assert adapters["coding_computeeval_cuda_2026"]["source"] == "https://huggingface.co/datasets/nvidia/compute-eval"
+    assert "document" in adapters["multimodal_parsebench_2026"]["modalities"]
+    assert "audio" in adapters["multimodal_audiomcq_strongac_2026"]["modalities"]
+    assert adapters["long_context_officeqa_2026"]["context_windows"][-1] == 1048576
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")
