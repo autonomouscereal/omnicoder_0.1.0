@@ -154,6 +154,23 @@ passes that must consume `<root>/local_2026`. Local public-dev rows are useful
 for training realignment and nightly debugging, but they are still not
 reportable release scores.
 
+Profile coverage should be audited before any release run:
+
+```bash
+python -m omnicoder.data_factory.benchmark_materializer_2026 \
+  --profile profiles/benchmark_suite_2026.json \
+  --suite core25 \
+  audit-profile \
+  --fail-core25 \
+  --fail-missing-materializers \
+  --fail-known-not-profile
+```
+
+This now fail-closes on missing `reportable_core_25` snapshot descriptors,
+task roots, profile records, or materializer source contracts. The broader
+profile can still include exploratory contracts that need official snapshots
+before they become reportable; the core25 gate must stay fully covered.
+
 ### Reportable Prediction Harness
 
 Use `omnicoder.eval.reportable_prediction_harness_2026` to generate the
@@ -219,7 +236,8 @@ also adds ARC-AGI-3 interactive tasks, Terminal-Bench 2.1, BrowserGym/WebArena,
 OSWorld, LiveBench math, split MMMU-Pro standard/vision gates, Video-MME-v2,
 AudioBench/MMAU/MMAU-Pro, MMAR, IFEval-Audio through VoiceBench, VBench 2.0
 faithfulness, VBench trustworthiness, Music Arena, BFCL v4, SWE-Lancer, HLE,
-GDPVal, PaperBench, TheAgentCompany, MCP-Bench, and MCPMark/MCP-Universe
+GDPVal, PaperBench, TheAgentCompany, MCP-Bench, MCP-Atlas, MCPMark/MCP-Universe,
+ARC-AGI-2, SWE-PolyBench, SWE-smith, TTSDS2,
 contracts. These are eval/release gates only;
 their hidden labels, media assets, private states, answer keys, and successful
 trajectories do not enter training exports. The broad suite profile includes

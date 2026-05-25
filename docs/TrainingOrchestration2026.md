@@ -305,8 +305,30 @@ promotion or next-stage launch.
 When `benchmark-materialize` has run, coverage also reads
 `weights/data_factory/runs/benchmark_materialization/<run_id>/manifests/benchmark_materialization_manifest.json`
 and reports local-only versus official/authorized task counts separately.
+For stacked benchmark waves, pass each run with repeated
+`--benchmark-materialization-root <root>` or
+`--benchmark-materialization-manifest <manifest>` flags; the validator
+aggregates local-dev and official rows separately and also counts
+`<root>/reportable_2026` as a reportable task source when authorized rows are
+materialized there. Use `--require-local-benchmark-tasks` for public-dev
+regression coverage and `--require-official-reportable-tasks` for release-gate
+coverage.
 `OMNICODER_REQUIRE_OFFICIAL_REPORTABLE_TASKS=1` prevents public-dev benchmark
 rows from satisfying official release-gate coverage.
+The benchmark materializer also has a profile audit mode:
+
+```bash
+python -m omnicoder.data_factory.benchmark_materializer_2026 \
+  --profile profiles/benchmark_suite_2026.json \
+  --suite core25 \
+  audit-profile \
+  --fail-core25 \
+  --fail-missing-materializers \
+  --fail-known-not-profile
+```
+
+Use it before promotion so the native-1M release lane cannot forget a core
+benchmark root, snapshot descriptor, profile record, or source materializer.
 
 `media-teacher-rollouts` consumes
 `weights/data_factory/runs/teacher_jobs/<run_id>/modality/all_modality_teacher_jobs.jsonl`

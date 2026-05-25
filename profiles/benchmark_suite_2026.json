@@ -216,6 +216,66 @@
       "task_format": "jsonl_mcp_task"
     },
     {
+      "adapter_kind": "mcp_multi_server_tool_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_mcp_bench_2026",
+      "holdout_policy": [
+        "hide_expected_tool_sequences",
+        "hide_server_combination_answers",
+        "quarantine_successful_tool_traces"
+      ],
+      "metrics": [
+        "tool_selection_accuracy",
+        "multi_server_plan_success",
+        "argument_f1",
+        "tool_error_rate",
+        "final_answer_correctness"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "mcp_server_state"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://github.com/Accenture/mcp-bench",
+      "splits": {
+        "nightly": "single, two-server, and three-server MCP task slice",
+        "release": "locked authorized MCP-Bench multi-server suite",
+        "smoke": "one single-server and one multi-server MCP tool task"
+      },
+      "task_format": "jsonl_mcp_multi_server_task"
+    },
+    {
+      "adapter_kind": "mcp_real_server_tool_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_mcp_atlas_2026",
+      "holdout_policy": [
+        "hide_expected_tool_sequences",
+        "reset_real_server_state",
+        "quarantine_successful_tool_traces"
+      ],
+      "metrics": [
+        "tool_selection_accuracy",
+        "server_selection_accuracy",
+        "argument_f1",
+        "state_transition_success",
+        "final_answer_correctness"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "mcp_server_state"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://github.com/scaleapi/mcp-atlas",
+      "splits": {
+        "nightly": "public 500-task MCP-Atlas subset plus local server fixtures",
+        "release": "locked authorized MCP-Atlas suite",
+        "smoke": "one real-server MCP task with deterministic state"
+      },
+      "task_format": "jsonl_mcp_real_server_task"
+    },
+    {
       "adapter_kind": "container_terminal_task",
       "axis": "agent_tool",
       "benchmark_id": "agent_terminal_bench_2026",
@@ -309,6 +369,34 @@
         "smoke": "single graph-structured virtual-agent fixture"
       },
       "task_format": "jsonl_virtual_agent_graph_task"
+    },
+    {
+      "adapter_kind": "abstract_reasoning_grid_eval",
+      "axis": "reasoning",
+      "benchmark_id": "reasoning_arc_agi2_2026",
+      "holdout_policy": [
+        "hide_private_tasks",
+        "hide_solution_programs",
+        "separate_public_and_reportable_scores"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "program_synthesis_score",
+        "generalization_score",
+        "attempt_efficiency"
+      ],
+      "modalities": [
+        "text",
+        "grid"
+      ],
+      "release_gate": "reasoning_release",
+      "source": "https://github.com/arcprize/ARC-AGI-2",
+      "splits": {
+        "nightly": "public ARC-AGI-2 dev slice",
+        "release": "locked authorized ARC-AGI-2 suite",
+        "smoke": "one public grid induction task"
+      },
+      "task_format": "jsonl_arc_grid_task"
     },
     {
       "adapter_kind": "interactive_reasoning_env",
@@ -866,6 +954,36 @@
       "task_format": "jsonl_audio_generation_prompt"
     },
     {
+      "adapter_kind": "tts_distribution_quality_eval",
+      "axis": "audio_generation",
+      "benchmark_id": "generation_ttsds2_2026",
+      "holdout_policy": [
+        "hide_human_quality_labels",
+        "hash_audio_outputs",
+        "separate_reference_voices_by_license"
+      ],
+      "metrics": [
+        "tts_distribution_score_2",
+        "naturalness_mos",
+        "speaker_similarity",
+        "pronunciation_error_rate",
+        "artifact_rate"
+      ],
+      "modalities": [
+        "text",
+        "audio",
+        "speech"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://arxiv.org/abs/2506.19441",
+      "splits": {
+        "nightly": "language and speaker-style balanced TTSDS2 slice",
+        "release": "locked authorized TTSDS2 suite",
+        "smoke": "one short-form and one long-form TTS prompt"
+      },
+      "task_format": "jsonl_audio_generation_prompt"
+    },
+    {
       "adapter_kind": "music_generation_eval",
       "axis": "music_generation",
       "benchmark_id": "generation_music_2026",
@@ -1016,6 +1134,69 @@
         "nightly": "quality-assured generated repo slice",
         "release": "locked SWE-Bench++ authorized release slice",
         "smoke": "two generated PR tasks with public fixtures only"
+      },
+      "task_format": "jsonl_pr_task_container"
+    },
+    {
+      "adapter_kind": "multilingual_repo_level_patch_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_swe_polybench_2026",
+      "holdout_policy": [
+        "hide_hidden_tests",
+        "record_repo_commit",
+        "language_balance_required",
+        "quarantine_successful_trajectories"
+      ],
+      "metrics": [
+        "patch_applies",
+        "hidden_tests_pass_rate",
+        "language_pass_rate",
+        "repo_setup_success",
+        "task_type_pass_rate"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "git",
+        "tests"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://github.com/amazon-science/SWE-PolyBench",
+      "splits": {
+        "nightly": "language and task-type balanced SWE-PolyBench slice",
+        "release": "locked authorized SWE-PolyBench suite",
+        "smoke": "one bug-fix and one feature/refactor task"
+      },
+      "task_format": "jsonl_multilingual_repo_issue"
+    },
+    {
+      "adapter_kind": "synthetic_swe_agent_training_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_swe_smith_2026",
+      "holdout_policy": [
+        "hide_reference_solutions",
+        "record_generation_pipeline_revision",
+        "separate_train_and_eval_repositories"
+      ],
+      "metrics": [
+        "tests_passed_rate",
+        "patch_applies",
+        "trajectory_quality",
+        "repo_setup_success",
+        "contamination_free_rate"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "git",
+        "tests"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://github.com/SWE-bench/SWE-smith",
+      "splits": {
+        "nightly": "repository-balanced SWE-smith synthetic issue slice",
+        "release": "locked generated-task eval suite with held-out repos",
+        "smoke": "one generated patch task and one trajectory-quality item"
       },
       "task_format": "jsonl_pr_task_container"
     },
@@ -3216,6 +3397,38 @@
       "task_format": "audio_task_jsonl"
     },
     {
+      "adapter_kind": "holistic_audio_understanding_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_mmau_pro_2026",
+      "holdout_policy": [
+        "hide_answers_or_oracles",
+        "quarantine_successful_trajectories",
+        "hash_audio_assets",
+        "record_dataset_revision"
+      ],
+      "metrics": [
+        "mcq_accuracy",
+        "speech_score",
+        "sound_score",
+        "music_score",
+        "multi_audio_reasoning_score"
+      ],
+      "modalities": [
+        "audio",
+        "speech",
+        "music",
+        "text"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/gamma-lab-umd/MMAU-Pro",
+      "splits": {
+        "nightly": "domain-balanced MMAU-Pro public/dev slice",
+        "release": "locked authorized MMAU-Pro release suite",
+        "smoke": "one speech, one sound, and one music reasoning item"
+      },
+      "task_format": "audio_task_jsonl"
+    },
+    {
       "adapter_kind": "video_generation_faithfulness_eval",
       "axis": "video_generation",
       "benchmark_id": "generation_vbench2_intrinsic_faithfulness_2026",
@@ -3850,6 +4063,9 @@
     "agent_mcp_bench_2026": [
       "data/eval/reportable_2026/mcp_bench_authorized.jsonl"
     ],
+    "agent_mcp_atlas_2026": [
+      "data/eval/reportable_2026/mcp_atlas_authorized.jsonl"
+    ],
     "agent_mcp_universe_2026": [
       "data/eval/reportable_2026/mcp_universe_authorized.jsonl"
     ],
@@ -3883,11 +4099,23 @@
     "coding_swe_bench_pro_2026": [
       "data/eval/reportable_2026/swe_bench_pro_authorized.jsonl"
     ],
+    "coding_swe_bench_plus_2026": [
+      "data/eval/reportable_2026/swe_bench_plus_authorized.jsonl"
+    ],
+    "coding_swe_polybench_2026": [
+      "data/eval/reportable_2026/swe_polybench_authorized.jsonl"
+    ],
+    "coding_swe_smith_2026": [
+      "data/eval/reportable_2026/swe_smith_authorized.jsonl"
+    ],
     "coding_swe_lancer_2026": [
       "data/eval/reportable_2026/swe_lancer_authorized.jsonl"
     ],
     "generation_audio_speech_2026": [
       "data/eval/reportable_2026/audio_speech_authorized.jsonl"
+    ],
+    "generation_ttsds2_2026": [
+      "data/eval/reportable_2026/ttsds2_authorized.jsonl"
     ],
     "generation_image_edit_2026": [
       "data/eval/reportable_2026/image_edit_authorized.jsonl"
@@ -3925,6 +4153,9 @@
     "multimodal_video_understanding_2026": [
       "data/eval/reportable_2026/video_mme_v2_authorized.jsonl"
     ],
+    "reasoning_arc_agi2_2026": [
+      "data/eval/reportable_2026/arc_agi2_authorized.jsonl"
+    ],
     "reasoning_arc_agi3_2026": [
       "data/eval/reportable_2026/arc_agi3_authorized.jsonl"
     ],
@@ -3957,6 +4188,15 @@
     ],
     "reasoning_matharena_2026": [
       "data/eval/reportable_2026/matharena_authorized.jsonl"
+    ],
+    "safety_tool_security_2026": [
+      "data/eval/reportable_2026/tool_security_authorized.jsonl"
+    ],
+    "deployment_turboquant_kv_1m_2026": [
+      "data/eval/reportable_2026/turboquant_kv_1m_authorized.jsonl"
+    ],
+    "deployment_performance_2026": [
+      "data/eval/reportable_2026/deployment_performance_authorized.jsonl"
     ]
   },
   "reportable_snapshots": {
@@ -3995,6 +4235,15 @@
       "snapshot_id": "mcp-bench-authorized-2026-current",
       "source": "https://github.com/Accenture/mcp-bench",
       "task_root": "data/eval/reportable_2026/mcp_bench_authorized.jsonl"
+    },
+    "agent_mcp_atlas_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "mcp-atlas-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "mcp-atlas-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/ScaleAI/MCP-Atlas",
+      "task_root": "data/eval/reportable_2026/mcp_atlas_authorized.jsonl"
     },
     "agent_mcp_universe_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -4095,6 +4344,33 @@
       "source": "https://scale.com/blog/swe-bench-pro",
       "task_root": "data/eval/reportable_2026/swe_bench_pro_authorized.jsonl"
     },
+    "coding_swe_bench_plus_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "swe-bench-plus-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "swe-bench-plus-authorized-2026-current",
+      "source": "https://arxiv.org/abs/2512.17419",
+      "task_root": "data/eval/reportable_2026/swe_bench_plus_authorized.jsonl"
+    },
+    "coding_swe_polybench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "swe-polybench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "swe-polybench-authorized-2026-current",
+      "source": "https://github.com/amazon-science/SWE-PolyBench",
+      "task_root": "data/eval/reportable_2026/swe_polybench_authorized.jsonl"
+    },
+    "coding_swe_smith_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "swe-smith-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "swe-smith-authorized-2026-current",
+      "source": "https://github.com/SWE-bench/SWE-smith",
+      "task_root": "data/eval/reportable_2026/swe_smith_authorized.jsonl"
+    },
     "coding_swe_lancer_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "swe-lancer-authorized-2026-current",
@@ -4112,6 +4388,15 @@
       "snapshot_id": "audio-speech-authorized-2026-current",
       "source": "https://huggingface.co/datasets/hlt-lab/voicebench",
       "task_root": "data/eval/reportable_2026/audio_speech_authorized.jsonl"
+    },
+    "generation_ttsds2_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "ttsds2-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "ttsds2-authorized-2026-current",
+      "source": "https://arxiv.org/abs/2506.19441",
+      "task_root": "data/eval/reportable_2026/ttsds2_authorized.jsonl"
     },
     "generation_image_edit_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -4221,6 +4506,15 @@
       "source": "https://huggingface.co/datasets/MME-Benchmarks/Video-MME-v2",
       "task_root": "data/eval/reportable_2026/video_mme_v2_authorized.jsonl"
     },
+    "reasoning_arc_agi2_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "arc-agi2-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "arc-agi2-authorized-2026-current",
+      "source": "https://github.com/arcprize/ARC-AGI-2",
+      "task_root": "data/eval/reportable_2026/arc_agi2_authorized.jsonl"
+    },
     "reasoning_arc_agi3_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "arc-agi3-authorized-2026-current",
@@ -4319,6 +4613,33 @@
       "snapshot_id": "reasoning-matharena-authorized-2026-current",
       "source": "https://matharena.ai/",
       "task_root": "data/eval/reportable_2026/matharena_authorized.jsonl"
+    },
+    "safety_tool_security_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "tool-security-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "authorized_private",
+      "snapshot_id": "tool-security-authorized-2026-current",
+      "source": "internal_red_team_jsonl_and_authorized_public_slices",
+      "task_root": "data/eval/reportable_2026/tool_security_authorized.jsonl"
+    },
+    "deployment_turboquant_kv_1m_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "turboquant-kv-1m-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "authorized_private",
+      "snapshot_id": "turboquant-kv-1m-authorized-2026-current",
+      "source": "https://openreview.net/pdf/7d33913c9a4f47c8abb294d6beb85d30124747ca.pdf",
+      "task_root": "data/eval/reportable_2026/turboquant_kv_1m_authorized.jsonl"
+    },
+    "deployment_performance_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "deployment-performance-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "authorized_private",
+      "snapshot_id": "deployment-performance-authorized-2026-current",
+      "source": "internal_hardware_matrix_jsonl",
+      "task_root": "data/eval/reportable_2026/deployment_performance_authorized.jsonl"
     }
   },
   "run_cycles": {

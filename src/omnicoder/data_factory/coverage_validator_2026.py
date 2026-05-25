@@ -57,6 +57,112 @@ def add_missing(missing: list[dict[str, Any]], label: str, path: Path, reason: s
     missing.append({"label": label, "path": str(path), "reason": reason, "count": count})
 
 
+def coerce_path_values(value: Any) -> list[Path]:
+    values: list[Any]
+    if value in (None, "", [], ()):
+        return []
+    if isinstance(value, (list, tuple)):
+        values = list(value)
+    else:
+        values = [value]
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for item in values:
+        if item in (None, ""):
+            continue
+        path = Path(str(item))
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(path)
+    return paths
+
+
+def resolve_benchmark_materialization_manifests(args: argparse.Namespace, root: Path, run_id: str) -> list[Path]:
+    manifests = coerce_path_values(getattr(args, "benchmark_materialization_manifest", ""))
+    for materialization_root in coerce_path_values(getattr(args, "benchmark_materialization_root", "")):
+        if materialization_root.is_file():
+            manifests.append(materialization_root)
+        else:
+            manifests.append(materialization_root / "manifests" / "benchmark_materialization_manifest.json")
+    if not manifests:
+        manifests.append(
+            root
+            / "weights"
+            / "data_factory"
+            / "runs"
+            / "benchmark_materialization"
+            / run_id
+            / "manifests"
+            / "benchmark_materialization_manifest.json"
+        )
+    out: list[Path] = []
+    seen: set[str] = set()
+    for path in manifests:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+
+def materialization_reportable_roots(args: argparse.Namespace) -> list[Path]:
+    roots: list[Path] = []
+    for materialization_root in coerce_path_values(getattr(args, "benchmark_materialization_root", "")):
+        if materialization_root.is_dir():
+            roots.append(materialization_root / "reportable_2026")
+    return roots
+
+
+def materialization_record_counts(manifests: list[Path]) -> tuple[dict[str, int], dict[str, int], int, int, list[str], list[dict[str, Any]]]:
+    official_benchmark_counts: dict[str, int] = {}
+    local_benchmark_counts: dict[str, int] = {}
+    official_benchmark_rows = 0
+    local_benchmark_rows = 0
+    warnings: list[str] = []
+    summaries: list[dict[str, Any]] = []
+    for manifest in manifests:
+        data = read_json(manifest)
+        if not data:
+            summaries.append({"path": str(manifest), "status": "missing_or_unreadable", "rows": 0})
+            continue
+        if data.get("schema") != "omnicoder.benchmark_materializer_2026.v1":
+            warnings.append(f"benchmark materialization manifest schema is unrecognized: {manifest}")
+        records = data.get("records") if isinstance(data.get("records"), list) else []
+        summaries.append(
+            {
+                "path": str(manifest),
+                "status": data.get("status") or ("materialized" if int(data.get("materialized") or 0) > 0 else "needs_data"),
+                "run_id": data.get("run_id"),
+                "mode": data.get("mode"),
+                "rows": int(data.get("rows") or 0),
+                "materialized": int(data.get("materialized") or 0),
+                "needs_data": int(data.get("needs_data") or 0),
+            }
+        )
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            benchmark_id = str(record.get("benchmark_id") or "unknown")
+            rows = int(record.get("rows") or 0)
+            if bool(record.get("reportable")) and not bool(record.get("local_only")):
+                official_benchmark_counts[benchmark_id] = official_benchmark_counts.get(benchmark_id, 0) + rows
+                official_benchmark_rows += rows
+            elif rows > 0:
+                local_benchmark_counts[benchmark_id] = local_benchmark_counts.get(benchmark_id, 0) + rows
+                local_benchmark_rows += rows
+    return (
+        official_benchmark_counts,
+        local_benchmark_counts,
+        official_benchmark_rows,
+        local_benchmark_rows,
+        warnings,
+        summaries,
+    )
+
+
 def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
     root = Path(args.root).resolve()
     run_id = str(args.run_id)
@@ -68,11 +174,7 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
     teacher_rollout_dir = Path(args.teacher_rollout_dir) if args.teacher_rollout_dir else root / "weights" / "data_factory" / "teacher_rollouts" / run_id
     mixture_plan = Path(args.mixture_plan) if args.mixture_plan else root / "weights" / "training_orchestration_2026" / "runs" / run_id / "manifests" / "mixture_plan.json"
     reportable_root = Path(args.reportable_root) if args.reportable_root else root / "data" / "eval" / "reportable_2026"
-    benchmark_manifest = (
-        Path(args.benchmark_materialization_manifest)
-        if getattr(args, "benchmark_materialization_manifest", "")
-        else root / "weights" / "data_factory" / "runs" / "benchmark_materialization" / run_id / "manifests" / "benchmark_materialization_manifest.json"
-    )
+    benchmark_manifests = resolve_benchmark_materialization_manifests(args, root, run_id)
     missing: list[dict[str, Any]] = []
     warnings: list[str] = []
 
@@ -155,36 +257,38 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
         add_missing(missing, "mixture_plan", mixture_plan, "missing_or_unreadable")
 
     reportable_paths = []
-    if reportable_root.exists():
-        if reportable_root.is_dir():
-            reportable_paths = sorted(reportable_root.glob("*.jsonl"))
+    reportable_roots = [reportable_root] + materialization_reportable_roots(args)
+    seen_reportable: set[str] = set()
+    for candidate_root in reportable_roots:
+        if not candidate_root.exists():
+            continue
+        if candidate_root.is_dir():
+            candidates = sorted(candidate_root.glob("*.jsonl"))
         else:
-            reportable_paths = [reportable_root]
+            candidates = [candidate_root]
+        for candidate in candidates:
+            key = str(candidate)
+            if key in seen_reportable:
+                continue
+            seen_reportable.add(key)
+            reportable_paths.append(candidate)
     reportable_counts = {str(path): count_jsonl(path) for path in reportable_paths}
     if args.require_reportable_tasks and sum(reportable_counts.values()) <= 0:
         add_missing(missing, "reportable_eval_tasks", reportable_root, "missing_or_empty", 0)
 
-    benchmark_materialization_data = read_json(benchmark_manifest)
-    benchmark_records = benchmark_materialization_data.get("records") if isinstance(benchmark_materialization_data.get("records"), list) else []
-    official_benchmark_counts: dict[str, int] = {}
-    local_benchmark_counts: dict[str, int] = {}
-    official_benchmark_rows = 0
-    local_benchmark_rows = 0
-    for record in benchmark_records:
-        if not isinstance(record, dict):
-            continue
-        benchmark_id = str(record.get("benchmark_id") or "unknown")
-        rows = int(record.get("rows") or 0)
-        if bool(record.get("reportable")) and not bool(record.get("local_only")):
-            official_benchmark_counts[benchmark_id] = official_benchmark_counts.get(benchmark_id, 0) + rows
-            official_benchmark_rows += rows
-        elif rows > 0:
-            local_benchmark_counts[benchmark_id] = local_benchmark_counts.get(benchmark_id, 0) + rows
-            local_benchmark_rows += rows
-    if benchmark_materialization_data and benchmark_materialization_data.get("schema") != "omnicoder.benchmark_materializer_2026.v1":
-        warnings.append("benchmark materialization manifest schema is unrecognized")
+    (
+        official_benchmark_counts,
+        local_benchmark_counts,
+        official_benchmark_rows,
+        local_benchmark_rows,
+        benchmark_warnings,
+        benchmark_summaries,
+    ) = materialization_record_counts(benchmark_manifests)
+    warnings.extend(benchmark_warnings)
     if getattr(args, "require_official_reportable_tasks", False) and official_benchmark_rows <= 0:
-        add_missing(missing, "official_materialized_reportable_tasks", benchmark_manifest, "missing_or_zero_official_rows", official_benchmark_rows)
+        add_missing(missing, "official_materialized_reportable_tasks", benchmark_manifests[0], "missing_or_zero_official_rows", official_benchmark_rows)
+    if getattr(args, "require_local_benchmark_tasks", False) and local_benchmark_rows <= 0:
+        add_missing(missing, "local_materialized_benchmark_tasks", benchmark_manifests[0], "missing_or_zero_local_rows", local_benchmark_rows)
 
     status = "passed" if not missing else "needs_data"
     return {
@@ -202,7 +306,9 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
             "teacher_rollout_dir": str(teacher_rollout_dir),
             "mixture_plan": str(mixture_plan),
             "reportable_root": str(reportable_root),
-            "benchmark_materialization_manifest": str(benchmark_manifest),
+            "reportable_roots": [str(path) for path in reportable_roots],
+            "benchmark_materialization_manifest": str(benchmark_manifests[0]) if benchmark_manifests else "",
+            "benchmark_materialization_manifests": [str(path) for path in benchmark_manifests],
         },
         "counts": {
             "curated_train_files": train_counts,
@@ -230,8 +336,9 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
             "modality_teacher_status": modality_manifest_data.get("status"),
             "teacher_rollout_status": teacher_rollout_data.get("status"),
             "mixture_status": mixture_data.get("status"),
-            "benchmark_materialization_schema": benchmark_materialization_data.get("schema"),
-            "benchmark_materialization_rows": benchmark_materialization_data.get("rows"),
+            "benchmark_materializations": benchmark_summaries,
+            "benchmark_materialization_schema": "omnicoder.benchmark_materializer_2026.v1" if benchmark_summaries else None,
+            "benchmark_materialization_rows": sum(int(item.get("rows") or 0) for item in benchmark_summaries),
         },
         "missing": missing,
         "warnings": warnings,
@@ -250,10 +357,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--teacher-rollout-dir", default="")
     parser.add_argument("--mixture-plan", default="")
     parser.add_argument("--reportable-root", default="")
-    parser.add_argument("--benchmark-materialization-manifest", default="")
+    parser.add_argument("--benchmark-materialization-root", action="append", default=[])
+    parser.add_argument("--benchmark-materialization-manifest", action="append", default=[])
     parser.add_argument("--require-media-teacher-rollouts", action="store_true")
     parser.add_argument("--require-reportable-tasks", action="store_true")
     parser.add_argument("--require-official-reportable-tasks", action="store_true")
+    parser.add_argument("--require-local-benchmark-tasks", action="store_true")
     parser.add_argument("--strict", action="store_true", help="Exit nonzero when required coverage is missing")
     parser.add_argument("--out", default="")
     args = parser.parse_args(argv)

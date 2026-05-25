@@ -41,6 +41,14 @@ except Exception:
 try:
     if _os.getenv('OMNICODER_ENABLE_DML', '1') == '1':
         from .modeling.kernels import omnicoder_dml_op  # noqa: F401  (register fused DML op on import)
+except ModuleNotFoundError as _exc:
+    try:
+        if getattr(_exc, 'name', '') == 'torch':
+            _logging.getLogger('omnicoder.boot').warning('DML fused op registration skipped because torch is unavailable')
+        else:
+            _logging.getLogger('omnicoder.boot').warning('DML fused op registration failed; continuing without DML path', exc_info=True)
+    except Exception:
+        pass
 except Exception:
     # Best-effort: continue without DML fused ops
     import logging as _logging

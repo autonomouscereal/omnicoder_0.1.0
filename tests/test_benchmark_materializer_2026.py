@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -367,26 +368,40 @@ def test_materializer_normalizes_countdown_rewardbench_and_oneig_aliases() -> No
 def test_materializer_tracks_2026_official_source_mirrors() -> None:
     required = {
         "agent_mcp_bench_2026",
+        "agent_mcp_atlas_2026",
         "agent_mcp_universe_2026",
         "agent_clawbench_browser_2026",
         "agent_browsecomp_long_context_2026",
         "agent_theagentcompany_enterprise_2026",
         "agent_paperbench_2026",
         "agent_gdpval_2026",
+        "reasoning_arc_agi2_2026",
+        "reasoning_arc_agi3_2026",
         "coding_swe_lancer_2026",
         "coding_swe_rebench_v2_2026",
+        "coding_swe_polybench_2026",
+        "coding_swe_smith_2026",
         "reasoning_hle_rolling_2026",
         "reasoning_matharena_2026",
         "reasoning_rlvr_linearity_math_2026",
         "coding_nous_rlvr_coding_2026",
+        "coding_multi_swe_bench_2026",
+        "coding_swe_bench_plus_2026",
+        "long_context_helmet_longproc_2026",
+        "long_context_longcodebench_2026",
         "long_context_longproc_2026",
         "long_context_nolima_1m_2026",
         "multimodal_audiobench_mmau_2026",
+        "multimodal_mmau_pro_2026",
         "multimodal_audiomarathon_2026",
         "multimodal_mmar_audio_music_reasoning_2026",
         "multimodal_rewardbench2_2026",
         "generation_audio_speech_2026",
+        "generation_ttsds2_2026",
         "generation_oneig_bench_2026",
+        "safety_tool_security_2026",
+        "deployment_turboquant_kv_1m_2026",
+        "deployment_performance_2026",
     }
     assert required.issubset(materializer.KNOWN_BENCHMARKS)
     voicebench = materializer.KNOWN_BENCHMARKS["generation_audio_speech_2026"]["hf"][0]
@@ -401,3 +416,79 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert rewardbench["config"] == "edit"
     oneig = materializer.KNOWN_BENCHMARKS["generation_oneig_bench_2026"]["hf"][0]
     assert oneig["config"] == "OneIG-Bench"
+
+
+def test_audit_profile_reports_materializer_and_core25_gaps(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.json"
+    _write_json(
+        profile,
+        {
+            "benchmarks": [
+                {
+                    "benchmark_id": "agent_bfcl_v4_2026",
+                    "adapter_kind": "tool_call_state_scorer",
+                    "axis": "agent_tool",
+                    "source": "fixture",
+                    "splits": {"smoke": "fixture"},
+                },
+                {
+                    "benchmark_id": "fresh_missing_2026",
+                    "adapter_kind": "new_eval",
+                    "axis": "reasoning",
+                    "source": "fixture",
+                    "splits": {"smoke": "fixture"},
+                },
+            ],
+            "reportable_core_25": ["agent_bfcl_v4_2026", "fresh_missing_2026"],
+            "reportable_task_roots": {
+                "agent_bfcl_v4_2026": ["data/eval/reportable_2026/bfcl_v4_authorized.jsonl"]
+            },
+            "reportable_snapshots": {
+                "agent_bfcl_v4_2026": {
+                    "snapshot_id": "bfcl-authorized",
+                    "snapshot_authorization": "official_or_authorized_current_release",
+                    "dataset_revision": "bfcl-authorized",
+                    "source": "fixture",
+                }
+            },
+        },
+    )
+
+    report = materializer.audit_profile(
+        argparse.Namespace(
+            profile=str(profile),
+            benchmark=None,
+            suite="profile",
+            fail_core25=True,
+            fail_missing_materializers=True,
+            fail_known_not_profile=False,
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert "fresh_missing_2026" in report["missing_materializer_or_snapshot"]
+    assert "fresh_missing_2026" in report["core25"]["missing_reportable_task_root"]
+    assert "fresh_missing_2026" in report["core25"]["missing_reportable_snapshot"]
+
+
+def test_audit_profile_cli_exits_nonzero_on_core25_gap(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.json"
+    _write_json(
+        profile,
+        {
+            "benchmarks": [
+                {
+                    "benchmark_id": "agent_bfcl_v4_2026",
+                    "adapter_kind": "tool_call_state_scorer",
+                    "axis": "agent_tool",
+                    "source": "fixture",
+                    "splits": {"smoke": "fixture"},
+                }
+            ],
+            "reportable_core_25": ["agent_bfcl_v4_2026"],
+            "reportable_task_roots": {},
+            "reportable_snapshots": {},
+        },
+    )
+
+    assert materializer.main(["--profile", str(profile), "--suite", "profile", "audit-profile", "--fail-core25"]) == 5

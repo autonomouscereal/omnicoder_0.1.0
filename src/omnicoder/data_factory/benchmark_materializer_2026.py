@@ -57,6 +57,13 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/Accenture/mcp-bench.git",
         "kind": "tool",
     },
+    "agent_mcp_atlas_2026": {
+        "source": "https://github.com/scaleapi/mcp-atlas",
+        "git": "https://github.com/scaleapi/mcp-atlas.git",
+        "hf": ["ScaleAI/MCP-Atlas"],
+        "kind": "tool",
+        "splits": ["train", "test", "validation"],
+    },
     "agent_mcp_universe_2026": {
         "source": "https://github.com/SalesforceAIResearch/MCP-Universe",
         "git": "https://github.com/SalesforceAIResearch/MCP-Universe.git",
@@ -147,11 +154,40 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "swe",
         "splits": ["train"],
     },
+    "coding_multi_swe_bench_2026": {
+        "source": "https://multi-swe-bench.github.io/",
+        "kind": "swe",
+    },
+    "coding_swe_bench_plus_2026": {
+        "source": "https://arxiv.org/abs/2512.17419",
+        "kind": "swe",
+    },
+    "coding_swe_polybench_2026": {
+        "source": "https://github.com/amazon-science/SWE-PolyBench",
+        "git": "https://github.com/amazon-science/SWE-PolyBench.git",
+        "hf": ["AmazonScience/SWE-PolyBench", "AmazonScience/SWE-PolyBench_Verified"],
+        "kind": "swe",
+        "splits": ["test", "train"],
+    },
+    "coding_swe_smith_2026": {
+        "source": "https://github.com/SWE-bench/SWE-smith",
+        "git": "https://github.com/SWE-bench/SWE-smith.git",
+        "kind": "swe",
+    },
     "coding_nous_rlvr_coding_2026": {
         "source": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
         "hf": ["NousResearch/RLVR_Coding_Problems"],
         "kind": "coding",
         "splits": ["train", "test", "validation"],
+    },
+    "reasoning_arc_agi2_2026": {
+        "source": "https://arcprize.org/arc-agi/2",
+        "git": "https://github.com/arcprize/ARC-AGI-2.git",
+        "kind": "reasoning",
+    },
+    "reasoning_arc_agi3_2026": {
+        "source": "https://arcprize.org/arc-agi/3/",
+        "kind": "interactive_reasoning",
     },
     "reasoning_livebench_2026": {
         "source": "https://github.com/LiveBench/LiveBench",
@@ -202,6 +238,14 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "long_context_longproc_2026": {
         "source": "https://github.com/princeton-pli/LongProc",
         "git": "https://github.com/princeton-pli/LongProc.git",
+        "kind": "long_context",
+    },
+    "long_context_helmet_longproc_2026": {
+        "source": "https://pli.princeton.edu/blog/2025/long-input-long-output-holistic-long-context-evaluation-helmet-and-longproc",
+        "kind": "long_context",
+    },
+    "long_context_longcodebench_2026": {
+        "source": "https://huggingface.co/papers/2505.07897",
         "kind": "long_context",
     },
     "long_context_nolima_1m_2026": {
@@ -329,6 +373,18 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "image_generation",
         "splits": ["test", "validation", "train"],
     },
+    "safety_tool_security_2026": {
+        "source": "internal_red_team_jsonl_and_authorized_public_slices",
+        "kind": "tool_security",
+    },
+    "deployment_turboquant_kv_1m_2026": {
+        "source": "https://openreview.net/pdf/7d33913c9a4f47c8abb294d6beb85d30124747ca.pdf",
+        "kind": "deployment_performance",
+    },
+    "deployment_performance_2026": {
+        "source": "internal_hardware_matrix_jsonl",
+        "kind": "deployment_performance",
+    },
     "generation_video_2026": {
         "source": "https://github.com/Vchitect/VBench",
         "git": "https://github.com/Vchitect/VBench.git",
@@ -350,6 +406,10 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "hf": [{"id": "hlt-lab/voicebench", "config": "ifeval", "splits": ["test"]}],
         "kind": "audio_generation",
         "splits": ["test"],
+    },
+    "generation_ttsds2_2026": {
+        "source": "https://arxiv.org/abs/2506.19441",
+        "kind": "audio_generation",
     },
     "generation_avgen_bench_2026": {
         "source": "https://microsoft.github.io/AVGen-Bench/",
@@ -1256,6 +1316,69 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     return summary
 
 
+def audit_profile(args: argparse.Namespace) -> dict[str, Any]:
+    profile = load_profile(args.profile)
+    records = profile_record_map(profile)
+    roots = profile.get("reportable_task_roots") if isinstance(profile.get("reportable_task_roots"), dict) else {}
+    snapshots = profile.get("reportable_snapshots") if isinstance(profile.get("reportable_snapshots"), dict) else {}
+    core_ids = [str(item) for item in profile.get("reportable_core_25") or []]
+    selected = selected_benchmark_ids(profile, args)
+    selected_set = set(selected)
+
+    missing_materializer = sorted(
+        benchmark_id
+        for benchmark_id in selected
+        if benchmark_id not in KNOWN_BENCHMARKS and benchmark_id not in snapshots and benchmark_id not in roots
+    )
+    profile_missing_materializer = sorted(benchmark_id for benchmark_id in selected if benchmark_id not in KNOWN_BENCHMARKS)
+    known_not_profile = sorted(benchmark_id for benchmark_id in KNOWN_BENCHMARKS if benchmark_id not in records)
+    core_missing_profile = sorted(benchmark_id for benchmark_id in core_ids if benchmark_id not in records)
+    core_missing_roots = sorted(benchmark_id for benchmark_id in core_ids if benchmark_id not in roots)
+    core_missing_snapshots = sorted(benchmark_id for benchmark_id in core_ids if benchmark_id not in snapshots)
+    core_missing_materializer = sorted(benchmark_id for benchmark_id in core_ids if benchmark_id in selected_set and benchmark_id not in KNOWN_BENCHMARKS)
+    reportable_without_profile = sorted((set(roots) | set(snapshots)) - set(records))
+
+    fail_reasons: list[str] = []
+    if getattr(args, "fail_missing_materializers", False) and missing_materializer:
+        fail_reasons.append("selected_benchmarks_without_materializer_or_snapshot")
+    if getattr(args, "fail_core25", False):
+        if core_missing_profile:
+            fail_reasons.append("core25_benchmarks_missing_profile_records")
+        if core_missing_roots:
+            fail_reasons.append("core25_benchmarks_missing_reportable_roots")
+        if core_missing_snapshots:
+            fail_reasons.append("core25_benchmarks_missing_reportable_snapshots")
+        if core_missing_materializer:
+            fail_reasons.append("core25_benchmarks_missing_known_materializers")
+    if getattr(args, "fail_known_not_profile", False) and known_not_profile:
+        fail_reasons.append("known_materializers_missing_profile_records")
+
+    return {
+        "schema": "omnicoder.benchmark_materializer_profile_audit_2026.v1",
+        "created_at": utc_now(),
+        "profile": str(resolve_path(args.profile, repo_root())),
+        "suite": str(args.suite),
+        "selected": len(selected),
+        "profile_benchmarks": len(records),
+        "known_materializers": len(KNOWN_BENCHMARKS),
+        "reportable_task_roots": len(roots),
+        "reportable_snapshots": len(snapshots),
+        "status": "failed" if fail_reasons else "passed",
+        "fail_reasons": fail_reasons,
+        "missing_materializer_or_snapshot": missing_materializer,
+        "profile_benchmarks_without_known_materializer": profile_missing_materializer,
+        "known_materializers_without_profile_record": known_not_profile,
+        "reportable_without_profile_record": reportable_without_profile,
+        "core25": {
+            "count": len(core_ids),
+            "missing_profile_record": core_missing_profile,
+            "missing_reportable_task_root": core_missing_roots,
+            "missing_reportable_snapshot": core_missing_snapshots,
+            "missing_known_materializer": core_missing_materializer,
+        },
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Materialize official/public benchmark task JSONLs for Omnicoder 2026")
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
@@ -1275,6 +1398,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     mat = sub.add_parser("materialize", help="Fetch/scan sources and write task JSONLs")
     mat.set_defaults(func=lambda ns: materialize(ns))
+    audit = sub.add_parser("audit-profile", help="Audit benchmark profile materializer and reportable snapshot coverage")
+    audit.add_argument("--fail-core25", action="store_true", help="Exit nonzero when reportable_core_25 lacks profile roots or snapshot descriptors")
+    audit.add_argument("--fail-missing-materializers", action="store_true", help="Exit nonzero for selected benchmarks with no downloader, snapshot, or task root")
+    audit.add_argument("--fail-known-not-profile", action="store_true", help="Exit nonzero when KNOWN_BENCHMARKS entries are absent from the profile")
+    audit.set_defaults(func=lambda ns: audit_profile(ns))
     return parser
 
 
@@ -1283,10 +1411,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.command:
         args.command = "materialize"
-    summary = materialize(args)
+    func = getattr(args, "func", materialize)
+    summary = func(args)
     print(json.dumps(summary, indent=2, sort_keys=True, ensure_ascii=True))
     if args.strict and int(summary.get("needs_data") or 0) > 0:
         return 4
+    if summary.get("status") == "failed":
+        return 5
     return 0
 
 

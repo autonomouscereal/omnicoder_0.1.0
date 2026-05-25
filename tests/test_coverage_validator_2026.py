@@ -29,10 +29,12 @@ def _args(root: Path, run_id: str, **overrides):
         "teacher_rollout_dir": "",
         "mixture_plan": "",
         "reportable_root": "",
+        "benchmark_materialization_root": "",
         "benchmark_materialization_manifest": "",
         "require_media_teacher_rollouts": True,
         "require_reportable_tasks": True,
         "require_official_reportable_tasks": False,
+        "require_local_benchmark_tasks": False,
         "strict": False,
         "out": "",
     }
@@ -124,3 +126,104 @@ def test_coverage_validator_distinguishes_local_from_official_benchmark_material
     assert report["counts"]["official_materialized_benchmark_rows"] == 0
     labels = {item["label"] for item in report["missing"]}
     assert "official_materialized_reportable_tasks" in labels
+
+
+def test_coverage_validator_aggregates_multiple_benchmark_materializations(tmp_path: Path) -> None:
+    local_manifest = tmp_path / "bench_a" / "manifests" / "benchmark_materialization_manifest.json"
+    official_manifest = tmp_path / "bench_b" / "manifests" / "benchmark_materialization_manifest.json"
+    _write_json(
+        local_manifest,
+        {
+            "schema": "omnicoder.benchmark_materializer_2026.v1",
+            "run_id": "bench_a",
+            "rows": 4,
+            "materialized": 1,
+            "needs_data": 0,
+            "records": [
+                {
+                    "benchmark_id": "agent_mcp_bench_2026",
+                    "rows": 4,
+                    "reportable": False,
+                    "local_only": True,
+                }
+            ],
+        },
+    )
+    _write_json(
+        official_manifest,
+        {
+            "schema": "omnicoder.benchmark_materializer_2026.v1",
+            "run_id": "bench_b",
+            "rows": 2,
+            "materialized": 1,
+            "needs_data": 0,
+            "records": [
+                {
+                    "benchmark_id": "reasoning_arc_agi3_2026",
+                    "rows": 2,
+                    "reportable": True,
+                    "local_only": False,
+                }
+            ],
+        },
+    )
+
+    report = coverage.validate_coverage(
+        _args(
+            tmp_path,
+            "run_multi",
+            benchmark_materialization_manifest=[str(local_manifest), str(official_manifest)],
+            require_reportable_tasks=False,
+            require_media_teacher_rollouts=False,
+            require_official_reportable_tasks=True,
+            require_local_benchmark_tasks=True,
+        )
+    )
+
+    assert report["counts"]["local_materialized_benchmark_rows"] == 4
+    assert report["counts"]["official_materialized_benchmark_rows"] == 2
+    assert report["counts"]["local_materialized_benchmark_tasks"]["agent_mcp_bench_2026"] == 4
+    assert report["counts"]["official_materialized_benchmark_tasks"]["reasoning_arc_agi3_2026"] == 2
+    assert len(report["manifests"]["benchmark_materializations"]) == 2
+    labels = {item["label"] for item in report["missing"]}
+    assert "official_materialized_reportable_tasks" not in labels
+    assert "local_materialized_benchmark_tasks" not in labels
+
+
+def test_coverage_validator_counts_reportable_tasks_from_materialization_root(tmp_path: Path) -> None:
+    materialized = tmp_path / "weights" / "data_factory" / "runs" / "benchmark_materialization" / "bench_reportable"
+    _write_jsonl(materialized / "reportable_2026" / "arc_agi3_authorized.jsonl", [{"task_id": "arc"}])
+    _write_json(
+        materialized / "manifests" / "benchmark_materialization_manifest.json",
+        {
+            "schema": "omnicoder.benchmark_materializer_2026.v1",
+            "run_id": "bench_reportable",
+            "rows": 1,
+            "materialized": 1,
+            "needs_data": 0,
+            "records": [
+                {
+                    "benchmark_id": "reasoning_arc_agi3_2026",
+                    "rows": 1,
+                    "reportable": True,
+                    "local_only": False,
+                }
+            ],
+        },
+    )
+
+    report = coverage.validate_coverage(
+        _args(
+            tmp_path,
+            "run_reportable_root",
+            benchmark_materialization_root=[str(materialized)],
+            require_reportable_tasks=True,
+            require_media_teacher_rollouts=False,
+            require_official_reportable_tasks=True,
+        )
+    )
+
+    assert report["counts"]["reportable_tasks"][str(materialized / "reportable_2026" / "arc_agi3_authorized.jsonl")] == 1
+    assert report["counts"]["official_materialized_benchmark_rows"] == 1
+    labels = {item["label"] for item in report["missing"]}
+    assert "reportable_eval_tasks" not in labels
