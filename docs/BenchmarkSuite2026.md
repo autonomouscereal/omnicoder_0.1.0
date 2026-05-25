@@ -130,6 +130,13 @@ OMNICODER_REQUIRE_REPORTABLE_GATE=1 \
 scripts/ai_server_fast_pipeline_20b.sh
 ```
 
+The 20B launcher also accepts the materialization root directly. It will
+automatically add `<root>/reportable_2026` when JSONL files exist there; set
+`OMNICODER_ALLOW_LOCAL_BENCHMARK_TASK_ROOTS=1` only for public-dev regression
+passes that must consume `<root>/local_2026`. Local public-dev rows are useful
+for training realignment and nightly debugging, but they are still not
+reportable release scores.
+
 ### Reportable Prediction Harness
 
 Use `omnicoder.eval.reportable_prediction_harness_2026` to generate the
@@ -193,8 +200,10 @@ RLVR Linearity, Nous RLVR Coding, EditReward-Bench, IESBench, Stable Video
 Infinity, and text-to-audio human preference evaluation. The latest expansion
 also adds ARC-AGI-3 interactive tasks, Terminal-Bench 2.1, BrowserGym/WebArena,
 OSWorld, LiveBench math, split MMMU-Pro standard/vision gates, Video-MME-v2,
-AudioBench/MMAU, VBench 2.0 faithfulness, VBench trustworthiness, Music Arena,
-BFCL v4, and MCPMark/MCP-Universe contracts. These are eval/release gates only;
+AudioBench/MMAU/MMAU-Pro, MMAR, IFEval-Audio through VoiceBench, VBench 2.0
+faithfulness, VBench trustworthiness, Music Arena, BFCL v4, SWE-Lancer, HLE,
+GDPVal, PaperBench, TheAgentCompany, MCP-Bench, and MCPMark/MCP-Universe
+contracts. These are eval/release gates only;
 their hidden labels, media assets, private states, answer keys, and successful
 trajectories do not enter training exports. The broad suite profile includes
 matching contract adapters under reasoning, agent/tool, multimodal,

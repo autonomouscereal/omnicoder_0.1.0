@@ -3744,6 +3744,7 @@ def run_checkpoint_benchmark_gate(
 
     def run_reportable_gate(benchmark_profile: str, run_id: str) -> tuple[dict[str, Any], bool]:
         gates_cfg = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
+        final_reportable_gate = safe_filename(phase) == "full_run_final"
         reportable_roots, reportable_sources = configured_reportable_roots(
             cfg,
             benchmark_profile,
@@ -3825,10 +3826,14 @@ def run_checkpoint_benchmark_gate(
                 "gate_policy": "fail_open" if missing_policy in {"allow", "warn", "skip"} else "fail_closed",
                 "gate_decision": "allowed_needs_data" if missing_policy in {"allow", "warn", "skip"} else "blocked_needs_data",
             }
-            if checkpoint_path.is_dir() and not require_reportable_gate:
+            if checkpoint_path.is_dir() and not require_reportable_gate and not final_reportable_gate:
                 gate["status"] = "pending"
                 gate["gate_decision"] = "pending_needs_data"
                 return gate, False
+            if final_reportable_gate:
+                gate["required"] = True
+                gate["reason"] = "final_reportable_gate_requires_authorized_tasks"
+                return gate, True
             return gate, missing_policy not in {"allow", "warn", "skip"}
 
         reportable_dir = gate_dir / "reportable"
@@ -3847,6 +3852,7 @@ def run_checkpoint_benchmark_gate(
             elif benchmark_cycle == "smoke" and not checkpoint_path.is_dir():
                 prediction_seed = write_reportable_prediction_seed(reportable_paths, reportable_dir / "checkpoint_predictions.jsonl")
             else:
+                required_predictions = require_reportable_gate or final_reportable_gate
                 prediction_seed = {
                     "path": benchmark_predictions_raw,
                     "records": 0,
@@ -3854,17 +3860,17 @@ def run_checkpoint_benchmark_gate(
                     "generation": generated_predictions,
                 }
                 gate = {
-                    "status": "pending" if not require_reportable_gate else "failed",
+                    "status": "failed" if required_predictions else "pending",
                     "reason": "model_generated_predictions_required_for_non_smoke_reportable_gate",
                     "cycle": benchmark_cycle,
                     "configured_predictions": benchmark_predictions_raw,
                     "task_roots": [str(path) for path in reportable_paths],
                     "configured_task_roots": [str(path) for path in reportable_roots],
                     "root_sources": reportable_sources,
-                    "required": require_reportable_gate,
+                    "required": required_predictions,
                     "prediction_generation": generated_predictions,
                 }
-                return gate, require_reportable_gate
+                return gate, required_predictions
 
         reportable_cmd = [
             sys.executable,
@@ -3934,10 +3940,19 @@ def run_checkpoint_benchmark_gate(
             "skipped": reportable_summary.get("skipped"),
             "local_only": reportable_summary.get("local_only"),
         }
+        summary_status = str(reportable_summary.get("status") or "")
+        summary_gate_decision = str(reportable_summary.get("gate_decision") or "")
+        summary_not_reportable = (
+            summary_status != "ok"
+            or summary_gate_decision in {"blocked_needs_data", "pending_needs_data"}
+            or int(reportable_summary.get("reportable") or 0) <= 0
+            or int(reportable_summary.get("local_only") or 0) > 0
+        )
         should_fail = (
             reportable_code != 0
             or reportable_summary_code != 0
-            or reportable_summary.get("gate_decision") == "blocked_needs_data"
+            or summary_gate_decision == "blocked_needs_data"
+            or ((require_reportable_gate or final_reportable_gate) and summary_not_reportable)
         )
         return gate, should_fail
 

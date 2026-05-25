@@ -179,3 +179,25 @@ def test_materializer_reads_mcpmark_meta_json(tmp_path: Path) -> None:
     assert task is not None
     assert task["task_id"] == "task_a"
     assert task["prompt"] == "Move the Notion cards."
+
+
+def test_materializer_tracks_2026_official_source_mirrors() -> None:
+    required = {
+        "agent_mcp_bench_2026",
+        "agent_mcp_universe_2026",
+        "agent_browsecomp_long_context_2026",
+        "agent_theagentcompany_enterprise_2026",
+        "agent_paperbench_2026",
+        "agent_gdpval_2026",
+        "coding_swe_lancer_2026",
+        "reasoning_hle_rolling_2026",
+        "reasoning_rlvr_linearity_math_2026",
+        "coding_nous_rlvr_coding_2026",
+        "multimodal_audiobench_mmau_2026",
+        "multimodal_mmar_audio_music_reasoning_2026",
+        "generation_audio_speech_2026",
+    }
+    assert required.issubset(materializer.KNOWN_BENCHMARKS)
+    voicebench = materializer.KNOWN_BENCHMARKS["generation_audio_speech_2026"]["hf"][0]
+    assert voicebench["id"] == "hlt-lab/voicebench"
+    assert voicebench["config"] == "ifeval"

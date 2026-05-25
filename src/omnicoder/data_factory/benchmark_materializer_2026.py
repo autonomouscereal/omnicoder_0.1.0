@@ -52,6 +52,16 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/eval-sys/mcpmark.git",
         "kind": "tool",
     },
+    "agent_mcp_bench_2026": {
+        "source": "https://github.com/Accenture/mcp-bench",
+        "git": "https://github.com/Accenture/mcp-bench.git",
+        "kind": "tool",
+    },
+    "agent_mcp_universe_2026": {
+        "source": "https://github.com/SalesforceAIResearch/MCP-Universe",
+        "git": "https://github.com/SalesforceAIResearch/MCP-Universe.git",
+        "kind": "tool",
+    },
     "agent_terminal_bench_2026": {
         "source": "https://github.com/harbor-framework/terminal-bench-2",
         "git": "https://github.com/harbor-framework/terminal-bench-2.git",
@@ -77,8 +87,26 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "research",
     },
     "agent_browsecomp_long_context_2026": {
-        "source": "https://openai.com/index/browsecomp/",
+        "source": "https://huggingface.co/datasets/openai/BrowseCompLongContext",
+        "hf": ["openai/BrowseCompLongContext"],
         "kind": "research",
+        "splits": ["test", "validation"],
+    },
+    "agent_theagentcompany_enterprise_2026": {
+        "source": "https://github.com/TheAgentCompany/TheAgentCompany",
+        "git": "https://github.com/TheAgentCompany/TheAgentCompany.git",
+        "kind": "agent_tool",
+    },
+    "agent_paperbench_2026": {
+        "source": "https://github.com/openai/preparedness/tree/main/project/paperbench",
+        "git": "https://github.com/openai/preparedness.git",
+        "kind": "research",
+    },
+    "agent_gdpval_2026": {
+        "source": "https://huggingface.co/datasets/openai/gdpval",
+        "hf": ["openai/gdpval"],
+        "kind": "agent_tool",
+        "splits": ["test", "validation", "train"],
     },
     "coding_swe_bench_live_2026": {
         "source": "https://huggingface.co/datasets/SWE-bench-Live/SWE-bench-Live",
@@ -101,6 +129,17 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "coding",
         "splits": ["test", "validation"],
     },
+    "coding_swe_lancer_2026": {
+        "source": "https://github.com/openai/SWELancer-Benchmark",
+        "git": "https://github.com/openai/SWELancer-Benchmark.git",
+        "kind": "swe",
+    },
+    "coding_nous_rlvr_coding_2026": {
+        "source": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
+        "hf": ["NousResearch/RLVR_Coding_Problems"],
+        "kind": "coding",
+        "splits": ["train", "test", "validation"],
+    },
     "reasoning_livebench_2026": {
         "source": "https://github.com/LiveBench/LiveBench",
         "git": "https://github.com/LiveBench/LiveBench.git",
@@ -110,6 +149,18 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "source": "https://github.com/LiveBench/LiveBench",
         "git": "https://github.com/LiveBench/LiveBench.git",
         "kind": "math",
+    },
+    "reasoning_hle_rolling_2026": {
+        "source": "https://huggingface.co/datasets/cais/hle",
+        "hf": ["cais/hle"],
+        "kind": "reasoning",
+        "splits": ["test", "validation", "train"],
+    },
+    "reasoning_rlvr_linearity_math_2026": {
+        "source": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
+        "hf": ["Miaow-Lab/RLVR-Linearity-Dataset"],
+        "kind": "math",
+        "splits": ["train", "test", "validation"],
     },
     "long_context_mrcr_2026": {
         "source": "https://huggingface.co/datasets/openai/mrcr",
@@ -179,16 +230,39 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "multimodal_audiobench_2026": {
         "source": "https://github.com/AudioLLMs/AudioBench",
         "git": "https://github.com/AudioLLMs/AudioBench.git",
+        "hf": [
+            {"id": "hlt-lab/voicebench", "config": "ifeval", "splits": ["test"]},
+            "gamma-lab-umd/MMAU-test",
+        ],
         "kind": "audio",
+        "splits": ["test"],
     },
     "multimodal_audiobench_mmau_2026": {
-        "source": "https://github.com/AudioLLMs/AudioBench",
+        "source": "https://huggingface.co/datasets/gamma-lab-umd/MMAU-test",
         "git": "https://github.com/AudioLLMs/AudioBench.git",
+        "hf": ["gamma-lab-umd/MMAU-test", "gamma-lab-umd/MMAU-Pro"],
         "kind": "audio",
+        "splits": ["test"],
+    },
+    "multimodal_mmau_pro_2026": {
+        "source": "https://huggingface.co/datasets/gamma-lab-umd/MMAU-Pro",
+        "hf": ["gamma-lab-umd/MMAU-Pro"],
+        "kind": "audio",
+        "splits": ["test"],
     },
     "multimodal_mmar_audio_music_reasoning_2026": {
-        "source": "https://www.microsoft.com/en-us/research/publication/mmar-a-challenging-benchmark-for-deep-reasoning-in-speech-audio-music-and-their-mix/",
+        "source": "https://github.com/ddlBoJack/MMAR",
+        "git": "https://github.com/ddlBoJack/MMAR.git",
         "kind": "audio",
+    },
+    "long_video_longvt_2026": {
+        "source": "https://github.com/EvolvingLMMs-Lab/LongVT",
+        "git": "https://github.com/EvolvingLMMs-Lab/LongVT.git",
+        "kind": "video_audio",
+    },
+    "multimodal_rbench_v_visual_reasoning_2026": {
+        "source": "https://evalmodels.github.io/rbenchv/",
+        "kind": "multimodal_mcq",
     },
     "generation_image_edit_2026": {
         "source": "https://github.com/PKU-YuanGroup/ImgEdit",
@@ -217,10 +291,31 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/Vchitect/VBench.git",
         "kind": "video_generation",
     },
+    "generation_vbenchpp_trustworthiness_2026": {
+        "source": "https://github.com/Vchitect/VBench",
+        "git": "https://github.com/Vchitect/VBench.git",
+        "kind": "video_generation",
+    },
     "generation_audio_speech_2026": {
-        "source": "https://github.com/AudioLLMs/AudioBench",
+        "source": "https://huggingface.co/datasets/hlt-lab/voicebench",
         "git": "https://github.com/AudioLLMs/AudioBench.git",
+        "hf": [{"id": "hlt-lab/voicebench", "config": "ifeval", "splits": ["test"]}],
         "kind": "audio_generation",
+        "splits": ["test"],
+    },
+    "generation_avgen_bench_2026": {
+        "source": "https://microsoft.github.io/AVGen-Bench/",
+        "kind": "video_generation",
+    },
+    "generation_t2i_reasonbench_2026": {
+        "source": "https://github.com/KaiyueSun98/T2I-ReasonBench",
+        "git": "https://github.com/KaiyueSun98/T2I-ReasonBench.git",
+        "kind": "image_generation",
+    },
+    "generation_complexbench_edit_2026": {
+        "source": "https://github.com/llllly26/ComplexBench-Edit",
+        "git": "https://github.com/llllly26/ComplexBench-Edit.git",
+        "kind": "image_generation",
     },
     "generation_music_2026": {
         "source": "https://huggingface.co/datasets/music-arena/music-arena-dataset",
@@ -646,19 +741,37 @@ def clone_repo(repo: str, cache_root: Path, force: bool) -> tuple[Path | None, s
 def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[dict[str, Any]], list[str]]:
     errors: list[str] = []
     try:
-        from datasets import load_dataset  # type: ignore
+        from datasets import Audio, load_dataset  # type: ignore
     except Exception as exc:
         return [], [f"datasets package unavailable: {exc}"]
 
-    for dataset_id in spec.get("hf") or []:
-        for split in spec.get("splits") or ["test", "validation", "train"]:
+    for entry in spec.get("hf") or []:
+        if isinstance(entry, dict):
+            dataset_id = str(entry.get("id") or entry.get("dataset") or "").strip()
+            config = str(entry.get("config") or entry.get("name") or "").strip() or None
+            splits = entry.get("splits") or spec.get("splits") or ["test", "validation", "train"]
+        else:
+            dataset_id = str(entry).strip()
+            config = None
+            splits = spec.get("splits") or ["test", "validation", "train"]
+        if not dataset_id:
+            continue
+        for split in splits:
             try:
-                ds = load_dataset(dataset_id, split=split, cache_dir=str(cache_root / "hf"))
+                if config:
+                    ds = load_dataset(dataset_id, config, split=split, cache_dir=str(cache_root / "hf"))
+                else:
+                    ds = load_dataset(dataset_id, split=split, cache_dir=str(cache_root / "hf"))
+                for column, feature in getattr(ds, "features", {}).items():
+                    if feature.__class__.__name__ == "Audio":
+                        ds = ds.cast_column(column, Audio(decode=False))
                 rows: list[dict[str, Any]] = []
                 for idx, item in enumerate(ds):
                     if isinstance(item, dict):
                         item = dict(item)
                         item.setdefault("_hf_dataset", dataset_id)
+                        if config:
+                            item.setdefault("_hf_config", config)
                         item.setdefault("_hf_split", split)
                         item.setdefault("_source_index", idx)
                         rows.append(item)
@@ -667,7 +780,8 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
                 if rows:
                     return rows, errors
             except Exception as exc:
-                errors.append(f"{dataset_id}:{split}: {exc}")
+                label = f"{dataset_id}:{config}:{split}" if config else f"{dataset_id}:{split}"
+                errors.append(f"{label}: {exc}")
     return [], errors
 
 

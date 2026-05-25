@@ -355,6 +355,15 @@ API-key environment name, or checkpoint-runner command. The fast-card launcher
 quotes the full argv before `bash -lc`, so checkpoint-runner commands with
 spaces remain intact inside Docker.
 
+For the 20B launcher, set `OMNICODER_BENCHMARK_MATERIALIZATION_ROOT` to a
+run-scoped materializer directory and it will feed `reportable_2026` JSONL rows
+into checkpoint evaluation automatically. Public-dev rows under `local_2026`
+are opt-in with `OMNICODER_ALLOW_LOCAL_BENCHMARK_TASK_ROOTS=1`; they are for
+debugging and realignment, not release reporting. The final `full_run_final`
+benchmark gate now fails closed if authorized tasks or model-generated
+predictions are missing, so a full run cannot pass by carrying a pending
+reportable gate.
+
 When a target training container or sidecar builder is actively running, stage
 code/profile updates under `weights/staged_patches/<patch_id>` and apply them
 only after a checkpoint and sidecar boundary. Do not overwrite

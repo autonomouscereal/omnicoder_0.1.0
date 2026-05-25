@@ -65,6 +65,8 @@ BENCHMARK_PREDICTION_MAX_OUTPUT_TOKENS="${OMNICODER_BENCHMARK_PREDICTION_MAX_OUT
 REPORTABLE_TASK_ROOTS="${OMNICODER_REPORTABLE_TASK_ROOTS:-}"
 REQUIRE_REPORTABLE_GATE="${OMNICODER_REQUIRE_REPORTABLE_GATE:-0}"
 RERUN_HELDOUT_EVALS="${OMNICODER_RERUN_HELDOUT_EVALS:-0}"
+BENCHMARK_MATERIALIZATION_ROOT="${OMNICODER_BENCHMARK_MATERIALIZATION_ROOT:-}"
+ALLOW_LOCAL_BENCHMARK_TASK_ROOTS="${OMNICODER_ALLOW_LOCAL_BENCHMARK_TASK_ROOTS:-0}"
 
 cd "$REPO"
 if [[ "$OUT_DIR" == /workspace/weights/* ]]; then
@@ -123,6 +125,14 @@ append_nonempty_arg shared_eval_args --benchmark-prediction-api-key-env "$BENCHM
 append_nonempty_arg shared_eval_args --benchmark-prediction-checkpoint-runner "$BENCHMARK_PREDICTION_CHECKPOINT_RUNNER"
 append_nonzero_arg shared_eval_args --benchmark-prediction-timeout-seconds "$BENCHMARK_PREDICTION_TIMEOUT_SECONDS"
 append_nonzero_arg shared_eval_args --benchmark-prediction-max-output-tokens "$BENCHMARK_PREDICTION_MAX_OUTPUT_TOKENS"
+
+append_reportable_task_root_if_jsonl() {
+  local candidate="$1"
+  if [[ -d "$candidate" ]] && compgen -G "$candidate/*.jsonl" >/dev/null; then
+    shared_eval_args+=(--reportable-task-root "$candidate")
+  fi
+}
+
 if [[ -n "$REPORTABLE_TASK_ROOTS" ]]; then
   IFS=',' read -r -a reportable_task_roots <<< "$REPORTABLE_TASK_ROOTS"
   for reportable_task_root in "${reportable_task_roots[@]}"; do
@@ -130,6 +140,12 @@ if [[ -n "$REPORTABLE_TASK_ROOTS" ]]; then
       shared_eval_args+=(--reportable-task-root "$reportable_task_root")
     fi
   done
+fi
+if [[ -n "$BENCHMARK_MATERIALIZATION_ROOT" ]]; then
+  append_reportable_task_root_if_jsonl "$BENCHMARK_MATERIALIZATION_ROOT/reportable_2026"
+  if truthy "$ALLOW_LOCAL_BENCHMARK_TASK_ROOTS"; then
+    append_reportable_task_root_if_jsonl "$BENCHMARK_MATERIALIZATION_ROOT/local_2026"
+  fi
 fi
 if truthy "$REQUIRE_REPORTABLE_GATE"; then
   shared_eval_args+=(--require-reportable-gate)

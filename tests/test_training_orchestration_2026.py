@@ -413,6 +413,34 @@ def test_pipeline_checkpoint_benchmark_gate_does_not_fail_on_prediction_pending(
     assert result["reportable_gate"]["status"] == "pending"
 
 
+def test_full_run_final_reportable_gate_fails_closed_without_reportable_tasks(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(eval_path, [{"text": "hello world", "modality": "text"}])
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+    }
+    manifest = {"eval_all_jsonl": str(eval_path)}
+
+    def fake_run_command(cmd: list[str], log_path: Path, timeout_seconds: int = 0) -> int:
+        out_path = Path(cmd[cmd.index("--out") + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0}}), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    result = orch.run_checkpoint_benchmark_gate(profile, manifest, tmp_path, checkpoint, "full_run_final", _runtime_args())
+
+    assert result["status"] == "failed"
+    assert result["reportable_gate"]["status"] == "needs_data"
+    assert result["reportable_gate"]["reason"] == "final_reportable_gate_requires_authorized_tasks"
+
+
 def test_pipeline_checkpoint_benchmark_gate_scores_generated_predictions(tmp_path, monkeypatch) -> None:
     checkpoint = tmp_path / "pipeline_ckpt"
     _write_complete_sharded_checkpoint(checkpoint)
