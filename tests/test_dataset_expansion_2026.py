@@ -1540,14 +1540,46 @@ def test_repo_dataset_registry_covers_sixteenth_wave_multimodal_and_agentic_sour
 
     assert by_name["PD12M Public Domain 12M"]["license_tier"] == "public_domain_cc0"
     assert by_name["Meta Omnilingual ASR Corpus"]["license_tier"] == "attribution"
+    assert by_name["PD12M Public Domain 12M"]["contamination_status"] == "clean"
+    assert by_name["Meta Omnilingual ASR Corpus"]["contamination_status"] == "clean"
     assert by_name["AVATAR Audio-Visual Localization"]["materialization_note"].startswith("Large video.zip")
     assert by_name["VideoWebArena"]["repo"] == "https://github.com/ljang0/videowebarena.git"
     assert by_name["SWE-bench Multimodal"]["splits"] == ["dev", "test"]
 
     assert expansion.source_use_bucket(by_name["PD12M Public Domain 12M"]) == "train"
     assert expansion.source_use_bucket(by_name["Meta Omnilingual ASR Corpus"]) == "train"
+    assert expansion.training_bucket_for_record(by_name["PD12M Public Domain 12M"], {"caption": "public domain image caption"}) == "train"
+    assert expansion.training_bucket_for_record(by_name["Meta Omnilingual ASR Corpus"], {"text": "public ASR transcript"}) == "train"
     for name in set(expected_policy) - {"PD12M Public Domain 12M", "Meta Omnilingual ASR Corpus"}:
         assert expansion.source_use_bucket(by_name[name]) != "train"
+
+
+def test_repo_dataset_registry_covers_seventeenth_wave_feature_tool_and_generation_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "seventeenth_wave_agentic_coding_generation_eval_2026_05_25"
+
+    expected_policy = {
+        "BFCL Function Calling Leaderboard": "eval_only",
+        "FEA-Bench Repository Feature Implementation": "eval_only",
+        "WorldGenBench T2I World Knowledge": "research_internal",
+        "OmniGenBench Image Generation": "eval_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    assert by_name["BFCL Function Calling Leaderboard"]["hf_id"] == "gorilla-llm/Berkeley-Function-Calling-Leaderboard"
+    assert by_name["FEA-Bench Repository Feature Implementation"]["hf_id"] == "microsoft/FEA-Bench"
+    assert by_name["WorldGenBench T2I World Knowledge"]["hf_id"] == "worldrl/WorldGenBench"
+    assert by_name["OmniGenBench Image Generation"]["repo"] == "https://github.com/emilia113/OmniGenBench.git"
+
+    assert expansion.source_use_bucket(by_name["BFCL Function Calling Leaderboard"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["FEA-Bench Repository Feature Implementation"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["WorldGenBench T2I World Knowledge"]) != "train"
+    assert expansion.source_use_bucket(by_name["OmniGenBench Image Generation"]) == "eval_holdout"
 
 
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:

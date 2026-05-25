@@ -1060,7 +1060,13 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard",
-        "use_policy": "eval_only"
+        "use_policy": "eval_only",
+        "last_verified": "2026-05-25",
+        "source_year": 2026,
+        "registry_wave": "seventeenth_wave_agentic_coding_generation_eval_2026_05_25",
+        "notes": [
+          "BFCL v4 leaderboard checked 2026-05-25; keep public answer keys out of train."
+        ]
       },
       {
         "curriculum_axes": [
@@ -24895,7 +24901,10 @@
         ],
         "target_modality": "image",
         "url": "https://huggingface.co/datasets/Spawning/PD12M",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25"
       },
       {
         "curriculum_axes": [
@@ -25012,7 +25021,10 @@
         ],
         "target_modality": "audio",
         "url": "https://huggingface.co/datasets/facebook/omnilingual-asr-corpus",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25"
       },
       {
         "curriculum_axes": [
@@ -25292,6 +25304,117 @@
         "source_year": 2025,
         "target_modality": "image",
         "url": "https://arxiv.org/abs/2506.09988",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "repo_feature_implementation",
+          "real_pr_tasks",
+          "hidden_tests",
+          "benchmark_holdout"
+        ],
+        "family": "coding_agentic",
+        "field_map": {
+          "id": [
+            "instance_id",
+            "id"
+          ],
+          "prompt": [
+            "problem_statement",
+            "issue",
+            "repo",
+            "pull_number"
+          ],
+          "target": [
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS",
+            "patch",
+            "test_patch"
+          ]
+        },
+        "hf_id": "microsoft/FEA-Bench",
+        "last_verified": "2026-05-25",
+        "license": "HF license is other; upstream repo licenses and GitHub reconstruction terms require review",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1401,
+        "name": "FEA-Bench Repository Feature Implementation",
+        "registry_wave": "seventeenth_wave_agentic_coding_generation_eval_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "code",
+        "url": "https://huggingface.co/datasets/microsoft/FEA-Bench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "world_knowledge_t2i",
+          "implicit_visual_reasoning",
+          "checklist_reward",
+          "license_review"
+        ],
+        "family": "image_generation_editing",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "region",
+            "domain"
+          ],
+          "prompt": [
+            "prompt",
+            "Prompt",
+            "prompt_en",
+            "text"
+          ],
+          "target": [
+            "knowledge_checklist",
+            "checklist",
+            "Knowledge Checklist",
+            "requirements"
+          ]
+        },
+        "hf_id": "worldrl/WorldGenBench",
+        "last_verified": "2026-05-25",
+        "license": "HF card does not declare a clear redistribution license; use internally until license review clears train promotion",
+        "license_tier": "source_review",
+        "max_records": 1072,
+        "name": "WorldGenBench T2I World Knowledge",
+        "registry_wave": "seventeenth_wave_agentic_coding_generation_eval_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "image",
+        "url": "https://huggingface.co/datasets/worldrl/WorldGenBench",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "omnigenbench",
+          "image_instruction_following",
+          "perception_cognition_generation",
+          "benchmark_holdout"
+        ],
+        "distillation_prompts": [
+          {
+            "instruction": "Create an OmniGenBench-style image-generation eval descriptor with task family, instruction, input images/placeholders, expected visual constraints, and hidden evaluator rubric.",
+            "target": "jsonl image generation instruction-following eval descriptor with hidden scoring policy"
+          }
+        ],
+        "family": "image_generation_editing",
+        "last_verified": "2026-05-25",
+        "license": "Paper and GitHub source require repository-level license/source review before mirroring data",
+        "license_tier": "benchmark_holdout_review",
+        "materialization_note": "Use authorized descriptor/source override; do not scrape benchmark answer keys into train.",
+        "max_records": 256,
+        "name": "OmniGenBench Image Generation",
+        "registry_wave": "seventeenth_wave_agentic_coding_generation_eval_2026_05_25",
+        "repo": "https://github.com/emilia113/OmniGenBench.git",
+        "source_year": 2025,
+        "target_modality": "image",
+        "url": "https://arxiv.org/abs/2505.18775",
         "use_policy": "eval_only"
       }
     ],

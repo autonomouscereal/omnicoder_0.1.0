@@ -337,6 +337,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "swe_repo_multimodal",
         "splits": ["dev", "test"],
     },
+    "coding_fea_bench_2026": {
+        "source": "https://huggingface.co/datasets/microsoft/FEA-Bench",
+        "hf": [{"id": "microsoft/FEA-Bench", "splits": ["test"]}],
+        "kind": "swe_repo_feature_implementation",
+        "splits": ["test"],
+    },
     "coding_contextbench_2026": {
         "source": "https://huggingface.co/datasets/Contextbench/ContextBench",
         "hf": [
@@ -845,6 +851,18 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     },
     "generation_editinspector_2026": {
         "source": "https://arxiv.org/abs/2506.09988",
+        "snapshot_requires_operator_manifest": True,
+        "kind": "image_generation",
+    },
+    "generation_worldgenbench_2026": {
+        "source": "https://huggingface.co/datasets/worldrl/WorldGenBench",
+        "hf": [{"id": "worldrl/WorldGenBench", "splits": ["train"]}],
+        "kind": "image_generation",
+        "splits": ["train"],
+    },
+    "generation_omnigenbench_2026": {
+        "source": "https://arxiv.org/abs/2505.18775",
+        "git": "https://github.com/emilia113/OmniGenBench.git",
         "snapshot_requires_operator_manifest": True,
         "kind": "image_generation",
     },
@@ -1906,6 +1924,7 @@ def normalize_task(
         raw,
         (
             "prompt",
+            "Prompt",
             "question",
             "instruction",
             "query",
@@ -1988,6 +2007,9 @@ def normalize_task(
             "full_code",
             "expected_markdown",
             "rule",
+            "knowledge_checklist",
+            "Knowledge Checklist",
+            "requirements",
         ),
     )
     if answer is None and isinstance(raw.get("multi_choice_QA"), dict):

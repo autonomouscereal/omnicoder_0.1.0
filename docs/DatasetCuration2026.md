@@ -254,6 +254,11 @@ Current high-value registry families:
   license/source review clears them, and register AVATAR, VideoWebArena,
   OSUniverse, SWE-bench Multimodal, LOFT, FrontierMath, GIE-Bench, and
   EditInspector as protected eval/benchmark-holdout sources.
+- Seventeenth-wave May 25, 2026 additions add BFCL v4 function-calling,
+  FEA-Bench repository feature implementation, WorldGenBench T2I world
+  knowledge, and OmniGenBench image-generation instruction following. BFCL,
+  FEA-Bench, and OmniGenBench stay eval-only; WorldGenBench stays
+  research-internal until license review clears any train promotion.
 - Thirteenth-wave May 25, 2026 additions: Agentic-MME, ABC-Bench,
   LongBench-Pro, MEGA-Bench, StepEval-Audio-360, and IndiMathBench are
   registered as eval/benchmark-holdout sources under

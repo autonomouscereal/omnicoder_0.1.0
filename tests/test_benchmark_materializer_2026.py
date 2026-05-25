@@ -942,6 +942,47 @@ def test_materializer_normalizes_fifteenth_wave_descriptor_rows() -> None:
     assert parsebench["answer"] == {"labels": ["IF"], "value": "0.8079"}
 
 
+def test_materializer_normalizes_seventeenth_wave_generation_and_feature_rows() -> None:
+    fea = materializer.normalize_task(
+        "coding_fea_bench_2026",
+        {
+            "instance_id": "Aider-AI__aider-207",
+            "repo": "Aider-AI/aider",
+            "base_commit": "43047c38358d7453c5778d4415475f152e4c562e",
+            "FAIL_TO_PASS": ["tests/test_coder.py::TestCoder::test_allowed_to_edit"],
+            "PASS_TO_PASS": ["tests/test_coder.py::TestCoder::test_check_for_file_mentions"],
+        },
+        materializer.KNOWN_BENCHMARKS["coding_fea_bench_2026"],
+        {"adapter_kind": "repo_feature_implementation_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        1,
+    )
+    worldgen = materializer.normalize_task(
+        "generation_worldgenbench_2026",
+        {
+            "Prompt": "A historical scene that requires implicit cultural grounding.",
+            "Knowledge Checklist": [{"item": "period-accurate clothing", "explanation": "derived world knowledge"}],
+            "region": "Europe",
+            "domain": "Humanities",
+        },
+        materializer.KNOWN_BENCHMARKS["generation_worldgenbench_2026"],
+        {"adapter_kind": "worldgenbench_t2i_knowledge_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        1,
+    )
+
+    assert fea is not None
+    assert fea["repo"] == "Aider-AI/aider"
+    assert fea["FAIL_TO_PASS"] == ["tests/test_coder.py::TestCoder::test_allowed_to_edit"]
+    assert worldgen is not None
+    assert worldgen["prompt"].startswith("A historical scene")
+    assert worldgen["answer"] == [{"item": "period-accurate clothing", "explanation": "derived world knowledge"}]
+
+
 def test_smmbench_cluster_qa_rows_are_scorable_and_imagefolder_rows_are_rejected(tmp_path: Path) -> None:
     root = tmp_path / "smmbench"
     cluster = root / "Dataset" / "Samples" / "cluster_1"
@@ -1193,6 +1234,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["agent_webgym_tasks_2026"]["hf"][0]["id"] == "microsoft/webgym_tasks"
     assert materializer.KNOWN_BENCHMARKS["agent_videowebarena_2026"]["git"] == "https://github.com/ljang0/videowebarena.git"
     assert materializer.KNOWN_BENCHMARKS["agent_osuniverse_gui_2026"]["git"] == "https://github.com/agentsea/osuniverse.git"
+    assert materializer.KNOWN_BENCHMARKS["agent_bfcl_v4_2026"]["hf"] == ["gorilla-llm/Berkeley-Function-Calling-Leaderboard"]
     omniagentbench = materializer.KNOWN_BENCHMARKS["agent_omniagentbench_2026"]
     assert omniagentbench["source"] == "https://huggingface.co/datasets/omniagentbench/OmniAgentBench"
     assert omniagentbench["snapshot_requires_operator_manifest"] is True
@@ -1201,6 +1243,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["agent_ui_vision_2026"]["hf"][0]["id"] == "ServiceNow/ui-vision"
     assert materializer.KNOWN_BENCHMARKS["coding_beyondswe_2026"]["hf"][0]["id"] == "AweAI-Team/BeyondSWE"
     assert materializer.KNOWN_BENCHMARKS["coding_swe_bench_multimodal_2026"]["hf"][0]["id"] == "SWE-bench/SWE-bench_Multimodal"
+    assert materializer.KNOWN_BENCHMARKS["coding_fea_bench_2026"]["hf"][0]["id"] == "microsoft/FEA-Bench"
     assert materializer.KNOWN_BENCHMARKS["coding_contextbench_2026"]["hf"][0]["id"] == "Contextbench/ContextBench"
     assert materializer.KNOWN_BENCHMARKS["coding_ccbench_2026"]["git"] == "https://github.com/codecrafters-io/ccbench.git"
     assert materializer.KNOWN_BENCHMARKS["coding_computeeval_cuda_2026"]["hf"][0]["id"] == "nvidia/compute-eval"
@@ -1210,6 +1253,8 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["multimodal_avatar_av_localization_2026"]["snapshot_requires_operator_manifest"] is True
     assert materializer.KNOWN_BENCHMARKS["generation_gie_bench_2026"]["snapshot_requires_operator_manifest"] is True
     assert materializer.KNOWN_BENCHMARKS["generation_editinspector_2026"]["snapshot_requires_operator_manifest"] is True
+    assert materializer.KNOWN_BENCHMARKS["generation_worldgenbench_2026"]["hf"][0]["id"] == "worldrl/WorldGenBench"
+    assert materializer.KNOWN_BENCHMARKS["generation_omnigenbench_2026"]["snapshot_requires_operator_manifest"] is True
     assert materializer.KNOWN_BENCHMARKS["long_context_longcodebench_2026"]["hf"][0]["id"] == "Steefano/LCB"
     assert materializer.KNOWN_BENCHMARKS["long_context_ama_bench_2026"]["hf"][0]["id"] == "AMA-bench/AMA-bench"
     assert materializer.KNOWN_BENCHMARKS["long_context_officeqa_2026"]["hf"][0]["id"] == "databricks/officeqa"

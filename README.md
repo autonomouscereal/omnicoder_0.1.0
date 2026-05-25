@@ -236,6 +236,11 @@ mix:
   in research-internal review, and add protected eval gates for VideoWebArena,
   OSUniverse, AVATAR, SWE-bench Multimodal, LOFT, FrontierMath, GIE-Bench, and
   EditInspector.
+- Seventeenth-wave May 25, 2026 additions close the agentic/coding/generation
+  gaps from the latest scout pass: BFCL v4 is registered as an eval-only
+  function-calling source, FEA-Bench as a repo feature-implementation holdout,
+  WorldGenBench as a license-reviewed T2I world-knowledge reward/eval source,
+  and OmniGenBench as an authorized-snapshot image-generation gate.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for

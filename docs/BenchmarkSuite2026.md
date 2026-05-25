@@ -186,6 +186,12 @@ EditInspector. Large-media or private/control-plane benchmarks are represented
 as authorized snapshot contracts first; public-dev materialization is bounded
 and must not stream multi-GB archives or private rubrics.
 
+The seventeenth-wave additions add FEA-Bench for repository-level feature
+implementation, WorldGenBench for world-knowledge T2I generation checks, and
+OmniGenBench for broad image-generation instruction following. BFCL v4 is also
+mirrored into the dataset curation registry as an eval-only function-calling
+source. These are release gates, not training-answer feeds.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \

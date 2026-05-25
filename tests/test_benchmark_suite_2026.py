@@ -364,6 +364,26 @@ def test_suite_profile_includes_sixteenth_wave_video_gui_av_and_edit_gates() -> 
     assert adapters["long_context_loft_2026"]["source"] == "https://github.com/google-deepmind/loft"
 
 
+def test_suite_profile_includes_seventeenth_wave_feature_and_generation_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    expected = {
+        "coding_fea_bench_2026": "coding_release",
+        "generation_worldgenbench_2026": "generation_release",
+        "generation_omnigenbench_2026": "generation_release",
+    }
+    for adapter_id, gate in expected.items():
+        assert adapter_id in adapters
+        assert adapter_id in suite["release_gates"][gate]
+        assert adapter_id in suite["reportable_snapshots"]
+        assert adapter_id in suite["reportable_task_roots"]
+
+    assert "git" in adapters["coding_fea_bench_2026"]["modalities"]
+    assert "image" in adapters["generation_worldgenbench_2026"]["modalities"]
+    assert adapters["generation_omnigenbench_2026"]["source"] == "https://arxiv.org/abs/2505.18775"
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")

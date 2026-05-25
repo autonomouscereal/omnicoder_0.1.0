@@ -6023,6 +6023,92 @@
         "release": "locked authorized EditInspector snapshot"
       },
       "task_format": "jsonl_image_edit_inspection_task"
+    },
+    {
+      "adapter_kind": "repo_feature_implementation_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_fea_bench_2026",
+      "holdout_policy": [
+        "hide_gold_patches",
+        "hide_hidden_tests",
+        "record_repo_reconstruction_revision"
+      ],
+      "metrics": [
+        "patch_applies",
+        "hidden_tests_pass_rate",
+        "intent_match_score",
+        "regression_rate"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "git",
+        "tests"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/microsoft/FEA-Bench",
+      "splits": {
+        "smoke": "one repository feature-implementation task",
+        "nightly": "repo/language-balanced FEA-Bench slice",
+        "release": "locked authorized FEA-Bench snapshot"
+      },
+      "task_format": "jsonl_repo_feature_implementation_task"
+    },
+    {
+      "adapter_kind": "worldgenbench_t2i_knowledge_eval",
+      "axis": "image_generation",
+      "benchmark_id": "generation_worldgenbench_2026",
+      "holdout_policy": [
+        "hide_checklist_labels_until_scoring",
+        "hash_generated_images",
+        "record_judge_model_revision"
+      ],
+      "metrics": [
+        "knowledge_checklist_score",
+        "implicit_reasoning_score",
+        "cultural_grounding_score",
+        "visual_factuality_score"
+      ],
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://huggingface.co/datasets/worldrl/WorldGenBench",
+      "splits": {
+        "smoke": "two world-knowledge T2I prompts",
+        "nightly": "domain/region-balanced WorldGenBench prompt slice",
+        "release": "locked authorized WorldGenBench snapshot"
+      },
+      "task_format": "jsonl_t2i_world_knowledge_checklist_task"
+    },
+    {
+      "adapter_kind": "omnigenbench_image_instruction_eval",
+      "axis": "image_generation",
+      "benchmark_id": "generation_omnigenbench_2026",
+      "holdout_policy": [
+        "hide_eval_rubrics",
+        "separate_perception_and_cognition_oracles",
+        "hash_input_output_images"
+      ],
+      "metrics": [
+        "instruction_following_score",
+        "perception_task_score",
+        "cognition_task_score",
+        "constraint_satisfaction_rate"
+      ],
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://arxiv.org/abs/2505.18775",
+      "splits": {
+        "smoke": "one perception-centric and one cognition-centric image generation task",
+        "nightly": "task-family-balanced OmniGenBench descriptor slice",
+        "release": "locked authorized OmniGenBench snapshot"
+      },
+      "task_format": "jsonl_image_instruction_generation_eval_task"
     }
   ],
   "contamination_controls": [
@@ -6144,7 +6230,8 @@
       "coding_beyondswe_2026",
       "coding_contextbench_2026",
       "coding_ccbench_2026",
-      "coding_computeeval_cuda_2026"
+      "coding_computeeval_cuda_2026",
+      "coding_fea_bench_2026"
     ],
     "deployment_performance_release": [
       "deployment_performance_2026",
@@ -6181,7 +6268,9 @@
       "generation_nv_bench_2026",
       "generation_tricky_tts_2026",
       "generation_gie_bench_2026",
-      "generation_editinspector_2026"
+      "generation_editinspector_2026",
+      "generation_worldgenbench_2026",
+      "generation_omnigenbench_2026"
     ],
     "global_must_pass": [
       "raw_postgresql_schema_applies",
@@ -6541,6 +6630,15 @@
     ],
     "generation_editinspector_2026": [
       "data/eval/reportable_2026/generation_editinspector_authorized.jsonl"
+    ],
+    "coding_fea_bench_2026": [
+      "data/eval/reportable_2026/coding_fea_bench_2026_authorized.jsonl"
+    ],
+    "generation_worldgenbench_2026": [
+      "data/eval/reportable_2026/generation_worldgenbench_2026_authorized.jsonl"
+    ],
+    "generation_omnigenbench_2026": [
+      "data/eval/reportable_2026/generation_omnigenbench_2026_authorized.jsonl"
     ]
   },
   "reportable_snapshots": {
@@ -7174,6 +7272,33 @@
       "snapshot_id": "generation_editinspector-authorized-2026-current",
       "source": "https://arxiv.org/abs/2506.09988",
       "task_root": "data/eval/reportable_2026/generation_editinspector_authorized.jsonl"
+    },
+    "coding_fea_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "coding_fea_bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "coding_fea_bench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/microsoft/FEA-Bench",
+      "task_root": "data/eval/reportable_2026/coding_fea_bench_2026_authorized.jsonl"
+    },
+    "generation_worldgenbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "generation_worldgenbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "generation_worldgenbench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/worldrl/WorldGenBench",
+      "task_root": "data/eval/reportable_2026/generation_worldgenbench_2026_authorized.jsonl"
+    },
+    "generation_omnigenbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "generation_omnigenbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "generation_omnigenbench-authorized-2026-current",
+      "source": "https://arxiv.org/abs/2505.18775",
+      "task_root": "data/eval/reportable_2026/generation_omnigenbench_2026_authorized.jsonl"
     }
   },
   "run_cycles": {
@@ -7255,7 +7380,8 @@
       "https://huggingface.co/datasets/Nicole-Yi/GitTaskBench",
       "https://huggingface.co/datasets/maxRyeery/VeriSoftBench",
       "https://huggingface.co/datasets/MERA-evaluation/SWE-MERA",
-      "https://github.com/SakanaAI/ALE-Bench"
+      "https://github.com/SakanaAI/ALE-Bench",
+      "https://huggingface.co/datasets/microsoft/FEA-Bench"
     ],
     "deployment_quantization_2026": [
       "https://openreview.net/pdf/7d33913c9a4f47c8abb294d6beb85d30124747ca.pdf",
@@ -7273,7 +7399,10 @@
       "https://huggingface.co/datasets/bosonai/EmergentTTS-Eval",
       "https://huggingface.co/datasets/wcy1122/Long-TTS-Eval",
       "https://huggingface.co/datasets/Hui519/TTA-Bench",
-      "https://huggingface.co/datasets/AnonyData/NV-Bench"
+      "https://huggingface.co/datasets/AnonyData/NV-Bench",
+      "https://huggingface.co/datasets/worldrl/WorldGenBench",
+      "https://arxiv.org/abs/2505.18775",
+      "https://github.com/emilia113/OmniGenBench"
     ],
     "long_audio_visual_2026": [
       "https://huggingface.co/papers/2605.07593",
@@ -7340,7 +7469,8 @@
       "https://mcpmark.ai/docs",
       "https://github.com/mbzuai-oryx/Agent-X",
       "https://omni-bench.github.io/",
-      "https://github.com/microsoft/STATE-Bench"
+      "https://github.com/microsoft/STATE-Bench",
+      "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard"
     ],
     "reasoning_2026": [
       "https://matharena.ai/",
