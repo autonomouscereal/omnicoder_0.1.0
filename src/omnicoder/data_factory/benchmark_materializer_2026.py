@@ -21,6 +21,11 @@ import time
 from pathlib import Path
 from typing import Any
 
+try:
+    import tomllib
+except Exception:  # pragma: no cover - Python < 3.11 fallback path
+    tomllib = None  # type: ignore[assignment]
+
 
 SCHEMA = "omnicoder.benchmark_materializer_2026.v1"
 TASK_SCHEMA = "omnicoder.benchmark_task_2026.v1"
@@ -531,14 +536,67 @@ def read_yaml_rows(path: Path) -> list[dict[str, Any]]:
     return [row] if row else []
 
 
+def read_toml_row(path: Path) -> dict[str, Any]:
+    row: dict[str, Any] = {}
+    if tomllib is not None:
+        try:
+            payload = tomllib.loads(path.read_text(encoding="utf-8", errors="ignore"))
+            if isinstance(payload, dict):
+                row.update(payload)
+        except Exception:
+            row = {}
+    if not row:
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            row[key.strip()] = value.strip().strip("'\"")
+    instruction = path.with_name("instruction.md")
+    if instruction.exists():
+        row.setdefault("instruction", instruction.read_text(encoding="utf-8", errors="ignore").strip())
+    readme = path.with_name("README.md")
+    if readme.exists():
+        row.setdefault("readme", readme.read_text(encoding="utf-8", errors="ignore").strip()[:20000])
+    row.setdefault("task_id", path.parent.name)
+    row.setdefault("_source_file", str(path))
+    return row
+
+
+def special_descriptor_files(path: Path) -> list[Path]:
+    if not path.is_dir():
+        return []
+    files: list[Path] = []
+    files.extend(sorted(item for item in path.rglob("meta.json") if "tasks" in item.parts))
+    files.extend(sorted(path.rglob("task.toml")))
+    return files
+
+
 def scan_local_source(path: Path, limit: int) -> tuple[list[dict[str, Any]], list[str]]:
     errors: list[str] = []
     rows: list[dict[str, Any]] = []
     files: list[Path]
+    special_rows: list[dict[str, Any]] = []
+    for descriptor in special_descriptor_files(path):
+        if len(special_rows) >= limit:
+            break
+        try:
+            if descriptor.name == "meta.json":
+                row = read_json(descriptor)
+                if row:
+                    row.setdefault("_source_file", str(descriptor))
+                    row.setdefault("task_id", row.get("task_id") or descriptor.parent.name)
+                    special_rows.append(row)
+            elif descriptor.name == "task.toml":
+                special_rows.append(read_toml_row(descriptor))
+        except Exception as exc:
+            errors.append(f"{descriptor}: {exc}")
+    if special_rows:
+        return special_rows[:limit], errors
+
     if path.is_file():
         files = [path]
     elif path.is_dir():
-        patterns = ("*.jsonl", "*.json", "*.csv", "*.yaml", "*.yml")
+        patterns = ("*.jsonl", "*.json", "*.csv", "*.yaml", "*.yml", "*.toml")
         files = []
         for pattern in patterns:
             files.extend(sorted(path.rglob(pattern)))
@@ -558,6 +616,8 @@ def scan_local_source(path: Path, limit: int) -> tuple[list[dict[str, Any]], lis
                 loaded = read_csv_rows(file_path, limit - len(rows))
             elif suffix in {".yaml", ".yml"}:
                 loaded = read_yaml_rows(file_path)
+            elif suffix == ".toml":
+                loaded = [read_toml_row(file_path)]
             else:
                 loaded = []
             for row in loaded:
@@ -682,7 +742,21 @@ def normalize_task(
         ),
     )
     choices = normalize_choices(first_value(raw, ("choices", "options", "candidates", "endings", "answers")))
-    answer = first_value(raw, ("answer", "target", "gold", "label", "answer_key", "answerKey", "correct_answer", "expected"))
+    answer = first_value(
+        raw,
+        (
+            "answer",
+            "target",
+            "gold",
+            "label",
+            "answer_key",
+            "answerKey",
+            "correct_answer",
+            "expected",
+            "reference",
+            "gold_answer",
+        ),
+    )
     row: dict[str, Any] = {
         "schema": TASK_SCHEMA,
         "benchmark_id": benchmark_id,

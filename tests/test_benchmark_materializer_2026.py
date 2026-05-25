@@ -132,3 +132,50 @@ def test_materializer_writes_run_scoped_authorized_rows(tmp_path: Path) -> None:
     assert rows[0]["snapshot_id"] == "mmmu-pro-authorized-2026-current"
     assert rows[0]["snapshot_authorization"] == "official_or_authorized_current_release"
     assert manifest["records"][0]["reportable"] is True
+
+
+def test_materializer_reads_terminal_task_toml_and_instruction(tmp_path: Path) -> None:
+    root = tmp_path / "terminal"
+    task_dir = root / "repair-cli"
+    task_dir.mkdir(parents=True)
+    (task_dir / "task.toml").write_text('timeout = 300\ncategory = "shell"\n', encoding="utf-8")
+    (task_dir / "instruction.md").write_text("Fix the CLI and make the tests pass.", encoding="utf-8")
+
+    rows, errors = materializer.scan_local_source(root, 8)
+    task = materializer.normalize_task(
+        "agent_terminal_bench_2026",
+        rows[0],
+        {"kind": "terminal", "source": "fixture"},
+        {"adapter_kind": "container_terminal_task"},
+        {},
+        "public-dev",
+        str(root),
+        0,
+    )
+
+    assert errors == []
+    assert task is not None
+    assert task["task_id"] == "repair-cli"
+    assert "Fix the CLI" in task["prompt"]
+
+
+def test_materializer_reads_mcpmark_meta_json(tmp_path: Path) -> None:
+    meta = tmp_path / "mcp" / "tasks" / "notion" / "easy" / "task_a" / "meta.json"
+    _write_json(meta, {"task_id": "task_a", "description": "Move the Notion cards.", "mcp": ["notion"]})
+
+    rows, errors = materializer.scan_local_source(tmp_path / "mcp", 8)
+    task = materializer.normalize_task(
+        "agent_mcp_workflows_2026",
+        rows[0],
+        {"kind": "tool", "source": "fixture"},
+        {"adapter_kind": "mcp_fixture_adapter"},
+        {},
+        "public-dev",
+        str(tmp_path / "mcp"),
+        0,
+    )
+
+    assert errors == []
+    assert task is not None
+    assert task["task_id"] == "task_a"
+    assert task["prompt"] == "Move the Notion cards."
