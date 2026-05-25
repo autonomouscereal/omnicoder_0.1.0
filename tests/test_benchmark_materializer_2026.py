@@ -294,6 +294,27 @@ def test_materializer_reads_agent_company_scenarios_with_task_prompt(tmp_path: P
     assert task["checkpoints"] == "- feedback collected"
 
 
+def test_materializer_normalizes_long_context_prompt_aliases() -> None:
+    task = materializer.normalize_task(
+        "long_context_longproc_2026",
+        {
+            "id": "html_to_tsv_0.5k_001",
+            "input_prompt": "Extract the requested rows from the long HTML document.",
+            "reference_output": "name\tprice\nexample\t1",
+        },
+        {"kind": "long_context", "source": "fixture"},
+        {"adapter_kind": "long_input_long_output_process_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert task is not None
+    assert task["prompt"].startswith("Extract the requested")
+    assert task["answer"] == "name\tprice\nexample\t1"
+
+
 def test_materializer_tracks_2026_official_source_mirrors() -> None:
     required = {
         "agent_mcp_bench_2026",
@@ -325,3 +346,9 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["agent_clawbench_browser_2026"]["hf"][0] == "TIGER-Lab/ClawBench"
     assert materializer.KNOWN_BENCHMARKS["long_context_nolima_1m_2026"]["hf"] == ["amodaresi/NoLiMa"]
     assert materializer.KNOWN_BENCHMARKS["multimodal_audiomarathon_2026"]["hf"][0] == "AudioMarathon/AudioMarathon"
+    assert materializer.KNOWN_BENCHMARKS["coding_swe_rebench_v2_2026"]["splits"] == ["train"]
+    rewardbench = materializer.KNOWN_BENCHMARKS["multimodal_rewardbench2_2026"]["hf"][0]
+    assert rewardbench["id"] == "rl-research/multimodal-rewardbench-2"
+    assert rewardbench["config"] == "edit"
+    oneig = materializer.KNOWN_BENCHMARKS["generation_oneig_bench_2026"]["hf"][0]
+    assert oneig["config"] == "OneIG-Bench"
