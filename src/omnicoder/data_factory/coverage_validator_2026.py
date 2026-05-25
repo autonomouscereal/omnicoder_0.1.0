@@ -60,6 +60,24 @@ def jsonl_counts(paths: list[Path]) -> dict[str, int]:
     return {path.name: count_jsonl(path) for path in sorted(paths)}
 
 
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not path.exists() or not path.is_file():
+        return rows
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(row, dict):
+                rows.append(row)
+    return rows
+
+
 def add_missing(missing: list[dict[str, Any]], label: str, path: Path, reason: str, count: int = 0) -> None:
     missing.append({"label": label, "path": str(path), "reason": reason, "count": count})
 
@@ -190,6 +208,152 @@ def materialization_record_counts(manifests: list[Path]) -> tuple[dict[str, int]
         warnings,
         summaries,
     )
+
+
+def load_profile_core25(profile_path: Path) -> tuple[list[str], dict[str, Any]]:
+    profile = read_json(profile_path)
+    core = profile.get("reportable_core_25") if isinstance(profile.get("reportable_core_25"), list) else []
+    return [str(item) for item in core if str(item).strip()], profile
+
+
+def resolve_reportable_result_artifacts(args: argparse.Namespace, root: Path, run_id: str) -> tuple[list[Path], list[Path]]:
+    summaries = coerce_path_values(getattr(args, "benchmark_reportable_summary", ""))
+    results = coerce_path_values(getattr(args, "benchmark_reportable_results", ""))
+    default_dir = root / "weights" / "data_factory" / "runs" / "benchmark_reportable" / run_id
+    if not summaries:
+        summaries.append(default_dir / "reportable_summary.json")
+    for summary in list(summaries):
+        data = read_json(summary)
+        result_ref = data.get("results") if isinstance(data, dict) else None
+        if result_ref:
+            path = Path(str(result_ref))
+            results.append(path if path.is_absolute() else summary.parent / path)
+    if not results:
+        results.append(default_dir / "reportable_results.jsonl")
+    return summaries, results
+
+
+def valid_reportable_result(row: dict[str, Any], min_tasks: int) -> bool:
+    score_json = row.get("score_json") if isinstance(row.get("score_json"), dict) else {}
+    metrics = row.get("metrics") if isinstance(row.get("metrics"), dict) else {}
+    reportable_task_count = int(metrics.get("reportable_task_count") or score_json.get("task_count") or 0)
+    return (
+        row.get("mode") == "reportable"
+        and row.get("phase") == "reportable_scoring"
+        and row.get("status") == "passed"
+        and bool(score_json.get("reportable_score"))
+        and not bool(score_json.get("contract_only"))
+        and reportable_task_count >= min_tasks
+    )
+
+
+def validate_reportable_gate_results(
+    args: argparse.Namespace,
+    root: Path,
+    run_id: str,
+    missing: list[dict[str, Any]],
+    warnings: list[str],
+) -> dict[str, Any]:
+    profile_path = Path(getattr(args, "benchmark_profile", "") or root / "profiles" / "benchmark_suite_2026.json")
+    core25, _profile = load_profile_core25(profile_path)
+    summaries, result_paths = resolve_reportable_result_artifacts(args, root, run_id)
+    rows: list[dict[str, Any]] = []
+    for path in result_paths:
+        rows.extend(read_jsonl(path))
+    valid_by_benchmark: dict[str, int] = {}
+    min_tasks = int(getattr(args, "min_reportable_tasks", 1) or 1)
+    for row in rows:
+        benchmark_id = str(row.get("benchmark_id") or "")
+        if benchmark_id and valid_reportable_result(row, min_tasks):
+            valid_by_benchmark[benchmark_id] = valid_by_benchmark.get(benchmark_id, 0) + 1
+    summary_data = [read_json(path) for path in summaries if path.exists()]
+    if not summary_data:
+        add_missing(missing, "core25_reportable_summary", summaries[0], "missing_or_unreadable_reportable_summary", 0)
+    if not core25:
+        add_missing(missing, "core25_reportable_profile", profile_path, "missing_or_empty_reportable_core_25", 0)
+    if not rows:
+        add_missing(missing, "core25_reportable_results", result_paths[0], "missing_or_empty_reportable_results", 0)
+    missing_core = [benchmark_id for benchmark_id in core25 if valid_by_benchmark.get(benchmark_id, 0) <= 0]
+    for benchmark_id in missing_core:
+        add_missing(missing, f"core25_reportable_{benchmark_id}", result_paths[0], "missing_passed_reportable_scoring_result", 0)
+    for summary in summary_data:
+        status = summary.get("status")
+        gate_decision = summary.get("gate_decision")
+        if status != "ok":
+            add_missing(missing, "core25_reportable_summary_status", summaries[0], f"reportable_summary_status_{status}", 0)
+        if gate_decision != "passed":
+            add_missing(missing, "core25_reportable_summary_gate", summaries[0], f"reportable_summary_gate_{gate_decision}", 0)
+        if int(summary.get("reportable") or 0) <= 0:
+            add_missing(missing, "core25_reportable_summary_count", summaries[0], "missing_positive_reportable_count", 0)
+        for key in ("failed", "skipped", "local_only"):
+            count = int(summary.get(key) or 0)
+            if count:
+                add_missing(missing, f"core25_reportable_summary_{key}", summaries[0], f"nonzero_{key}", count)
+    return {
+        "profile": str(profile_path),
+        "summary_paths": [str(path) for path in summaries],
+        "result_paths": [str(path) for path in result_paths],
+        "result_rows": len(rows),
+        "valid_reportable_results": sum(valid_by_benchmark.values()),
+        "core25_count": len(core25),
+        "core25_missing": missing_core,
+    }
+
+
+def resolve_prediction_artifacts(args: argparse.Namespace) -> tuple[list[Path], list[Path]]:
+    summaries = coerce_path_values(getattr(args, "reportable_prediction_summary", ""))
+    predictions = coerce_path_values(getattr(args, "reportable_predictions", ""))
+    for summary in list(summaries):
+        data = read_json(summary)
+        prediction_ref = data.get("predictions") if isinstance(data, dict) else None
+        if prediction_ref:
+            path = Path(str(prediction_ref))
+            predictions.append(path if path.is_absolute() else summary.parent / path)
+    return summaries, predictions
+
+
+def validate_prediction_artifacts(
+    args: argparse.Namespace,
+    missing: list[dict[str, Any]],
+    warnings: list[str],
+) -> dict[str, Any]:
+    summaries, prediction_paths = resolve_prediction_artifacts(args)
+    rows: list[dict[str, Any]] = []
+    backend_counts: dict[str, int] = {}
+    bad_rows = 0
+    fixture_rows = 0
+    for path in prediction_paths:
+        for row in read_jsonl(path):
+            rows.append(row)
+            backend = str(row.get("backend") or "")
+            if backend:
+                backend_counts[backend] = backend_counts.get(backend, 0) + 1
+            if backend == "fixture":
+                fixture_rows += 1
+            if (
+                row.get("schema") != "omnicoder.reportable_prediction_2026.v1"
+                or not row.get("task_row_sha256")
+                or not row.get("task_file_sha256")
+                or not row.get("prediction_id")
+            ):
+                bad_rows += 1
+    if not rows:
+        add_missing(missing, "reportable_predictions", prediction_paths[0] if prediction_paths else Path(""), "missing_or_empty_predictions", 0)
+    if bad_rows:
+        add_missing(missing, "reportable_prediction_provenance", prediction_paths[0], "missing_schema_or_task_hashes", bad_rows)
+    if fixture_rows and not bool(getattr(args, "allow_fixture_reportable_predictions", False)):
+        add_missing(missing, "reportable_prediction_backend", prediction_paths[0], "fixture_backend_not_allowed_for_reportable_gate", fixture_rows)
+    for summary in summaries:
+        data = read_json(summary)
+        if data and data.get("status") not in {None, "ok", "passed"}:
+            warnings.append(f"prediction summary status is {data.get('status')}")
+    return {
+        "summary_paths": [str(path) for path in summaries],
+        "prediction_paths": [str(path) for path in prediction_paths],
+        "rows": len(rows),
+        "bad_rows": bad_rows,
+        "backend_counts": backend_counts,
+    }
 
 
 def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
@@ -349,6 +513,14 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
     if getattr(args, "require_local_benchmark_tasks", False) and local_benchmark_rows <= 0:
         add_missing(missing, "local_materialized_benchmark_tasks", benchmark_manifests[0], "missing_or_zero_local_rows", local_benchmark_rows)
 
+    reportable_gate: dict[str, Any] = {}
+    if getattr(args, "require_core25_reportable_results", False):
+        reportable_gate = validate_reportable_gate_results(args, root, run_id, missing, warnings)
+
+    prediction_gate: dict[str, Any] = {}
+    if getattr(args, "require_reportable_predictions", False):
+        prediction_gate = validate_prediction_artifacts(args, missing, warnings)
+
     status = "passed" if not missing else "needs_data"
     return {
         "schema": "omnicoder.dataset_coverage_validator_2026.v1",
@@ -386,6 +558,8 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
             "local_materialized_benchmark_tasks": local_benchmark_counts,
             "official_materialized_benchmark_rows": official_benchmark_rows,
             "local_materialized_benchmark_rows": local_benchmark_rows,
+            "core25_reportable_results": reportable_gate,
+            "reportable_predictions": prediction_gate,
         },
         "manifests": {
             "curated_status": curated_manifest_data.get("status"),
@@ -398,6 +572,8 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
             "benchmark_materializations": benchmark_summaries,
             "benchmark_materialization_schema": "omnicoder.benchmark_materializer_2026.v1" if benchmark_summaries else None,
             "benchmark_materialization_rows": sum(int(item.get("rows") or 0) for item in benchmark_summaries),
+            "reportable_gate": reportable_gate,
+            "prediction_gate": prediction_gate,
         },
         "missing": missing,
         "warnings": warnings,
@@ -418,12 +594,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reportable-root", default="")
     parser.add_argument("--benchmark-materialization-root", action="append", default=[])
     parser.add_argument("--benchmark-materialization-manifest", action="append", default=[])
+    parser.add_argument("--benchmark-profile", default="")
+    parser.add_argument("--benchmark-reportable-summary", action="append", default=[])
+    parser.add_argument("--benchmark-reportable-results", action="append", default=[])
+    parser.add_argument("--reportable-prediction-summary", action="append", default=[])
+    parser.add_argument("--reportable-predictions", action="append", default=[])
+    parser.add_argument("--min-reportable-tasks", type=int, default=1)
     parser.add_argument("--require-media-teacher-rollouts", action="store_true")
     parser.add_argument("--require-modality-teacher-jobs", action="store_true")
     parser.add_argument("--require-mixture-plan", action="store_true")
     parser.add_argument("--require-reportable-tasks", action="store_true")
     parser.add_argument("--require-official-reportable-tasks", action="store_true")
     parser.add_argument("--require-local-benchmark-tasks", action="store_true")
+    parser.add_argument("--require-core25-reportable-results", action="store_true")
+    parser.add_argument("--require-reportable-predictions", action="store_true")
+    parser.add_argument("--allow-fixture-reportable-predictions", action="store_true")
     parser.add_argument("--strict", action="store_true", help="Exit nonzero when required coverage is missing")
     parser.add_argument("--out", default="")
     args = parser.parse_args(argv)

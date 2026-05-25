@@ -31,17 +31,49 @@ def _args(root: Path, run_id: str, **overrides):
         "reportable_root": "",
         "benchmark_materialization_root": "",
         "benchmark_materialization_manifest": "",
+        "benchmark_profile": "",
+        "benchmark_reportable_summary": "",
+        "benchmark_reportable_results": "",
+        "reportable_prediction_summary": "",
+        "reportable_predictions": "",
+        "min_reportable_tasks": 1,
         "require_media_teacher_rollouts": True,
         "require_modality_teacher_jobs": False,
         "require_mixture_plan": False,
         "require_reportable_tasks": True,
         "require_official_reportable_tasks": False,
         "require_local_benchmark_tasks": False,
+        "require_core25_reportable_results": False,
+        "require_reportable_predictions": False,
+        "allow_fixture_reportable_predictions": False,
         "strict": False,
         "out": "",
     }
     values.update(overrides)
     return argparse.Namespace(**values)
+
+
+def _write_minimal_coverage_base(root: Path, run_id: str) -> None:
+    curated = root / "weights" / "curated_datasets_2026" / "runs" / run_id
+    for name in coverage.REQUIRED_TRAIN_FILES:
+        _write_jsonl(curated / "jsonl" / name, [{"text": name}])
+    _write_json(curated / "manifests" / "curation_manifest.json", {"status": "passed"})
+    _write_jsonl(curated / "raw" / "normalized_traces.jsonl", [{"text": "trace"}])
+
+    external = root / "weights" / "external_datasets_2026" / "runs" / run_id
+    _write_json(external / "manifests" / "external_dataset_manifest.json", {"status": "passed", "records": {"train": 3}})
+
+    agentic = root / "weights" / "agentic_tool_training_2026" / "runs" / run_id
+    counts = {name: 2 for name in coverage.REQUIRED_AGENTIC_EXPORTS}
+    _write_json(agentic / "agentic_tool_training_manifest.json", {"status": "passed", "counts": counts})
+
+    teacher = root / "weights" / "data_factory" / "runs" / "teacher_jobs" / run_id
+    _write_jsonl(teacher / "all_jobs.jsonl", [{"job": 1}])
+
+    rollouts = root / "weights" / "data_factory" / "teacher_rollouts" / run_id
+    _write_jsonl(rollouts / "qwen36_agentic_math_code_tool.jsonl", [{"teacher": "qwen"}])
+
+    _write_jsonl(root / "data" / "eval" / "reportable_2026" / "core_canary.jsonl", [{"task_id": "a"}])
 
 
 def test_coverage_validator_reports_missing_materialized_modalities(tmp_path: Path) -> None:
@@ -269,3 +301,184 @@ def test_coverage_validator_counts_reportable_tasks_from_materialization_root(tm
     assert report["counts"]["official_materialized_benchmark_rows"] == 1
     labels = {item["label"] for item in report["missing"]}
     assert "reportable_eval_tasks" not in labels
+
+
+def test_coverage_validator_fails_when_official_rows_exist_without_reportable_scores(tmp_path: Path) -> None:
+    run_id = "reportable_missing_scores"
+    _write_minimal_coverage_base(tmp_path, run_id)
+    profile = tmp_path / "profile.json"
+    _write_json(profile, {"reportable_core_25": ["reasoning_arc_agi3_2026"]})
+    manifest = tmp_path / "bench" / "manifests" / "benchmark_materialization_manifest.json"
+    _write_json(
+        manifest,
+        {
+            "schema": "omnicoder.benchmark_materializer_2026.v1",
+            "rows": 1,
+            "records": [
+                {
+                    "benchmark_id": "reasoning_arc_agi3_2026",
+                    "rows": 1,
+                    "reportable": True,
+                    "local_only": False,
+                }
+            ],
+        },
+    )
+
+    report = coverage.validate_coverage(
+        _args(
+            tmp_path,
+            run_id,
+            benchmark_profile=str(profile),
+            benchmark_materialization_manifest=[str(manifest)],
+            require_media_teacher_rollouts=False,
+            require_core25_reportable_results=True,
+            require_official_reportable_tasks=True,
+        )
+    )
+
+    labels = {item["label"] for item in report["missing"]}
+    assert "official_materialized_reportable_tasks" not in labels
+    assert "core25_reportable_results" in labels
+    assert "core25_reportable_reasoning_arc_agi3_2026" in labels
+
+
+def test_coverage_validator_accepts_core25_reportable_results_with_prediction_artifact(tmp_path: Path) -> None:
+    run_id = "reportable_full"
+    _write_minimal_coverage_base(tmp_path, run_id)
+    profile = tmp_path / "profile.json"
+    _write_json(profile, {"reportable_core_25": ["reasoning_arc_agi3_2026"]})
+    out_dir = tmp_path / "reportable"
+    results = out_dir / "reportable_results.jsonl"
+    predictions = out_dir / "predictions.jsonl"
+    _write_jsonl(
+        results,
+        [
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "mode": "reportable",
+                "phase": "reportable_scoring",
+                "status": "passed",
+                "score_json": {"reportable_score": True, "contract_only": False, "task_count": 1},
+                "metrics": {"reportable_task_count": 1},
+            }
+        ],
+    )
+    _write_json(
+        out_dir / "reportable_summary.json",
+        {"status": "ok", "results": str(results), "gate_decision": "passed", "reportable": 1, "failed": 0, "skipped": 0, "local_only": 0},
+    )
+    _write_jsonl(
+        predictions,
+        [
+            {
+                "schema": "omnicoder.reportable_prediction_2026.v1",
+                "schema_version": "2026-05-24",
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "arc-1",
+                "model": "local-checkpoint",
+                "backend": "checkpoint-runner",
+                "prediction": "answer",
+                "task_row_sha256": "abc",
+                "task_file_sha256": "def",
+                "prediction_id": "pred",
+            }
+        ],
+    )
+    _write_json(
+        out_dir / "prediction_summary.json",
+        {"status": "ok", "schema_version": "2026-05-24", "records": 1, "predictions": str(predictions)},
+    )
+
+    report = coverage.validate_coverage(
+        _args(
+            tmp_path,
+            run_id,
+            benchmark_profile=str(profile),
+            benchmark_reportable_summary=[str(out_dir / "reportable_summary.json")],
+            reportable_prediction_summary=[str(out_dir / "prediction_summary.json")],
+            require_media_teacher_rollouts=False,
+            require_core25_reportable_results=True,
+            require_reportable_predictions=True,
+        )
+    )
+
+    assert report["status"] == "passed"
+    assert report["missing"] == []
+    assert report["counts"]["core25_reportable_results"]["valid_reportable_results"] == 1
+    assert report["counts"]["reportable_predictions"]["backend_counts"] == {"checkpoint-runner": 1}
+
+
+def test_coverage_validator_rejects_contract_only_or_local_only_reportable_result(tmp_path: Path) -> None:
+    run_id = "reportable_contract_only"
+    _write_minimal_coverage_base(tmp_path, run_id)
+    profile = tmp_path / "profile.json"
+    _write_json(profile, {"reportable_core_25": ["agent_terminal_bench_2_1_2026"]})
+    results = tmp_path / "reportable_results.jsonl"
+    _write_jsonl(
+        results,
+        [
+            {
+                "benchmark_id": "agent_terminal_bench_2_1_2026",
+                "mode": "reportable",
+                "phase": "reportable_scoring",
+                "status": "local_only",
+                "score_json": {"reportable_score": False, "contract_only": True, "task_count": 1},
+                "metrics": {"reportable_task_count": 1},
+            }
+        ],
+    )
+    summary = tmp_path / "reportable_summary.json"
+    _write_json(summary, {"status": "needs_data", "results": str(results), "gate_decision": "blocked"})
+
+    report = coverage.validate_coverage(
+        _args(
+            tmp_path,
+            run_id,
+            benchmark_profile=str(profile),
+            benchmark_reportable_summary=[str(summary)],
+            require_media_teacher_rollouts=False,
+            require_core25_reportable_results=True,
+        )
+    )
+
+    labels = {item["label"] for item in report["missing"]}
+    assert "core25_reportable_agent_terminal_bench_2_1_2026" in labels
+    assert "core25_reportable_summary_status" in labels
+    assert "core25_reportable_summary_gate" in labels
+
+
+def test_coverage_validator_rejects_fixture_reportable_predictions_by_default(tmp_path: Path) -> None:
+    run_id = "reportable_fixture_predictions"
+    _write_minimal_coverage_base(tmp_path, run_id)
+    predictions = tmp_path / "predictions.jsonl"
+    _write_jsonl(
+        predictions,
+        [
+            {
+                "schema": "omnicoder.reportable_prediction_2026.v1",
+                "schema_version": "2026-05-24",
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "arc-1",
+                "model": "fixture-local",
+                "backend": "fixture",
+                "prediction": "A",
+                "task_row_sha256": "abc",
+                "task_file_sha256": "def",
+                "prediction_id": "pred",
+            }
+        ],
+    )
+
+    report = coverage.validate_coverage(
+        _args(
+            tmp_path,
+            run_id,
+            reportable_predictions=[str(predictions)],
+            require_media_teacher_rollouts=False,
+            require_reportable_predictions=True,
+        )
+    )
+
+    labels = {item["label"] for item in report["missing"]}
+    assert "reportable_prediction_backend" in labels
