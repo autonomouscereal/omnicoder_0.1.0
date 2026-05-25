@@ -200,9 +200,11 @@ mix:
   `twelfth_wave_agent_memory_state_2026_05_25`, plus STATE-Bench as a
   benchmark-suite gate. These extend long-horizon agent memory, source-
   distributed multimodal memory, and stateful enterprise tool-use evaluation.
-  HF image/audio/video features are cast metadata-only during curation and
-  benchmark materialization so rows can be extracted without media codec
-  failures.
+  SMMBench uses pinned raw `Samples/cluster_*/QA_sample.json` task files; its
+  HF `default/train` imagefolder split is image-only and is rejected for scored
+  benchmark material. HF image/audio/video features are otherwise cast
+  metadata-only during curation and benchmark materialization so rows can be
+  extracted without media codec failures.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for

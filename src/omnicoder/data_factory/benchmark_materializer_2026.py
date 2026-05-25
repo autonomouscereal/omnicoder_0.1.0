@@ -566,7 +566,13 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "multimodal_smmbench_2026": {
         "source": "https://huggingface.co/datasets/HuacanChai/SMMBench",
         "git": "https://github.com/FatCatCHC/SMMBench.git",
-        "hf": [{"id": "HuacanChai/SMMBench", "splits": ["train"]}],
+        "hf": [
+            {
+                "id": "HuacanChai/SMMBench",
+                "revision": "d19ef39f8b73cea533ad34532c6ba9a70637ea25",
+                "files": ["Samples/cluster_*/QA_sample.json"],
+            }
+        ],
         "kind": "multimodal_agent_memory",
         "splits": ["train"],
     },
@@ -1221,6 +1227,7 @@ def special_descriptor_files(path: Path) -> list[Path]:
     files.extend(sorted(path.glob("mcpuniverse/benchmark/configs/mcpuniverse/**/*.json")))
     files.extend(sorted(path.glob("mcpuniverse/benchmark/configs/mcpmark/configs/**/*.json")))
     files.extend(sorted(path.glob("workspaces/tasks/*/scenarios.json")))
+    files.extend(sorted(path.glob("Dataset/Samples/cluster_*/QA_sample.json")))
     files.extend(sorted(item for item in path.rglob("meta.json") if "tasks" in item.parts))
     files.extend(sorted(path.rglob("task.toml")))
     return unique_paths(files)
@@ -1244,6 +1251,12 @@ def scan_local_source(path: Path, limit: int) -> tuple[list[dict[str, Any]], lis
                 special_rows.append(read_mcp_universe_task_row(descriptor))
             elif descriptor.name == "scenarios.json" and "workspaces" in descriptor.parts:
                 special_rows.extend(read_agent_company_scenario_rows(descriptor, limit - len(special_rows)))
+            elif descriptor.name == "QA_sample.json":
+                rows = read_json_rows(descriptor, limit - len(special_rows))
+                for row in rows:
+                    row.setdefault("_source_file", str(descriptor))
+                    row.setdefault("cluster_id", descriptor.parent.name)
+                special_rows.extend(rows)
             elif descriptor.name == "meta.json":
                 row = read_json(descriptor)
                 if row:
@@ -1323,8 +1336,12 @@ def hf_file_rows(
     patterns = [str(item) for item in entry.get("files") or entry.get("file_patterns") or [] if str(item).strip()]
     if not patterns:
         patterns = ["*.jsonl", "*.json", "*.csv"]
+    revision = str(entry.get("revision") or "").strip() or None
     try:
-        files = list_repo_files(dataset_id, repo_type="dataset")
+        list_kwargs: dict[str, Any] = {"repo_type": "dataset"}
+        if revision:
+            list_kwargs["revision"] = revision
+        files = list_repo_files(dataset_id, **list_kwargs)
     except Exception as exc:
         return [], [f"{dataset_id}: list_repo_files failed: {exc}"]
     selected = [
@@ -1337,14 +1354,15 @@ def hf_file_rows(
         if len(rows) >= limit:
             break
         try:
-            local = Path(
-                hf_hub_download(
-                    repo_id=dataset_id,
-                    filename=name,
-                    repo_type="dataset",
-                    cache_dir=str(cache_root / "hf_files"),
-                )
-            )
+            download_kwargs: dict[str, Any] = {
+                "repo_id": dataset_id,
+                "filename": name,
+                "repo_type": "dataset",
+                "cache_dir": str(cache_root / "hf_files"),
+            }
+            if revision:
+                download_kwargs["revision"] = revision
+            local = Path(hf_hub_download(**download_kwargs))
             suffix = local.suffix.lower()
             if suffix == ".jsonl":
                 loaded = read_jsonl_rows(local, limit - len(rows))
@@ -1539,6 +1557,8 @@ def normalize_task(
         ),
     )
     choices = normalize_choices(first_value(raw, ("choices", "choice", "options", "candidates", "endings", "answers", "text_choices", "image_choices")))
+    if choices in (None, "", [], {}) and isinstance(raw.get("multi_choice_QA"), dict):
+        choices = normalize_choices(first_value(raw["multi_choice_QA"], ("multi_choice_QA_options", "options", "choices")))
     if choices in (None, "", [], {}) and (
         raw.get("response_a_text") not in (None, "", [], {}) or raw.get("response_b_text") not in (None, "", [], {})
     ):
@@ -1577,6 +1597,9 @@ def normalize_task(
             "preference",
         ),
     )
+    if answer is None and isinstance(raw.get("multi_choice_QA"), dict):
+        mcq = raw["multi_choice_QA"]
+        answer = first_value(mcq, ("multi_choice_QA_answer", "answer", "label", "target"))
     if prompt is None and raw.get("nums") not in (None, "", [], {}) and raw.get("target") not in (None, "", [], {}):
         prompt = (
             "Solve this Countdown arithmetic task. Use each number at most once "
@@ -1608,6 +1631,18 @@ def normalize_task(
         row["choices"] = choices
     if answer not in (None, "", [], {}):
         row["answer"] = make_jsonable(answer)
+
+    evidence = raw.get("evidence")
+    if isinstance(evidence, dict):
+        for media_key, row_key in (
+            ("image_evidence", "images"),
+            ("video_evidence", "video"),
+            ("audio_evidence", "audio"),
+            ("text_evidence", "ctxs"),
+        ):
+            value = evidence.get(media_key)
+            if value not in (None, "", [], {}):
+                row.setdefault(row_key, make_jsonable(value))
 
     for media_key in (
         "image",
@@ -1728,6 +1763,9 @@ def normalize_task(
         "duration",
         "demographics",
         "rationale",
+        "evidence",
+        "evidence_assignment",
+        "meta_data",
         "query",
         "text_norm",
         "rubric",
@@ -1773,6 +1811,13 @@ def normalize_task(
     return row
 
 
+def is_scorable_task(row: dict[str, Any], spec: dict[str, Any]) -> bool:
+    kind = str(spec.get("kind") or "").lower()
+    if "multimodal_agent_memory" in kind:
+        return bool(row.get("prompt") or row.get("question")) and row.get("answer") not in (None, "", [], {})
+    return True
+
+
 def dedupe_rows(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -1815,8 +1860,10 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
         for idx, raw in enumerate(rows_raw):
             row = normalize_task(benchmark_id, raw, spec, record, snapshot, args.mode, source_ref, idx)
-            if row is not None:
+            if row is not None and is_scorable_task(row, spec):
                 rows.append(row)
+        if rows_raw and not rows:
+            errors.append(f"{benchmark_id}: normalized rows failed scorable task contract")
         rows = dedupe_rows(rows, args.limit)
         output_path = (
             reportable_root_for(profile, benchmark_id, out_root, bool(args.write_profile_reportable_roots))

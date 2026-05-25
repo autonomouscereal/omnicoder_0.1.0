@@ -148,6 +148,11 @@ source-distributed multimodal memory. HF materialization now disables image,
 audio, and video decoding where the `datasets` feature type supports it, so
 public-dev benchmark rows can be extracted on curation sidecars without
 requiring media codecs just to read task metadata.
+For SMMBench specifically, the task contract uses HF raw
+`Samples/cluster_*/QA_sample.json` files pinned to revision
+`d19ef39f8b73cea533ad34532c6ba9a70637ea25`, with the GitHub mirror as
+fallback. The HF `default/train` imagefolder split is image-only and is not a
+valid scorable benchmark source.
 
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \

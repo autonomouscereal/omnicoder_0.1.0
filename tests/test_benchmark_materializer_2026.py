@@ -602,6 +602,64 @@ def test_materializer_normalizes_agentic_omni_benchmark_wave_aliases() -> None:
     assert emergent_tts["rubric"] == {"prosody": "relieved whisper"}
 
 
+def test_smmbench_cluster_qa_rows_are_scorable_and_imagefolder_rows_are_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "smmbench"
+    cluster = root / "Dataset" / "Samples" / "cluster_1"
+    cluster.mkdir(parents=True)
+    _write_json(
+        cluster / "QA_sample.json",
+        [
+            {
+                "id": "QA_sample_1",
+                "question": "Based on Fig. cafe1234, which city is the rail hub?",
+                "answer": "Stockholm",
+                "evidence": {
+                    "image_evidence": ["MMCV_96c7af79fdd893a44fabf2799070879f.png"],
+                    "text_evidence": ["Arlanda Express connects Stockholm Central Station to the airport."],
+                },
+                "multi_choice_QA": {
+                    "multi_choice_QA_answer": 3,
+                    "multi_choice_QA_options": ["Helsinki", "Copenhagen", "Oslo", "Stockholm"],
+                },
+            }
+        ],
+    )
+    rows, errors = materializer.scan_local_source(root, 8)
+
+    assert errors == []
+    assert rows[0]["cluster_id"] == "cluster_1"
+    task = materializer.normalize_task(
+        "multimodal_smmbench_2026",
+        rows[0],
+        {"kind": "multimodal_agent_memory", "source": "fixture"},
+        {"adapter_kind": "multimodal_memory_eval"},
+        {},
+        "public-dev",
+        str(root),
+        0,
+    )
+    image_only = materializer.normalize_task(
+        "multimodal_smmbench_2026",
+        {"image": {"path": "raw_imagefolder_only.png"}},
+        {"kind": "multimodal_agent_memory", "source": "fixture"},
+        {"adapter_kind": "multimodal_memory_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert task is not None
+    assert task["prompt"].startswith("Based on Fig.")
+    assert task["answer"] == "Stockholm"
+    assert task["choices"] == ["Helsinki", "Copenhagen", "Oslo", "Stockholm"]
+    assert task["images"] == ["MMCV_96c7af79fdd893a44fabf2799070879f.png"]
+    assert task["ctxs"] == ["Arlanda Express connects Stockholm Central Station to the airport."]
+    assert materializer.is_scorable_task(task, {"kind": "multimodal_agent_memory"})
+    assert image_only is not None
+    assert not materializer.is_scorable_task(image_only, {"kind": "multimodal_agent_memory"})
+
+
 def test_hf_rows_falls_back_to_raw_hub_files(monkeypatch, tmp_path: Path) -> None:
     remote_file = tmp_path / "mmlong.jsonl"
     _write_jsonl(
@@ -770,7 +828,11 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["generation_tricky_tts_2026"]["hf"] == ["Trelis/tricky-tts-public"]
     assert materializer.KNOWN_BENCHMARKS["agent_state_bench_2026"]["git"] == "https://github.com/microsoft/STATE-Bench.git"
     assert materializer.KNOWN_BENCHMARKS["long_context_ama_bench_2026"]["hf"][0]["id"] == "AMA-bench/AMA-bench"
-    assert materializer.KNOWN_BENCHMARKS["multimodal_smmbench_2026"]["hf"][0]["id"] == "HuacanChai/SMMBench"
+    smmbench = materializer.KNOWN_BENCHMARKS["multimodal_smmbench_2026"]["hf"][0]
+    assert smmbench["id"] == "HuacanChai/SMMBench"
+    assert smmbench["revision"] == "d19ef39f8b73cea533ad34532c6ba9a70637ea25"
+    assert smmbench["files"] == ["Samples/cluster_*/QA_sample.json"]
+    assert materializer.KNOWN_BENCHMARKS["multimodal_smmbench_2026"]["git"] == "https://github.com/FatCatCHC/SMMBench.git"
     rtv = materializer.KNOWN_BENCHMARKS["multimodal_rtv_bench_2026"]["hf"][0]
     assert rtv["id"] == "RTVBench/RTV-Bench"
     assert rtv["files"] == ["*.json", "*.jsonl", "*.csv"]

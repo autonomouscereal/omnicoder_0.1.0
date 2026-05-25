@@ -23649,9 +23649,28 @@
         "max_records": 1024,
         "name": "SMMBench Source-Distributed Multimodal Memory",
         "registry_wave": "twelfth_wave_agent_memory_state_2026_05_25",
+        "remote_files": [
+          {
+            "format": "json",
+            "url": "https://huggingface.co/datasets/HuacanChai/SMMBench/resolve/d19ef39f8b73cea533ad34532c6ba9a70637ea25/Samples/cluster_1/QA_sample.json"
+          },
+          {
+            "format": "json",
+            "url": "https://huggingface.co/datasets/HuacanChai/SMMBench/resolve/d19ef39f8b73cea533ad34532c6ba9a70637ea25/Samples/cluster_2/QA_sample.json"
+          },
+          {
+            "format": "json",
+            "url": "https://huggingface.co/datasets/HuacanChai/SMMBench/resolve/d19ef39f8b73cea533ad34532c6ba9a70637ea25/Samples/cluster_3/QA_sample.json"
+          },
+          {
+            "format": "json",
+            "url": "https://huggingface.co/datasets/HuacanChai/SMMBench/resolve/d19ef39f8b73cea533ad34532c6ba9a70637ea25/Samples/cluster_4/QA_sample.json"
+          }
+        ],
+        "revision": "d19ef39f8b73cea533ad34532c6ba9a70637ea25",
         "source_year": 2026,
         "splits": [
-          "train"
+          "Samples/cluster_*/QA_sample.json"
         ],
         "target_modality": "image",
         "url": "https://huggingface.co/datasets/HuacanChai/SMMBench",

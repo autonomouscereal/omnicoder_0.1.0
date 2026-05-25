@@ -225,16 +225,17 @@ Current high-value registry families:
   `twelfth_wave_agent_memory_state_2026_05_25` and keeps both sources in the
   eval-holdout lane. AMA-Bench adds long-horizon trajectory QA for agent memory;
   SMMBench adds source-distributed multimodal memory over independently
-  originated image/table/screenshot/document-style artifacts. STATE-Bench is
-  wired in the benchmark suite as a stateful tool/memory evaluation rather than
-  as train data, because its value is the locked enterprise task loop and
-  state-mutating scoring contract.
+  originated image/table/screenshot/document-style artifacts. SMMBench curation
+  uses pinned raw `Samples/cluster_*/QA_sample.json` task files; the HF
+  imagefolder split is image-only and remains unsuitable for scored rows.
+  STATE-Bench is wired in the benchmark suite as a stateful tool/memory
+  evaluation rather than as train data, because its value is the locked
+  enterprise task loop and state-mutating scoring contract.
 
 The external loader now casts HF `Audio`, `Video`, and `Image` features with
 `decode=False` before iteration. That keeps metadata rows from VSTAT, Tricky
-TTS, SMMBench, and similar imagefolder/audio/video datasets usable on curation
-sidecars without requiring `torchcodec` or eagerly decoding media during task
-row extraction.
+TTS, and similar audio/video datasets usable on curation sidecars without
+requiring `torchcodec` or eagerly decoding media during task row extraction.
 
 `mixture_controller_2026` turns curation metadata into scheduler inputs for the
 training profile. It caps synthetic ratios, includes provenance/license/quality
