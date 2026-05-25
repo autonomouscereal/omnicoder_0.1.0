@@ -1449,6 +1449,8 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "agent_metr_time_horizon_hcast_2026",
         "agent_agent2_rl_bench_2026",
         "agent_memgym_2026",
+        "agent_agentvidbench_2026",
+        "agent_mcp_server_catalogue_2026",
         "agent_theagentcompany_enterprise_2026",
         "agent_paperbench_2026",
         "agent_gdpval_2026",
@@ -1469,6 +1471,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "reasoning_imo_bench_2026",
         "reasoning_matharena_2026",
         "reasoning_maime2025_2026",
+        "reasoning_math_reasoning_benchmark_2026",
         "reasoning_rlvr_linearity_math_2026",
         "coding_nous_rlvr_coding_2026",
         "coding_multi_swe_bench_2026",
@@ -1478,6 +1481,8 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "long_context_graphwalks_2026",
         "long_context_longproc_2026",
         "long_context_nolima_1m_2026",
+        "long_context_needle1m_mvp_2026",
+        "long_context_merrin_2026",
         "long_context_sagascale_2026",
         "long_context_academiceval_2026",
         "multimodal_audiobench_mmau_2026",
@@ -1532,6 +1537,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "multimodal_real5_omnidocbench_2026",
         "multimodal_smmbench_2026",
         "multimodal_vimul_bench_2026",
+        "omnimodal_final_bench_leaderboard_2026",
     }
     assert required.issubset(materializer.KNOWN_BENCHMARKS)
     voicebench = materializer.KNOWN_BENCHMARKS["generation_audio_speech_2026"]["hf"][0]
@@ -1564,6 +1570,11 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["multimodal_mme_unify_2026"]["hf"][0]["id"] == "wulin222/MME-Unify"
     assert materializer.KNOWN_BENCHMARKS["generation_long_tts_eval_2026"]["hf"][0]["id"] == "wcy1122/Long-TTS-Eval"
     assert materializer.KNOWN_BENCHMARKS["agent_livemcpbench_2026"]["hf"] == ["ICIP/LiveMCPBench"]
+    assert materializer.KNOWN_BENCHMARKS["agent_mcp_server_catalogue_2026"]["hf"][0]["files"] == [
+        "servers.jsonl",
+        "tools.jsonl",
+    ]
+    assert materializer.KNOWN_BENCHMARKS["agent_agentvidbench_2026"]["hf"][0]["config"] == "questions"
     assert materializer.KNOWN_BENCHMARKS["agent_bfcl_v4_tool_calling_2026"]["hf"] == ["gorilla-llm/Berkeley-Function-Calling-Leaderboard"]
     assert materializer.KNOWN_BENCHMARKS["coding_livecodebench_v6_2026"]["hf"][0]["id"] == "livecodebench/code_generation_lite"
     assert materializer.KNOWN_BENCHMARKS["agent_terminal_bench_core_2026"]["hf"] == ["terminal-bench/terminal-bench-2-1"]
@@ -1592,6 +1603,16 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert vstat["id"] == "VSTAT-NeurIPS2026/VSTAT"
     assert "vstat_qa_clean.json" in vstat["files"]
     assert materializer.KNOWN_BENCHMARKS["generation_tricky_tts_2026"]["hf"] == ["Trelis/tricky-tts-public"]
+    assert materializer.KNOWN_BENCHMARKS["reasoning_math_reasoning_benchmark_2026"]["hf"][0]["splits"] == ["test"]
+    assert materializer.KNOWN_BENCHMARKS["long_context_needle1m_mvp_2026"]["hf"][0]["files"] == [
+        "data/needles_50k.json",
+        "data/needles_250k.json",
+        "data/needles_500k.json",
+        "data/needles_1000k.json",
+    ]
+    assert materializer.KNOWN_BENCHMARKS["long_context_merrin_2026"]["snapshot_requires_operator_manifest"] is True
+    final_bench = materializer.KNOWN_BENCHMARKS["omnimodal_final_bench_leaderboard_2026"]["hf"]
+    assert [entry["config"] for entry in final_bench] == ["agent", "image", "llm", "music", "video", "vlm_flagship"]
     assert materializer.KNOWN_BENCHMARKS["agent_state_bench_2026"]["git"] == "https://github.com/microsoft/STATE-Bench.git"
     assert materializer.KNOWN_BENCHMARKS["agent_mcpverse_2026"]["git"] == "https://github.com/hailsham/mcpverse.git"
     awm = materializer.KNOWN_BENCHMARKS["agent_world_model_rl_2026"]["hf"][0]

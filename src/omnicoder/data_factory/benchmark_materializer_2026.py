@@ -89,6 +89,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "tool",
         "splits": ["test"],
     },
+    "agent_mcp_server_catalogue_2026": {
+        "source": "https://huggingface.co/datasets/PolicyLayer/mcp-server-catalogue",
+        "hf": [{"id": "PolicyLayer/mcp-server-catalogue", "files": ["servers.jsonl", "tools.jsonl"]}],
+        "kind": "tool",
+        "splits": ["train"],
+    },
     "agent_sra_bench_2026": {
         "source": "https://huggingface.co/datasets/WeihangSu/SRA-Bench",
         "hf": [{"id": "WeihangSu/SRA-Bench", "files": ["instances/*.json", "corpus/*.json"]}],
@@ -181,6 +187,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "agent_memgym_2026": {
         "source": "https://arxiv.org/abs/2605.20833",
         "kind": "agent_tool",
+    },
+    "agent_agentvidbench_2026": {
+        "source": "https://huggingface.co/datasets/agentvidbench/agentvidbench",
+        "hf": [{"id": "agentvidbench/agentvidbench", "config": "questions", "splits": ["train"]}],
+        "kind": "video_agent",
+        "splits": ["train"],
     },
     "agent_theagentcompany_enterprise_2026": {
         "source": "https://github.com/TheAgentCompany/TheAgentCompany",
@@ -517,6 +529,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "math",
         "splits": ["test", "validation", "train"],
     },
+    "reasoning_math_reasoning_benchmark_2026": {
+        "source": "https://huggingface.co/datasets/sumeetrm/math-reasoning-benchmark",
+        "hf": [{"id": "sumeetrm/math-reasoning-benchmark", "config": "default", "splits": ["test"]}],
+        "kind": "math",
+        "splits": ["test"],
+    },
     "multimodal_mathnet_2026": {
         "source": "https://huggingface.co/datasets/ShadenA/MathNet",
         "hf": [
@@ -541,6 +559,29 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "hf": ["openai/mrcr"],
         "kind": "long_context",
         "splits": ["test", "validation"],
+    },
+    "long_context_needle1m_mvp_2026": {
+        "source": "https://huggingface.co/datasets/drawais/needle-1M-bench-mvp",
+        "hf": [
+            {
+                "id": "drawais/needle-1M-bench-mvp",
+                "files": [
+                    "data/needles_50k.json",
+                    "data/needles_250k.json",
+                    "data/needles_500k.json",
+                    "data/needles_1000k.json",
+                ],
+            }
+        ],
+        "kind": "long_context",
+    },
+    "long_context_merrin_2026": {
+        "source": "https://huggingface.co/datasets/HanNight/MERRIN",
+        "hf": [{"id": "HanNight/MERRIN", "config": "default", "splits": ["test"]}],
+        "kind": "long_context",
+        "splits": ["test"],
+        "snapshot_requires_operator_manifest": True,
+        "materialization_note": "Public metadata is encrypted; reportable use requires an authorized plaintext manifest.",
     },
     "long_context_ruler_infinitebench_2026": {
         "source": "https://github.com/NVIDIA/RULER",
@@ -677,6 +718,19 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         ],
         "kind": "video_audio_multilingual",
         "splits": ["train", "test", "validation"],
+    },
+    "omnimodal_final_bench_leaderboard_2026": {
+        "source": "https://huggingface.co/datasets/FINAL-Bench/ALL-Bench-Leaderboard",
+        "hf": [
+            {"id": "FINAL-Bench/ALL-Bench-Leaderboard", "config": "agent", "splits": ["train"]},
+            {"id": "FINAL-Bench/ALL-Bench-Leaderboard", "config": "image", "splits": ["train"]},
+            {"id": "FINAL-Bench/ALL-Bench-Leaderboard", "config": "llm", "splits": ["train"]},
+            {"id": "FINAL-Bench/ALL-Bench-Leaderboard", "config": "music", "splits": ["train"]},
+            {"id": "FINAL-Bench/ALL-Bench-Leaderboard", "config": "video", "splits": ["train"]},
+            {"id": "FINAL-Bench/ALL-Bench-Leaderboard", "config": "vlm_flagship", "splits": ["train"]},
+        ],
+        "kind": "omnimodal_leaderboard",
+        "splits": ["train"],
     },
     "multimodal_parsebench_2026": {
         "source": "https://huggingface.co/datasets/llamaindex/ParseBench",
