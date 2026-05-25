@@ -751,6 +751,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["agent_livemcpbench_2026"]["hf"] == ["ICIP/LiveMCPBench"]
     assert materializer.KNOWN_BENCHMARKS["agent_sra_bench_2026"]["hf"][0]["id"] == "WeihangSu/SRA-Bench"
     assert materializer.KNOWN_BENCHMARKS["agent_skillret_2026"]["hf"][0]["config"] == "queries"
+    assert materializer.KNOWN_BENCHMARKS["long_context_memoryagentbench_2026"]["hf"][0]["id"] == "ai-hyz/MemoryAgentBench"
     assert materializer.KNOWN_BENCHMARKS["multimodal_omnigaia_2026"]["hf"] == ["RUC-NLPIR/OmniGAIA"]
     assert materializer.KNOWN_BENCHMARKS["multimodal_omnirag_agent_2026"]["hf"][0]["config"] == "Daily-Omni"
     assert materializer.KNOWN_BENCHMARKS["multimodal_vstat_visual_state_tracking_2026"]["hf"] == [

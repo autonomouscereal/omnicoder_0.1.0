@@ -364,6 +364,17 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/ulab-uiuc/AcademicEval.git",
         "kind": "long_context",
     },
+    "long_context_memoryagentbench_2026": {
+        "source": "https://huggingface.co/datasets/ai-hyz/MemoryAgentBench",
+        "hf": [
+            {"id": "ai-hyz/MemoryAgentBench", "config": "Accurate_Retrieval", "splits": ["test", "train"]},
+            {"id": "ai-hyz/MemoryAgentBench", "config": "Test_Time_Learning", "splits": ["test", "train"]},
+            {"id": "ai-hyz/MemoryAgentBench", "config": "Long_Range_Understanding", "splits": ["test", "train"]},
+            {"id": "ai-hyz/MemoryAgentBench", "config": "Conflict_Resolution", "splits": ["test", "train"]},
+        ],
+        "kind": "long_context",
+        "splits": ["test", "train"],
+    },
     "multimodal_mmmu_pro_2026": {
         "source": "https://huggingface.co/datasets/MMMU/MMMU_Pro",
         "hf": ["MMMU/MMMU_Pro"],
