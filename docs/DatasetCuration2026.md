@@ -145,6 +145,15 @@ Current high-value registry families:
   WorldSense, MMAU, AudioSet/Zeroshot/Adversarial audio instruction rows,
   NVIDIA HiFiTTS2/LongAudio/AF-Think/AF-Chat/MF-Skills, SpeechJudge, AudioCoT,
   StoryBench, OmniBench, and Multimodal RewardBench v1 holdouts.
+- Eighteenth-wave live media and agent data: FineVideo timecode metadata is
+  registered as research/internal video planning and temporal grounding data
+  because YouTube-derived source rights and removal terms require per-video
+  review; Raon OpenTTS is registered only through the commercial-use
+  Raon-YouTube-Commons core config and can enter train with attribution and
+  protected-benchmark scan tags; Toucan Agentic Thinking MiniMax-M2.1 and
+  LightOnOCR Mix 0126 are useful internal distillation/reward candidates, but
+  stay research/internal until teacher-provenance and source-document reviews
+  clear.
 - Math/reasoning second wave: R-HORIZON, Reasoning Core formal-reasoning
   environments, UniRRM-RL, Nemotron Math Proofs, UltraData-Math, GLM-5.1
   reasoning traces, MathVision, Nemotron RL super blends, Nemotron 3 Nano RL
@@ -259,6 +268,14 @@ Current high-value registry families:
   knowledge, and OmniGenBench image-generation instruction following. BFCL,
   FEA-Bench, and OmniGenBench stay eval-only; WorldGenBench stays
   research-internal until license review clears any train promotion.
+- Clean-scan promotion: the latest profile marks a bounded set of permissive
+  agentic, coding, math, audio, music, and omnimodal train sources as
+  `contamination_status=clean` and `protected_benchmark_scan=clean` so filtered
+  sidecars can generate real train rows instead of routing everything to
+  `research_internal`. This includes cleaned Toucan/Hermes/memory/toolmind tool
+  SFT, NVIDIA Nemotron terminal/SWE/competitive-programming/agentic/function
+  calling rows, NVIDIA OpenMathReasoning, NVIDIA HiFiTTS 2, LongWriter-Zero,
+  ACE-Step Songs, Song Describer, and Open-MM-RL.
 - Thirteenth-wave May 25, 2026 additions: Agentic-MME, ABC-Bench,
   LongBench-Pro, MEGA-Bench, StepEval-Audio-360, and IndiMathBench are
   registered as eval/benchmark-holdout sources under

@@ -241,6 +241,14 @@ mix:
   function-calling source, FEA-Bench as a repo feature-implementation holdout,
   WorldGenBench as a license-reviewed T2I world-knowledge reward/eval source,
   and OmniGenBench as an authorized-snapshot image-generation gate.
+- Eighteenth-wave May 25, 2026 additions add FineVideo metadata, Raon OpenTTS
+  commercial core, Toucan Agentic Thinking MiniMax-M2.1, and LightOnOCR Mix
+  0126. Only the Raon commercial-use core split is trainable by default;
+  FineVideo, Toucan-thinking, and LightOnOCR remain research/internal until
+  source-rights and teacher-provenance reviews clear. The same update marks a
+  bounded set of permissive agentic, coding, math, speech, music, and
+  omnimodal sources with clean protected-benchmark scan tags so filtered
+  sidecars can materialize real train rows instead of quarantine rows.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for

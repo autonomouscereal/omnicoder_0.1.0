@@ -1582,6 +1582,73 @@ def test_repo_dataset_registry_covers_seventeenth_wave_feature_tool_and_generati
     assert expansion.source_use_bucket(by_name["OmniGenBench Image Generation"]) == "eval_holdout"
 
 
+def test_repo_dataset_registry_covers_eighteenth_wave_live_media_agent_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "eighteenth_wave_live_media_agent_data_2026_05_25"
+
+    expected_policy = {
+        "FineVideo Timecode Metadata": "research_internal",
+        "Raon OpenTTS Pool Commercial Core": "train",
+        "Toucan Agentic Thinking MiniMax-M2.1": "research_internal",
+        "LightOnOCR Mix 0126": "research_internal",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    assert by_name["FineVideo Timecode Metadata"]["hf_id"] == "HuggingFaceFV/finevideo"
+    assert by_name["FineVideo Timecode Metadata"]["license_tier"] == "source_license_varies"
+    assert by_name["Raon OpenTTS Pool Commercial Core"]["hf_id"] == "KRAFTON/Raon-OpenTTS-Pool"
+    assert by_name["Raon OpenTTS Pool Commercial Core"]["config"] == "Raon-YouTube-Commons"
+    assert by_name["Raon OpenTTS Pool Commercial Core"]["splits"] == ["core"]
+    assert by_name["Toucan Agentic Thinking MiniMax-M2.1"]["hf_id"] == "agent-data/toucan-agentic-thinking"
+    assert by_name["LightOnOCR Mix 0126"]["hf_id"] == "lightonai/LightOnOCR-mix-0126"
+
+    assert expansion.source_use_bucket(by_name["Raon OpenTTS Pool Commercial Core"]) == "train"
+    assert expansion.training_bucket_for_record(
+        by_name["Raon OpenTTS Pool Commercial Core"],
+        {"text": "spoken training text", "audio": "sample.opus"},
+    ) == "train"
+    for name in set(expected_policy) - {"Raon OpenTTS Pool Commercial Core"}:
+        assert expansion.source_use_bucket(by_name[name]) == "research_internal"
+
+
+def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+
+    reviewed_train = [
+        "Cleaned Toucan Tool Use 333K",
+        "Cleaned Hermes Reasoning Tool Use",
+        "Cleaned Memory Agent SFT 408K",
+        "Cleaned ToolMind Web QA Tool Use",
+        "NVIDIA Nemotron-Terminal-Corpus",
+        "NVIDIA Nemotron-Terminal-Synthetic-Tasks",
+        "NVIDIA Nemotron-SFT-SWE-v2",
+        "NVIDIA Nemotron-SFT Competitive Programming v2",
+        "NVIDIA OpenMathReasoning",
+        "NVIDIA When2Call",
+        "NVIDIA Nemotron Agentic v1",
+        "NVIDIA Nemotron-RL Agentic Function Calling Pivot v1",
+        "NVIDIA HiFiTTS 2",
+        "LongWriter-Zero RLData",
+        "ACE-Step Songs",
+        "Song Describer",
+        "Open-MM-RL",
+    ]
+    for name in reviewed_train:
+        assert by_name[name]["contamination_status"] == "clean"
+        assert by_name[name]["protected_benchmark_scan"] == "clean"
+        assert by_name[name]["source_review_status"] == "public_train_reviewed_2026_05_25"
+        assert expansion.source_use_bucket(by_name[name]) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], {"prompt": "p", "answer": "a"}) == "train"
+
+
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))

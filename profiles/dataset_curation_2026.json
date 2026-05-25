@@ -1773,7 +1773,11 @@
         ],
         "target_modality": "text",
         "url": "https://huggingface.co/datasets/nvidia/OpenMathReasoning",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "config": "all",
@@ -1966,7 +1970,11 @@
         ],
         "target_modality": "long_context",
         "url": "https://huggingface.co/datasets/THU-KEG/LongWriter-Zero-RLData",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -3630,7 +3638,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/nvidia/Nemotron-Terminal-Corpus",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -3663,7 +3675,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/nvidia/Nemotron-Terminal-Synthetic-Tasks",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -5425,7 +5441,11 @@
         ],
         "target_modality": "music",
         "url": "https://huggingface.co/datasets/Yi3852/ACEStep-Songs",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -5552,7 +5572,11 @@
         ],
         "target_modality": "multimodal",
         "url": "https://huggingface.co/datasets/TuringEnterprises/Open-MM-RL",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -6019,7 +6043,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/nvidia/Nemotron-SFT-SWE-v2",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -6171,7 +6199,11 @@
         ],
         "target_modality": "code",
         "url": "https://huggingface.co/datasets/nvidia/Nemotron-SFT-Competitive-Programming-v2",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -9109,7 +9141,11 @@
         ],
         "target_modality": "music",
         "url": "https://huggingface.co/datasets/lmms-lab-audio/song-describer",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -9963,7 +9999,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/nvidia/When2Call",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -10011,7 +10051,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/nvidia/Nemotron-Agentic-v1",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -10053,7 +10097,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/nvidia/Nemotron-RL-Agentic-Function-Calling-Pivot-v1",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -11161,7 +11209,11 @@
         ],
         "target_modality": "audio",
         "url": "https://huggingface.co/datasets/nvidia/hifitts-2",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -11780,7 +11832,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-TOOLS-toucan-1.5m-sft-tool-use-data-cleaned-rectified-333k",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -11821,7 +11877,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-TOOLS-hermes_reasoning_tool_use-data-cleaned-rectified",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -11864,7 +11924,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-MEMORY-mem_agent-sft-data-cleaned-rectified-408k",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -11906,7 +11970,11 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/AmanPriyanshu/tool-reasoning-sft-TOOLS-toolmind-web-qa-sft-tool-use-data-cleaned-rectified-5.2k",
-        "use_policy": "train"
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "last_verified": "2026-05-25"
       },
       {
         "curriculum_axes": [
@@ -25416,6 +25484,219 @@
         "target_modality": "image",
         "url": "https://arxiv.org/abs/2505.18775",
         "use_policy": "eval_only"
+      },
+      {
+        "name": "FineVideo Timecode Metadata",
+        "family": "video_generation",
+        "hf_id": "HuggingFaceFV/finevideo",
+        "url": "https://huggingface.co/datasets/HuggingFaceFV/finevideo",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "eighteenth_wave_live_media_agent_data_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "video",
+        "use_policy": "research_internal",
+        "license": "source creator and YouTube-derived rights vary; timecode metadata uses generated annotations",
+        "license_tier": "source_license_varies",
+        "source_review_status": "metadata_only_review_required_2026_05_25",
+        "materialization_note": "Stream metadata/timecode rows first; do not fetch or train on source video bytes until per-video license/removal policy is cleared.",
+        "curriculum_axes": [
+          "video_understanding",
+          "timecode_grounding",
+          "text_to_video_planning",
+          "preference_reward"
+        ],
+        "field_map": {
+          "id": [
+            "video_id",
+            "youtube_id",
+            "id",
+            "url"
+          ],
+          "prompt": [
+            "title",
+            "description",
+            "caption",
+            "transcript",
+            "timecodes",
+            "segments",
+            "metadata"
+          ],
+          "target": [
+            "timecodes",
+            "segments",
+            "caption",
+            "description",
+            "transcript",
+            "metadata"
+          ],
+          "media": [
+            "url",
+            "video",
+            "youtube_url",
+            "video_url",
+            "thumbnail"
+          ]
+        }
+      },
+      {
+        "name": "Raon OpenTTS Pool Commercial Core",
+        "family": "audio_music_speech",
+        "hf_id": "KRAFTON/Raon-OpenTTS-Pool",
+        "url": "https://huggingface.co/datasets/KRAFTON/Raon-OpenTTS-Pool",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "eighteenth_wave_live_media_agent_data_2026_05_25",
+        "config": "Raon-YouTube-Commons",
+        "splits": [
+          "core"
+        ],
+        "max_records": 1024,
+        "target_modality": "audio",
+        "use_policy": "train",
+        "license": "CC-BY-4.0 Raon-YouTube-Commons subset; metadata/dataset structure CC-BY-4.0",
+        "license_tier": "attribution",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "commercial_subset_reviewed_2026_05_25",
+        "materialization_note": "Use the commercial-use Raon-YouTube-Commons core split only; exclude non-commercial and license-agreement configs.",
+        "curriculum_axes": [
+          "tts",
+          "speech_generation",
+          "prosody",
+          "audio_captioning",
+          "voice_quality"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "segment_id",
+            "utt_id",
+            "audio_id"
+          ],
+          "prompt": [
+            "text",
+            "normalized_text",
+            "transcript",
+            "sentence",
+            "utterance"
+          ],
+          "target": [
+            "text",
+            "normalized_text",
+            "duration",
+            "speaker_id",
+            "source",
+            "audio"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "path",
+            "tar_file"
+          ]
+        }
+      },
+      {
+        "name": "Toucan Agentic Thinking MiniMax-M2.1",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "agent-data/toucan-agentic-thinking",
+        "url": "https://huggingface.co/datasets/agent-data/toucan-agentic-thinking",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "eighteenth_wave_live_media_agent_data_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "tool",
+        "use_policy": "research_internal",
+        "license": "synthetic MiniMax-M2.1 reasoning over Toucan prompts; teacher-provenance review required before release training",
+        "license_tier": "teacher_provenance_review",
+        "source_review_status": "distillation_internal_review_required_2026_05_25",
+        "materialization_note": "Use as internal reward/distillation candidate; keep out of release train bucket until teacher-provenance and benchmark contamination review passes.",
+        "curriculum_axes": [
+          "agentic_reasoning",
+          "tool_calling",
+          "minimax_distillation",
+          "mcp"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "sample_id"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "tools",
+            "messages"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "reasoning",
+            "messages",
+            "tool_calls"
+          ]
+        }
+      },
+      {
+        "name": "LightOnOCR Mix 0126",
+        "family": "omnimodal_understanding",
+        "hf_id": "lightonai/LightOnOCR-mix-0126",
+        "url": "https://huggingface.co/datasets/lightonai/LightOnOCR-mix-0126",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "eighteenth_wave_live_media_agent_data_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "image",
+        "use_policy": "research_internal",
+        "license": "distilled OCR/document transcription data; upstream document and teacher provenance review required",
+        "license_tier": "teacher_provenance_review",
+        "source_review_status": "distillation_internal_review_required_2026_05_25",
+        "materialization_note": "Strong OCR/document parsing rows; keep research-internal until source-document and teacher-provenance review clears.",
+        "curriculum_axes": [
+          "ocr",
+          "document_understanding",
+          "markdown_transcription",
+          "tables",
+          "math_latex"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "page_id",
+            "document_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "image",
+            "prompt",
+            "instruction",
+            "question"
+          ],
+          "target": [
+            "text",
+            "markdown",
+            "transcription",
+            "answer",
+            "html",
+            "latex"
+          ],
+          "media": [
+            "image",
+            "images",
+            "page_image"
+          ]
+        }
       }
     ],
     "enabled": true,
