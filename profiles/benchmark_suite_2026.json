@@ -3692,8 +3692,41 @@
     "agent_bfcl_v4_2026": [
       "data/eval/reportable_2026/bfcl_v4_authorized.jsonl"
     ],
+    "agent_browsecomp_long_context_2026": [
+      "data/eval/reportable_2026/browsecomp_long_context_authorized.jsonl"
+    ],
+    "agent_gdpval_2026": [
+      "data/eval/reportable_2026/gdpval_authorized.jsonl"
+    ],
+    "agent_mcp_bench_2026": [
+      "data/eval/reportable_2026/mcp_bench_authorized.jsonl"
+    ],
+    "agent_mcp_universe_2026": [
+      "data/eval/reportable_2026/mcp_universe_authorized.jsonl"
+    ],
+    "agent_mcp_workflows_2026": [
+      "data/eval/reportable_2026/mcpmark_authorized.jsonl"
+    ],
+    "agent_paperbench_2026": [
+      "data/eval/reportable_2026/paperbench_authorized.jsonl"
+    ],
+    "agent_tau3_2026": [
+      "data/eval/reportable_2026/tau3_authorized.jsonl"
+    ],
+    "agent_terminal_bench_2026": [
+      "data/eval/reportable_2026/terminal_bench_authorized.jsonl"
+    ],
+    "agent_theagentcompany_enterprise_2026": [
+      "data/eval/reportable_2026/theagentcompany_authorized.jsonl"
+    ],
+    "coding_livecodebench_2026": [
+      "data/eval/reportable_2026/livecodebench_authorized.jsonl"
+    ],
     "coding_multi_swe_bench_2026": [
       "data/eval/reportable_2026/multi_swe_bench_authorized.jsonl"
+    ],
+    "coding_nous_rlvr_coding_2026": [
+      "data/eval/reportable_2026/nous_rlvr_coding_authorized.jsonl"
     ],
     "coding_swe_bench_live_2026": [
       "data/eval/reportable_2026/swe_bench_live_authorized.jsonl"
@@ -3701,14 +3734,56 @@
     "coding_swe_bench_pro_2026": [
       "data/eval/reportable_2026/swe_bench_pro_authorized.jsonl"
     ],
+    "coding_swe_lancer_2026": [
+      "data/eval/reportable_2026/swe_lancer_authorized.jsonl"
+    ],
+    "generation_audio_speech_2026": [
+      "data/eval/reportable_2026/audio_speech_authorized.jsonl"
+    ],
+    "generation_image_edit_2026": [
+      "data/eval/reportable_2026/image_edit_authorized.jsonl"
+    ],
+    "generation_music_2026": [
+      "data/eval/reportable_2026/music_generation_authorized.jsonl"
+    ],
+    "generation_video_2026": [
+      "data/eval/reportable_2026/video_generation_authorized.jsonl"
+    ],
+    "long_context_helmet_longproc_2026": [
+      "data/eval/reportable_2026/helmet_longproc_authorized.jsonl"
+    ],
+    "long_context_longcodebench_2026": [
+      "data/eval/reportable_2026/longcodebench_authorized.jsonl"
+    ],
     "long_context_mrcr_2026": [
       "data/eval/reportable_2026/mrcr_authorized.jsonl"
+    ],
+    "multimodal_audiobench_mmau_2026": [
+      "data/eval/reportable_2026/audiobench_mmau_authorized.jsonl"
+    ],
+    "multimodal_jointavbench_2026": [
+      "data/eval/reportable_2026/jointavbench_authorized.jsonl"
+    ],
+    "multimodal_lvomnibench_2026": [
+      "data/eval/reportable_2026/lvomnibench_authorized.jsonl"
+    ],
+    "multimodal_mmar_audio_music_reasoning_2026": [
+      "data/eval/reportable_2026/mmar_audio_music_reasoning_authorized.jsonl"
     ],
     "multimodal_mmmu_pro_2026": [
       "data/eval/reportable_2026/mmmu_pro_authorized.jsonl"
     ],
+    "multimodal_video_understanding_2026": [
+      "data/eval/reportable_2026/video_mme_v2_authorized.jsonl"
+    ],
     "reasoning_arc_agi3_2026": [
       "data/eval/reportable_2026/arc_agi3_authorized.jsonl"
+    ],
+    "reasoning_hle_rolling_2026": [
+      "data/eval/reportable_2026/hle_rolling_authorized.jsonl"
+    ],
+    "reasoning_rlvr_linearity_math_2026": [
+      "data/eval/reportable_2026/rlvr_linearity_math_authorized.jsonl"
     ]
   },
   "reportable_snapshots": {
@@ -3721,6 +3796,96 @@
       "source": "https://gorilla.cs.berkeley.edu/leaderboard.html",
       "task_root": "data/eval/reportable_2026/bfcl_v4_authorized.jsonl"
     },
+    "agent_browsecomp_long_context_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "browsecomp-long-context-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "browsecomp-long-context-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/openai/BrowseCompLongContext",
+      "task_root": "data/eval/reportable_2026/browsecomp_long_context_authorized.jsonl"
+    },
+    "agent_gdpval_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "gdpval-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "gdpval-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/openai/gdpval",
+      "task_root": "data/eval/reportable_2026/gdpval_authorized.jsonl"
+    },
+    "agent_mcp_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "mcp-bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "mcp-bench-authorized-2026-current",
+      "source": "https://github.com/Accenture/mcp-bench",
+      "task_root": "data/eval/reportable_2026/mcp_bench_authorized.jsonl"
+    },
+    "agent_mcp_universe_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "mcp-universe-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "mcp-universe-authorized-2026-current",
+      "source": "https://github.com/SalesforceAIResearch/MCP-Universe",
+      "task_root": "data/eval/reportable_2026/mcp_universe_authorized.jsonl"
+    },
+    "agent_mcp_workflows_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "mcpmark-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "mcpmark-authorized-2026-current",
+      "source": "https://github.com/eval-sys/mcpmark",
+      "task_root": "data/eval/reportable_2026/mcpmark_authorized.jsonl"
+    },
+    "agent_paperbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "paperbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "paperbench-authorized-2026-current",
+      "source": "https://github.com/openai/preparedness/tree/main/project/paperbench",
+      "task_root": "data/eval/reportable_2026/paperbench_authorized.jsonl"
+    },
+    "agent_tau3_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "tau3-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "tau3-authorized-2026-current",
+      "source": "https://www.taubench.com",
+      "task_root": "data/eval/reportable_2026/tau3_authorized.jsonl"
+    },
+    "agent_terminal_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "terminal-bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "terminal-bench-authorized-2026-current",
+      "source": "https://www.tbench.ai/leaderboard/terminal-bench/2.1",
+      "task_root": "data/eval/reportable_2026/terminal_bench_authorized.jsonl"
+    },
+    "agent_theagentcompany_enterprise_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "theagentcompany-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "theagentcompany-authorized-2026-current",
+      "source": "https://github.com/TheAgentCompany/TheAgentCompany",
+      "task_root": "data/eval/reportable_2026/theagentcompany_authorized.jsonl"
+    },
+    "coding_livecodebench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "livecodebench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "livecodebench-authorized-2026-current",
+      "source": "https://github.com/LiveCodeBench/LiveCodeBench",
+      "task_root": "data/eval/reportable_2026/livecodebench_authorized.jsonl"
+    },
     "coding_multi_swe_bench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "multi-swe-bench-authorized-2026-current",
@@ -3729,6 +3894,15 @@
       "snapshot_id": "multi-swe-bench-authorized-2026-current",
       "source": "registry_private_or_authorized",
       "task_root": "data/eval/reportable_2026/multi_swe_bench_authorized.jsonl"
+    },
+    "coding_nous_rlvr_coding_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "nous-rlvr-coding-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "nous-rlvr-coding-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
+      "task_root": "data/eval/reportable_2026/nous_rlvr_coding_authorized.jsonl"
     },
     "coding_swe_bench_live_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -3748,6 +3922,69 @@
       "source": "https://scale.com/blog/swe-bench-pro",
       "task_root": "data/eval/reportable_2026/swe_bench_pro_authorized.jsonl"
     },
+    "coding_swe_lancer_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "swe-lancer-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "swe-lancer-authorized-2026-current",
+      "source": "https://github.com/openai/SWELancer-Benchmark",
+      "task_root": "data/eval/reportable_2026/swe_lancer_authorized.jsonl"
+    },
+    "generation_audio_speech_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "audio-speech-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "audio-speech-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/hlt-lab/voicebench",
+      "task_root": "data/eval/reportable_2026/audio_speech_authorized.jsonl"
+    },
+    "generation_image_edit_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "image-edit-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "image-edit-authorized-2026-current",
+      "source": "https://github.com/PKU-YuanGroup/ImgEdit",
+      "task_root": "data/eval/reportable_2026/image_edit_authorized.jsonl"
+    },
+    "generation_music_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "music-generation-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "music-generation-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/music-arena/music-arena-dataset",
+      "task_root": "data/eval/reportable_2026/music_generation_authorized.jsonl"
+    },
+    "generation_video_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "video-generation-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "video-generation-authorized-2026-current",
+      "source": "https://github.com/Vchitect/VBench",
+      "task_root": "data/eval/reportable_2026/video_generation_authorized.jsonl"
+    },
+    "long_context_helmet_longproc_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "helmet-longproc-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "helmet-longproc-authorized-2026-current",
+      "source": "official_current_release_or_authorized_mirror",
+      "task_root": "data/eval/reportable_2026/helmet_longproc_authorized.jsonl"
+    },
+    "long_context_longcodebench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "longcodebench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "longcodebench-authorized-2026-current",
+      "source": "https://huggingface.co/papers/2505.07897",
+      "task_root": "data/eval/reportable_2026/longcodebench_authorized.jsonl"
+    },
     "long_context_mrcr_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "mrcr-authorized-2026-current",
@@ -3756,6 +3993,42 @@
       "snapshot_id": "mrcr-authorized-2026-current",
       "source": "https://github.com/hsiehjackson/RULER",
       "task_root": "data/eval/reportable_2026/mrcr_authorized.jsonl"
+    },
+    "multimodal_audiobench_mmau_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "audiobench-mmau-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "audiobench-mmau-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/gamma-lab-umd/MMAU-test",
+      "task_root": "data/eval/reportable_2026/audiobench_mmau_authorized.jsonl"
+    },
+    "multimodal_jointavbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "jointavbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "jointavbench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/JointAVBench/JointAVBench",
+      "task_root": "data/eval/reportable_2026/jointavbench_authorized.jsonl"
+    },
+    "multimodal_lvomnibench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "lvomnibench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "lvomnibench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/KD-TAO/LVOmniBench",
+      "task_root": "data/eval/reportable_2026/lvomnibench_authorized.jsonl"
+    },
+    "multimodal_mmar_audio_music_reasoning_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "mmar-audio-music-reasoning-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "mmar-audio-music-reasoning-authorized-2026-current",
+      "source": "https://github.com/ddlBoJack/MMAR",
+      "task_root": "data/eval/reportable_2026/mmar_audio_music_reasoning_authorized.jsonl"
     },
     "multimodal_mmmu_pro_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -3766,6 +4039,15 @@
       "source": "https://mmmu-benchmark.github.io/",
       "task_root": "data/eval/reportable_2026/mmmu_pro_authorized.jsonl"
     },
+    "multimodal_video_understanding_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "video-mme-v2-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "video-mme-v2-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/MME-Benchmarks/Video-MME-v2",
+      "task_root": "data/eval/reportable_2026/video_mme_v2_authorized.jsonl"
+    },
     "reasoning_arc_agi3_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "arc-agi3-authorized-2026-current",
@@ -3774,6 +4056,24 @@
       "snapshot_id": "arc-agi3-authorized-2026-current",
       "source": "https://arcprize.org/arc-agi/3",
       "task_root": "data/eval/reportable_2026/arc_agi3_authorized.jsonl"
+    },
+    "reasoning_hle_rolling_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "hle-rolling-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "hle-rolling-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/cais/hle",
+      "task_root": "data/eval/reportable_2026/hle_rolling_authorized.jsonl"
+    },
+    "reasoning_rlvr_linearity_math_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "rlvr-linearity-math-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "rlvr-linearity-math-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
+      "task_root": "data/eval/reportable_2026/rlvr_linearity_math_authorized.jsonl"
     }
   },
   "run_cycles": {
