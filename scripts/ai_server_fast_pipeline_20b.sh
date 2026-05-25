@@ -37,6 +37,7 @@ DETACH="${OMNICODER_DETACH:-1}"
 ADAPTIVE_WEIGHTS="${OMNICODER_ADAPTIVE_WEIGHTS:-1}"
 MIXTURE_PLAN="${OMNICODER_MIXTURE_PLAN:-weights/training_orchestration_2026/manifests/mixture_plan.json}"
 CONTEXT_LADDER="${OMNICODER_CONTEXT_LADDER:-8192,32768,131072,262144,524288,1048576}"
+LONG_CONTEXT_STEPS_PER_RUNG="${OMNICODER_LONG_CONTEXT_STEPS_PER_RUNG:-0}"
 RLVR_ALGOS="${OMNICODER_RLVR_ALGOS:-grpo,dapo,offline_reward_replay}"
 LIVE_POSTTRAIN="${OMNICODER_LIVE_POSTTRAIN:-0}"
 POSTTRAIN_LR="${OMNICODER_POSTTRAIN_LR:-0}"
@@ -54,6 +55,13 @@ BENCHMARK_SAMPLE_LOSS_TIMEOUT_SECONDS="${OMNICODER_BENCHMARK_SAMPLE_LOSS_TIMEOUT
 BENCHMARK_CYCLE="${OMNICODER_BENCHMARK_CYCLE:-}"
 BENCHMARK_MIN_TASKS="${OMNICODER_BENCHMARK_MIN_TASKS:-0}"
 BENCHMARK_PREDICTIONS="${OMNICODER_BENCHMARK_PREDICTIONS:-}"
+BENCHMARK_PREDICTION_BACKEND="${OMNICODER_BENCHMARK_PREDICTION_BACKEND:-}"
+BENCHMARK_PREDICTION_MODEL="${OMNICODER_BENCHMARK_PREDICTION_MODEL:-}"
+BENCHMARK_PREDICTION_BASE_URL="${OMNICODER_BENCHMARK_PREDICTION_BASE_URL:-}"
+BENCHMARK_PREDICTION_API_KEY_ENV="${OMNICODER_BENCHMARK_PREDICTION_API_KEY_ENV:-}"
+BENCHMARK_PREDICTION_CHECKPOINT_RUNNER="${OMNICODER_BENCHMARK_PREDICTION_CHECKPOINT_RUNNER:-}"
+BENCHMARK_PREDICTION_TIMEOUT_SECONDS="${OMNICODER_BENCHMARK_PREDICTION_TIMEOUT_SECONDS:-0}"
+BENCHMARK_PREDICTION_MAX_OUTPUT_TOKENS="${OMNICODER_BENCHMARK_PREDICTION_MAX_OUTPUT_TOKENS:-0}"
 REQUIRE_REPORTABLE_GATE="${OMNICODER_REQUIRE_REPORTABLE_GATE:-0}"
 RERUN_HELDOUT_EVALS="${OMNICODER_RERUN_HELDOUT_EVALS:-0}"
 
@@ -107,6 +115,13 @@ append_nonzero_arg shared_eval_args --benchmark-sample-loss-timeout-seconds "$BE
 append_nonempty_arg shared_eval_args --benchmark-cycle "$BENCHMARK_CYCLE"
 append_nonzero_arg shared_eval_args --benchmark-min-tasks "$BENCHMARK_MIN_TASKS"
 append_nonempty_arg shared_eval_args --benchmark-predictions "$BENCHMARK_PREDICTIONS"
+append_nonempty_arg shared_eval_args --benchmark-prediction-backend "$BENCHMARK_PREDICTION_BACKEND"
+append_nonempty_arg shared_eval_args --benchmark-prediction-model "$BENCHMARK_PREDICTION_MODEL"
+append_nonempty_arg shared_eval_args --benchmark-prediction-base-url "$BENCHMARK_PREDICTION_BASE_URL"
+append_nonempty_arg shared_eval_args --benchmark-prediction-api-key-env "$BENCHMARK_PREDICTION_API_KEY_ENV"
+append_nonempty_arg shared_eval_args --benchmark-prediction-checkpoint-runner "$BENCHMARK_PREDICTION_CHECKPOINT_RUNNER"
+append_nonzero_arg shared_eval_args --benchmark-prediction-timeout-seconds "$BENCHMARK_PREDICTION_TIMEOUT_SECONDS"
+append_nonzero_arg shared_eval_args --benchmark-prediction-max-output-tokens "$BENCHMARK_PREDICTION_MAX_OUTPUT_TOKENS"
 if truthy "$REQUIRE_REPORTABLE_GATE"; then
   shared_eval_args+=(--require-reportable-gate)
 fi
@@ -125,6 +140,10 @@ append_nonzero_arg full_only_args --distill-steps "$DISTILL_STEPS"
 append_nonzero_arg full_only_args --distill-lr "$DISTILL_LR"
 append_nonzero_arg full_only_args --finetune-lr "$FINETUNE_LR"
 append_nonzero_arg full_only_args --benchmark-seq-len "$BENCHMARK_SEQ_LEN"
+
+long_context_args=()
+append_nonempty_arg long_context_args --context-ladder "$CONTEXT_LADDER"
+append_nonzero_arg long_context_args --long-context-steps-per-rung "$LONG_CONTEXT_STEPS_PER_RUNG"
 
 if [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
   if [[ -z "$RESUME_CHECKPOINT" ]]; then
@@ -189,6 +208,7 @@ else
     --lr "$LEARNING_RATE"
     --save-interval "$SAVE_INTERVAL"
     --posttrain-steps "$POSTTRAIN_STEPS"
+    "${long_context_args[@]}"
     --distributed pipeline_stage
     --nproc-per-node 3
     --rank-device-map "$RANK_DEVICE_MAP"
@@ -241,9 +261,14 @@ docker_args=(
   -w /workspace
 )
 
+if [[ -n "$BENCHMARK_PREDICTION_API_KEY_ENV" && -n "${!BENCHMARK_PREDICTION_API_KEY_ENV:-}" ]]; then
+  docker_args+=(-e "$BENCHMARK_PREDICTION_API_KEY_ENV")
+fi
+
+printf -v common_args_quoted "%q " "${common_args[@]}"
 run_cmd=(
   bash -lc
-  "set -euo pipefail; python -m omnicoder.training.training_orchestration_2026 ${common_args[*]}"
+  "set -euo pipefail; python -m omnicoder.training.training_orchestration_2026 ${common_args_quoted}"
 )
 
 if [[ "$DETACH" == "1" ]]; then

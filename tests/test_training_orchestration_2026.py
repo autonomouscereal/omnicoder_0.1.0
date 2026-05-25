@@ -229,6 +229,13 @@ def _runtime_args(**overrides):
         "benchmark_cycle": "",
         "benchmark_min_tasks": 0,
         "benchmark_predictions": "",
+        "benchmark_prediction_backend": "",
+        "benchmark_prediction_model": "",
+        "benchmark_prediction_base_url": "",
+        "benchmark_prediction_api_key_env": "",
+        "benchmark_prediction_checkpoint_runner": "",
+        "benchmark_prediction_timeout_seconds": 0,
+        "benchmark_prediction_max_output_tokens": 0,
         "require_reportable_gate": False,
         "rerun_heldout_evals": False,
     }
@@ -498,6 +505,94 @@ def test_pipeline_checkpoint_benchmark_gate_scores_generated_predictions(tmp_pat
     assert result["reportable_gate"]["predictions"]["source"] == "model_generated_predictions"
     assert result["reportable_gate"]["reportable"] == 1
     assert any("run-reportable" in cmd for cmd in commands)
+
+
+def test_pipeline_checkpoint_benchmark_gate_generates_predictions_when_backend_configured(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    eval_path = tmp_path / "eval.jsonl"
+    tasks_path = tmp_path / "reportable_tasks.jsonl"
+    _write_jsonl(eval_path, [{"text": "hello world", "modality": "text"}])
+    _write_jsonl(
+        tasks_path,
+        [
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "arc-1",
+                "reportable": True,
+                "official": True,
+                "source": "authorized_fixture",
+                "snapshot_id": "arcagi3-2026-fixture",
+                "snapshot_hash": "abc123",
+                "authorization": "unit-test-authorized",
+                "gold": "A",
+            }
+        ],
+    )
+    profile = _profile(tmp_path)
+    profile["reportable_task_roots"] = [str(tasks_path)]
+    profile["benchmark_gates"] = {"benchmark_cycle": "release", "benchmark_min_tasks": 1}
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+    }
+    manifest = {"eval_all_jsonl": str(eval_path)}
+    commands: list[list[str]] = []
+
+    def fake_run_command(cmd: list[str], log_path: Path, timeout_seconds: int = 0) -> int:
+        commands.append(cmd)
+        if "omnicoder.eval.pipeline_sample_loss_2026" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0}}), encoding="utf-8")
+        elif "omnicoder.eval.reportable_prediction_harness_2026" in cmd:
+            assert cmd[cmd.index("--backend") + 1] == "fixture"
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_jsonl(out_path, [{"benchmark_id": "reasoning_arc_agi3_2026", "task_id": "arc-1", "prediction": "A"}])
+            summary_path = Path(cmd[cmd.index("--summary") + 1])
+            summary_path.write_text(json.dumps({"status": "ok", "records": 1}), encoding="utf-8")
+        elif "run-reportable" in cmd:
+            generated = Path(cmd[cmd.index("--predictions") + 1])
+            assert generated.name == "model_predictions.jsonl"
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "gate_policy": "fail_closed",
+                        "gate_decision": "passed",
+                        "reportable": 1,
+                        "failed": 0,
+                        "skipped": 0,
+                        "local_only": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        elif "summarize" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps({"reportable_results": 1}), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    result = orch.run_checkpoint_benchmark_gate(
+        profile,
+        manifest,
+        tmp_path,
+        checkpoint,
+        "pipeline",
+        _runtime_args(benchmark_cycle="release", benchmark_prediction_backend="fixture"),
+    )
+
+    assert result["status"] == "passed"
+    assert result["reportable_gate"]["predictions"]["source"] == "generated_by_reportable_prediction_harness"
+    assert any("omnicoder.eval.reportable_prediction_harness_2026" in cmd for cmd in commands)
 
 
 def test_live_posttraining_runs_native_reward_replay_not_dry_run(tmp_path, monkeypatch):
@@ -1004,6 +1099,11 @@ def test_run_full_summarizes_all_major_training_phases(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         orch,
+        "run_long_context_curriculum_stage",
+        lambda loaded, manifest, out, checkpoint, args: {"status": "passed", "final_checkpoint": str(out / "checkpoints" / "long_context_curriculum" / "02_ctx4096")},
+    )
+    monkeypatch.setattr(
+        orch,
         "run_distillation_curriculum_stage",
         lambda loaded, manifest, out, checkpoint, args: {"status": "passed", "final_checkpoint": str(out / "checkpoints" / "09_distillation_replay.pt")},
     )
@@ -1038,6 +1138,7 @@ def test_run_full_summarizes_all_major_training_phases(tmp_path, monkeypatch):
     result = orch.run_full(args)
     assert result["status"] == "passed"
     assert result["pretraining"]["status"] == "passed"
+    assert result["long_context_curriculum"]["status"] == "passed"
     assert result["distillation"]["status"] == "passed"
     assert result["posttraining"]["status"] == "passed"
     assert result["finetune"]["status"] == "passed"
@@ -1045,6 +1146,185 @@ def test_run_full_summarizes_all_major_training_phases(tmp_path, monkeypatch):
     assert result["final_checkpoint"] == str(final_checkpoint)
     assert result["artifacts"]["final_checkpoint"] == str(final_checkpoint)
     assert (out_dir / "full_training_summary.json").exists()
+
+
+def test_long_context_curriculum_runs_real_ladder_and_resumes_each_rung(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["model_contract"] = {"target_context_length": 4096, "target_profile": "ledger_probe"}
+    profile["training_plan"].update(
+        {
+            "preset": "ledger_probe",
+            "context_ladder": [2048, 4096],
+            "steps_per_stage": 3,
+            "long_context_steps_per_rung": 2,
+            "long_context_min_real_token_fraction": 0.0,
+            "long_context_min_real_tokens": 1,
+            "long_context_min_real_row_fraction": 0.0,
+            "seq_len": 1024,
+            "distributed_training": {"mode": "pipeline_stage", "nproc_per_node": 3},
+        }
+    )
+    out_dir = tmp_path / "out"
+    train_jsonl = out_dir / "jsonl" / "train_long_context.jsonl"
+    eval_jsonl = out_dir / "jsonl" / "eval_long_context.jsonl"
+    _write_jsonl(train_jsonl, [{"content": "long context training row"}])
+    _write_jsonl(eval_jsonl, [{"content": "long context eval row"}])
+    manifest = {
+        "per_modality_jsonl": {"long_context": str(train_jsonl)},
+        "per_modality_split_jsonl": {"long_context": {"train": str(train_jsonl), "eval": str(eval_jsonl)}},
+    }
+    initial = tmp_path / "initial_checkpoint"
+    initial.mkdir()
+    seq_lens: list[int] = []
+    resumes: list[str] = []
+
+    def fake_run_command(cmd, log_path, timeout_seconds=None):
+        seq_lens.append(int(cmd[cmd.index("--seq_len") + 1]))
+        resumes.append(str(cmd[cmd.index("--resume") + 1]))
+        checkpoint = Path(cmd[cmd.index("--out") + 1])
+        _write_complete_sharded_checkpoint(checkpoint, world_size=3)
+        log_file = Path(cmd[cmd.index("--log_file") + 1])
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.write_text(
+            "\n".join([json.dumps({"loss": 2.0}), json.dumps({"loss": 1.0})]) + "\n",
+            encoding="utf-8",
+        )
+        return 0
+
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    monkeypatch.setattr(orch, "run_sample_loss_eval", lambda *args, **kwargs: {"status": "passed"})
+    monkeypatch.setattr(orch, "run_checkpoint_benchmark_gate", lambda *args, **kwargs: {"status": "passed"})
+    args = _runtime_args(
+        seq_len=1024,
+        context_ladder="2048,4096",
+        long_context_steps_per_rung=0,
+        batch_size=1,
+        steps_per_stage=0,
+        lr=0.0,
+        preset="ledger_probe",
+        allow_verifier_preset=True,
+        device="cpu",
+        fake_quant=False,
+        save_interval=0,
+        resume_completed_stages=True,
+        distributed="pipeline_stage",
+        nproc_per_node=3,
+    )
+    result = orch.run_long_context_curriculum_stage(profile, manifest, out_dir, initial, args)
+    assert result["status"] == "passed"
+    assert result["context_ladder"] == [2048, 4096]
+    assert seq_lens == [2048, 4096]
+    assert resumes[0] == str(initial)
+    assert "01_ctx2048" in resumes[1]
+    assert result["final_checkpoint"].endswith("02_ctx4096")
+
+
+def test_long_context_records_preserve_large_token_spans(tmp_path, monkeypatch):
+    trace = tmp_path / "traces.jsonl"
+    long_a = "A" * 7000
+    long_b = "B" * 7000
+    _write_jsonl(trace, [{"content": long_a}, {"content": long_b}])
+    plan = {
+        "context_ladder": [4096, 8192, 12000],
+        "long_context_target_chars": 12000,
+        "long_context_text_token_limit": 12000,
+        "long_context_prompt_token_limit": 128,
+        "long_context_min_chars_per_record": 1000,
+        "fallback_token_count": 4,
+    }
+
+    rows = orch.collect_text_like("long_context", [trace], plan, limit=4, min_chars=20)
+
+    assert rows
+    assert rows[0]["source_payload"]["packed_long_context"] is True
+    assert rows[0]["token_count"] >= 12000
+    assert len(rows[0]["target_json"]["content"]) == 12000
+
+
+def test_long_context_curriculum_rejects_padded_fake_long_rows(tmp_path):
+    profile = _profile(tmp_path)
+    profile["model_contract"] = {"target_context_length": 1048576, "target_profile": "ledger_probe"}
+    profile["training_plan"].update(
+        {
+            "preset": "ledger_probe",
+            "context_ladder": [1048576],
+            "seq_len": 1024,
+            "long_context_min_real_token_fraction": 0.5,
+            "long_context_min_real_tokens": 8192,
+        }
+    )
+    out_dir = tmp_path / "out"
+    train_jsonl = out_dir / "jsonl" / "train_long_context.jsonl"
+    _write_jsonl(train_jsonl, [{"token_ids": [1, 2, 3, 4], "modality": "long_context"}])
+    initial = tmp_path / "initial_checkpoint"
+    initial.mkdir()
+    manifest = {
+        "per_modality_jsonl": {"long_context": str(train_jsonl)},
+        "per_modality_split_jsonl": {"long_context": {"train": str(train_jsonl)}},
+    }
+    args = _runtime_args(
+        seq_len=1024,
+        context_ladder="1048576",
+        long_context_steps_per_rung=1,
+        batch_size=1,
+        steps_per_stage=1,
+        lr=0.0,
+        preset="ledger_probe",
+        allow_verifier_preset=True,
+    )
+
+    result = orch.run_long_context_curriculum_stage(profile, manifest, out_dir, initial, args)
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "long_context_rows_too_short_for_curriculum"
+
+
+def test_long_context_curriculum_rejects_mostly_padded_rows(tmp_path):
+    profile = _profile(tmp_path)
+    profile["model_contract"] = {"target_context_length": 4096, "target_profile": "ledger_probe"}
+    profile["training_plan"].update(
+        {
+            "preset": "ledger_probe",
+            "context_ladder": [4096],
+            "seq_len": 1024,
+            "long_context_min_real_token_fraction": 0.5,
+            "long_context_min_real_tokens": 1024,
+            "long_context_min_real_row_fraction": 0.5,
+        }
+    )
+    out_dir = tmp_path / "out"
+    train_jsonl = out_dir / "jsonl" / "train_long_context.jsonl"
+    rows = [{"target_text_token_count": 4096, "modality": "long_context"}]
+    rows.extend({"target_text_token_count": 4, "modality": "long_context"} for _ in range(9))
+    _write_jsonl(train_jsonl, rows)
+    initial = tmp_path / "initial_checkpoint"
+    initial.mkdir()
+    manifest = {
+        "per_modality_jsonl": {"long_context": str(train_jsonl)},
+        "per_modality_split_jsonl": {"long_context": {"train": str(train_jsonl)}},
+    }
+
+    result = orch.run_long_context_curriculum_stage(
+        profile,
+        manifest,
+        out_dir,
+        initial,
+        _runtime_args(
+            seq_len=1024,
+            context_ladder="4096",
+            long_context_steps_per_rung=1,
+            batch_size=1,
+            steps_per_stage=1,
+            lr=0.0,
+            preset="ledger_probe",
+            allow_verifier_preset=True,
+        ),
+    )
+
+    assert result["status"] == "failed"
+    assert result["density_report"]["failed_rungs"][0]["eligible_rows"] == 1
+    assert result["density_report"]["failed_rungs"][0]["eligible_fraction"] == 0.1
+    assert result["density_report"]["failed_rungs"][0]["context_length"] == 4096
 
 
 def test_run_real_cli_wires_live_posttraining_args(tmp_path, monkeypatch):
@@ -1055,6 +1335,11 @@ def test_run_real_cli_wires_live_posttraining_args(tmp_path, monkeypatch):
 
     monkeypatch.setattr(orch, "build_real_corpus", lambda loaded, out: {"status": "ok"})
     monkeypatch.setattr(orch, "run_training_stages", lambda loaded, manifest, out, args: {"status": "passed", "final_checkpoint": str(tmp_path / "ckpt.pt")})
+    monkeypatch.setattr(
+        orch,
+        "run_long_context_curriculum_stage",
+        lambda loaded, manifest, out, checkpoint, args: {"status": "passed", "final_checkpoint": checkpoint},
+    )
 
     def fake_posttraining(loaded, out, training, args):
         captured["args"] = args

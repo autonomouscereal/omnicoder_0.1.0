@@ -456,7 +456,7 @@ def extract_text(record: dict[str, Any]) -> str:
                 if key in value:
                     visit(value[key])
         elif isinstance(value, list):
-            for item in value[:64]:
+            for item in value[:4096]:
                 visit(item)
 
     visit(record)
@@ -470,6 +470,50 @@ def text_to_ledger_ids(text: str, limit: int = 384) -> list[int]:
     if not data:
         return [lo + 1]
     return [lo + 1 + (byte % max(1, span - 1)) for byte in data[: max(1, int(limit))]]
+
+
+def plan_context_ladder_values(plan: dict[str, Any]) -> list[int]:
+    raw = plan.get("context_ladder") or plan.get("long_context_ladder") or []
+    if isinstance(raw, str):
+        values = [part.strip() for part in raw.split(",") if part.strip()]
+    elif isinstance(raw, (list, tuple)):
+        values = list(raw)
+    else:
+        values = []
+    parsed: list[int] = []
+    for value in values:
+        try:
+            item = int(value)
+        except (TypeError, ValueError):
+            continue
+        if item > 0:
+            parsed.append(item)
+    if not parsed:
+        parsed = [8192, 32768, 131072, 262144, 524288, 1048576]
+    return sorted(dict.fromkeys(max(1024, int(value)) for value in parsed))
+
+
+def modality_text_token_limit(plan: dict[str, Any], modality: str, *, prompt: bool = False) -> int:
+    by_modality = plan.get("text_token_limit_by_modality") if isinstance(plan.get("text_token_limit_by_modality"), dict) else {}
+    if modality == "long_context":
+        ladder_max = max(plan_context_ladder_values(plan))
+        if prompt:
+            return int(plan.get("long_context_prompt_token_limit") or min(8192, max(512, ladder_max // 64)))
+        return int(plan.get("long_context_text_token_limit") or ladder_max)
+    configured = by_modality.get(modality)
+    if configured is not None:
+        return int(configured)
+    return int(plan.get("text_token_limit") or 384)
+
+
+def modality_target_chars(plan: dict[str, Any], modality: str) -> int:
+    by_modality = plan.get("target_text_chars_by_modality") if isinstance(plan.get("target_text_chars_by_modality"), dict) else {}
+    configured = by_modality.get(modality)
+    if configured is not None:
+        return int(configured)
+    if modality == "long_context":
+        return int(plan.get("long_context_target_chars") or max(plan_context_ladder_values(plan)))
+    return int(plan.get("target_text_chars") or 3000)
 
 
 def hash_file(path: Path, max_hash_bytes: int) -> dict[str, Any]:
@@ -796,7 +840,8 @@ def make_training_record(
     media_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     control_lo, _ = LEDGER_RANGES["control"]
-    token_limit = int(plan.get("text_token_limit") or 384)
+    token_limit = modality_text_token_limit(plan, modality)
+    prompt_limit = modality_text_token_limit(plan, modality, prompt=True)
     token_ids: list[int] = [control_lo + (int(stable_hash(modality)[:4], 16) % 4096)]
     artifact_refs: list[dict[str, Any]] = []
     effective_media_metadata = media_metadata or (source_payload if isinstance(source_payload, dict) and ("probe" in source_payload or "image_header" in source_payload) else None) or {}
@@ -806,8 +851,10 @@ def make_training_record(
         artifact_refs.append(artifact)
     elif modality in MODALITY_RANGE:
         token_ids.extend(hash_to_range_tokens(stable_hash(source_payload or prompt), MODALITY_RANGE[modality], int(plan.get("fallback_token_count") or 32)))
-    token_ids.extend(text_to_ledger_ids(prompt, token_limit // 2))
-    token_ids.extend(text_to_ledger_ids(target, token_limit))
+    prompt_token_ids = text_to_ledger_ids(prompt, prompt_limit)
+    target_token_ids = text_to_ledger_ids(target, token_limit)
+    token_ids.extend(prompt_token_ids)
+    token_ids.extend(target_token_ids)
     source_date = "2026-05-23"
     if isinstance(source_payload, dict) and source_payload.get("source_date"):
         source_date = str(source_payload.get("source_date"))[:10]
@@ -868,6 +915,12 @@ def make_training_record(
         "artifact_refs": artifact_refs,
         "media_metadata": effective_media_metadata,
         "payload_sha256": stable_hash({"prompt": prompt, "target": target, "artifact_refs": artifact_refs, "media_metadata": effective_media_metadata}),
+        "token_count": len(token_ids),
+        "text_token_count": max(0, len(token_ids) - 1 - sum(int(artifact.get("token_count") or 0) for artifact in artifact_refs)),
+        "prompt_text_token_count": len(prompt_token_ids),
+        "target_text_token_count": len(target_token_ids),
+        "prompt_char_count": len(prompt),
+        "target_char_count": len(target),
         "quality": {"score": quality_value, "label": quality_label},
         "contamination": contamination,
         "source_payload": source_payload or {},
@@ -883,12 +936,70 @@ def collect_text_like(
     min_chars: int = 40,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    long_context_parts: list[str] = []
+    long_context_sources: list[str] = []
+    long_context_chars = 0
+    long_target_chars = modality_target_chars(plan, "long_context")
+
+    def flush_long_context_bundle(force: bool = False) -> bool:
+        nonlocal long_context_chars
+        if modality != "long_context" or not long_context_parts:
+            return False
+        text = "\n\n".join(long_context_parts).strip()
+        min_bundle_chars = int(plan.get("long_context_min_chars_per_record") or min(long_target_chars, max(8192, long_target_chars // 4)))
+        if not force and len(text) < min_bundle_chars:
+            return False
+        spans = [
+            text[start : start + long_target_chars]
+            for start in range(0, len(text), max(1, long_target_chars))
+        ]
+        emitted = False
+        for span_index, span in enumerate(spans):
+            if not span.strip():
+                continue
+            if not force and len(span) < min_bundle_chars:
+                continue
+            source_payload = {
+                "source_id": stable_hash({"long_context_sources": long_context_sources, "chars": len(span), "span_index": span_index}),
+                "source_date": "2026-05-23",
+                "sources": list(long_context_sources),
+                "packed_long_context": True,
+                "char_count": len(span),
+                "packed_total_char_count": len(text),
+                "span_index": span_index,
+            }
+            rows.append(
+                make_training_record(
+                    modality,
+                    "Learn the packed long-context retained source span and preserve retrieval anchors across the full context.",
+                    span,
+                    "packed:" + stable_hash(long_context_sources) + f":{span_index}",
+                    plan,
+                    source_payload=source_payload,
+                )
+            )
+            emitted = True
+            if len(rows) >= limit:
+                break
+        long_context_parts.clear()
+        long_context_sources.clear()
+        long_context_chars = 0
+        return emitted and len(rows) >= limit
+
     for path in paths:
         candidates = sorted(path.rglob("*.jsonl")) if path.is_dir() else [path]
         for src in candidates:
             for record in iter_jsonl(src):
                 text = extract_text(record)
                 if len(text) < min_chars:
+                    continue
+                if modality == "long_context":
+                    long_context_parts.append(text)
+                    long_context_sources.append(str(src))
+                    long_context_chars += len(text)
+                    if long_context_chars >= long_target_chars:
+                        if flush_long_context_bundle(force=True):
+                            return rows
                     continue
                 prompt = f"Learn the {modality} source record and preserve its useful training signal."
                 if modality == "code":
@@ -897,10 +1008,12 @@ def collect_text_like(
                     prompt = "Learn the agent tool-call and observation trajectory."
                 elif modality == "long_context":
                     prompt = "Learn the long-context retained source span and anchor metadata."
-                target = text[: int(plan.get("target_text_chars") or 3000)]
+                target = text[: modality_target_chars(plan, modality)]
                 rows.append(make_training_record(modality, prompt, target, str(src), plan, source_payload=record))
                 if len(rows) >= limit:
                     return rows
+    if modality == "long_context":
+        flush_long_context_bundle(force=True)
     return rows
 
 
@@ -1101,8 +1214,8 @@ def collect_file_text_like(
     min_chars: int = 1,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    max_bytes = int(plan.get("max_text_file_bytes") or 1024 * 1024)
-    target_chars = int(plan.get("target_text_chars") or 3000)
+    max_bytes = int((plan.get("long_context_max_text_file_bytes") if modality == "long_context" else None) or plan.get("max_text_file_bytes") or 1024 * 1024)
+    target_chars = modality_target_chars(plan, modality)
     for path in find_text_files(roots, suffixes, limit, max_bytes):
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
@@ -1119,6 +1232,17 @@ def collect_file_text_like(
             prompt = f"Compress and retrieve useful long-context information from {path.name}."
         else:
             prompt = f"Learn the real text/document signal from {path.name}."
+        if modality == "long_context":
+            stride = max(target_chars, 1)
+            for start in range(0, len(text), stride):
+                span = text[start : start + target_chars]
+                if len(span) < min_chars:
+                    continue
+                payload = {"path": str(path), "byte_size": path.stat().st_size, "span_start": start, "span_end": start + len(span)}
+                rows.append(make_training_record(modality, prompt, span, str(path), plan, source_payload=payload))
+                if len(rows) >= limit:
+                    return rows
+            continue
         rows.append(make_training_record(modality, prompt, text[:target_chars], str(path), plan, source_payload={"path": str(path), "byte_size": path.stat().st_size}))
         if len(rows) >= limit:
             break
@@ -2183,6 +2307,39 @@ def stage_int_setting(plan: dict[str, Any], key: str, modality: str, default_val
     return int(default_value)
 
 
+def context_ladder_values(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> list[int]:
+    plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
+    scheduler = cfg.get("adaptive_training_scheduler_2026") if isinstance(cfg.get("adaptive_training_scheduler_2026"), dict) else {}
+    contract = cfg.get("model_contract") if isinstance(cfg.get("model_contract"), dict) else {}
+    raw: Any = (
+        arg_value(args, "context_ladder", "")
+        or os.environ.get("OMNICODER_CONTEXT_LADDER", "")
+        or plan.get("context_ladder")
+        or scheduler.get("context_ladder")
+        or []
+    )
+    values: list[int] = []
+    if isinstance(raw, str):
+        parts: Iterable[Any] = [part.strip() for part in raw.split(",") if part.strip()]
+    elif isinstance(raw, (list, tuple)):
+        parts = raw
+    else:
+        parts = []
+    for part in parts:
+        try:
+            value = int(part)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            values.append(value)
+    if not values:
+        values = [8192, 32768, 131072, 262144, 524288, 1048576]
+    target = int(contract.get("target_context_length") or plan.get("target_context_length") or 1048576)
+    if target > 0 and target not in values:
+        values.append(target)
+    return sorted(dict.fromkeys(max(1024, int(value)) for value in values))
+
+
 def sample_loss_max_records_per_file(
     cfg: dict[str, Any],
     args: argparse.Namespace | None = None,
@@ -2906,6 +3063,263 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
     }
 
 
+def training_row_token_count(row: dict[str, Any]) -> int:
+    for key in ("target_text_token_count", "target_token_count"):
+        try:
+            value = int(row.get(key) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value > 0:
+            return value
+    target_json = row.get("target_json") if isinstance(row.get("target_json"), dict) else {}
+    target_text = target_json.get("content") if isinstance(target_json.get("content"), str) else ""
+    if target_text:
+        return len(text_to_ledger_ids(target_text, int(row.get("max_token_probe") or 1048576)))
+    for key in ("text_token_count", "token_count"):
+        try:
+            value = int(row.get(key) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value > 0:
+            return value
+    ids = row.get("token_ids")
+    if isinstance(ids, list):
+        return len(ids)
+    return len(text_to_ledger_ids(extract_text(row), int(row.get("max_token_probe") or 1048576)))
+
+
+def long_context_density_report(train_path: Path, ladder: list[int], plan: dict[str, Any]) -> dict[str, Any]:
+    lengths: list[int] = []
+    for row in iter_jsonl(train_path):
+        lengths.append(training_row_token_count(row))
+    if not lengths:
+        return {"status": "failed", "reason": "no_long_context_rows", "records": 0, "max_tokens": 0}
+    lengths.sort()
+    max_tokens = lengths[-1]
+    fraction = float(plan.get("long_context_min_real_token_fraction") if plan.get("long_context_min_real_token_fraction") is not None else 0.5)
+    absolute_floor = int(plan.get("long_context_min_real_tokens") or 8192)
+    min_row_fraction = float(plan.get("long_context_min_real_row_fraction") if plan.get("long_context_min_real_row_fraction") is not None else 0.25)
+    min_eligible_rows = int(plan.get("long_context_min_eligible_rows") or 1)
+    rung_reports: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for context_len in ladder:
+        required = max(1, min(int(context_len), max(absolute_floor, int(int(context_len) * fraction))))
+        eligible_rows = sum(1 for value in lengths if value >= required)
+        eligible_fraction = eligible_rows / max(1, len(lengths))
+        passed = max_tokens >= required and eligible_rows >= min_eligible_rows and eligible_fraction >= min_row_fraction
+        row = {
+            "context_length": int(context_len),
+            "required_real_tokens": int(required),
+            "max_real_tokens": int(max_tokens),
+            "eligible_rows": int(eligible_rows),
+            "eligible_fraction": float(eligible_fraction),
+            "min_eligible_rows": int(min_eligible_rows),
+            "min_real_row_fraction": float(min_row_fraction),
+            "status": "passed" if passed else "failed",
+        }
+        rung_reports.append(row)
+        if row["status"] != "passed":
+            failures.append(row)
+    p95 = lengths[min(len(lengths) - 1, int(len(lengths) * 0.95))]
+    return {
+        "schema": "omnicoder.long_context_density_report_2026.v1",
+        "status": "failed" if failures else "passed",
+        "records": len(lengths),
+        "max_tokens": int(max_tokens),
+        "p95_tokens": int(p95),
+        "min_real_token_fraction": fraction,
+        "min_real_row_fraction": min_row_fraction,
+        "min_eligible_rows": min_eligible_rows,
+        "absolute_floor": absolute_floor,
+        "rungs": rung_reports,
+        "failed_rungs": failures,
+    }
+
+
+def run_long_context_curriculum_stage(
+    profile: dict[str, Any],
+    manifest: dict[str, Any],
+    out_dir: Path,
+    checkpoint: str | Path | None,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    if not checkpoint or not Path(str(checkpoint)).exists():
+        return {"status": "failed", "reason": "missing_checkpoint_for_long_context_curriculum", "initial_checkpoint": str(checkpoint)}
+    cfg = profile_cfg(profile)
+    plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
+    split_paths = manifest.get("per_modality_split_jsonl", {}).get("long_context", {}) if isinstance(manifest.get("per_modality_split_jsonl"), dict) else {}
+    train_path = Path(split_paths.get("train") or manifest.get("per_modality_jsonl", {}).get("long_context", ""))
+    if not train_path.exists() or train_path.stat().st_size <= 0:
+        return {"status": "failed", "reason": "missing_long_context_train_jsonl", "train_jsonl": str(train_path)}
+    base_seq_len = int(arg_value(args, "seq_len", 0) or plan.get("seq_len") or 1024)
+    ladder = [value for value in context_ladder_values(cfg, args) if int(value) > base_seq_len]
+    if not ladder:
+        ladder = [base_seq_len]
+    density = long_context_density_report(train_path, ladder, plan)
+    density_path = out_dir / "manifests" / "long_context_density_report.json"
+    write_json(density_path, density)
+    if density.get("status") != "passed":
+        return {
+            "schema": "omnicoder.long_context_curriculum_2026.v1",
+            "status": "failed",
+            "reason": "long_context_rows_too_short_for_curriculum",
+            "initial_checkpoint": str(checkpoint),
+            "final_checkpoint": str(checkpoint),
+            "train_jsonl": str(train_path),
+            "context_ladder": [int(value) for value in ladder],
+            "density_report": density,
+            "density_report_path": str(density_path),
+            "rungs": [],
+        }
+    steps = int(arg_value(args, "long_context_steps_per_rung", 0) or plan.get("long_context_steps_per_rung") or arg_value(args, "steps_per_stage", 0) or plan.get("steps_per_stage") or 64)
+    batch_size = int(arg_value(args, "batch_size", 0) or plan.get("batch_size") or 1)
+    lr = float(arg_value(args, "lr", 0.0) or plan.get("long_context_learning_rate") or plan.get("learning_rate") or 0.001)
+    preset = resolve_training_preset(cfg, args)
+    guard_target_training_preset(cfg, preset, args)
+    device = str(arg_value(args, "device", "") or plan.get("device") or ("cuda" if torch_available() else "cpu"))
+    save_interval = int(arg_value(args, "save_interval", 0) or plan.get("save_interval") or 0)
+    pipeline_stage_trainer = uses_pipeline_stage_trainer(cfg, args)
+    expected_world_size = expected_pipeline_world_size(cfg, args)
+    resume_completed = resume_completed_stages_enabled(plan, args)
+    fake_quant = bool(arg_value(args, "fake_quant", False) or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled"))
+    current_checkpoint = Path(str(checkpoint))
+    rung_reports: list[dict[str, Any]] = []
+    root = out_dir / "checkpoints" / "long_context_curriculum"
+    for index, context_len in enumerate(ladder, 1):
+        checkpoint_out = root / f"{index:02d}_ctx{int(context_len)}"
+        train_log = out_dir / "logs" / f"long_context_curriculum_{index:02d}_ctx{int(context_len)}_loss.jsonl"
+        report: dict[str, Any] = {
+            "stage": "long_context",
+            "rung": index,
+            "context_length": int(context_len),
+            "train_jsonl": str(train_path),
+            "heldout_jsonl": {key: value for key, value in split_paths.items() if key in {"eval", "test"}},
+            "checkpoint": str(checkpoint_out),
+            "initial_checkpoint": str(current_checkpoint),
+            "steps": int(steps),
+            "batch_size": int(batch_size),
+            "lr": float(lr),
+        }
+        if resume_completed and checkpoint_is_complete(checkpoint_out, expected_world_size=expected_world_size):
+            current_checkpoint = checkpoint_out
+            losses = parse_losses(train_log)
+            report.update(
+                {
+                    "status": "passed",
+                    "reason": "completed_checkpoint_present",
+                    "loss_log": str(train_log),
+                    "loss_points": len(losses),
+                    "loss_first": losses[0] if losses else None,
+                    "loss_last": losses[-1] if losses else None,
+                }
+            )
+            rung_reports.append(report)
+            continue
+        if resume_completed and checkpoint_out.exists() and not checkpoint_is_complete(checkpoint_out, expected_world_size=expected_world_size):
+            report.update({"status": "failed", "reason": "incomplete_existing_checkpoint", "completion_marker": str(checkpoint_complete_marker(checkpoint_out))})
+            rung_reports.append(report)
+            break
+        cmd = pretrain_launcher(cfg, args) + [
+            "--preset",
+            preset,
+            "--data",
+            str(train_path),
+            "--out",
+            str(checkpoint_out),
+            "--seq_len",
+            str(int(context_len)),
+            "--batch_size",
+            str(batch_size),
+            "--steps",
+            str(steps),
+            "--lr",
+            str(lr),
+            "--max_records",
+            "0",
+            "--log_file",
+            str(train_log),
+            "--data_manifest",
+            str(out_dir / "manifests" / "curation_manifest.json"),
+            "--resume",
+            str(current_checkpoint),
+        ]
+        if not pipeline_stage_trainer:
+            cmd.extend(["--device", device, "--aux_probe"])
+        append_pretrain_runtime_args(cmd, cfg, args)
+        if save_interval > 0:
+            cmd.extend(["--save_interval", str(save_interval)])
+        if fake_quant:
+            cmd.append("--fake_quant")
+        code = run_command(cmd, out_dir / "logs" / f"long_context_curriculum_{index:02d}_ctx{int(context_len)}_command.log")
+        losses = parse_losses(train_log)
+        trend_report = learning_report(
+            losses,
+            min_relative_drop=float(training_checks(cfg).get("min_relative_loss_drop") or 0.001),
+            min_points=int(training_checks(cfg).get("min_loss_points") or 2),
+        )
+        report.update(
+            {
+                "returncode": code,
+                "loss_log": str(train_log),
+                "loss_points": len(losses),
+                "loss_first": losses[0] if losses else None,
+                "loss_last": losses[-1] if losses else None,
+                "checkpoint_complete": checkpoint_is_complete(checkpoint_out, expected_world_size=expected_world_size),
+            }
+        )
+        for key, value in trend_report.items():
+            if key == "status":
+                report["learning_status"] = value
+            else:
+                report[key] = value
+        if code == 0 and report["checkpoint_complete"]:
+            heldout_args = namespace_with(args, seq_len=int(context_len), benchmark_seq_len=int(context_len))
+            report["heldout_sample_loss"] = run_sample_loss_eval(
+                checkpoint_out,
+                "long_context",
+                split_paths,
+                out_dir,
+                cfg=cfg,
+                args=heldout_args,
+                preset=preset,
+                device=device,
+                seq_len=int(context_len),
+            )
+            if report["heldout_sample_loss"].get("status") == "failed":
+                report["status"] = "failed"
+                report["reason"] = "heldout_sample_loss_failed"
+            else:
+                report["status"] = "passed"
+                current_checkpoint = checkpoint_out
+        else:
+            report["status"] = "failed"
+            report["reason"] = "long_context_trainer_returned_nonzero_or_incomplete_checkpoint"
+        rung_reports.append(report)
+        if report.get("status") != "passed":
+            break
+    status = "failed" if any(row.get("status") != "passed" for row in rung_reports) else "passed"
+    benchmark_gate = (
+        run_checkpoint_benchmark_gate(profile, manifest, out_dir, current_checkpoint, "long_context_curriculum_final", namespace_with(args, benchmark_seq_len=int(ladder[-1])))
+        if status == "passed" and current_checkpoint
+        else {"status": "skipped", "reason": "long_context_curriculum_failed"}
+    )
+    if benchmark_gate.get("status") == "failed":
+        status = "failed"
+    return {
+        "schema": "omnicoder.long_context_curriculum_2026.v1",
+        "status": status,
+        "initial_checkpoint": str(checkpoint),
+        "final_checkpoint": str(current_checkpoint),
+        "train_jsonl": str(train_path),
+        "context_ladder": [int(value) for value in ladder],
+        "density_report": density,
+        "density_report_path": str(density_path),
+        "steps_per_rung": int(steps),
+        "rungs": rung_reports,
+        "benchmark_gate": benchmark_gate,
+    }
+
+
 def declared_posttrain_algorithms(rl: dict[str, Any]) -> list[str]:
     replay = rl.get("offline_reward_replay") if isinstance(rl.get("offline_reward_replay"), dict) else {}
     stack = rl.get("policy_stack_2026") if isinstance(rl.get("policy_stack_2026"), dict) else {}
@@ -3337,6 +3751,61 @@ def run_checkpoint_benchmark_gate(
         require_reportable_gate = truthy_value(arg_value(args, "require_reportable_gate", False))
         benchmark_predictions_raw = str(arg_value(args, "benchmark_predictions", "") or "").strip()
         benchmark_predictions = resolve_path(benchmark_predictions_raw, repo_root()) if benchmark_predictions_raw else None
+
+        def generate_predictions_if_configured() -> dict[str, Any]:
+            backend = str(
+                arg_value(args, "benchmark_prediction_backend", "")
+                or os.environ.get("OMNICODER_BENCHMARK_PREDICTION_BACKEND", "")
+                or gates_cfg.get("prediction_backend")
+                or ""
+            ).strip()
+            if not backend:
+                return {"status": "skipped", "reason": "no_prediction_backend_configured"}
+            prediction_out = reportable_dir / "model_predictions.jsonl"
+            summary_out = reportable_dir / "model_prediction_summary.json"
+            model_id = str(arg_value(args, "benchmark_prediction_model", "") or os.environ.get("OMNICODER_BENCHMARK_PREDICTION_MODEL", "") or checkpoint_path)
+            prediction_cmd = [
+                sys.executable,
+                "-m",
+                "omnicoder.eval.reportable_prediction_harness_2026",
+                "--backend",
+                backend,
+                "--model",
+                model_id,
+                "--out",
+                str(prediction_out),
+                "--summary",
+                str(summary_out),
+                "--force",
+            ]
+            for task_path in reportable_paths:
+                prediction_cmd.extend(["--tasks", str(task_path)])
+            max_output_tokens = int(arg_value(args, "benchmark_prediction_max_output_tokens", 0) or os.environ.get("OMNICODER_BENCHMARK_PREDICTION_MAX_OUTPUT_TOKENS", "0") or gates_cfg.get("prediction_max_output_tokens") or 0)
+            timeout = int(arg_value(args, "benchmark_prediction_timeout_seconds", 0) or os.environ.get("OMNICODER_BENCHMARK_PREDICTION_TIMEOUT_SECONDS", "0") or gates_cfg.get("prediction_timeout_seconds") or 0)
+            if max_output_tokens > 0:
+                prediction_cmd.extend(["--max-output-tokens", str(max_output_tokens)])
+            if timeout > 0:
+                prediction_cmd.extend(["--timeout-seconds", str(timeout)])
+            if backend == "openai-compatible":
+                base_url = str(arg_value(args, "benchmark_prediction_base_url", "") or os.environ.get("OMNICODER_BENCHMARK_PREDICTION_BASE_URL", "") or gates_cfg.get("prediction_base_url") or "")
+                api_key_env = str(arg_value(args, "benchmark_prediction_api_key_env", "") or os.environ.get("OMNICODER_BENCHMARK_PREDICTION_API_KEY_ENV", "") or gates_cfg.get("prediction_api_key_env") or "OPENAI_API_KEY")
+                prediction_cmd.extend(["--base-url", base_url, "--api-key-env", api_key_env])
+            elif backend == "checkpoint-runner":
+                runner = str(arg_value(args, "benchmark_prediction_checkpoint_runner", "") or os.environ.get("OMNICODER_BENCHMARK_PREDICTION_CHECKPOINT_RUNNER", "") or gates_cfg.get("prediction_checkpoint_runner") or "")
+                prediction_cmd.extend(["--checkpoint-runner", runner, "--checkpoint-path", str(checkpoint_path)])
+            prediction_code = run_command(prediction_cmd, out_dir / "logs" / f"benchmark_{safe_filename(phase)}_prediction_harness.log")
+            summary = read_json(summary_out) if summary_out.exists() else {}
+            return {
+                "status": "passed" if prediction_code == 0 and prediction_out.exists() and count_jsonl_rows(prediction_out) > 0 else "failed",
+                "returncode": prediction_code,
+                "backend": backend,
+                "path": str(prediction_out),
+                "summary": str(summary_out),
+                "records": count_jsonl_rows(prediction_out) if prediction_out.exists() else 0,
+                "summary_json": summary,
+                "source": "generated_by_reportable_prediction_harness",
+            }
+
         if not reportable_paths:
             gate = {
                 "status": "needs_data",
@@ -3362,25 +3831,31 @@ def run_checkpoint_benchmark_gate(
                 "records": count_jsonl_rows(benchmark_predictions),
                 "source": "model_generated_predictions",
             }
-        elif benchmark_cycle == "smoke" and not checkpoint_path.is_dir():
-            prediction_seed = write_reportable_prediction_seed(reportable_paths, reportable_dir / "checkpoint_predictions.jsonl")
         else:
-            prediction_seed = {
-                "path": benchmark_predictions_raw,
-                "records": 0,
-                "source": "missing_model_generated_predictions",
-            }
-            gate = {
-                "status": "pending" if not require_reportable_gate else "failed",
-                "reason": "model_generated_predictions_required_for_non_smoke_reportable_gate",
-                "cycle": benchmark_cycle,
-                "configured_predictions": benchmark_predictions_raw,
-                "task_roots": [str(path) for path in reportable_paths],
-                "configured_task_roots": [str(path) for path in reportable_roots],
-                "root_sources": reportable_sources,
-                "required": require_reportable_gate,
-            }
-            return gate, require_reportable_gate
+            generated_predictions = generate_predictions_if_configured()
+            if generated_predictions.get("status") == "passed":
+                prediction_seed = generated_predictions
+            elif benchmark_cycle == "smoke" and not checkpoint_path.is_dir():
+                prediction_seed = write_reportable_prediction_seed(reportable_paths, reportable_dir / "checkpoint_predictions.jsonl")
+            else:
+                prediction_seed = {
+                    "path": benchmark_predictions_raw,
+                    "records": 0,
+                    "source": "missing_model_generated_predictions",
+                    "generation": generated_predictions,
+                }
+                gate = {
+                    "status": "pending" if not require_reportable_gate else "failed",
+                    "reason": "model_generated_predictions_required_for_non_smoke_reportable_gate",
+                    "cycle": benchmark_cycle,
+                    "configured_predictions": benchmark_predictions_raw,
+                    "task_roots": [str(path) for path in reportable_paths],
+                    "configured_task_roots": [str(path) for path in reportable_roots],
+                    "root_sources": reportable_sources,
+                    "required": require_reportable_gate,
+                    "prediction_generation": generated_predictions,
+                }
+                return gate, require_reportable_gate
 
         reportable_cmd = [
             sys.executable,
@@ -3879,16 +4354,21 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     manifest = build_real_corpus(profile, out_dir)
     pretrain = run_training_stages(profile, manifest, out_dir, args)
     current_checkpoint = pretrain.get("final_checkpoint")
+    if pretrain.get("status") == "passed" and current_checkpoint:
+        long_context_curriculum = run_long_context_curriculum_stage(profile, manifest, out_dir, current_checkpoint, args)
+        current_checkpoint = long_context_curriculum.get("final_checkpoint") or current_checkpoint
+    else:
+        long_context_curriculum = {"status": "skipped", "reason": "multimodal_pretrain_failed"}
     initial_benchmark = (
         run_checkpoint_benchmark_gate(profile, manifest, out_dir, current_checkpoint, "after_multimodal_pretrain", args)
-        if pretrain.get("status") == "passed"
-        else {"status": "skipped", "reason": "multimodal_pretrain_failed"}
+        if long_context_curriculum.get("status") == "passed"
+        else {"status": "skipped", "reason": "long_context_curriculum_failed"}
     )
-    if pretrain.get("status") == "passed":
+    if long_context_curriculum.get("status") == "passed":
         distillation = run_distillation_curriculum_stage(profile, manifest, out_dir, current_checkpoint, args)
         current_checkpoint = distillation.get("final_checkpoint") or current_checkpoint
     else:
-        distillation = {"status": "skipped", "reason": "multimodal_pretrain_failed"}
+        distillation = {"status": "skipped", "reason": "long_context_curriculum_failed"}
     if distillation.get("status") in {"passed", "skipped"} and current_checkpoint:
         post_args = namespace_with(args, live_posttraining=True)
         posttraining = run_posttraining_stages(
@@ -3913,11 +4393,12 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     summary = {
         "schema": "omnicoder.full_training_orchestration_result_2026.v1",
         "schema_version": SCHEMA_VERSION,
-        "status": full_run_status(pretrain, distillation, posttraining, finetune, final_benchmark),
+        "status": full_run_status(pretrain, long_context_curriculum, distillation, posttraining, finetune, final_benchmark),
         "created_at": now_iso(),
         "model_contract": profile_cfg(profile).get("model_contract"),
         "curation": manifest,
         "pretraining": pretrain,
+        "long_context_curriculum": long_context_curriculum,
         "benchmark_after_pretraining": initial_benchmark,
         "distillation": distillation,
         "posttraining": posttraining,
@@ -3992,11 +4473,17 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
     out_dir = Path(args.out_dir or profile_cfg(profile).get("work_dir") or DEFAULT_OUT_DIR)
     manifest = build_real_corpus(profile, out_dir)
     training = run_training_stages(profile, manifest, out_dir, args)
-    if training["status"] == "passed":
-        posttraining = run_posttraining_stages(profile, out_dir, training, args)
+    if training["status"] == "passed" and training.get("final_checkpoint"):
+        long_context_curriculum = run_long_context_curriculum_stage(profile, manifest, out_dir, training["final_checkpoint"], args)
     else:
-        posttraining = {"status": "skipped", "reason": "dense_training_failed", "stages": []}
-    status = "failed" if training["status"] == "failed" or posttraining["status"] == "failed" else "passed"
+        long_context_curriculum = {"status": "skipped", "reason": "dense_training_failed"}
+    if long_context_curriculum["status"] == "passed":
+        training_with_context = dict(training)
+        training_with_context["final_checkpoint"] = long_context_curriculum.get("final_checkpoint") or training.get("final_checkpoint")
+        posttraining = run_posttraining_stages(profile, out_dir, training_with_context, args)
+    else:
+        posttraining = {"status": "skipped", "reason": "long_context_curriculum_failed", "stages": []}
+    status = "failed" if training["status"] == "failed" or long_context_curriculum["status"] == "failed" or posttraining["status"] == "failed" else "passed"
     summary = {
         "schema": "omnicoder.real_training_orchestration_result_2026.v1",
         "schema_version": SCHEMA_VERSION,
@@ -4005,6 +4492,7 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
         "model_contract": profile_cfg(profile).get("model_contract"),
         "curation": manifest,
         "training": training,
+        "long_context_curriculum": long_context_curriculum,
         "posttraining": posttraining,
         "artifacts": {
             "out_dir": str(out_dir),
@@ -4049,6 +4537,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--resume-checkpoint", default="")
     run.add_argument("--start-stage", default="", help="Start dense pretraining at this 1-based stage index or modality name")
     run.add_argument("--stage-order", default="", help="Comma-separated dense pretraining stage order override")
+    run.add_argument("--context-ladder", dest="context_ladder", default="", help="Comma-separated real long-context curriculum ladder; defaults to the 8K..1M profile ladder")
+    run.add_argument("--long-context-steps-per-rung", dest="long_context_steps_per_rung", type=int, default=0)
     run.add_argument("--resume-completed-stages", dest="resume_completed_stages", action="store_true", default=None, help="Skip stages whose expected checkpoint already exists")
     run.add_argument("--rerun-completed-stages", dest="resume_completed_stages", action="store_false", help="Retrain stages even when their expected checkpoint exists")
     run.add_argument("--save-interval", type=int, default=0)
@@ -4091,6 +4581,13 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--benchmark-cycle", dest="benchmark_cycle", default="")
     run.add_argument("--benchmark-min-tasks", dest="benchmark_min_tasks", type=int, default=0)
     run.add_argument("--benchmark-predictions", dest="benchmark_predictions", default="")
+    run.add_argument("--benchmark-prediction-backend", dest="benchmark_prediction_backend", default="")
+    run.add_argument("--benchmark-prediction-model", dest="benchmark_prediction_model", default="")
+    run.add_argument("--benchmark-prediction-base-url", dest="benchmark_prediction_base_url", default="")
+    run.add_argument("--benchmark-prediction-api-key-env", dest="benchmark_prediction_api_key_env", default="")
+    run.add_argument("--benchmark-prediction-checkpoint-runner", dest="benchmark_prediction_checkpoint_runner", default="")
+    run.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
+    run.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
     run.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     run.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     run.set_defaults(func=run_real)
@@ -4145,6 +4642,13 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--benchmark-cycle", dest="benchmark_cycle", default="")
     post.add_argument("--benchmark-min-tasks", dest="benchmark_min_tasks", type=int, default=0)
     post.add_argument("--benchmark-predictions", dest="benchmark_predictions", default="")
+    post.add_argument("--benchmark-prediction-backend", dest="benchmark_prediction_backend", default="")
+    post.add_argument("--benchmark-prediction-model", dest="benchmark_prediction_model", default="")
+    post.add_argument("--benchmark-prediction-base-url", dest="benchmark_prediction_base_url", default="")
+    post.add_argument("--benchmark-prediction-api-key-env", dest="benchmark_prediction_api_key_env", default="")
+    post.add_argument("--benchmark-prediction-checkpoint-runner", dest="benchmark_prediction_checkpoint_runner", default="")
+    post.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
+    post.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
     post.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     post.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     post.set_defaults(func=run_posttrain, live_posttraining=True)
@@ -4159,6 +4663,8 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--resume-checkpoint", default="")
     full.add_argument("--start-stage", default="", help="Start dense pretraining at this 1-based stage index or modality name")
     full.add_argument("--stage-order", default="", help="Comma-separated dense pretraining stage order override")
+    full.add_argument("--context-ladder", dest="context_ladder", default="", help="Comma-separated real long-context curriculum ladder; defaults to the 8K..1M profile ladder")
+    full.add_argument("--long-context-steps-per-rung", dest="long_context_steps_per_rung", type=int, default=0)
     full.add_argument("--resume-completed-stages", dest="resume_completed_stages", action="store_true", default=None, help="Skip stages whose expected checkpoint already exists")
     full.add_argument("--rerun-completed-stages", dest="resume_completed_stages", action="store_false", help="Retrain stages even when their expected checkpoint exists")
     full.add_argument("--save-interval", type=int, default=0)
@@ -4207,6 +4713,13 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--benchmark-cycle", dest="benchmark_cycle", default="")
     full.add_argument("--benchmark-min-tasks", dest="benchmark_min_tasks", type=int, default=0)
     full.add_argument("--benchmark-predictions", dest="benchmark_predictions", default="")
+    full.add_argument("--benchmark-prediction-backend", dest="benchmark_prediction_backend", default="")
+    full.add_argument("--benchmark-prediction-model", dest="benchmark_prediction_model", default="")
+    full.add_argument("--benchmark-prediction-base-url", dest="benchmark_prediction_base_url", default="")
+    full.add_argument("--benchmark-prediction-api-key-env", dest="benchmark_prediction_api_key_env", default="")
+    full.add_argument("--benchmark-prediction-checkpoint-runner", dest="benchmark_prediction_checkpoint_runner", default="")
+    full.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
+    full.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
     full.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     full.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     full.set_defaults(func=run_full, live_posttraining=True)

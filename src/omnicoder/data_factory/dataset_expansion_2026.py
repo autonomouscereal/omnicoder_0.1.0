@@ -616,6 +616,11 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     declared_modality = str(entry.get("target_modality") or FAMILY_TO_MODALITY.get(family, "text"))
     stage_safe_modalities = set(plan.get("artifact_token_count", {}).keys()) | {"text", "code", "tool", "long_context"}
     modality = declared_modality if declared_modality in stage_safe_modalities else FAMILY_TO_MODALITY.get(family, "text")
+    target_limit = training_orchestration_2026.modality_target_chars(plan, modality)
+    prompt_limit = target_limit if modality != "long_context" else int(plan.get("long_context_prompt_chars") or min(8192, target_limit))
+    if modality == "long_context" and len(prompt) > len(target):
+        target = f"{prompt}\n\n{target}".strip() if target else prompt
+        prompt = "Learn this external long-context span with retained anchors and retrieval-critical dependencies."
     source_uri = str(entry.get("url") or entry.get("hf_id") or entry.get("name") or family)
     raw_id = field_text(record, field_map.get("id") or ["id", "task_id", "problem_id", "instance_id", "ID", "uid"]) or f"row-{row_index}"
     source_payload = {
@@ -635,8 +640,8 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     }
     row = training_orchestration_2026.make_training_record(
         modality,
-        prompt[: int(plan.get("target_text_chars") or 3000)],
-        target[: int(plan.get("target_text_chars") or 3000)],
+        prompt[:prompt_limit],
+        target[:target_limit],
         source_uri,
         plan,
         source_payload=source_payload,

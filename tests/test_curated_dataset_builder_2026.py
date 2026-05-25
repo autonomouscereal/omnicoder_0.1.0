@@ -186,3 +186,61 @@ def test_curated_dataset_builder_writes_manifests_and_posttraining(tmp_path, mon
     assert Path(posttraining["manifest"]).exists()
     assert posttraining["counts"]["sft"] == manifest["records"]["train"]
     assert posttraining["counts"]["reward"] == manifest["records"]["train"]
+
+
+def test_curated_trace_long_context_uses_long_context_target_chars(tmp_path):
+    long_text = "anchor " * 3000
+    plan = {
+        "target_text_chars": 512,
+        "long_context_target_chars": 12000,
+        "long_context_text_token_limit": 12000,
+        "artifact_token_count": {"long_context": 4},
+    }
+    row = builder.curated_trace_to_training_row(
+        {"lineage": {"path": "trace.jsonl"}},
+        {
+            "curated_id": "long-trace",
+            "normalized_text": long_text,
+            "quality": {"overall": 0.99, "label": "accepted"},
+            "contamination": {"status": "clean"},
+            "secret_redaction": {"has_secret": False},
+            "split_assignment": {"split": "train"},
+            "provenance": {"path": "trace.jsonl"},
+        },
+        plan,
+        {"min_quality": 0.3, "min_chars": 8, "long_context_min_chars": 1800},
+    )
+
+    assert row is not None
+    assert row["modality"] == "long_context"
+    assert len(row["target_json"]["content"]) == 12000
+    assert row["target_text_token_count"] == 12000
+
+
+def test_collect_file_rows_long_context_uses_long_context_file_caps(tmp_path):
+    root = tmp_path
+    long_root = root / "long"
+    long_root.mkdir()
+    (long_root / "large_context.txt").write_text("L" * 5000, encoding="utf-8")
+    plan = {
+        "target_text_chars": 512,
+        "long_context_target_chars": 4000,
+        "long_context_text_token_limit": 4000,
+        "long_context_max_text_file_bytes": 10000,
+        "artifact_token_count": {"long_context": 4},
+        "max_records_per_modality_by_modality": {"long_context": 4},
+    }
+    profile = {
+        "source_date": "2026-05-23",
+        "builder_2026": {
+            "max_text_file_bytes": 10,
+            "supplemental_sources": {"long_context_roots": ["long"]},
+        },
+    }
+    source_inventory: list[dict] = []
+
+    rows = builder.collect_file_rows(profile, root, plan, source_inventory)
+
+    assert rows["long_context"]
+    assert len(rows["long_context"][0]["target_json"]["content"]) == 4000
+    assert rows["long_context"][0]["target_text_token_count"] == 4000

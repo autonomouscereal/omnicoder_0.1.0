@@ -42,6 +42,24 @@ consume `OMNICODER_BENCHMARK_PREDICTIONS` once a serving/export path produces
 real model outputs for authorized tasks. That lets release gates score sharded
 20B checkpoints directly without pretending smoke fixtures are reportable.
 
+The 20B lane now inserts an explicit long-context curriculum after dense
+all-modality training and before posttraining. It walks the native context
+ladder from `8K` through `1M`, resumes each rung from the previous sharded
+checkpoint, runs heldout sample-loss checks per rung, then gates the final
+long-context checkpoint. Long-context rows are fail-closed: the curation layer
+must produce enough eligible real target tokens per row and enough eligible
+rows across the dataset, so one giant row cannot hide mostly padded short
+records. Curated traces, supplemental files, and external long-context datasets
+now use `long_context_target_chars`, `long_context_text_token_limit`, and
+`long_context_max_text_file_bytes` instead of the short global text cap.
+
+Reportable benchmark gates can now generate prediction JSONL automatically for
+authorized task snapshots when a real backend is configured through
+`OMNICODER_BENCHMARK_PREDICTION_BACKEND` plus the matching model, endpoint, or
+checkpoint-runner settings. The launcher preserves argument boundaries for
+checkpoint runners with spaces, and generated prediction files are scored by
+the existing reportable gate instead of being treated as fixture outputs.
+
 The posttraining orchestrator is fail-closed for 20B pipeline replay: a failed
 or incomplete sharded optimizer stage stops the remaining replay stack instead
 of silently continuing from an older checkpoint. The profile also enables

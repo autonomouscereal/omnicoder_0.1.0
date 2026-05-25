@@ -458,7 +458,7 @@ def curated_trace_to_training_row(
     return training_orchestration_2026.make_training_record(
         modality,
         prompt_for_modality(modality, record),
-        text[: int(plan.get("target_text_chars") or 3000)],
+        text[: training_orchestration_2026.modality_target_chars(plan, modality)],
         source_uri,
         plan,
         source_payload=source_payload,
@@ -559,12 +559,14 @@ def collect_file_rows(profile: dict[str, Any], root: Path, plan: dict[str, Any],
     sources = cfg.get("supplemental_sources") if isinstance(cfg.get("supplemental_sources"), dict) else {}
     max_files = int(cfg.get("max_files_per_root") or 128)
     max_text_bytes = int(cfg.get("max_text_file_bytes") or plan.get("max_text_file_bytes") or 1024 * 1024)
+    max_long_text_bytes = int(cfg.get("long_context_max_text_file_bytes") or plan.get("long_context_max_text_file_bytes") or max_text_bytes)
     rows_by_modality: dict[str, list[dict[str, Any]]] = {modality: [] for modality in DEFAULT_MODALITIES}
     for modality, suffixes in (("text", TEXT_SUFFIXES), ("code", CODE_SUFFIXES), ("long_context", TEXT_SUFFIXES)):
         roots = existing_paths(sources.get(f"{modality}_roots"), root)
+        modality_max_bytes = max_long_text_bytes if modality == "long_context" else max_text_bytes
         for source_root in roots:
             source_inventory.append(source_inventory_entry(source_root, f"{modality}_root", source_root.name))
-            for path in iter_files(source_root, suffixes, max_files=max_files, max_bytes=max_text_bytes):
+            for path in iter_files(source_root, suffixes, max_files=max_files, max_bytes=modality_max_bytes):
                 try:
                     text = path.read_text(encoding="utf-8", errors="ignore")
                 except OSError:
@@ -576,20 +578,35 @@ def collect_file_rows(profile: dict[str, Any], root: Path, plan: dict[str, Any],
                 secret = curation_layers_2026.redact_secrets(normalized)
                 if secret["has_secret"]:
                     continue
-                row = training_orchestration_2026.make_training_record(
-                    modality,
-                    prompt_for_modality(modality, {}),
-                    secret["redacted_text"][: int(plan.get("target_text_chars") or 3000)],
-                    str(path),
-                    plan,
-                    source_payload={
-                        "source_id": stable_hash({"path": str(path), "modality": modality}),
-                        "source_date": str(profile.get("source_date") or "2026-05-23"),
-                        "quality": {"score": 0.78, "label": "accepted_local_file"},
-                        "contamination": {"status": "unknown", "note": "local_supplemental_file_needs_downstream_scan"},
-                    },
-                )
-                rows_by_modality[modality].append(row)
+                target_chars = training_orchestration_2026.modality_target_chars(plan, modality)
+                if modality == "long_context":
+                    spans = [
+                        secret["redacted_text"][start : start + target_chars]
+                        for start in range(0, len(secret["redacted_text"]), max(1, target_chars))
+                    ]
+                else:
+                    spans = [secret["redacted_text"][:target_chars]]
+                for span_index, span in enumerate(spans):
+                    if len(span.strip()) < min_chars:
+                        continue
+                    row = training_orchestration_2026.make_training_record(
+                        modality,
+                        prompt_for_modality(modality, {}),
+                        span,
+                        str(path),
+                        plan,
+                        source_payload={
+                            "source_id": stable_hash({"path": str(path), "modality": modality, "span_index": span_index}),
+                            "source_date": str(profile.get("source_date") or "2026-05-23"),
+                            "quality": {"score": 0.78, "label": "accepted_local_file"},
+                            "contamination": {"status": "unknown", "note": "local_supplemental_file_needs_downstream_scan"},
+                            "span_index": span_index,
+                            "span_char_count": len(span),
+                        },
+                    )
+                    rows_by_modality[modality].append(row)
+                    if len(rows_by_modality[modality]) >= modality_limit(plan, modality):
+                        break
                 if len(rows_by_modality[modality]) >= modality_limit(plan, modality):
                     break
     return rows_by_modality

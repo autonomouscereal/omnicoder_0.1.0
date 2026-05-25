@@ -314,6 +314,31 @@ rejects, and artifact-validation failures. `scripts/ai_server_fast_pipeline_20b.
 passes `OMNICODER_ADAPTIVE_WEIGHTS`, `OMNICODER_MIXTURE_PLAN`,
 `OMNICODER_CONTEXT_LADDER`, and `OMNICODER_RLVR_ALGOS` into the 20B container.
 
+`run-full` and target `run-real` now add a real long-context curriculum between
+dense modality training and posttraining. The stage trains checkpoint rungs for
+the configured ladder, defaults to `8K -> 32K -> 128K -> 256K -> 512K -> 1M`,
+and resumes each rung from the previous complete checkpoint. Before any rung
+starts, `long_context_density_report.json` must pass both token-density and
+eligible-row-density checks. The default target contract requires real
+long-context rows to reach at least half of each rung's context target, at
+least eight eligible rows, and at least 25 percent eligible-row coverage. This
+prevents a single long row from masking a mostly padded dataset.
+
+Long-context curation is modality-specific. Curated traces, supplemental text
+files, and external datasets use `long_context_target_chars`,
+`long_context_text_token_limit`, and `long_context_max_text_file_bytes` instead
+of the global short-text caps. Training rows store
+`prompt_text_token_count`, `target_text_token_count`, `prompt_char_count`, and
+`target_char_count`; curriculum density gates prefer the target count so prompt
+or artifact padding cannot inflate the native-1M evidence.
+
+Reportable benchmark gates can generate model predictions automatically when
+authorized reportable tasks exist and no explicit prediction JSONL was supplied.
+Set `OMNICODER_BENCHMARK_PREDICTION_BACKEND` plus the matching model, base URL,
+API-key environment name, or checkpoint-runner command. The fast-card launcher
+quotes the full argv before `bash -lc`, so checkpoint-runner commands with
+spaces remain intact inside Docker.
+
 When a target training container or sidecar builder is actively running, stage
 code/profile updates under `weights/staged_patches/<patch_id>` and apply them
 only after a checkpoint and sidecar boundary. Do not overwrite

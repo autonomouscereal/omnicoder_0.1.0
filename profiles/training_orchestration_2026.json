@@ -971,6 +971,14 @@
       "video": 64
     },
     "batch_size": 1,
+    "context_ladder": [
+      8192,
+      32768,
+      131072,
+      262144,
+      524288,
+      1048576
+    ],
     "device": "cuda",
     "distributed_training": {
       "activation_checkpointing": true,
@@ -1038,6 +1046,14 @@
     "heldout_sample_loss_max_records_per_file": 32,
     "heldout_sample_loss_timeout_seconds": 3600,
     "learning_rate": 2e-05,
+    "long_context_max_text_file_bytes": 16777216,
+    "long_context_min_chars_per_record": 262144,
+    "long_context_min_eligible_rows": 8,
+    "long_context_min_real_token_fraction": 0.5,
+    "long_context_min_real_row_fraction": 0.25,
+    "long_context_target_chars": 1048576,
+    "long_context_steps_per_rung": 64,
+    "long_context_text_token_limit": 1048576,
     "max_hash_bytes": 268435456,
     "max_media_bytes": 536870912,
     "max_records_per_modality": 256,
