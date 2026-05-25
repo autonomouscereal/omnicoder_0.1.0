@@ -361,10 +361,14 @@ MathArena keeps math reasoning represented inside the 25-task release gate, and
 TerminalWorld-style parquet/materialized task roots are supported as local
 regression rows until authorized release snapshots are supplied.
 
-The latest dataset registry wave adds train/eval coverage for Aureth Agent SFT
+The latest dataset registry waves add train/eval coverage for Aureth Agent SFT
 Curriculum, AFM CodeAgent SFT, LiteCoder Terminal RL Preview, LiteCoder
-Terminal World Model SFT, and LexBench Browser. Train promotion remains
-license- and contamination-gated; browser benchmark rows remain eval holdout.
+Terminal World Model SFT, LexBench Browser, AgencyBench, GAIA 2, Claw-Eval
+Live, AgentFly, ProgramBench, ProjDevBench, GooseReason, ORZ Math, AEC-Bench,
+MDPBench, MMAU, Voices of Civilizations, SoulX, WaxalNLP, Qwen Image Edit VIBE,
+and VLABench video. Train promotion remains license- and contamination-gated;
+browser, project-development, official benchmark, noncommercial, license-mixed,
+and storage-heavy rows stay eval or research-internal until their gates clear.
 
 ## Why This Exists
 

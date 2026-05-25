@@ -408,6 +408,16 @@ bucket only accepts reviewed permissive rows; terminal world-model rows remain
 research-internal until the license scan is complete, and LexBench Browser is
 kept as eval holdout to avoid browser-benchmark contamination.
 
+The twenty-fifth-wave registry slice adds a broader 2026 scout pass across
+native-1M agent work, coding/project development, math RLVR, image/document
+perception, image editing, video state modeling, audio reasoning, music, and
+speech. Trainable permissive sources include AgentFly Train, ORZ Math 72K
+Extended, MDPBench, and Voices of Civilizations. AgencyBench, GAIA 2, Claw-Eval
+Live, ProgramBench Tests, ProjDevBench, AEC-Bench, and MMAU stay eval holdout.
+GooseReason, SoulX Singer Eval, WaxalNLP, Qwen Image Edit VIBE outputs, and
+VLABench video rows stay research-internal until noncommercial, license-split,
+provenance, or storage gates clear.
+
 ## Quality And Safety
 
 The curation layer stores scores instead of only dropping rows. It tracks

@@ -2096,7 +2096,57 @@ def test_repo_dataset_registry_covers_twenty_fourth_wave_agentic_code_browser_so
     assert "license_scan_required" in by_name["LiteCoder Terminal World Model SFT"]["source_review_status"]
     assert expansion.source_use_bucket(by_name["LiteCoder Terminal World Model SFT"]) == "research_internal"
     assert by_name["LexBench Browser"]["license_tier"] == "permissive_eval_holdout"
+    assert by_name["LexBench Browser"]["data_files"] == "LexBench-Browser/task.jsonl"
     assert expansion.source_use_bucket(by_name["LexBench Browser"]) == "eval_holdout"
+
+
+def test_repo_dataset_registry_covers_twenty_fifth_wave_agentic_math_audio_multimodal_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25"
+
+    expected_policy = {
+        "AgencyBench": "eval_only",
+        "GAIA 2": "eval_only",
+        "Claw-Eval Live": "eval_only",
+        "AgentFly Train": "train",
+        "ProgramBench Tests": "eval_only",
+        "ProjDevBench": "eval_only",
+        "Nemotron Research GooseReason 0.7M": "research_internal",
+        "ORZ Math 72K Extended": "train",
+        "AEC-Bench": "eval_only",
+        "MDPBench": "train",
+        "MMAU HF Dataset": "eval_only",
+        "Voices of Civilizations": "train",
+        "SoulX Singer Eval": "research_internal",
+        "WaxalNLP": "research_internal",
+        "Qwen Image Edit VIBE Outputs": "research_internal",
+        "VLABench Lerobot Video": "research_internal",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    assert by_name["AgentFly Train"]["license"] == "Apache-2.0"
+    assert expansion.source_use_bucket(by_name["AgentFly Train"]) == "train"
+    assert by_name["ORZ Math 72K Extended"]["family"] == "math_reasoning"
+    assert expansion.source_use_bucket(by_name["ORZ Math 72K Extended"]) == "train"
+    assert by_name["MDPBench"]["target_modality"] == "image"
+    assert expansion.source_use_bucket(by_name["MDPBench"]) == "train"
+    assert by_name["Voices of Civilizations"]["family"] == "audio_music_speech"
+    assert expansion.source_use_bucket(by_name["Voices of Civilizations"]) == "train"
+    assert by_name["Nemotron Research GooseReason 0.7M"]["license_tier"] == "noncommercial_research_internal"
+    assert expansion.source_use_bucket(by_name["Nemotron Research GooseReason 0.7M"]) == "research_internal"
+    assert "license_split" in by_name["WaxalNLP"]["license_tier"]
+    assert expansion.source_use_bucket(by_name["WaxalNLP"]) == "research_internal"
+    assert by_name["Qwen Image Edit VIBE Outputs"]["family"] == "image_generation_editing"
+    assert expansion.source_use_bucket(by_name["Qwen Image Edit VIBE Outputs"]) == "research_internal"
+    assert by_name["VLABench Lerobot Video"]["family"] == "video_generation"
+    assert expansion.source_use_bucket(by_name["VLABench Lerobot Video"]) == "research_internal"
+    assert by_name["MMAU HF Dataset"]["license_tier"] == "permissive_eval_holdout"
+    assert expansion.source_use_bucket(by_name["MMAU HF Dataset"]) == "eval_holdout"
 
 
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:

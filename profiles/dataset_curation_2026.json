@@ -28148,6 +28148,8 @@
         "splits": [
           "train"
         ],
+        "data_files": "LexBench-Browser/task.jsonl",
+        "verification_mode": "no_checks",
         "max_records": 1024,
         "target_modality": "tool",
         "use_policy": "eval_only",
@@ -28181,6 +28183,820 @@
           "verifier_labels": [
             "expected_state",
             "rubric",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "AgencyBench",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "GAIR/AgencyBench",
+        "url": "https://huggingface.co/datasets/GAIR/AgencyBench",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "target_modality": "tool",
+        "use_policy": "eval_only",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Long-context autonomous-agent task suite is useful for native-1M workflow evaluation and contamination-safe regression, not training prompt leakage.",
+        "curriculum_axes": [
+          "long_context_agent_eval",
+          "tool_workflow",
+          "rubric_deliverables",
+          "native_1m_eval",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "uuid"
+          ],
+          "prompt": [
+            "task",
+            "instruction",
+            "prompt",
+            "query"
+          ],
+          "target": [
+            "rubric",
+            "answer",
+            "expected_output",
+            "deliverable"
+          ],
+          "trajectory": [
+            "tools",
+            "steps",
+            "trajectory"
+          ],
+          "verifier_labels": [
+            "rubric",
+            "score",
+            "grader",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "GAIA 2",
+        "family": "terminal_browser_agents",
+        "hf_id": "meta-agents-research-environments/gaia2",
+        "url": "https://huggingface.co/datasets/meta-agents-research-environments/gaia2",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "tool",
+        "use_policy": "eval_only",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Real-world multi-step search/execution rows are held out for agentic evaluation and benchmark decontamination.",
+        "curriculum_axes": [
+          "search_agent_eval",
+          "multi_step_tool_use",
+          "browser_research",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "question_id"
+          ],
+          "prompt": [
+            "question",
+            "task",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "reference_answer",
+            "ground_truth"
+          ],
+          "verifier_labels": [
+            "level",
+            "capability",
+            "source",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "Claw-Eval Live",
+        "family": "terminal_browser_agents",
+        "hf_id": "claw-eval-live/claw-eval-live",
+        "url": "https://huggingface.co/datasets/claw-eval-live/claw-eval-live",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "tool",
+        "use_policy": "eval_only",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Live workflow-agent tasks with fixtures and graders stay eval-only until official scorer integration is wired.",
+        "curriculum_axes": [
+          "live_agent_eval",
+          "tool_use",
+          "grader_sandbox",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "run_id"
+          ],
+          "prompt": [
+            "task",
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "rubric",
+            "expected_state"
+          ],
+          "tool_calls": [
+            "tools",
+            "tool_calls",
+            "actions"
+          ],
+          "verifier_labels": [
+            "grader",
+            "score",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "AgentFly Train",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "Agent-One/AgentFly-Train",
+        "url": "https://huggingface.co/datasets/Agent-One/AgentFly-Train",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "RL environment/task mix for ALFWorld, WebShop, ScienceWorld, HotpotQA, and math-style agentic training.",
+        "curriculum_axes": [
+          "agent_rl",
+          "environment_interaction",
+          "tool_use",
+          "rlvr",
+          "multi_domain_agents"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "episode_id"
+          ],
+          "prompt": [
+            "instruction",
+            "task",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "trajectory",
+            "solution",
+            "reward"
+          ],
+          "trajectory": [
+            "trajectory",
+            "steps",
+            "messages"
+          ],
+          "verifier_labels": [
+            "reward",
+            "success",
+            "environment",
+            "score"
+          ]
+        }
+      },
+      {
+        "name": "ProgramBench Tests",
+        "family": "coding_agentic",
+        "hf_id": "programbench/ProgramBench-Tests",
+        "url": "https://huggingface.co/datasets/programbench/ProgramBench-Tests",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "target_modality": "code",
+        "use_policy": "eval_only",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Program reconstruction tests are held out for coding-agent evaluation and hidden-test style release gates.",
+        "curriculum_axes": [
+          "program_synthesis_eval",
+          "binary_to_program",
+          "test_driven_coding",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "program_id"
+          ],
+          "prompt": [
+            "instruction",
+            "description",
+            "prompt"
+          ],
+          "target": [
+            "tests",
+            "solution",
+            "expected_output"
+          ],
+          "verifier_labels": [
+            "tests",
+            "grader",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "ProjDevBench",
+        "family": "coding_agentic",
+        "hf_id": "projdevbench/projdevbench",
+        "url": "https://huggingface.co/datasets/projdevbench/projdevbench",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "code",
+        "use_policy": "eval_only",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "End-to-end project-development tasks are eval holdout until repository-generation graders are sandboxed.",
+        "curriculum_axes": [
+          "project_development_eval",
+          "repo_generation",
+          "software_engineering",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "project_id"
+          ],
+          "prompt": [
+            "instruction",
+            "requirements",
+            "prompt",
+            "task"
+          ],
+          "target": [
+            "tests",
+            "rubric",
+            "solution"
+          ],
+          "verifier_labels": [
+            "tests",
+            "score",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "Nemotron Research GooseReason 0.7M",
+        "family": "math_reasoning",
+        "hf_id": "nvidia/Nemotron-Research-GooseReason-0.7M",
+        "url": "https://huggingface.co/datasets/nvidia/Nemotron-Research-GooseReason-0.7M",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "text",
+        "use_policy": "research_internal",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "noncommercial_research_internal",
+        "source_review_status": "public_shape_reviewed_noncommercial_2026_05_25",
+        "materialization_note": "Large RLVR math, programming, and STEM source remains research-internal because of noncommercial terms.",
+        "curriculum_axes": [
+          "math_rlvr",
+          "code_rlvr",
+          "stem_reasoning",
+          "nvidia_research",
+          "noncommercial_review"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "problem_id"
+          ],
+          "prompt": [
+            "problem",
+            "question",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "response"
+          ],
+          "verifier_labels": [
+            "reward",
+            "score",
+            "domain",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "ORZ Math 72K Extended",
+        "family": "math_reasoning",
+        "hf_id": "Open-Reasoner-Zero/orz_math_72k_collection_extended",
+        "url": "https://huggingface.co/datasets/Open-Reasoner-Zero/orz_math_72k_collection_extended",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Permissive math reasoning/RL-style rows for RLVR and posttraining mixtures; decontam remains active against AIME/MathArena holdouts.",
+        "curriculum_axes": [
+          "math_reasoning",
+          "rlvr",
+          "proof_sketch",
+          "answer_verification"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "problem_id",
+            "uuid"
+          ],
+          "prompt": [
+            "problem",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "completion"
+          ],
+          "verifier_labels": [
+            "answer",
+            "score",
+            "source"
+          ]
+        }
+      },
+      {
+        "name": "AEC-Bench",
+        "family": "omnimodal_understanding",
+        "hf_id": "nomic-ai/aec-bench",
+        "url": "https://huggingface.co/datasets/nomic-ai/aec-bench",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "target_modality": "image",
+        "use_policy": "eval_only",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Architecture/engineering/construction multimodal agent benchmark is eval-only until official harness scoring is wired.",
+        "curriculum_axes": [
+          "multimodal_agent_eval",
+          "spatial_reasoning",
+          "document_image_understanding",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "rubric",
+            "ground_truth"
+          ],
+          "media": [
+            "image",
+            "images",
+            "media"
+          ],
+          "verifier_labels": [
+            "answer",
+            "score",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "MDPBench",
+        "family": "omnimodal_understanding",
+        "hf_id": "Delores-Lin/MDPBench",
+        "url": "https://huggingface.co/datasets/Delores-Lin/MDPBench",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "image",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Multilingual document perception rows strengthen OCR/layout robustness; media payloads are metadata-cast by the curation layer.",
+        "curriculum_axes": [
+          "document_perception",
+          "ocr_layout",
+          "multilingual_vision",
+          "robust_image_understanding"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "uid"
+          ],
+          "prompt": [
+            "question",
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "label",
+            "ground_truth"
+          ],
+          "media": [
+            "image",
+            "images",
+            "document"
+          ]
+        }
+      },
+      {
+        "name": "MMAU HF Dataset",
+        "family": "audio_music_speech",
+        "hf_id": "AudioMatters/MMAU_dataset",
+        "url": "https://huggingface.co/datasets/AudioMatters/MMAU_dataset",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "audio",
+        "use_policy": "eval_only",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Audio reasoning rows are eval holdout for speech, music, and environmental audio understanding benchmarks.",
+        "curriculum_axes": [
+          "audio_reasoning_eval",
+          "speech_music_environment",
+          "multimodal_audio",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "question_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "label",
+            "choices"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "file"
+          ],
+          "verifier_labels": [
+            "answer",
+            "category",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "Voices of Civilizations",
+        "family": "audio_music_speech",
+        "hf_id": "sander-wood/voices-of-civilizations",
+        "url": "https://huggingface.co/datasets/sander-wood/voices-of-civilizations",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "audio",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Multilingual music/audio QA rows improve cultural audio reasoning and audio-text alignment.",
+        "curriculum_axes": [
+          "music_understanding",
+          "audio_reasoning",
+          "multilingual_audio",
+          "qa"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "track_id"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "label"
+          ],
+          "media": [
+            "audio",
+            "audio_url",
+            "audio_path"
+          ]
+        }
+      },
+      {
+        "name": "SoulX Singer Eval",
+        "family": "music_generation",
+        "hf_id": "Soul-AILab/SoulX-Singer-Eval-Dataset",
+        "url": "https://huggingface.co/datasets/Soul-AILab/SoulX-Singer-Eval-Dataset",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "target_modality": "music",
+        "use_policy": "research_internal",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "noncommercial_research_internal",
+        "source_review_status": "public_shape_reviewed_noncommercial_2026_05_25",
+        "materialization_note": "Singing voice synthesis eval data remains research-internal because of noncommercial terms.",
+        "curriculum_axes": [
+          "singing_voice_eval",
+          "music_generation",
+          "tts_music_boundary",
+          "noncommercial_review"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "song_id"
+          ],
+          "prompt": [
+            "prompt",
+            "lyrics",
+            "description"
+          ],
+          "target": [
+            "reference",
+            "answer",
+            "rubric"
+          ],
+          "media": [
+            "audio",
+            "music",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "WaxalNLP",
+        "family": "audio_music_speech",
+        "hf_id": "google/WaxalNLP",
+        "url": "https://huggingface.co/datasets/google/WaxalNLP",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "audio",
+        "use_policy": "research_internal",
+        "license": "CC-BY / CC-BY-SA mixed",
+        "license_tier": "research_internal_license_split_review",
+        "source_review_status": "public_shape_reviewed_license_split_required_2026_05_25",
+        "materialization_note": "Large multilingual speech resource stays research-internal until per-split license attribution is tracked.",
+        "curriculum_axes": [
+          "multilingual_asr",
+          "tts",
+          "speech_alignment",
+          "license_split_review"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "utterance_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "text",
+            "transcript",
+            "prompt"
+          ],
+          "target": [
+            "text",
+            "transcript",
+            "translation"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "file"
+          ],
+          "verifier_labels": [
+            "language",
+            "speaker",
+            "license"
+          ]
+        }
+      },
+      {
+        "name": "Qwen Image Edit VIBE Outputs",
+        "family": "image_generation_editing",
+        "hf_id": "VIBE-Benchmark/Qwen-Image-Edit-2509",
+        "url": "https://huggingface.co/datasets/VIBE-Benchmark/Qwen-Image-Edit-2509",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "image",
+        "use_policy": "research_internal",
+        "license": "dataset card license review required",
+        "license_tier": "research_internal_review",
+        "source_review_status": "public_shape_reviewed_license_scan_required_2026_05_25",
+        "materialization_note": "Qwen image-edit output rows are useful for edit-quality reward/distillation audits but need license and provenance review before train promotion.",
+        "curriculum_axes": [
+          "image_editing",
+          "qwen_image_teacher",
+          "edit_quality_eval",
+          "reward_modeling"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "image_id"
+          ],
+          "prompt": [
+            "prompt",
+            "instruction",
+            "edit_prompt"
+          ],
+          "target": [
+            "output",
+            "edited_image",
+            "score"
+          ],
+          "media": [
+            "image",
+            "input_image",
+            "output_image"
+          ],
+          "verifier_labels": [
+            "score",
+            "rubric",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "VLABench Lerobot Video",
+        "family": "video_generation",
+        "hf_id": "VLABench/vlabench_primitive_ft_lerobot_video",
+        "url": "https://huggingface.co/datasets/VLABench/vlabench_primitive_ft_lerobot_video",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "target_modality": "video",
+        "use_policy": "research_internal",
+        "license": "MIT",
+        "license_tier": "permissive_storage_review",
+        "source_review_status": "public_shape_reviewed_storage_gate_required_2026_05_25",
+        "materialization_note": "Video/timeseries embodied task rows are valuable for state/action modeling but require storage-budget validation before training promotion.",
+        "curriculum_axes": [
+          "video_state_modeling",
+          "embodied_action",
+          "robotics_video",
+          "storage_gate"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "episode_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "task",
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "actions",
+            "trajectory",
+            "state"
+          ],
+          "media": [
+            "video",
+            "frames",
+            "observation"
+          ],
+          "verifier_labels": [
+            "success",
+            "reward",
             "metadata"
           ]
         }
