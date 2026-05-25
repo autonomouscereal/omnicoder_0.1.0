@@ -28457,8 +28457,9 @@
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "config": "tasks",
         "splits": [
-          "train"
+          "test"
         ],
         "max_records": 1024,
         "target_modality": "code",
@@ -28505,8 +28506,11 @@
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "config": "default",
         "splits": [
-          "train"
+          "math",
+          "code",
+          "stem"
         ],
         "max_records": 4096,
         "target_modality": "text",
@@ -28807,7 +28811,7 @@
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
         "splits": [
-          "train"
+          "test"
         ],
         "max_records": 512,
         "target_modality": "music",
@@ -28853,6 +28857,17 @@
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "configs": [
+          "ach_asr",
+          "ach_tts",
+          "aka_asr",
+          "amh_asr",
+          "ewe_tts",
+          "hau_asr",
+          "ibo_asr",
+          "swa_asr",
+          "yor_asr"
+        ],
         "splits": [
           "train"
         ],
@@ -28957,6 +28972,13 @@
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "configs": [
+          "select_fruit",
+          "add_condiment",
+          "density_qa",
+          "reflection_qa",
+          "sound_speed_qa"
+        ],
         "splits": [
           "train"
         ],

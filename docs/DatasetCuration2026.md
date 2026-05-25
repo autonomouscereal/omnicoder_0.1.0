@@ -417,6 +417,11 @@ Live, ProgramBench Tests, ProjDevBench, AEC-Bench, and MMAU stay eval holdout.
 GooseReason, SoulX Singer Eval, WaxalNLP, Qwen Image Edit VIBE outputs, and
 VLABench video rows stay research-internal until noncommercial, license-split,
 provenance, or storage gates clear.
+The May 25 hardening pass pins dataset-specific loader shapes for the sources
+that do not expose a default `train` split: ProjDevBench uses `tasks/test`,
+GooseReason uses `default` with `math`, `code`, and `stem`, SoulX uses `test`,
+and WaxalNLP/VLABench use bounded config allowlists so curation does not fail
+open into empty rows.
 
 ## Quality And Safety
 

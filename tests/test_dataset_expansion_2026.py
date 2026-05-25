@@ -2131,7 +2131,12 @@ def test_repo_dataset_registry_covers_twenty_fifth_wave_agentic_math_audio_multi
 
     assert by_name["AgentFly Train"]["license"] == "Apache-2.0"
     assert expansion.source_use_bucket(by_name["AgentFly Train"]) == "train"
+    assert by_name["ProjDevBench"]["config"] == "tasks"
+    assert by_name["ProjDevBench"]["splits"] == ["test"]
+    assert by_name["Nemotron Research GooseReason 0.7M"]["config"] == "default"
+    assert by_name["Nemotron Research GooseReason 0.7M"]["splits"] == ["math", "code", "stem"]
     assert by_name["ORZ Math 72K Extended"]["family"] == "math_reasoning"
+    assert by_name["ORZ Math 72K Extended"]["splits"] == ["train"]
     assert expansion.source_use_bucket(by_name["ORZ Math 72K Extended"]) == "train"
     assert by_name["MDPBench"]["target_modality"] == "image"
     assert expansion.source_use_bucket(by_name["MDPBench"]) == "train"
@@ -2140,10 +2145,29 @@ def test_repo_dataset_registry_covers_twenty_fifth_wave_agentic_math_audio_multi
     assert by_name["Nemotron Research GooseReason 0.7M"]["license_tier"] == "noncommercial_research_internal"
     assert expansion.source_use_bucket(by_name["Nemotron Research GooseReason 0.7M"]) == "research_internal"
     assert "license_split" in by_name["WaxalNLP"]["license_tier"]
+    assert by_name["WaxalNLP"]["configs"] == [
+        "ach_asr",
+        "ach_tts",
+        "aka_asr",
+        "amh_asr",
+        "ewe_tts",
+        "hau_asr",
+        "ibo_asr",
+        "swa_asr",
+        "yor_asr",
+    ]
     assert expansion.source_use_bucket(by_name["WaxalNLP"]) == "research_internal"
+    assert by_name["SoulX Singer Eval"]["splits"] == ["test"]
     assert by_name["Qwen Image Edit VIBE Outputs"]["family"] == "image_generation_editing"
     assert expansion.source_use_bucket(by_name["Qwen Image Edit VIBE Outputs"]) == "research_internal"
     assert by_name["VLABench Lerobot Video"]["family"] == "video_generation"
+    assert by_name["VLABench Lerobot Video"]["configs"] == [
+        "select_fruit",
+        "add_condiment",
+        "density_qa",
+        "reflection_qa",
+        "sound_speed_qa",
+    ]
     assert expansion.source_use_bucket(by_name["VLABench Lerobot Video"]) == "research_internal"
     assert by_name["MMAU HF Dataset"]["license_tier"] == "permissive_eval_holdout"
     assert expansion.source_use_bucket(by_name["MMAU HF Dataset"]) == "eval_holdout"
