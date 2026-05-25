@@ -181,6 +181,119 @@ def test_materializer_reads_mcpmark_meta_json(tmp_path: Path) -> None:
     assert task["prompt"] == "Move the Notion cards."
 
 
+def test_materializer_reads_mcp_bench_runner_tasks(tmp_path: Path) -> None:
+    task_file = tmp_path / "mcp-bench" / "tasks" / "mcpbench_tasks_multi_2server_runner_format.json"
+    _write_json(
+        task_file,
+        {
+            "server_tasks": [
+                {
+                    "server_name": "Google Maps+Weather Data",
+                    "servers": ["Google Maps", "Weather Data"],
+                    "combination_name": "Travel Planning Suite",
+                    "combination_type": "two_server_combinations",
+                    "tasks": [
+                        {
+                            "task_id": "trip-001",
+                            "task_description": "Plan a trip using map and weather tools.",
+                            "fuzzy_description": "Plan a trip.",
+                        }
+                    ],
+                }
+            ],
+            "total_tasks": 0,
+        },
+    )
+
+    rows, errors = materializer.scan_local_source(tmp_path / "mcp-bench", 8)
+    task = materializer.normalize_task(
+        "agent_mcp_bench_2026",
+        rows[0],
+        {"kind": "tool", "source": "fixture"},
+        {"adapter_kind": "mcp_agent_workflow_eval"},
+        {},
+        "public-dev",
+        str(tmp_path / "mcp-bench"),
+        0,
+    )
+
+    assert errors == []
+    assert task is not None
+    assert task["task_id"] == "trip-001"
+    assert task["prompt"] == "Plan a trip using map and weather tools."
+    assert task["tools"] == [{"name": "Google Maps"}, {"name": "Weather Data"}]
+    assert task["server_name"] == "Google Maps+Weather Data"
+
+
+def test_materializer_reads_mcp_universe_single_task_json(tmp_path: Path) -> None:
+    task_file = tmp_path / "MCP-Universe" / "mcpuniverse" / "benchmark" / "configs" / "mcpuniverse" / "maps" / "task_0001.json"
+    _write_json(
+        task_file,
+        {
+            "category": "general",
+            "question": "Plan a multi-city route with rest stops.",
+            "mcp_servers": [{"name": "google-maps"}],
+            "output_format": {"routes": ["..."]},
+            "evaluators": [{"type": "json"}],
+        },
+    )
+
+    rows, errors = materializer.scan_local_source(tmp_path / "MCP-Universe", 8)
+    task = materializer.normalize_task(
+        "agent_mcp_universe_2026",
+        rows[0],
+        {"kind": "tool", "source": "fixture"},
+        {"adapter_kind": "mcp_server_universe_eval"},
+        {},
+        "public-dev",
+        str(tmp_path / "MCP-Universe"),
+        0,
+    )
+
+    assert errors == []
+    assert task is not None
+    assert task["task_id"] == "task_0001"
+    assert task["prompt"] == "Plan a multi-city route with rest stops."
+    assert task["tools"] == [{"name": "google-maps"}]
+    assert task["expected_tool_call"] == {"routes": ["..."]}
+
+
+def test_materializer_reads_agent_company_scenarios_with_task_prompt(tmp_path: Path) -> None:
+    task_dir = tmp_path / "TheAgentCompany" / "workspaces" / "tasks" / "admin-ask-for-meeting-feedback"
+    _write_json(
+        task_dir / "scenarios.json",
+        {
+            "Huang Jie": {
+                "extra_info": "Someone will ask you about the meeting.",
+                "strategy_hint": "Give concise feedback.",
+            }
+        },
+    )
+    (task_dir / "task.md").write_text("Collect meeting feedback from the right coworkers.", encoding="utf-8")
+    (task_dir / "checkpoints.md").write_text("- feedback collected", encoding="utf-8")
+    (task_dir / "dependencies.yml").write_text("services:\n  - rocketchat\n  - owncloud\n", encoding="utf-8")
+
+    rows, errors = materializer.scan_local_source(tmp_path / "TheAgentCompany", 8)
+    task = materializer.normalize_task(
+        "agent_theagentcompany_enterprise_2026",
+        rows[0],
+        {"kind": "agent_tool", "source": "fixture"},
+        {"adapter_kind": "enterprise_workflow_eval"},
+        {},
+        "public-dev",
+        str(tmp_path / "TheAgentCompany"),
+        0,
+    )
+
+    assert errors == []
+    assert task is not None
+    assert task["task_id"] == "admin-ask-for-meeting-feedback:Huang_Jie"
+    assert task["prompt"] == "Collect meeting feedback from the right coworkers."
+    assert task["answer"] == "Give concise feedback."
+    assert task["scenario_extra_info"] == "Someone will ask you about the meeting."
+    assert task["checkpoints"] == "- feedback collected"
+
+
 def test_materializer_tracks_2026_official_source_mirrors() -> None:
     required = {
         "agent_mcp_bench_2026",

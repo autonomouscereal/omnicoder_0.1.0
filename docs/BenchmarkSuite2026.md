@@ -114,6 +114,14 @@ remain `local_only` until an official or explicitly authorized snapshot is
 provided with `snapshot_id`, revision, source, and authorization metadata. The
 AI-server sidecar action is opt-in:
 
+The materializer now handles the current official 2026 agent benchmark layouts
+directly: MCP-Bench nested runner JSON under `tasks/mcpbench_tasks_*`, single
+MCP-Universe task JSON under `tests/data/task` and benchmark config trees, and
+TheAgentCompany workspace `scenarios.json` plus sibling `task.md`,
+`checkpoints.md`, and `dependencies.yml`. These rows preserve MCP server/tool
+schemas, enterprise actor context, oracle hints, and task prompts without
+falling back to generic JSON descriptor noise.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \

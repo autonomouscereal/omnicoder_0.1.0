@@ -564,10 +564,13 @@ def read_json_rows(path: Path, limit: int) -> list[dict[str, Any]]:
         return []
     candidates: Any = payload
     if isinstance(payload, dict):
-        for key in ("data", "examples", "questions", "items", "tasks", "records", "validation", "test", "train"):
-            if isinstance(payload.get(key), list):
-                candidates = payload[key]
-                break
+        if any(payload.get(key) not in (None, "", [], {}) for key in ("question", "prompt", "task_description", "instruction", "problem_statement")):
+            candidates = [payload]
+        else:
+            for key in ("data", "examples", "questions", "items", "tasks", "records", "validation", "test", "train"):
+                if isinstance(payload.get(key), list):
+                    candidates = payload[key]
+                    break
     if isinstance(candidates, dict):
         candidates = list(candidates.values())
     if not isinstance(candidates, list):
@@ -657,13 +660,111 @@ def read_toml_row(path: Path) -> dict[str, Any]:
     return row
 
 
+def unique_paths(paths: list[Path]) -> list[Path]:
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        key = path.resolve() if path.exists() else path
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+
+def read_mcp_bench_rows(path: Path, limit: int) -> list[dict[str, Any]]:
+    payload = read_json(path)
+    rows: list[dict[str, Any]] = []
+    for block in payload.get("server_tasks") or []:
+        if not isinstance(block, dict):
+            continue
+        server_name = str(block.get("server_name") or "").strip()
+        servers = block.get("servers")
+        if not isinstance(servers, list) or not servers:
+            servers = [name.strip() for name in server_name.split("+") if name.strip()]
+        for task in block.get("tasks") or []:
+            if not isinstance(task, dict):
+                continue
+            row = dict(task)
+            if server_name:
+                row.setdefault("server_name", server_name)
+            if servers:
+                row.setdefault("servers", servers)
+                row.setdefault("tools", [{"name": str(name).strip()} for name in servers if str(name).strip()])
+            for key in ("combination_name", "combination_type"):
+                if block.get(key) not in (None, "", [], {}):
+                    row.setdefault(key, block[key])
+            row.setdefault("prompt", task.get("task_description") or task.get("fuzzy_description"))
+            row.setdefault("_source_file", str(path))
+            rows.append(row)
+            if len(rows) >= limit:
+                return rows
+    return rows
+
+
+def read_mcp_universe_task_row(path: Path) -> dict[str, Any]:
+    row = read_json(path)
+    row.setdefault("task_id", path.stem)
+    row.setdefault("_source_file", str(path))
+    row.setdefault("tools", row.get("mcp_servers"))
+    row.setdefault("expected", row.get("output_format"))
+    return row
+
+
+def read_agent_company_scenario_rows(path: Path, limit: int) -> list[dict[str, Any]]:
+    payload = read_json(path)
+    rows: list[dict[str, Any]] = []
+    workspace_task = path.parent.name
+    task_md = path.with_name("task.md")
+    checkpoints_md = path.with_name("checkpoints.md")
+    dependencies_yml = path.with_name("dependencies.yml")
+    task_prompt = task_md.read_text(encoding="utf-8", errors="ignore").strip() if task_md.exists() else ""
+    checkpoints = checkpoints_md.read_text(encoding="utf-8", errors="ignore").strip() if checkpoints_md.exists() else ""
+    dependencies: Any = None
+    if dependencies_yml.exists():
+        dep_rows = read_yaml_rows(dependencies_yml)
+        dependencies = dep_rows[0] if len(dep_rows) == 1 else dep_rows
+    for actor, scenario in payload.items():
+        if not isinstance(scenario, dict):
+            continue
+        extra_info = str(scenario.get("extra_info") or "").strip()
+        strategy_hint = str(scenario.get("strategy_hint") or "").strip()
+        prompt = extra_info or f"Enterprise workplace scenario for {actor} in task {workspace_task}."
+        row = dict(scenario)
+        row.setdefault("actor", actor)
+        row.setdefault("task_slug", workspace_task)
+        row.setdefault("workspace_task", workspace_task)
+        row.setdefault("task_id", f"{workspace_task}:{safe_name(str(actor))}")
+        row.setdefault("prompt", task_prompt or prompt)
+        if extra_info:
+            row.setdefault("scenario_extra_info", extra_info)
+        if strategy_hint:
+            row.setdefault("scenario_strategy_hint", strategy_hint)
+        if strategy_hint:
+            row.setdefault("answer", strategy_hint)
+        if checkpoints:
+            row.setdefault("checkpoints", checkpoints)
+        if dependencies not in (None, "", [], {}):
+            row.setdefault("dependencies", make_jsonable(dependencies))
+        row.setdefault("_source_file", str(path))
+        rows.append(row)
+        if len(rows) >= limit:
+            break
+    return rows
+
+
 def special_descriptor_files(path: Path) -> list[Path]:
     if not path.is_dir():
         return []
     files: list[Path] = []
+    files.extend(sorted(path.glob("tasks/mcpbench_tasks_*_runner_format.json")))
+    files.extend(sorted(path.glob("tests/data/task/*.json")))
+    files.extend(sorted(path.glob("mcpuniverse/benchmark/configs/mcpuniverse/**/*.json")))
+    files.extend(sorted(path.glob("mcpuniverse/benchmark/configs/mcpmark/configs/**/*.json")))
+    files.extend(sorted(path.glob("workspaces/tasks/*/scenarios.json")))
     files.extend(sorted(item for item in path.rglob("meta.json") if "tasks" in item.parts))
     files.extend(sorted(path.rglob("task.toml")))
-    return files
+    return unique_paths(files)
 
 
 def scan_local_source(path: Path, limit: int) -> tuple[list[dict[str, Any]], list[str]]:
@@ -675,7 +776,16 @@ def scan_local_source(path: Path, limit: int) -> tuple[list[dict[str, Any]], lis
         if len(special_rows) >= limit:
             break
         try:
-            if descriptor.name == "meta.json":
+            if descriptor.name.startswith("mcpbench_tasks_") and descriptor.name.endswith("_runner_format.json"):
+                special_rows.extend(read_mcp_bench_rows(descriptor, limit - len(special_rows)))
+            elif (
+                (descriptor.parent.name == "task" and "tests" in descriptor.parts)
+                or ("mcpuniverse" in descriptor.parts and "configs" in descriptor.parts)
+            ):
+                special_rows.append(read_mcp_universe_task_row(descriptor))
+            elif descriptor.name == "scenarios.json" and "workspaces" in descriptor.parts:
+                special_rows.extend(read_agent_company_scenario_rows(descriptor, limit - len(special_rows)))
+            elif descriptor.name == "meta.json":
                 row = read_json(descriptor)
                 if row:
                     row.setdefault("_source_file", str(descriptor))
@@ -850,7 +960,10 @@ def normalize_task(
             "problem",
             "task",
             "task_description",
+            "fuzzy_description",
             "description",
+            "extra_info",
+            "strategy_hint",
             "input",
             "goal",
         ),
@@ -867,8 +980,10 @@ def normalize_task(
             "answerKey",
             "correct_answer",
             "expected",
+            "expected_answer",
             "reference",
             "gold_answer",
+            "strategy_hint",
         ),
     )
     row: dict[str, Any] = {
@@ -901,12 +1016,29 @@ def normalize_task(
             row[media_key] = make_jsonable(value)
 
     if any(token in kind for token in ("tool", "bfcl", "mcp")):
-        tools = first_value(raw, ("tools", "functions", "tool_schema", "function", "apis"))
-        expected = first_value(raw, ("expected_tool_call", "ground_truth", "answer", "target"))
+        tools = first_value(raw, ("tools", "functions", "tool_schema", "function", "apis", "mcp_servers", "server_name", "servers"))
+        expected = first_value(raw, ("expected_tool_call", "ground_truth", "answer", "target", "output_format", "evaluators"))
         if tools not in (None, "", [], {}):
             row["tools"] = make_jsonable(tools)
         if expected not in (None, "", [], {}):
             row["expected_tool_call"] = normalize_tool_call(expected)
+        for key in (
+            "output_format",
+            "evaluators",
+            "cleanups",
+            "server_name",
+            "mcp_servers",
+            "actor",
+            "task_slug",
+            "workspace_task",
+            "scenario_extra_info",
+            "scenario_strategy_hint",
+            "checkpoints",
+            "dependencies",
+        ):
+            value = raw.get(key)
+            if value not in (None, "", [], {}):
+                row[key] = make_jsonable(value)
 
     if any(token in kind for token in ("swe", "repo", "patch", "coding")):
         for key in ("repo", "repo_name", "base_commit", "base_sha", "issue", "problem_statement", "test_commands", "tests", "entry_point"):
