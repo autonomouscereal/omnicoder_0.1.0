@@ -2217,7 +2217,7 @@ def test_repo_dataset_registry_covers_twenty_sixth_wave_web_gui_science_audio_co
     assert "license_scan_required" in by_name["SWE-Star"]["source_review_status"]
     assert expansion.source_use_bucket(by_name["SWE-Star"]) == "research_internal"
     assert by_name["MolmoAct Pretraining Mixture Bounded"]["configs"] == ["auxiliary_trace", "lvis"]
-    assert expansion.source_use_bucket(by_name["MolmoAct Pretraining Mixture Bounded"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["MolmoAct Pretraining Mixture Bounded"]) == "train"
     assert by_name["Multilingual Audio Alignments"]["configs"] == [
         "english",
         "french",

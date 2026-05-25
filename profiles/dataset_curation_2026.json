@@ -29672,7 +29672,7 @@
         "target_modality": "image",
         "use_policy": "train",
         "license": "CC-BY-4.0",
-        "license_tier": "permissive_storage_review",
+        "license_tier": "permissive",
         "contamination_status": "clean",
         "source_review_status": "public_train_reviewed_2026_05_25_media_storage_bounded",
         "materialization_note": "Bounded embodied action/image rows add action-grounded multimodal supervision; raw media stays referenced for storage review.",
