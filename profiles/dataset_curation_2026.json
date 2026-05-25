@@ -23100,6 +23100,469 @@
         "target_modality": "video",
         "url": "https://github.com/OpenGVLab/RIVER",
         "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "mcp",
+          "multi_tool",
+          "dynamic_tool_environment",
+          "benchmark_holdout"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "task_id",
+            "id"
+          ],
+          "prompt": [
+            "Question",
+            "question",
+            "instruction"
+          ],
+          "target": [
+            "answers",
+            "Annotator Metadata",
+            "category"
+          ]
+        },
+        "hf_id": "ICIP/LiveMCPBench",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 256,
+        "name": "LiveMCPBench",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/ICIP/LiveMCPBench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "skill_retrieval",
+          "capability_retrieval",
+          "tool_workflow_selection",
+          "benchmark_holdout"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "qid",
+            "query_id"
+          ],
+          "prompt": [
+            "query",
+            "question",
+            "instruction",
+            "task"
+          ],
+          "target": [
+            "gold_skill",
+            "gold_skills",
+            "qrels",
+            "answer"
+          ]
+        },
+        "hf_id": "WeihangSu/SRA-Bench",
+        "last_verified": "2026-05-25",
+        "license": "MIT per dataset card; skill corpus provenance review",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 1024,
+        "name": "SRA-Bench Skill Retrieval Augmentation",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/WeihangSu/SRA-Bench",
+        "use_policy": "eval_only"
+      },
+      {
+        "config": "queries",
+        "curriculum_axes": [
+          "skill_retrieval",
+          "agent_memory_retrieval",
+          "tool_selection",
+          "retrieval_augmented_agents"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "query_id",
+            "id"
+          ],
+          "prompt": [
+            "query",
+            "text",
+            "request"
+          ],
+          "target": [
+            "skill_id",
+            "positive_skill_ids",
+            "relevant_skills",
+            "qrels"
+          ]
+        },
+        "hf_id": "anonymous-ed-benchmark/SKILLRET",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "max_records": 4096,
+        "name": "SkillRet Benchmark",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/anonymous-ed-benchmark/SKILLRET",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "omnimodal_agent",
+          "audio_image_video_reasoning",
+          "tool_augmented_reasoning",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "media": [
+            "image_1",
+            "image_2",
+            "image_3",
+            "audio_1",
+            "audio_2",
+            "audio_3",
+            "video_1",
+            "video_2",
+            "video_3",
+            "omni_modal_input_json"
+          ],
+          "prompt": [
+            "question"
+          ],
+          "target": [
+            "answer",
+            "annotated_solution",
+            "sources_json",
+            "required_external_tools"
+          ]
+        },
+        "hf_id": "RUC-NLPIR/OmniGAIA",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 512,
+        "name": "OmniGAIA Benchmark",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "multimodal",
+        "url": "https://huggingface.co/datasets/RUC-NLPIR/OmniGAIA",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "omnimodal_agent_sft",
+          "tool_augmented_multimodal_reasoning",
+          "audio_image_video",
+          "trajectory_sft"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "media": [
+            "images",
+            "videos",
+            "audios"
+          ],
+          "prompt": [
+            "conversations",
+            "messages"
+          ],
+          "target": [
+            "conversations",
+            "tools",
+            "answer"
+          ]
+        },
+        "hf_id": "RUC-NLPIR/Omnimodal-Agent-SFT-2K",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_with_media_provenance_notice",
+        "max_records": 2156,
+        "name": "Omnimodal-Agent-SFT-2K",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "multimodal",
+        "url": "https://huggingface.co/datasets/RUC-NLPIR/Omnimodal-Agent-SFT-2K",
+        "use_policy": "train"
+      },
+      {
+        "config": "Daily-Omni",
+        "curriculum_axes": [
+          "audio_video_rag",
+          "long_video_qa",
+          "grpo_reward",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "original_id"
+          ],
+          "media": [
+            "images",
+            "audios",
+            "videos"
+          ],
+          "prompt": [
+            "prompt",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "options",
+            "correct_option",
+            "ability"
+          ]
+        },
+        "hf_id": "JackMuX3Y/OmniRAG-Agent",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 1536,
+        "name": "OmniRAG-Agent",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "video",
+        "url": "https://huggingface.co/datasets/JackMuX3Y/OmniRAG-Agent",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "visual_state_tracking",
+          "temporal_reasoning",
+          "video_qa",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "video_id"
+          ],
+          "media": [
+            "video"
+          ],
+          "prompt": [
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "label",
+            "metadata"
+          ]
+        },
+        "hf_id": "VSTAT-NeurIPS2026/VSTAT",
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_eval_holdout",
+        "max_records": 1024,
+        "name": "VSTAT Visual State Tracking",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "video",
+        "url": "https://huggingface.co/datasets/VSTAT-NeurIPS2026/VSTAT",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "tts_eval",
+          "symbol_expansion",
+          "pronunciation",
+          "prosody",
+          "benchmark_holdout"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "category"
+          ],
+          "media": [
+            "reference_audio"
+          ],
+          "prompt": [
+            "text"
+          ],
+          "target": [
+            "spoken_form",
+            "reference_asr",
+            "category"
+          ]
+        },
+        "hf_id": "Trelis/tricky-tts-public",
+        "last_verified": "2026-05-25",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 64,
+        "name": "Tricky TTS Public",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/Trelis/tricky-tts-public",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "math_rlvr",
+          "verifiable_reward",
+          "posttraining",
+          "reasoning"
+        ],
+        "family": "math_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "problem_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "problem"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "reward_model"
+          ]
+        },
+        "hf_id": "BytedTsinghua-SIA/DAPO-Math-17k",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "max_records": 4096,
+        "name": "DAPO-Math-17k",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "text",
+        "url": "https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "cross_domain_rl",
+          "verifiable_reasoning",
+          "posttraining",
+          "math_code_mix"
+        ],
+        "family": "math_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "problem"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "reward",
+            "messages"
+          ]
+        },
+        "hf_id": "LLM360/guru-RL-92k",
+        "last_verified": "2026-05-25",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "max_records": 4096,
+        "name": "Guru RL 92K",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "text",
+        "url": "https://huggingface.co/datasets/LLM360/guru-RL-92k",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "agent_memory",
+          "long_context_retrieval",
+          "conflict_resolution",
+          "benchmark_holdout"
+        ],
+        "family": "long_context",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "memory",
+            "messages"
+          ],
+          "target": [
+            "answer",
+            "target",
+            "rubric"
+          ]
+        },
+        "hf_id": "ai-hyz/MemoryAgentBench",
+        "last_verified": "2026-05-25",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 1024,
+        "name": "MemoryAgentBench",
+        "registry_wave": "eleventh_wave_agentic_omni_eval_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "Accurate_Retrieval",
+          "Test_Time_Learning",
+          "Long_Range_Understanding",
+          "Conflict_Resolution"
+        ],
+        "target_modality": "long_context",
+        "url": "https://huggingface.co/datasets/ai-hyz/MemoryAgentBench",
+        "use_policy": "eval_only"
       }
     ],
     "enabled": true,

@@ -1226,6 +1226,41 @@ def test_repo_dataset_registry_covers_tenth_wave_curated_sources() -> None:
     assert expansion.source_use_bucket(by_name["LEMAS Dataset Train"]) == "research_internal"
 
 
+def test_repo_dataset_registry_covers_eleventh_wave_agentic_omni_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "eleventh_wave_agentic_omni_eval_2026_05_25"
+
+    expected_policy = {
+        "LiveMCPBench": "eval_only",
+        "SRA-Bench Skill Retrieval Augmentation": "eval_only",
+        "SkillRet Benchmark": "train",
+        "DAPO-Math-17k": "train",
+        "Guru RL 92K": "train",
+        "MemoryAgentBench": "eval_only",
+        "OmniGAIA Benchmark": "eval_only",
+        "Omnimodal-Agent-SFT-2K": "train",
+        "OmniRAG-Agent": "eval_only",
+        "VSTAT Visual State Tracking": "eval_only",
+        "Tricky TTS Public": "eval_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["use_policy"] == policy
+        assert by_name[name]["registry_wave"] == wave
+
+    assert by_name["LiveMCPBench"]["hf_id"] == "ICIP/LiveMCPBench"
+    assert by_name["SkillRet Benchmark"]["license_tier"] == "permissive"
+    assert by_name["OmniGAIA Benchmark"]["target_modality"] == "multimodal"
+    assert by_name["Omnimodal-Agent-SFT-2K"]["use_policy"] == "train"
+    assert by_name["MemoryAgentBench"]["family"] == "long_context"
+    assert by_name["AgentTrove"]["hf_id"] == "open-thoughts/AgentTrove"
+    assert by_name["AVGen-Bench"]["hf_id"] == "microsoft/AVGen-Bench"
+    assert expansion.source_use_bucket(by_name["OmniGAIA Benchmark"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["Tricky TTS Public"]) == "eval_holdout"
+
+
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))

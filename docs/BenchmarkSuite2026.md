@@ -131,6 +131,14 @@ way as the rest of the suite: public rows can support regression and
 realignment, while release claims still require authorized snapshot roots and
 model-generated predictions.
 
+The May 25 eleventh-wave benchmark additions extend that contract with
+LiveMCPBench, SRA-Bench, SkillRet, MemoryAgentBench, OmniGAIA, OmniRAG-Agent,
+VSTAT, and Tricky TTS. The benchmark materializer now honors HF `files`
+patterns as metadata-only constraints and will not fall back to full dataset
+loading after a file-pattern miss; this prevents media-heavy suites such as
+RTV-Bench from pulling hundreds of videos when only JSON/CSV task descriptors
+are needed for public-dev regression.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \

@@ -76,6 +76,26 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "tool",
         "splits": ["train", "test", "validation"],
     },
+    "agent_livemcpbench_2026": {
+        "source": "https://huggingface.co/datasets/ICIP/LiveMCPBench",
+        "hf": ["ICIP/LiveMCPBench"],
+        "kind": "tool",
+        "splits": ["test"],
+    },
+    "agent_sra_bench_2026": {
+        "source": "https://huggingface.co/datasets/WeihangSu/SRA-Bench",
+        "hf": [{"id": "WeihangSu/SRA-Bench", "files": ["instances/*.json", "corpus/*.json"]}],
+        "kind": "tool",
+    },
+    "agent_skillret_2026": {
+        "source": "https://huggingface.co/datasets/anonymous-ed-benchmark/SKILLRET",
+        "hf": [
+            {"id": "anonymous-ed-benchmark/SKILLRET", "config": "queries", "splits": ["test", "train"]},
+            {"id": "anonymous-ed-benchmark/SKILLRET", "config": "skills", "splits": ["test", "train"]},
+        ],
+        "kind": "tool",
+        "splits": ["test", "train"],
+    },
     "agent_webbench_2026": {
         "source": "https://webbench.ai/",
         "kind": "browser",
@@ -480,9 +500,31 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "multimodal_rtv_bench_2026": {
         "source": "https://github.com/LJungang/RTV-Bench",
         "git": "https://github.com/LJungang/RTV-Bench.git",
-        "hf": ["RTVBench/RTV-Bench"],
+        "hf": [{"id": "RTVBench/RTV-Bench", "splits": ["train", "test", "validation"], "files": ["*.json", "*.jsonl", "*.csv"]}],
         "kind": "video",
         "splits": ["train", "test", "validation"],
+    },
+    "multimodal_omnigaia_2026": {
+        "source": "https://huggingface.co/datasets/RUC-NLPIR/OmniGAIA",
+        "hf": ["RUC-NLPIR/OmniGAIA"],
+        "kind": "video_audio",
+        "splits": ["test"],
+    },
+    "multimodal_omnirag_agent_2026": {
+        "source": "https://huggingface.co/datasets/JackMuX3Y/OmniRAG-Agent",
+        "hf": [
+            {"id": "JackMuX3Y/OmniRAG-Agent", "config": "Daily-Omni", "splits": ["train"]},
+            {"id": "JackMuX3Y/OmniRAG-Agent", "config": "VideoOmniBench", "splits": ["train"]},
+            {"id": "JackMuX3Y/OmniRAG-Agent", "config": "WorldSense", "splits": ["train"]},
+        ],
+        "kind": "video_audio",
+        "splits": ["train"],
+    },
+    "multimodal_vstat_visual_state_tracking_2026": {
+        "source": "https://huggingface.co/datasets/VSTAT-NeurIPS2026/VSTAT",
+        "hf": ["VSTAT-NeurIPS2026/VSTAT"],
+        "kind": "video",
+        "splits": ["train"],
     },
     "multimodal_maverix_av_reasoning_2026": {
         "source": "https://maverix-benchmark.github.io/",
@@ -620,6 +662,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         ],
         "kind": "audio_generation",
         "splits": ["test"],
+    },
+    "generation_tricky_tts_2026": {
+        "source": "https://huggingface.co/datasets/Trelis/tricky-tts-public",
+        "hf": ["Trelis/tricky-tts-public"],
+        "kind": "audio_generation",
+        "splits": ["train"],
     },
     "generation_avgen_bench_2026": {
         "source": "https://microsoft.github.io/AVGen-Bench/",
@@ -1273,6 +1321,7 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
             errors.extend(file_errors)
             if file_rows:
                 return file_rows, errors
+            continue
         for split in splits:
             try:
                 if config:

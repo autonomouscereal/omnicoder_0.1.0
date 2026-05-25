@@ -4726,6 +4726,245 @@
         "release": "locked authorized RIVER Bench suite"
       },
       "task_format": "jsonl_realtime_video_interaction"
+    },
+    {
+      "adapter_kind": "live_mcp_tool_agent_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_livemcpbench_2026",
+      "holdout_policy": [
+        "hide_expected_tool_sequences",
+        "reset_mcp_servers",
+        "quarantine_successful_tool_traces"
+      ],
+      "metrics": [
+        "tool_selection_accuracy",
+        "argument_f1",
+        "server_state_success",
+        "final_answer_correctness"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "mcp_server_state"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/ICIP/LiveMCPBench",
+      "splits": {
+        "nightly": "category-balanced LiveMCPBench slice",
+        "release": "locked authorized LiveMCPBench task set",
+        "smoke": "one LiveMCPBench public task"
+      },
+      "task_format": "jsonl_mcp_tool_task"
+    },
+    {
+      "adapter_kind": "skill_retrieval_augmented_agent_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_sra_bench_2026",
+      "holdout_policy": [
+        "hide_gold_skill_ids",
+        "separate_skill_train_test_splits",
+        "record_retrieval_corpus_revision"
+      ],
+      "metrics": [
+        "skill_retrieval_recall",
+        "skill_selection_accuracy",
+        "end_task_success",
+        "noise_robustness"
+      ],
+      "modalities": [
+        "text",
+        "tool",
+        "skill"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/WeihangSu/SRA-Bench",
+      "splits": {
+        "nightly": "family-balanced SRA-Bench slice",
+        "release": "locked authorized SRA-Bench suite",
+        "smoke": "one SRA-Bench skill retrieval task"
+      },
+      "task_format": "jsonl_skill_retrieval_task"
+    },
+    {
+      "adapter_kind": "agent_skill_retrieval_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_skillret_2026",
+      "holdout_policy": [
+        "zero_skill_overlap_train_test",
+        "hide_test_qrels",
+        "record_skill_library_revision"
+      ],
+      "metrics": [
+        "recall_at_k",
+        "mrr",
+        "skill_taxonomy_accuracy",
+        "heldout_skill_generalization"
+      ],
+      "modalities": [
+        "text",
+        "skill",
+        "retrieval"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/anonymous-ed-benchmark/SKILLRET",
+      "splits": {
+        "nightly": "taxonomy-balanced SkillRet slice",
+        "release": "locked SkillRet test split",
+        "smoke": "one SkillRet query/qrel item"
+      },
+      "task_format": "jsonl_skill_retrieval_qrel"
+    },
+    {
+      "adapter_kind": "agent_memory_long_context_eval",
+      "axis": "long_context",
+      "benchmark_id": "long_context_memoryagentbench_2026",
+      "context_windows": [
+        32768,
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_memory_answer_keys",
+        "record_memory_session_order",
+        "block_train_overlap_with_memory_canaries"
+      ],
+      "metrics": [
+        "memory_retrieval_accuracy",
+        "test_time_learning_score",
+        "conflict_resolution_accuracy",
+        "long_range_understanding"
+      ],
+      "modalities": [
+        "text",
+        "long_context",
+        "memory"
+      ],
+      "release_gate": "long_context_release",
+      "source": "https://huggingface.co/datasets/ai-hyz/MemoryAgentBench",
+      "splits": {
+        "nightly": "task-type balanced MemoryAgentBench slice",
+        "release": "locked authorized MemoryAgentBench suite",
+        "smoke": "one memory retrieval item"
+      },
+      "task_format": "jsonl_agent_memory_task"
+    },
+    {
+      "adapter_kind": "omnimodal_tool_agent_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_omnigaia_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_media_assets",
+        "quarantine_successful_tool_traces"
+      ],
+      "metrics": [
+        "pass_at_1",
+        "tool_augmented_answer_accuracy",
+        "evidence_grounding",
+        "multi_modal_step_success"
+      ],
+      "modalities": [
+        "image",
+        "audio",
+        "video",
+        "text",
+        "tool"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/RUC-NLPIR/OmniGAIA",
+      "splits": {
+        "nightly": "difficulty/domain-balanced OmniGAIA slice",
+        "release": "locked authorized OmniGAIA suite",
+        "smoke": "one OmniGAIA test item"
+      },
+      "task_format": "jsonl_omnimodal_agent_task"
+    },
+    {
+      "adapter_kind": "audio_video_rag_agent_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_omnirag_agent_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_media_assets",
+        "record_dataset_subset"
+      ],
+      "metrics": [
+        "audio_video_qa_accuracy",
+        "retrieval_grounding",
+        "event_sequence_accuracy",
+        "grpo_reward_delta"
+      ],
+      "modalities": [
+        "video",
+        "audio",
+        "text",
+        "long_context"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/JackMuX3Y/OmniRAG-Agent",
+      "splits": {
+        "nightly": "Daily-Omni/VideoOmniBench/WorldSense balanced slice",
+        "release": "locked authorized OmniRAG-Agent suite",
+        "smoke": "one Daily-Omni item"
+      },
+      "task_format": "jsonl_audio_video_rag_task"
+    },
+    {
+      "adapter_kind": "visual_state_tracking_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_vstat_visual_state_tracking_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_video_assets",
+        "record_clip_source_type"
+      ],
+      "metrics": [
+        "visual_state_accuracy",
+        "temporal_state_tracking",
+        "single_frame_shortcut_resistance",
+        "open_ended_accuracy"
+      ],
+      "modalities": [
+        "video",
+        "text"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/VSTAT-NeurIPS2026/VSTAT",
+      "splits": {
+        "nightly": "synthetic/self-recorded/youtube balanced VSTAT slice",
+        "release": "locked authorized VSTAT suite",
+        "smoke": "one VSTAT state tracking item"
+      },
+      "task_format": "jsonl_visual_state_tracking_task"
+    },
+    {
+      "adapter_kind": "tricky_tts_pronunciation_eval",
+      "axis": "audio_generation",
+      "benchmark_id": "generation_tricky_tts_2026",
+      "holdout_policy": [
+        "hash_reference_audio",
+        "record_category",
+        "hide_human_reference_asr_from_generator"
+      ],
+      "metrics": [
+        "roundtrip_asr_cer",
+        "symbol_expansion_accuracy",
+        "proper_noun_accuracy",
+        "prosody_punctuation_score"
+      ],
+      "modalities": [
+        "text",
+        "audio",
+        "speech"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://huggingface.co/datasets/Trelis/tricky-tts-public",
+      "splits": {
+        "nightly": "category-balanced tricky TTS slice",
+        "release": "locked tricky TTS suite",
+        "smoke": "one tricky TTS prompt"
+      },
+      "task_format": "jsonl_tts_generation_prompt"
     }
   ],
   "contamination_controls": [
@@ -4807,7 +5046,10 @@
       "agent_agencybench_2026",
       "agent_locobench_agent_2026",
       "agent_mcptoolbenchpp_2026",
-      "agent_webbench_2026"
+      "agent_webbench_2026",
+      "agent_livemcpbench_2026",
+      "agent_sra_bench_2026",
+      "agent_skillret_2026"
     ],
     "coding_release": [
       "coding_swe_bench_pro_2026",
@@ -4862,7 +5104,8 @@
       "generation_emergent_tts_eval_2026",
       "generation_long_tts_eval_2026",
       "generation_tta_bench_2026",
-      "generation_nv_bench_2026"
+      "generation_nv_bench_2026",
+      "generation_tricky_tts_2026"
     ],
     "global_must_pass": [
       "raw_postgresql_schema_applies",
@@ -4887,7 +5130,8 @@
       "long_context_nolima_1m_2026",
       "long_context_graphwalks_2026",
       "long_context_sagascale_2026",
-      "long_context_academiceval_2026"
+      "long_context_academiceval_2026",
+      "long_context_memoryagentbench_2026"
     ],
     "multimodal_understanding_release": [
       "multimodal_mmmu_pro_2026",
@@ -4926,7 +5170,10 @@
       "multimodal_muse_music_2026",
       "multimodal_rtv_bench_2026",
       "multimodal_maverix_av_reasoning_2026",
-      "multimodal_river_video_interaction_2026"
+      "multimodal_river_video_interaction_2026",
+      "multimodal_omnigaia_2026",
+      "multimodal_omnirag_agent_2026",
+      "multimodal_vstat_visual_state_tracking_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",

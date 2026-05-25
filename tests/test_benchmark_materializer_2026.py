@@ -727,7 +727,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["reasoning_maime2025_2026"]["hf"] == ["LumiOpen/mAIME2025"]
     assert materializer.KNOWN_BENCHMARKS["long_context_nolima_1m_2026"]["hf"] == ["amodaresi/NoLiMa"]
     assert materializer.KNOWN_BENCHMARKS["multimodal_audiomarathon_2026"]["hf"][0] == "AudioMarathon/AudioMarathon"
-    assert materializer.KNOWN_BENCHMARKS["multimodal_rtv_bench_2026"]["hf"] == ["RTVBench/RTV-Bench"]
+    assert materializer.KNOWN_BENCHMARKS["multimodal_rtv_bench_2026"]["hf"][0]["id"] == "RTVBench/RTV-Bench"
     river = materializer.KNOWN_BENCHMARKS["multimodal_river_video_interaction_2026"]["hf"][0]
     assert river["id"] == "OpenGVLab/RIVER"
     assert river["files"] == ["*.json", "*.jsonl", "*.csv"]
@@ -748,6 +748,18 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["coding_swe_mera_2026"]["hf"][0]["id"] == "MERA-evaluation/SWE-MERA"
     assert materializer.KNOWN_BENCHMARKS["multimodal_mme_unify_2026"]["hf"][0]["id"] == "wulin222/MME-Unify"
     assert materializer.KNOWN_BENCHMARKS["generation_long_tts_eval_2026"]["hf"][0]["id"] == "wcy1122/Long-TTS-Eval"
+    assert materializer.KNOWN_BENCHMARKS["agent_livemcpbench_2026"]["hf"] == ["ICIP/LiveMCPBench"]
+    assert materializer.KNOWN_BENCHMARKS["agent_sra_bench_2026"]["hf"][0]["id"] == "WeihangSu/SRA-Bench"
+    assert materializer.KNOWN_BENCHMARKS["agent_skillret_2026"]["hf"][0]["config"] == "queries"
+    assert materializer.KNOWN_BENCHMARKS["multimodal_omnigaia_2026"]["hf"] == ["RUC-NLPIR/OmniGAIA"]
+    assert materializer.KNOWN_BENCHMARKS["multimodal_omnirag_agent_2026"]["hf"][0]["config"] == "Daily-Omni"
+    assert materializer.KNOWN_BENCHMARKS["multimodal_vstat_visual_state_tracking_2026"]["hf"] == [
+        "VSTAT-NeurIPS2026/VSTAT"
+    ]
+    assert materializer.KNOWN_BENCHMARKS["generation_tricky_tts_2026"]["hf"] == ["Trelis/tricky-tts-public"]
+    rtv = materializer.KNOWN_BENCHMARKS["multimodal_rtv_bench_2026"]["hf"][0]
+    assert rtv["id"] == "RTVBench/RTV-Bench"
+    assert rtv["files"] == ["*.json", "*.jsonl", "*.csv"]
 
 
 def test_audit_profile_reports_materializer_and_core25_gaps(tmp_path: Path) -> None:

@@ -211,6 +211,15 @@ Current high-value registry families:
   rights and non-commercial constraints are reviewed. The rest are eval-only
   or benchmark-holdout rows so answers, rubrics, tool traces, and media assets
   cannot leak into the 20B training lane.
+- Eleventh-wave May 25, 2026 additions: LiveMCPBench, SRA-Bench, SkillRet,
+  DAPO-Math-17k, Guru RL 92K, MemoryAgentBench, OmniGAIA,
+  Omnimodal-Agent-SFT-2K, OmniRAG-Agent, VSTAT, and Tricky TTS. The wave is tagged
+  `eleventh_wave_agentic_omni_eval_2026_05_25`. Trainable rows are limited to
+  permissive agent SFT/RL/math/omnimodal-agent sources; MCP, memory, TTS, AV
+  generation, and omnimodal benchmark rows stay eval-holdout unless explicitly
+  converted through a non-answer-key training derivative. Toucan, OpenThoughts
+  Agent, and AVGen-Bench were already present in earlier waves, so the eleventh
+  wave reuses those entries instead of duplicating HF IDs.
 
 `mixture_controller_2026` turns curation metadata into scheduler inputs for the
 training profile. It caps synthetic ratios, includes provenance/license/quality

@@ -223,6 +223,31 @@ def test_suite_profile_includes_tenth_wave_curated_benchmark_gates() -> None:
     assert adapters["multimodal_cmi_bench_music_2026"]["modalities"] == ["audio", "music", "text"]
 
 
+def test_suite_profile_includes_eleventh_wave_agentic_omni_benchmark_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    expected = {
+        "agent_livemcpbench_2026": "agent_tool_release",
+        "agent_sra_bench_2026": "agent_tool_release",
+        "agent_skillret_2026": "agent_tool_release",
+        "long_context_memoryagentbench_2026": "long_context_release",
+        "multimodal_omnigaia_2026": "multimodal_understanding_release",
+        "multimodal_omnirag_agent_2026": "multimodal_understanding_release",
+        "multimodal_vstat_visual_state_tracking_2026": "multimodal_understanding_release",
+        "generation_tricky_tts_2026": "generation_release",
+    }
+    for adapter_id, gate in expected.items():
+        assert adapter_id in adapters
+        assert adapter_id in suite["release_gates"][gate]
+
+    assert adapters["agent_livemcpbench_2026"]["source"] == "https://huggingface.co/datasets/ICIP/LiveMCPBench"
+    assert adapters["agent_skillret_2026"]["adapter_kind"] == "agent_skill_retrieval_eval"
+    assert adapters["long_context_memoryagentbench_2026"]["context_windows"][-1] == 1048576
+    assert "tool" in adapters["multimodal_omnigaia_2026"]["modalities"]
+    assert adapters["generation_tricky_tts_2026"]["axis"] == "audio_generation"
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")

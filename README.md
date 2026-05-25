@@ -190,6 +190,12 @@ mix:
   `tenth_wave_curated_benchmarks_2026_05_25`; FineWeb2 and Common Pile are
   train-eligible, while benchmark and speech-media rows stay eval-only or
   research-internal until licensing and holdout checks pass.
+- Eleventh-wave May 25, 2026 additions add LiveMCPBench, SRA-Bench, SkillRet,
+  DAPO-Math-17k, Guru RL 92K, MemoryAgentBench, OmniGAIA,
+  Omnimodal-Agent-SFT-2K, OmniRAG-Agent, VSTAT, and Tricky TTS under
+  `eleventh_wave_agentic_omni_eval_2026_05_25`. The benchmark materializer now
+  treats HF file patterns as strict metadata-only constraints so public-dev
+  benchmark pulls do not accidentally download full video/audio corpora.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for
