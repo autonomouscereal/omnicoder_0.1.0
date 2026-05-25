@@ -95,7 +95,9 @@ one file at a time and optimizer state is intentionally not reused across the
 placement change. The May 25 2048-token retries showed that `16,8,40` and
 `16,14,34` can both fill the RTX 8000 during fake-quant backward, while older
 `16,16,32` only overfilled a 3090 with the larger 64-row fake-quant chunks.
-The current default keeps the 32-layer RTX 8000 shard and uses 16-row chunks.
+The current default keeps the 32-layer RTX 8000 shard, uses 16-row fake-quant
+chunks, and passes `OMNICODER2026_LM_LOSS_CHUNK_TOKENS=64` into Docker to trim
+final-head transient logits.
 
 Long-context-only recovery is also first-class. Use
 `training-orchestration-2026 run-long-context` or
