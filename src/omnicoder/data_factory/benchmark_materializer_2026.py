@@ -135,7 +135,21 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "agent_terminalworld_2026": {
         "source": "https://github.com/EuniAI/TerminalWorld",
         "git": "https://github.com/EuniAI/TerminalWorld.git",
-        "hf": [{"id": "EuniAI/TerminalWorld", "files": ["**/*.json", "**/*.jsonl", "**/task.toml", "**/instruction.md"]}],
+        "hf": [
+            {
+                "id": "EuniAI/TerminalWorld",
+                "files": [
+                    "**/*.json",
+                    "**/*.jsonl",
+                    "**/task.toml",
+                    "**/instruction.md",
+                    "**/Dockerfile",
+                    "**/tests/**",
+                    "**/solve*",
+                    "**/solution*",
+                ],
+            }
+        ],
         "kind": "terminal",
     },
     "agent_browsergym_webarena_verified_2026": {
@@ -1395,6 +1409,7 @@ def normalized_metadata(raw: dict[str, Any], kind: str, profile_record: dict[str
         "document_type",
         "metric_info",
         "evaluator_reference",
+        "metadata",
         "omnidocbench_gt_ref",
         "page_info",
         "layout_dets",
@@ -1541,10 +1556,12 @@ def read_json_rows(path: Path, limit: int) -> list[dict[str, Any]]:
 
     row_like_keys = (
         "question",
+        "question_content",
         "prompt",
         "task_description",
         "instruction",
         "problem_statement",
+        "task_id",
         "page_info",
         "layout_dets",
         "gt_markdown",
@@ -1693,6 +1710,46 @@ def read_toml_row(path: Path) -> dict[str, Any]:
     readme = path.with_name("README.md")
     if readme.exists():
         row.setdefault("readme", readme.read_text(encoding="utf-8", errors="ignore").strip()[:20000])
+    dockerfile = path.with_name("Dockerfile")
+    if dockerfile.exists():
+        row.setdefault("dockerfile_path", str(dockerfile))
+        row.setdefault("dockerfile", dockerfile.read_text(encoding="utf-8", errors="ignore").strip()[:20000])
+        row.setdefault("setup", {"dockerfile": str(dockerfile)})
+
+    def text_file_descriptor(file_path: Path) -> dict[str, Any]:
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+        relative_path = file_path.relative_to(path.parent).as_posix() if file_path.is_relative_to(path.parent) else file_path.name
+        return {
+            "path": str(file_path),
+            "relative_path": relative_path,
+            "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "content": text[:20000],
+        }
+
+    tests_dir = path.parent / "tests"
+    if tests_dir.exists() and tests_dir.is_dir():
+        test_files = [
+            item
+            for item in sorted(tests_dir.rglob("*"))
+            if item.is_file() and "__pycache__" not in item.parts and item.stat().st_size <= 500000
+        ][:50]
+        if test_files:
+            descriptors = [text_file_descriptor(item) for item in test_files]
+            row.setdefault("test_files", descriptors)
+            row.setdefault("tests", descriptors)
+            row.setdefault("command", "pytest tests")
+
+    solve_files: list[Path] = []
+    for pattern in ("solve*", "solution*"):
+        solve_files.extend(item for item in sorted(path.parent.glob(pattern)) if item.is_file() and item.stat().st_size <= 500000)
+    solutions_dir = path.parent / "solutions"
+    if solutions_dir.exists() and solutions_dir.is_dir():
+        solve_files.extend(item for item in sorted(solutions_dir.rglob("*")) if item.is_file() and item.stat().st_size <= 500000)
+    if solve_files:
+        solution_descriptors = [text_file_descriptor(item) for item in unique_paths(solve_files)[:50]]
+        row.setdefault("solve_files", solution_descriptors)
+        row.setdefault("solution_files", solution_descriptors)
+        row.setdefault("oracle", {"solution_files": solution_descriptors})
     row.setdefault("task_id", path.parent.name)
     row.setdefault("_source_file", str(path))
     return row
@@ -2063,25 +2120,59 @@ def hf_file_rows(
         files = list_repo_files(dataset_id, **list_kwargs)
     except Exception as exc:
         return [], [f"{dataset_id}: list_repo_files failed: {exc}"]
+    def is_file_row_or_companion(name: str) -> bool:
+        lower = name.lower()
+        filename = name.rsplit("/", 1)[-1]
+        lower_filename = filename.lower()
+        return (
+            lower.endswith((".jsonl", ".json", ".csv", ".parquet", ".yaml", ".yml", ".toml", ".md"))
+            or filename == "Dockerfile"
+            or lower_filename.startswith(("solve", "solution"))
+            or "/tests/" in f"/{name}"
+        )
+
     selected = [
         name
         for name in files
-        if name.lower().endswith((".jsonl", ".json", ".csv", ".parquet"))
-        and any(fnmatch.fnmatch(name, pattern) for pattern in patterns)
+        if is_file_row_or_companion(name) and any(fnmatch.fnmatch(name, pattern) for pattern in patterns)
     ]
+
+    def download_file(name: str) -> Path | None:
+        download_kwargs: dict[str, Any] = {
+            "repo_id": dataset_id,
+            "filename": name,
+            "repo_type": "dataset",
+            "cache_dir": str(cache_root / "hf_files"),
+        }
+        if revision:
+            download_kwargs["revision"] = revision
+        return Path(hf_hub_download(**download_kwargs))
+
+    def task_companions(name: str) -> list[str]:
+        parent = name.rsplit("/", 1)[0] if "/" in name else ""
+        prefix = f"{parent}/" if parent else ""
+        out: list[str] = []
+        for candidate in selected:
+            if candidate == name or (prefix and not candidate.startswith(prefix)):
+                continue
+            tail = candidate[len(prefix) :] if prefix else candidate
+            filename = tail.rsplit("/", 1)[-1]
+            lower_filename = filename.lower()
+            if (
+                tail in {"instruction.md", "README.md", "Dockerfile"}
+                or tail.startswith("tests/")
+                or lower_filename.startswith(("solve", "solution"))
+            ):
+                out.append(candidate)
+        return out[:80]
+
     for name in sorted(selected):
         if len(rows) >= limit:
             break
         try:
-            download_kwargs: dict[str, Any] = {
-                "repo_id": dataset_id,
-                "filename": name,
-                "repo_type": "dataset",
-                "cache_dir": str(cache_root / "hf_files"),
-            }
-            if revision:
-                download_kwargs["revision"] = revision
-            local = Path(hf_hub_download(**download_kwargs))
+            local = download_file(name)
+            if local is None:
+                continue
             suffix = local.suffix.lower()
             if suffix == ".jsonl":
                 loaded = read_jsonl_rows(local, limit - len(rows))
@@ -2091,6 +2182,15 @@ def hf_file_rows(
                 loaded = read_csv_rows(local, limit - len(rows))
             elif suffix == ".parquet":
                 loaded = read_parquet_rows(local, limit - len(rows))
+            elif suffix in {".yaml", ".yml"}:
+                loaded = read_yaml_rows(local)
+            elif suffix == ".toml":
+                for companion in task_companions(name):
+                    try:
+                        download_file(companion)
+                    except Exception as exc:
+                        errors.append(f"{dataset_id}:{companion}: {exc}")
+                loaded = [read_toml_row(local)]
             else:
                 loaded = []
             for idx, item in enumerate(loaded):
@@ -2275,9 +2375,11 @@ def normalize_task(
             "query_text",
             "query_content",
             "Question Content",
+            "question_content",
             "question_nonthinking",
             "question_thinking",
             "question_text",
+            "question_title",
             "prompt_text",
             "prompt_en",
             "text_to_synthesize",
@@ -2436,9 +2538,26 @@ def normalize_task(
         row["question"] = make_jsonable(first_value(raw, ("question",)) or prompt)
     if has_value(choices):
         row["choices"] = choices
+    coding_test_target = {
+        key: make_jsonable(raw[key])
+        for key in (
+            "tests",
+            "test_cases",
+            "public_test_cases",
+            "private_test_cases",
+            "generated_test_cases",
+            "input_output",
+            "sample_inputs",
+            "sample_outputs",
+            "metadata",
+        )
+        if has_value(raw.get(key))
+    }
     if has_value(answer):
         row["answer"] = make_jsonable(answer)
         row["target"] = make_jsonable(answer)
+    elif "coding" in kind and coding_test_target:
+        row["target"] = {"kind": "code_execution_tests", **coding_test_target}
     elif benchmark_id == "factuality_facts_grounding_2026":
         row["target"] = {
             "kind": "facts_grounding_judged_generation",
@@ -2578,6 +2697,13 @@ def normalize_task(
             "problem_statement",
             "test_commands",
             "tests",
+            "test_cases",
+            "public_test_cases",
+            "private_test_cases",
+            "generated_test_cases",
+            "input_output",
+            "sample_inputs",
+            "sample_outputs",
             "entry_point",
             "file_paths",
             "prompt_file",
@@ -2601,6 +2727,13 @@ def normalize_task(
             "command_test",
             "command_test_small",
             "image_name",
+            "starter_code",
+            "code",
+            "question_content",
+            "question_title",
+            "contest_id",
+            "contest_date",
+            "platform",
             "meta",
             "timeout",
             "timeouts",
@@ -2706,7 +2839,22 @@ def normalize_task(
             row[key] = make_jsonable(value)
 
     if any(token in kind for token in ("terminal", "browser", "desktop")):
-        for key in ("setup", "command", "commands", "oracle", "environment", "start_url", "sites", "workspace"):
+        for key in (
+            "setup",
+            "command",
+            "commands",
+            "oracle",
+            "environment",
+            "start_url",
+            "sites",
+            "workspace",
+            "dockerfile",
+            "dockerfile_path",
+            "tests",
+            "test_files",
+            "solve_files",
+            "solution_files",
+        ):
             value = raw.get(key)
             if has_value(value):
                 row[key] = make_jsonable(value)

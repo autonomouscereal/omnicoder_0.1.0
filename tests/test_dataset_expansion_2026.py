@@ -552,6 +552,34 @@ def test_dataset_expansion_preserves_structured_tool_media_and_declared_modality
     assert "tool" in row["domains"]
 
 
+def test_dataset_expansion_summarizes_inline_media_payloads() -> None:
+    plan = _training_profile(Path("."))["training_plan"]
+    entry = {
+        "name": "audio_payload_guard",
+        "family": "audio_music_speech",
+        "target_modality": "audio",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "field_map": {"prompt": ["prompt"], "target": ["answer"], "media": ["audio"], "id": ["id"]},
+    }
+    record = {
+        "id": "clip-1",
+        "prompt": "Transcribe the speaker and preserve prosody notes.",
+        "answer": "The speaker says hello with a rising tone.",
+        "audio": {"path": "clip-1.wav", "sampling_rate": 48000, "array": [0.01] * 10000},
+        "contamination_status": "clean",
+    }
+
+    row = expansion.record_to_training_row(entry, record, plan, 1)
+
+    assert row is not None
+    assert len(json.dumps(row)) < 20000
+    assert row["media_refs"][0]["path"] == "clip-1.wav"
+    assert row["media_refs"][0]["array_summary"]["list_items"] == 10000
+    assert row["media_refs"][0]["array_summary"]["truncated_items"] == 9992
+
+
 def test_huggingface_iteration_errors_do_not_abort_expansion(monkeypatch) -> None:
     class BrokenDataset:
         def __iter__(self):
@@ -1887,6 +1915,55 @@ def test_repo_dataset_registry_covers_twenty_second_wave_agent_audio_ocr_sources
     assert expansion.source_use_bucket(by_name["StephenZhu SWE-Play Trajectories"]) == "research_internal"
     assert "non_commercial" in by_name["Meituan LongCat Audio Turing Test"]["license_tier"]
     assert expansion.source_use_bucket(by_name["Meituan LongCat Audio Turing Test"]) == "research_internal"
+
+
+def test_repo_dataset_registry_covers_twenty_third_wave_agentic_code_math_multimodal_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "twenty_third_wave_agentic_code_math_multimodal_2026_05_25"
+
+    expected_policy = {
+        "Agentic Coding Tessa": "train",
+        "Ethanker Agentic Coding Dataset": "train",
+        "Agentic CoT Coding SFT v1.1": "train",
+        "169Pi MathReasoning": "train",
+        "Math SFT Solutions No CoT": "train",
+        "EST Math Reasoning SFT": "train",
+        "OpenDataArena MMFineReason Full 2.3M": "train",
+        "InfiX OmniAct Grounding Filtered": "train",
+        "ClaudeSet Community Agent Traces": "research_internal",
+        "Microsoft WebTailBench V2": "eval_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    train_names = {name for name, policy in expected_policy.items() if policy == "train"}
+    for name in train_names:
+        assert by_name[name]["contamination_status"] == "clean"
+        assert by_name[name]["protected_benchmark_scan"] == "clean"
+        assert expansion.source_use_bucket(by_name[name]) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], {"prompt": "p", "answer": "a"}) == "train"
+
+    assert by_name["Agentic Coding Tessa"]["hf_id"] == "smirki/Agentic-Coding-Tessa"
+    assert by_name["Agentic Coding Tessa"]["field_map"]["trajectory"] == ["conversations"]
+    assert by_name["Ethanker Agentic Coding Dataset"]["license"] == "MIT"
+    assert by_name["Agentic CoT Coding SFT v1.1"]["field_map"]["target"] == ["assistant", "output", "response"]
+    assert by_name["169Pi MathReasoning"]["field_map"]["target"] == ["response", "answer", "solution"]
+    assert by_name["Math SFT Solutions No CoT"]["configs"] == ["short", "long", "very long"]
+    assert by_name["EST Math Reasoning SFT"]["field_map"]["prompt"] == ["instruction", "input", "prompt"]
+    assert by_name["OpenDataArena MMFineReason Full 2.3M"]["hf_id"] == "OpenDataArena/MMFineReason-Full-2.3M-Qwen3-VL-235B-Thinking"
+    assert by_name["OpenDataArena MMFineReason Full 2.3M"]["target_modality"] == "image"
+    assert by_name["OpenDataArena MMFineReason Full 2.3M"]["field_map"]["media"] == ["image"]
+    assert by_name["InfiX OmniAct Grounding Filtered"]["family"] == "terminal_browser_agents"
+    assert "reward_model" in by_name["InfiX OmniAct Grounding Filtered"]["field_map"]["verifier_labels"]
+
+    assert "privacy_review" in by_name["ClaudeSet Community Agent Traces"]["license_tier"]
+    assert expansion.source_use_bucket(by_name["ClaudeSet Community Agent Traces"]) == "research_internal"
+    assert by_name["Microsoft WebTailBench V2"]["remote_files"][0]["format"] == "tsv"
+    assert expansion.source_use_bucket(by_name["Microsoft WebTailBench V2"]) == "eval_holdout"
 
 
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:

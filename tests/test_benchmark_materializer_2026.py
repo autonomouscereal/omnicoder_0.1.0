@@ -204,6 +204,103 @@ def test_materializer_reads_terminal_task_toml_and_instruction(tmp_path: Path) -
     assert "Fix the CLI" in task["prompt"]
 
 
+def test_materializer_materializes_livecodebench_v6_lowercase_question_content_and_tests(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.json"
+    _write_json(profile, {"benchmarks": []})
+    source = tmp_path / "livecodebench.jsonl"
+    _write_jsonl(
+        source,
+        [
+            {
+                "question_id": "lcb-v6-001",
+                "question_title": "Two Sum Fresh",
+                "question_content": "Write a function that returns two indices.",
+                "starter_code": "def two_sum(nums, target):\n    pass\n",
+                "public_test_cases": [{"input": "[2,7,11,15], 9", "output": "[0,1]"}],
+                "private_test_cases": [{"input": "[3,2,4], 6", "output": "[1,2]"}],
+                "metadata": {"func_name": "two_sum", "release_date": "2026-05-01"},
+            }
+        ],
+    )
+    out_root = tmp_path / "materialized"
+
+    assert (
+        materializer.main(
+            [
+                "--profile",
+                str(profile),
+                "--out-root",
+                str(out_root),
+                "--run-id",
+                "run_lcb_v6",
+                "--benchmark",
+                "coding_livecodebench_v6_2026",
+                "--source-override",
+                f"coding_livecodebench_v6_2026={source}",
+                "materialize",
+            ]
+        )
+        == 0
+    )
+
+    rows = _read_jsonl(out_root / "local_2026" / "coding_livecodebench_v6_2026_public_dev.jsonl")
+    manifest = _read_json(out_root / "manifests" / "benchmark_materialization_manifest.json")
+    assert manifest["needs_data"] == 0
+    assert manifest["records"][0]["status"] == "materialized"
+    assert rows[0]["task_id"] == "lcb-v6-001"
+    assert rows[0]["prompt"] == "Write a function that returns two indices."
+    assert rows[0]["question_content"] == "Write a function that returns two indices."
+    assert rows[0]["public_test_cases"] == [{"input": "[2,7,11,15], 9", "output": "[0,1]"}]
+    assert rows[0]["target"]["kind"] == "code_execution_tests"
+    assert rows[0]["target"]["private_test_cases"] == [{"input": "[3,2,4], 6", "output": "[1,2]"}]
+    assert rows[0]["metadata"]["metadata"]["func_name"] == "two_sum"
+
+
+def test_materializer_materializes_terminalworld_layout_assets(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.json"
+    _write_json(profile, {"benchmarks": []})
+    root = tmp_path / "terminalworld"
+    task_dir = root / "tasks" / "shell-repair"
+    (task_dir / "tests").mkdir(parents=True)
+    (task_dir / "task.toml").write_text('timeout = 600\ncategory = "filesystem"\n', encoding="utf-8")
+    (task_dir / "instruction.md").write_text("Repair the script and verify the terminal task.", encoding="utf-8")
+    (task_dir / "Dockerfile").write_text("FROM python:3.12-slim\nWORKDIR /workspace\n", encoding="utf-8")
+    (task_dir / "tests" / "test_task.py").write_text("def test_expected_file():\n    assert True\n", encoding="utf-8")
+    (task_dir / "solve.sh").write_text("#!/usr/bin/env bash\necho solved\n", encoding="utf-8")
+    out_root = tmp_path / "materialized"
+
+    assert (
+        materializer.main(
+            [
+                "--profile",
+                str(profile),
+                "--out-root",
+                str(out_root),
+                "--run-id",
+                "run_terminalworld",
+                "--benchmark",
+                "agent_terminalworld_2026",
+                "--source-override",
+                f"agent_terminalworld_2026={root}",
+                "materialize",
+            ]
+        )
+        == 0
+    )
+
+    rows = _read_jsonl(out_root / "local_2026" / "agent_terminalworld_2026_public_dev.jsonl")
+    manifest = _read_json(out_root / "manifests" / "benchmark_materialization_manifest.json")
+    assert manifest["needs_data"] == 0
+    assert manifest["records"][0]["status"] == "materialized"
+    assert rows[0]["task_id"] == "shell-repair"
+    assert rows[0]["prompt"] == "Repair the script and verify the terminal task."
+    assert rows[0]["dockerfile"].startswith("FROM python:3.12-slim")
+    assert rows[0]["command"] == "pytest tests"
+    assert rows[0]["tests"][0]["relative_path"] == "tests/test_task.py"
+    assert rows[0]["solve_files"][0]["relative_path"] == "solve.sh"
+    assert rows[0]["oracle"]["solution_files"][0]["relative_path"] == "solve.sh"
+
+
 def test_materializer_reads_mcpmark_meta_json(tmp_path: Path) -> None:
     meta = tmp_path / "mcp" / "tasks" / "notion" / "easy" / "task_a" / "meta.json"
     _write_json(meta, {"task_id": "task_a", "description": "Move the Notion cards.", "mcp": ["notion"]})

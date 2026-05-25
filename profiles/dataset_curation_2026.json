@@ -27411,6 +27411,507 @@
             "document"
           ]
         }
+      },
+      {
+        "name": "Agentic Coding Tessa",
+        "family": "coding_agentic",
+        "hf_id": "smirki/Agentic-Coding-Tessa",
+        "url": "https://huggingface.co/datasets/smirki/Agentic-Coding-Tessa",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "code",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Standard parquet conversation rows with coding-agent instructions and assistant completions; no custom reader required.",
+        "curriculum_axes": [
+          "agentic_coding",
+          "conversation_sft",
+          "repo_repair",
+          "tool_reasoning",
+          "software_engineering"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "source"
+          ],
+          "prompt": [
+            "conversations",
+            "conversations.value"
+          ],
+          "target": [
+            "conversations",
+            "conversations.value"
+          ],
+          "trajectory": [
+            "conversations"
+          ]
+        }
+      },
+      {
+        "name": "Ethanker Agentic Coding Dataset",
+        "family": "coding_agentic",
+        "hf_id": "ethanker/agentic_coding_dataset",
+        "url": "https://huggingface.co/datasets/ethanker/agentic_coding_dataset",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "code",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Instruction/output coding rows in auto-converted parquet for broad software-engineering SFT coverage.",
+        "curriculum_axes": [
+          "agentic_coding",
+          "debugging",
+          "software_design",
+          "patch_planning",
+          "sft"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid"
+          ],
+          "prompt": [
+            "instruction",
+            "prompt",
+            "question"
+          ],
+          "target": [
+            "output",
+            "answer",
+            "response"
+          ]
+        }
+      },
+      {
+        "name": "Agentic CoT Coding SFT v1.1",
+        "family": "coding_agentic",
+        "hf_id": "AlicanKiraz0/Agentic-Chain-of-Thought-Coding-SFT-Dataset-v1.1",
+        "url": "https://huggingface.co/datasets/AlicanKiraz0/Agentic-Chain-of-Thought-Coding-SFT-Dataset-v1.1",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "code",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "JSONL system/user/assistant coding-agent rows; suitable for direct HF streaming or file download.",
+        "curriculum_axes": [
+          "agentic_coding",
+          "chain_of_thought_distill",
+          "implementation_planning",
+          "test_aware_repair",
+          "long_form_code_sft"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "prompt": [
+            "user",
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "assistant",
+            "output",
+            "response"
+          ],
+          "verifier_labels": [
+            "system"
+          ]
+        }
+      },
+      {
+        "name": "169Pi MathReasoning",
+        "family": "math_reasoning",
+        "hf_id": "169Pi/mathreasoning",
+        "url": "https://huggingface.co/datasets/169Pi/mathreasoning",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Large prompt/response math parquet corpus for verifiable short-answer and reasoning SFT.",
+        "curriculum_axes": [
+          "math_reasoning",
+          "symbolic_problem_solving",
+          "answer_extraction",
+          "verifiable_math",
+          "sft"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid"
+          ],
+          "prompt": [
+            "prompt",
+            "problem",
+            "question"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "solution"
+          ]
+        }
+      },
+      {
+        "name": "Math SFT Solutions No CoT",
+        "family": "math_reasoning",
+        "hf_id": "kaushik-harsh-99/math-sft-solutions-no-cot",
+        "url": "https://huggingface.co/datasets/kaushik-harsh-99/math-sft-solutions-no-cot",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "configs": [
+          "short",
+          "long",
+          "very long"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "JSON/parquet math SFT rows partitioned by context length for verifier-friendly answer training without hidden binary readers.",
+        "curriculum_axes": [
+          "math_reasoning",
+          "short_answer_math",
+          "long_context_math",
+          "solution_selection",
+          "verifier_friendly"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid"
+          ],
+          "prompt": [
+            "instruction",
+            "prompt",
+            "problem"
+          ],
+          "target": [
+            "output",
+            "answer",
+            "solution"
+          ]
+        }
+      },
+      {
+        "name": "EST Math Reasoning SFT",
+        "family": "math_reasoning",
+        "hf_id": "est-ai/math-reasoning-sft",
+        "url": "https://huggingface.co/datasets/est-ai/math-reasoning-sft",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Compact instruction/input/output math reasoning parquet source for SFT balancing.",
+        "curriculum_axes": [
+          "math_reasoning",
+          "competition_math",
+          "instruction_following",
+          "stepwise_solution",
+          "sft"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid"
+          ],
+          "prompt": [
+            "instruction",
+            "input",
+            "prompt"
+          ],
+          "target": [
+            "output",
+            "answer",
+            "solution"
+          ]
+        }
+      },
+      {
+        "name": "OpenDataArena MMFineReason Full 2.3M",
+        "family": "omnimodal_understanding",
+        "hf_id": "OpenDataArena/MMFineReason-Full-2.3M-Qwen3-VL-235B-Thinking",
+        "url": "https://huggingface.co/datasets/OpenDataArena/MMFineReason-Full-2.3M-Qwen3-VL-235B-Thinking",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "configs": [
+          "BMMR",
+          "Euclid30K",
+          "FineVision-ai2d_merged",
+          "FineVision-geometry3k_mathv360k_",
+          "mmopenr1-8k"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "image",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_with_synthetic_provenance_audit",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Auto-converted parquet visual-reasoning rows with image columns cast decode=false by the existing materializer.",
+        "curriculum_axes": [
+          "visual_reasoning",
+          "multimodal_math",
+          "diagram_reasoning",
+          "qwen3_vl_distill",
+          "image_text_sft"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "source"
+          ],
+          "prompt": [
+            "question",
+            "ori_question",
+            "caption"
+          ],
+          "target": [
+            "qwen3vl_235b_thinking_response",
+            "original_answer",
+            "answer",
+            "consistency_analysis"
+          ],
+          "media": [
+            "image"
+          ],
+          "verifier_labels": [
+            "answer",
+            "pass_rate",
+            "is_consistent",
+            "source"
+          ]
+        }
+      },
+      {
+        "name": "InfiX OmniAct Grounding Filtered",
+        "family": "terminal_browser_agents",
+        "hf_id": "InfiX-ai/omniact_grounding_filtered",
+        "url": "https://huggingface.co/datasets/InfiX-ai/omniact_grounding_filtered",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "splits": [
+          "train",
+          "validation"
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Parquet GUI grounding rows with image references, prompt messages, and reward-model coordinate labels.",
+        "curriculum_axes": [
+          "gui_grounding",
+          "computer_use",
+          "screen_action_prediction",
+          "visual_tool_use",
+          "rlvr_verifier_labels"
+        ],
+        "field_map": {
+          "id": [
+            "extra_info.index",
+            "id"
+          ],
+          "prompt": [
+            "extra_info.question",
+            "prompt",
+            "ability"
+          ],
+          "target": [
+            "data_source",
+            "ability"
+          ],
+          "media": [
+            "images",
+            "image"
+          ],
+          "trajectory": [
+            "prompt"
+          ],
+          "verifier_labels": [
+            "reward_model",
+            "extra_info"
+          ],
+          "reward": [
+            "reward_model.style"
+          ]
+        }
+      },
+      {
+        "name": "ClaudeSet Community Agent Traces",
+        "family": "coding_agentic",
+        "hf_id": "lelouch0110/claudeset-community",
+        "url": "https://huggingface.co/datasets/lelouch0110/claudeset-community",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "code",
+        "use_policy": "research_internal",
+        "license": "MIT",
+        "license_tier": "permissive_real_user_privacy_review",
+        "source_review_status": "public_shape_reviewed_privacy_scan_required_2026_05_25",
+        "materialization_note": "Real user coding-agent traces are materializable JSONL/parquet, but remain research-internal until secret and contributor-policy scans pass.",
+        "curriculum_axes": [
+          "coding_agent_trajectory",
+          "real_user_trace",
+          "tool_calls",
+          "compaction_recovery",
+          "privacy_scan_required"
+        ],
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "prompt": [
+            "turns",
+            "project"
+          ],
+          "target": [
+            "turns",
+            "stats"
+          ],
+          "trajectory": [
+            "turns"
+          ],
+          "verifier_labels": [
+            "stats",
+            "model",
+            "claude_version"
+          ]
+        }
+      },
+      {
+        "name": "Microsoft WebTailBench V2",
+        "family": "terminal_browser_agents",
+        "hf_id": "microsoft/WebTailBench",
+        "url": "https://huggingface.co/datasets/microsoft/WebTailBench",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_third_wave_agentic_code_math_multimodal_2026_05_25",
+        "remote_files": [
+          {
+            "url": "https://huggingface.co/datasets/microsoft/WebTailBench/resolve/main/WebTailBench-v2-rubrics.tsv",
+            "format": "tsv"
+          },
+          {
+            "url": "https://huggingface.co/datasets/microsoft/WebTailBench/resolve/main/WebTailBench.tsv",
+            "format": "tsv"
+          },
+          {
+            "url": "https://huggingface.co/datasets/microsoft/WebTailBench/resolve/main/WebTailBench-Refusals.tsv",
+            "format": "tsv"
+          }
+        ],
+        "splits": [
+          "test_v2",
+          "test",
+          "refusals"
+        ],
+        "max_records": 2048,
+        "target_modality": "tool",
+        "use_policy": "eval_only",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "TSV benchmark task/rubric rows are downloaded through the existing remote_files TSV path and quarantined as eval holdout.",
+        "curriculum_axes": [
+          "browser_agent_eval",
+          "web_tail_tasks",
+          "rubric_scoring",
+          "computer_use_holdout",
+          "benchmark_decontamination"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "benchmark"
+          ],
+          "prompt": [
+            "task_summary",
+            "task",
+            "query"
+          ],
+          "target": [
+            "precomputed_rubric",
+            "rubric",
+            "answer"
+          ],
+          "verifier_labels": [
+            "precomputed_rubric",
+            "benchmark"
+          ]
+        }
       }
     ],
     "enabled": true,

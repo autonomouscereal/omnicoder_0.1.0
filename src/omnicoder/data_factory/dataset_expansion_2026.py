@@ -50,14 +50,86 @@ UNSAFE_TRAIN_LICENSE_MARKERS = (
     "research",
     "blocked",
 )
+MAX_INLINE_STRING_CHARS = 4096
+MAX_INLINE_LIST_ITEMS = 64
+MAX_INLINE_DICT_KEYS = 128
+BINARY_FIELD_NAMES = {
+    "array",
+    "audio",
+    "bytes",
+    "data",
+    "image",
+    "samples",
+    "video",
+    "waveform",
+}
+MEDIA_REF_FIELD_NAMES = {
+    "filename",
+    "height",
+    "mime_type",
+    "path",
+    "sampling_rate",
+    "sha256",
+    "size",
+    "url",
+    "width",
+}
 
 
 def now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def compact_json_value(value: Any, *, depth: int = 0, field_name: str = "") -> Any:
+    normalized_field = re.sub(r"[^a-z0-9_]+", "_", str(field_name or "").strip().lower()).strip("_")
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        if len(value) <= MAX_INLINE_STRING_CHARS:
+            return value
+        digest = hashlib.sha256(value.encode("utf-8", errors="ignore")).hexdigest()
+        return {"text_prefix": value[:MAX_INLINE_STRING_CHARS], "text_chars": len(value), "sha256": digest}
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        payload = bytes(value)
+        return {"binary_bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
+    shape = getattr(value, "shape", None)
+    dtype = getattr(value, "dtype", None)
+    if shape is not None:
+        return {"array_shape": [int(dim) for dim in tuple(shape)], "array_dtype": str(dtype) if dtype is not None else None}
+    if depth >= 6:
+        text = str(value)
+        return text[:MAX_INLINE_STRING_CHARS]
+    if isinstance(value, dict):
+        compact: dict[str, Any] = {}
+        for key, child in list(value.items())[:MAX_INLINE_DICT_KEYS]:
+            key_text = str(key)
+            child_field = re.sub(r"[^a-z0-9_]+", "_", key_text.strip().lower()).strip("_")
+            if child_field in BINARY_FIELD_NAMES and child_field not in MEDIA_REF_FIELD_NAMES:
+                compact[f"{key_text}_summary"] = compact_json_value(child, depth=depth + 1, field_name=child_field)
+            else:
+                compact[key_text] = compact_json_value(child, depth=depth + 1, field_name=child_field)
+        if len(value) > MAX_INLINE_DICT_KEYS:
+            compact["_truncated_keys"] = len(value) - MAX_INLINE_DICT_KEYS
+        return compact
+    if isinstance(value, list):
+        if len(value) > MAX_INLINE_LIST_ITEMS:
+            numeric = all(isinstance(item, (int, float)) for item in value[: min(len(value), 256)])
+            if numeric or normalized_field in BINARY_FIELD_NAMES:
+                return {
+                    "list_items": len(value),
+                    "sample": [compact_json_value(item, depth=depth + 1, field_name=normalized_field) for item in value[:8]],
+                    "truncated_items": len(value) - 8,
+                }
+        items = [compact_json_value(item, depth=depth + 1, field_name=normalized_field) for item in value[:MAX_INLINE_LIST_ITEMS]]
+        if len(value) > MAX_INLINE_LIST_ITEMS:
+            items.append({"_truncated_items": len(value) - MAX_INLINE_LIST_ITEMS})
+        return items
+    text = str(value)
+    return text[:MAX_INLINE_STRING_CHARS]
+
+
 def stable_hash(value: Any) -> str:
-    payload = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
+    payload = json.dumps(compact_json_value(value), ensure_ascii=True, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest()
 
 
@@ -833,7 +905,7 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
         "use_policy": entry.get("use_policy"),
         "skill_domain": entry.get("skill_domain") or family,
         "synthetic_seed_only": bool(record.get("synthetic_seed")),
-        "raw_record": record if bool(entry.get("keep_raw_record", False)) else {"raw_id": raw_id, "row_hash": stable_hash(record)},
+        "raw_record": compact_json_value(record) if bool(entry.get("keep_raw_record", False)) else {"raw_id": raw_id, "row_hash": stable_hash(record)},
     }
     row = training_orchestration_2026.make_training_record(
         modality,
@@ -862,22 +934,37 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     row["training_bucket"] = training_bucket_for_record(entry, record)
     row["contamination_status"] = contamination_status
     row["synthetic_seed_only"] = bool(record.get("synthetic_seed"))
-    row["media_refs"] = mapped_structured_values(
-        record,
-        field_map.get("media") or field_map.get("media_refs") or field_map.get("artifacts"),
-        ["media", "media_refs", "artifacts", "image", "images", "video", "videos", "audio", "audios"],
-    )
-    row["tool_calls"] = mapped_dict_list(record, field_map.get("tool_calls"), ["tool_calls", "actions", "steps.tool_calls"])
-    row["tool_results"] = mapped_dict_list(record, field_map.get("tool_results"), ["tool_results", "observations", "results"])
-    trajectory = mapped_structured_values(record, field_map.get("trajectory"), ["trajectory", "actions", "steps", "messages"])
+    row["media_refs"] = [
+        compact_json_value(value, field_name="media")
+        for value in mapped_structured_values(
+            record,
+            field_map.get("media") or field_map.get("media_refs") or field_map.get("artifacts"),
+            ["media", "media_refs", "artifacts", "image", "images", "video", "videos", "audio", "audios"],
+        )
+    ]
+    row["tool_calls"] = [
+        compact_json_value(value)
+        for value in mapped_dict_list(record, field_map.get("tool_calls"), ["tool_calls", "actions", "steps.tool_calls"])
+    ]
+    row["tool_results"] = [
+        compact_json_value(value)
+        for value in mapped_dict_list(record, field_map.get("tool_results"), ["tool_results", "observations", "results"])
+    ]
+    trajectory = [
+        compact_json_value(value)
+        for value in mapped_structured_values(record, field_map.get("trajectory"), ["trajectory", "actions", "steps", "messages"])
+    ]
     if trajectory:
         row["trajectory"] = trajectory
-    verifier_labels = mapped_structured_values(record, field_map.get("verifier_labels"), ["verifier_labels", "checks", "labels"])
+    verifier_labels = [
+        compact_json_value(value)
+        for value in mapped_structured_values(record, field_map.get("verifier_labels"), ["verifier_labels", "checks", "labels"])
+    ]
     if verifier_labels:
         row["verifier_labels"] = verifier_labels
     reward = field_values(record, field_map.get("reward") or ["reward", "score", "preference_score", "human_score"])
     if reward:
-        row["reward"] = reward[0]
+        row["reward"] = compact_json_value(reward[0])
     if row["tool_calls"]:
         row["domains"] = sorted(set(row.get("domains", [])) | {"tool"})
     if row["synthetic_seed_only"] and source_use_bucket(entry) == "train":
