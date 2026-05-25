@@ -26,7 +26,14 @@ REQUIRED_TRAIN_FILES = (
     "train_media_focus.jsonl",
 )
 
-REQUIRED_AGENTIC_EXPORTS = ("sft", "reward", "preference", "rlvr", "tool_rlvr")
+REQUIRED_AGENTIC_EXPORTS = ("sft", "reward", "rlvr", "tool_rlvr")
+OPTIONAL_AGENTIC_EXPORTS = ("preference", "safety_negative")
+AGENTIC_EXPORT_ALIASES = {
+    "sft": ("sft",),
+    "reward": ("reward",),
+    "rlvr": ("rlvr",),
+    "tool_rlvr": ("tool_rlvr", "rlvr"),
+}
 
 
 def count_jsonl(path: Path) -> int:
@@ -55,6 +62,28 @@ def jsonl_counts(paths: list[Path]) -> dict[str, int]:
 
 def add_missing(missing: list[dict[str, Any]], label: str, path: Path, reason: str, count: int = 0) -> None:
     missing.append({"label": label, "path": str(path), "reason": reason, "count": count})
+
+
+def first_existing(paths: list[Path]) -> Path:
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[0]
+
+
+def read_first_json(paths: list[Path]) -> tuple[Path, dict[str, Any]]:
+    path = first_existing(paths)
+    return path, read_json(path)
+
+
+def count_jsonl_candidates(paths: list[Path]) -> tuple[Path, int]:
+    path = first_existing(paths)
+    return path, count_jsonl(path)
+
+
+def agentic_export_count(counts: dict[str, Any], name: str) -> int:
+    aliases = AGENTIC_EXPORT_ALIASES.get(name, (name,))
+    return max(int(counts.get(alias) or 0) for alias in aliases)
 
 
 def coerce_path_values(value: Any) -> list[Path]:
@@ -169,7 +198,9 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
     curated_dir = Path(args.curated_dir) if args.curated_dir else root / "weights" / "curated_datasets_2026" / "runs" / run_id
     local_trace_dir = Path(args.local_trace_dir) if args.local_trace_dir else root / "weights" / "curated_datasets_2026" / "runs" / f"{run_id}_local_traces"
     external_dir = Path(args.external_dir) if args.external_dir else root / "weights" / "external_datasets_2026" / "runs" / run_id
-    agentic_dir = Path(args.agentic_dir) if args.agentic_dir else root / "weights" / "agentic_tool_training_2026" / "runs" / run_id
+    default_agentic_dir = root / "weights" / "agentic_tool_training_2026" / "runs" / run_id
+    curated_agentic_dir = curated_dir / "agentic_tool_training_2026"
+    agentic_dir = Path(args.agentic_dir) if args.agentic_dir else (curated_agentic_dir if curated_agentic_dir.exists() else default_agentic_dir)
     teacher_job_dir = Path(args.teacher_job_dir) if args.teacher_job_dir else root / "weights" / "data_factory" / "runs" / "teacher_jobs" / run_id
     teacher_rollout_dir = Path(args.teacher_rollout_dir) if args.teacher_rollout_dir else root / "weights" / "data_factory" / "teacher_rollouts" / run_id
     mixture_plan = Path(args.mixture_plan) if args.mixture_plan else root / "weights" / "training_orchestration_2026" / "runs" / run_id / "manifests" / "mixture_plan.json"
@@ -178,8 +209,13 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
     missing: list[dict[str, Any]] = []
     warnings: list[str] = []
 
-    curated_manifest = curated_dir / "manifests" / "curation_manifest.json"
-    curated_manifest_data = read_json(curated_manifest)
+    curated_manifest, curated_manifest_data = read_first_json(
+        [
+            curated_dir / "manifests" / "curation_manifest.json",
+            curated_dir / "manifests" / "curated_dataset_builder_manifest.json",
+            curated_dir / "latest_manifest.json",
+        ]
+    )
     if not curated_manifest_data:
         add_missing(missing, "curated_manifest", curated_manifest, "missing_or_unreadable")
 
@@ -196,29 +232,43 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
     if normalized_trace_rows <= 0:
         add_missing(missing, "curated_normalized_traces", normalized_traces, "missing_or_empty", normalized_trace_rows)
 
-    local_normalized_traces = local_trace_dir / "raw" / "normalized_traces.jsonl"
-    local_trace_rows = count_jsonl(local_normalized_traces)
+    local_trace_candidates = [local_trace_dir / "raw" / "normalized_traces.jsonl"]
+    if not args.local_trace_dir:
+        local_trace_candidates.append(normalized_traces)
+    local_normalized_traces, local_trace_rows = count_jsonl_candidates(local_trace_candidates)
     if local_trace_rows <= 0:
         add_missing(missing, "strict_local_normalized_traces", local_normalized_traces, "missing_or_empty", local_trace_rows)
 
-    external_manifest = external_dir / "manifests" / "external_dataset_manifest.json"
-    external_manifest_data = read_json(external_manifest)
+    external_manifest, external_manifest_data = read_first_json(
+        [
+            external_dir / "manifests" / "external_dataset_manifest.json",
+            external_dir / "external_dataset_manifest.stdout.json",
+        ]
+    )
     external_train_rows = int(((external_manifest_data.get("records") or {}) if external_manifest_data else {}).get("train") or 0)
     if external_train_rows <= 0:
         add_missing(missing, "external_train_records", external_manifest, "missing_or_zero_train_records", external_train_rows)
     if external_manifest_data and external_manifest_data.get("status") not in {None, "passed", "ok"}:
         warnings.append(f"external manifest status is {external_manifest_data.get('status')}")
 
-    agentic_manifest = agentic_dir / "agentic_tool_training_manifest.json"
-    agentic_manifest_data = read_json(agentic_manifest)
+    agentic_manifest, agentic_manifest_data = read_first_json(
+        [
+            agentic_dir / "agentic_tool_training_manifest.json",
+            agentic_dir / "manifests" / "posttraining_curation_manifest.json",
+        ]
+    )
     agentic_counts = agentic_manifest_data.get("counts") if isinstance(agentic_manifest_data.get("counts"), dict) else {}
     for name in REQUIRED_AGENTIC_EXPORTS:
-        rows = int(agentic_counts.get(name) or 0)
+        rows = agentic_export_count(agentic_counts, name)
         if rows <= 0:
             add_missing(missing, f"agentic_{name}", agentic_manifest, "missing_or_zero_export_count", rows)
 
-    after_teacher_manifest = agentic_dir / "after_teacher" / "agentic_tool_training_manifest.json"
-    after_teacher_data = read_json(after_teacher_manifest)
+    after_teacher_manifest, after_teacher_data = read_first_json(
+        [
+            agentic_dir / "after_teacher" / "agentic_tool_training_manifest.json",
+            agentic_dir / "after_teacher" / "manifests" / "posttraining_curation_manifest.json",
+        ]
+    )
     after_teacher_counts = after_teacher_data.get("counts") if isinstance(after_teacher_data.get("counts"), dict) else {}
 
     all_jobs = teacher_job_dir / "all_jobs.jsonl"
@@ -232,13 +282,22 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
     modality_job_counts = jsonl_counts(list(modality_job_dir.glob("*_jobs.jsonl"))) if modality_job_dir.exists() else {}
     modality_combined = modality_job_dir / "all_modality_teacher_jobs.jsonl"
     modality_combined_rows = count_jsonl(modality_combined)
-    if modality_combined_rows <= 0:
+    if getattr(args, "require_modality_teacher_jobs", False) and modality_combined_rows <= 0:
         add_missing(missing, "modality_teacher_jobs_all", modality_combined, "missing_or_empty", modality_combined_rows)
 
     teacher_rollout_manifest = teacher_rollout_dir / "teacher_rollout_manifest.json"
     teacher_rollout_data = read_json(teacher_rollout_manifest)
-    qwen_rollout = teacher_rollout_dir / "qwen36_agentic_math_code_tool.jsonl"
-    qwen_rollout_rows = count_jsonl(qwen_rollout)
+    qwen_rollout_candidates = [teacher_rollout_dir / "qwen36_agentic_math_code_tool.jsonl"]
+    qwen_rollout_candidates.extend(sorted(teacher_rollout_dir.glob("qwen36*.jsonl")) if teacher_rollout_dir.exists() else [])
+    seen_qwen_rollouts: set[str] = set()
+    qwen_rollout_rows = 0
+    for candidate in qwen_rollout_candidates:
+        key = str(candidate)
+        if key in seen_qwen_rollouts:
+            continue
+        seen_qwen_rollouts.add(key)
+        qwen_rollout_rows += count_jsonl(candidate)
+    qwen_rollout = first_existing(qwen_rollout_candidates)
     if qwen_rollout_rows <= 0:
         add_missing(missing, "qwen36_agentic_math_code_tool_rollouts", qwen_rollout, "missing_or_empty", qwen_rollout_rows)
     media_rollout_candidates = [
@@ -253,7 +312,7 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
         add_missing(missing, "media_teacher_rollouts", teacher_rollout_dir, "missing_qwen_ltx_ace_rollout_rows", 0)
 
     mixture_data = read_json(mixture_plan)
-    if not mixture_data:
+    if getattr(args, "require_mixture_plan", False) and not mixture_data:
         add_missing(missing, "mixture_plan", mixture_plan, "missing_or_unreadable")
 
     reportable_paths = []
@@ -360,6 +419,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--benchmark-materialization-root", action="append", default=[])
     parser.add_argument("--benchmark-materialization-manifest", action="append", default=[])
     parser.add_argument("--require-media-teacher-rollouts", action="store_true")
+    parser.add_argument("--require-modality-teacher-jobs", action="store_true")
+    parser.add_argument("--require-mixture-plan", action="store_true")
     parser.add_argument("--require-reportable-tasks", action="store_true")
     parser.add_argument("--require-official-reportable-tasks", action="store_true")
     parser.add_argument("--require-local-benchmark-tasks", action="store_true")

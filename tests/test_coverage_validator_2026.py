@@ -32,6 +32,8 @@ def _args(root: Path, run_id: str, **overrides):
         "benchmark_materialization_root": "",
         "benchmark_materialization_manifest": "",
         "require_media_teacher_rollouts": True,
+        "require_modality_teacher_jobs": False,
+        "require_mixture_plan": False,
         "require_reportable_tasks": True,
         "require_official_reportable_tasks": False,
         "require_local_benchmark_tasks": False,
@@ -92,6 +94,46 @@ def test_coverage_validator_passes_full_run_artifacts(tmp_path: Path) -> None:
     assert report["missing"] == []
     assert report["counts"]["curated_train_files"]["train_video.jsonl"] == 1
     assert report["counts"]["media_teacher_rollouts"]["comfyui_modality_teacher_rollouts.jsonl"] == 1
+
+
+def test_coverage_validator_accepts_real_pipeline_manifest_layout(tmp_path: Path) -> None:
+    run_id = "run_streaming"
+    root = tmp_path
+    curated = root / "weights" / "curated_datasets_2026" / "runs" / run_id
+    for name in coverage.REQUIRED_TRAIN_FILES:
+        _write_jsonl(curated / "jsonl" / name, [{"text": name}])
+    _write_json(curated / "manifests" / "curated_dataset_builder_manifest.json", {"status": "passed", "records": {"train": 10}})
+    _write_jsonl(curated / "raw" / "normalized_traces.jsonl", [{"text": "trace"}])
+    _write_json(
+        curated / "agentic_tool_training_2026" / "manifests" / "posttraining_curation_manifest.json",
+        {"counts": {"sft": 10, "reward": 10, "rlvr": 10, "safety_negative": 2}, "status": "passed"},
+    )
+
+    external = root / "weights" / "external_datasets_2026" / "runs" / "external_run"
+    _write_json(external / "external_dataset_manifest.stdout.json", {"records": {"train": 99}, "status": "passed"})
+
+    teacher = root / "weights" / "data_factory" / "runs" / "teacher_jobs" / "teacher_run"
+    _write_jsonl(teacher / "all_jobs.jsonl", [{"job": 1}])
+
+    rollouts = root / "weights" / "data_factory" / "teacher_rollouts" / "teacher_run"
+    _write_jsonl(rollouts / "qwen36_gpu1.jsonl", [{"teacher": "qwen"}])
+
+    report = coverage.validate_coverage(
+        _args(
+            root,
+            run_id,
+            external_dir=str(external),
+            teacher_job_dir=str(teacher),
+            teacher_rollout_dir=str(rollouts),
+            require_media_teacher_rollouts=False,
+            require_reportable_tasks=False,
+        )
+    )
+
+    assert report["status"] == "passed"
+    assert report["counts"]["strict_local_normalized_traces"] == 1
+    assert report["counts"]["agentic_exports"]["rlvr"] == 10
+    assert report["counts"]["qwen36_agentic_math_code_tool_rollouts"] == 1
 
 
 def test_coverage_validator_distinguishes_local_from_official_benchmark_materialization(tmp_path: Path) -> None:
