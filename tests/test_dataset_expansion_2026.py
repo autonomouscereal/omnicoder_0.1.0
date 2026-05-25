@@ -1411,6 +1411,7 @@ def test_repo_dataset_registry_covers_fourteenth_wave_agentic_gui_video_sources(
     assert by_name["MCPVerse"]["repo"] == "https://github.com/hailsham/mcpverse.git"
     assert by_name["UI-Vision"]["hf_id"] == "ServiceNow/ui-vision"
     assert by_name["ViMUL-Bench"]["hf_id"] == "MBZUAI/ViMUL-Bench"
+    assert by_name["ViMUL-Bench"]["configs"] == ["vimulmcq_english", "vimuloe_english"]
     assert by_name["ViMUL-Bench"]["license_tier"] == "sharealike_eval_holdout"
     assert expansion.source_use_bucket(by_name["MCPVerse"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["UI-Vision"]) == "eval_holdout"

@@ -24200,6 +24200,10 @@
         "registry_wave": "fourteenth_wave_agentic_gui_video_eval_2026_05_25",
         "repo": "https://github.com/mbzuai-oryx/ViMUL.git",
         "source_year": 2025,
+        "configs": [
+          "vimulmcq_english",
+          "vimuloe_english"
+        ],
         "splits": [
           "train",
           "test",

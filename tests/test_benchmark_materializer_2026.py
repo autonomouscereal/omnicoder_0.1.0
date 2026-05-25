@@ -1070,7 +1070,9 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     rtv = materializer.KNOWN_BENCHMARKS["multimodal_rtv_bench_2026"]["hf"][0]
     assert rtv["id"] == "RTVBench/RTV-Bench"
     assert rtv["files"] == ["*.json", "*.jsonl", "*.csv"]
-    assert materializer.KNOWN_BENCHMARKS["multimodal_vimul_bench_2026"]["hf"][0]["id"] == "MBZUAI/ViMUL-Bench"
+    vimul = materializer.KNOWN_BENCHMARKS["multimodal_vimul_bench_2026"]["hf"][0]
+    assert vimul["id"] == "MBZUAI/ViMUL-Bench"
+    assert vimul["config"] == "vimulmcq_english"
 
 
 def test_audit_profile_reports_materializer_and_core25_gaps(tmp_path: Path) -> None:

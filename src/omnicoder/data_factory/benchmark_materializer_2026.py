@@ -478,7 +478,10 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "multimodal_vimul_bench_2026": {
         "source": "https://huggingface.co/datasets/MBZUAI/ViMUL-Bench",
         "git": "https://github.com/mbzuai-oryx/ViMUL.git",
-        "hf": [{"id": "MBZUAI/ViMUL-Bench", "splits": ["train", "test", "validation"]}],
+        "hf": [
+            {"id": "MBZUAI/ViMUL-Bench", "config": "vimulmcq_english", "splits": ["test", "train", "validation"]},
+            {"id": "MBZUAI/ViMUL-Bench", "config": "vimuloe_english", "splits": ["test", "train", "validation"]},
+        ],
         "kind": "video_audio_multilingual",
         "splits": ["train", "test", "validation"],
     },
