@@ -163,7 +163,8 @@ Current high-value registry families:
   with clean scan metadata. ChartVerse-SFT-1.8M is kept research-internal as a
   VLM/chart/document source until benchmark-overlap review clears it, and
   DatapointAI TTS human preferences stay research-internal until gated access
-  and audio-rights review clear train promotion. `humair025/suno-audio` is not
+  and audio-rights review clear train promotion. Nemotron-SFT-OpenCode-v1 is
+  pinned to the current HF `default` config. `humair025/suno-audio` is not
   registered.
 - Math/reasoning second wave: R-HORIZON, Reasoning Core formal-reasoning
   environments, UniRRM-RL, Nemotron Math Proofs, UltraData-Math, GLM-5.1

@@ -1645,6 +1645,7 @@ def test_repo_dataset_registry_covers_nineteenth_wave_trainable_reward_eval_sour
     assert by_name["NVIDIA Nemotron-SFT Agentic v2"]["hf_id"] == "nvidia/Nemotron-SFT-Agentic-v2"
     assert by_name["NVIDIA OpenCodeInstruct"]["hf_id"] == "nvidia/OpenCodeInstruct"
     assert by_name["NVIDIA Nemotron-SFT OpenCode v1"]["hf_id"] == "nvidia/Nemotron-SFT-OpenCode-v1"
+    assert by_name["NVIDIA Nemotron-SFT OpenCode v1"]["config"] == "default"
     assert by_name["NVIDIA Nemotron-SFT Math v3"]["hf_id"] == "nvidia/Nemotron-SFT-Math-v3"
     assert by_name["FinePhrase"]["hf_id"] == "HuggingFaceFW/finephrase"
     assert by_name["NVIDIA Retrieval Synthetic NVDocs v1"]["hf_id"] == "nvidia/Retrieval-Synthetic-NVDocs-v1"

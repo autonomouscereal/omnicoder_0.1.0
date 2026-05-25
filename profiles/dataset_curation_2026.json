@@ -25812,14 +25812,7 @@
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
-        "configs": [
-          "general",
-          "bash_only_tool",
-          "bash_only_tool_skills",
-          "question_tool",
-          "agent_skills",
-          "agent_skills_question_tool"
-        ],
+        "config": "default",
         "splits": [
           "train"
         ],
