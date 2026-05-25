@@ -332,6 +332,12 @@ right teacher family instead of the P40 text/tool rollout path.
 Official/protected benchmark rows remain release-gate evidence only; missing
 official metadata now produces `local_only` benchmark results instead of being
 misreported as public leaderboard quality.
+The benchmark profile now also carries a nineteenth-wave factuality/document/
+agentic-search expansion: SimpleQA Verified, FACTS Grounding, MC-Search,
+METR/HCAST, Agent^2 RL-Bench, MemGym, OCRBench v2, OmniDocBench, CC-OCR-V2,
+and Real5-OmniDocBench. These are wired into reportable snapshot roots first,
+with public-dev materialization used only for regression and training
+realignment.
 
 ## Why This Exists
 

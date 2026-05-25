@@ -407,6 +407,7 @@
         "hide_solution_traces",
         "separate_public_and_reportable_scores"
       ],
+      "materialization_note": "Use ARC Prize ARC-AGI-3 public toolkit and official server scorecards; reportable runs require toolkit commit, game list, scoring timestamp, and agent configuration manifest.",
       "metrics": [
         "episode_success_rate",
         "sample_efficiency",
@@ -420,7 +421,7 @@
         "action_trace"
       ],
       "release_gate": "reasoning_release",
-      "source": "authorized_current_arc_agi3_style_envs",
+      "source": "https://arcprize.org/arc-agi/3/",
       "splits": {
         "nightly": "authorized dev environments",
         "release": "private reportable environments",
@@ -1023,6 +1024,7 @@
         "hide_judge_preferences",
         "fingerprint_generated_references"
       ],
+      "materialization_note": "Use the official AVGen-Bench project/HF artifacts for public-dev prompts; reportable runs require prompt and media hash manifests plus evaluator/judge versions.",
       "metrics": [
         "audio_visual_sync",
         "prompt_adherence",
@@ -1036,7 +1038,7 @@
         "video"
       ],
       "release_gate": "generation_release",
-      "source": "task_driven_audio_video_generation_benchmark_2026",
+      "source": "https://microsoft.github.io/AVGen-Bench/",
       "splits": {
         "nightly": "multi-granular prompt-control slice",
         "release": "locked human/model judged AV generation suite",
@@ -1437,6 +1439,7 @@
         "record_document_hashes",
         "separate_synthetic_and_real_docs"
       ],
+      "materialization_note": "Use HELMET/LongProc official code and context-bin manifests; reportable runs require document hashes, evaluator commit, and 1M-context config attestation.",
       "metrics": [
         "retrieval_accuracy",
         "multi_doc_aggregation_f1",
@@ -1451,7 +1454,7 @@
         "documents"
       ],
       "release_gate": "long_context_release",
-      "source": "official_current_release_or_authorized_mirror",
+      "source": "https://github.com/princeton-nlp/HELMET",
       "splits": {
         "nightly": "length-balanced 32K-1M slice",
         "release": "locked 1M long-process release suite",
@@ -1864,6 +1867,7 @@
         "hide_eval_queries",
         "quarantine_successful_traces"
       ],
+      "materialization_note": "Public-dev rows come from xbench/DeepSearch when available; reportable runs require official encrypted/decrypted snapshot provenance, evaluator commit, and answer-key isolation.",
       "metrics": [
         "answer_accuracy",
         "citation_support_rate",
@@ -1877,7 +1881,7 @@
         "citations"
       ],
       "release_gate": "agent_tool_release",
-      "source": "official_current_release_or_authorized_mirror",
+      "source": "https://huggingface.co/datasets/xbench/DeepSearch",
       "splits": {
         "nightly": "domain-balanced deep-search slice",
         "release": "locked xbench-DeepSearch release suite",
@@ -1907,7 +1911,7 @@
         "citations"
       ],
       "release_gate": "agent_tool_release",
-      "source": "official_current_release_or_authorized_mirror",
+      "source": "https://randomtutu.github.io/FinSearchComp/",
       "splits": {
         "nightly": "market/region-balanced finance search slice",
         "release": "locked FinSearchComp-global suite",
@@ -1939,7 +1943,7 @@
         "media"
       ],
       "release_gate": "agent_tool_release",
-      "source": "official_current_release_or_authorized_mirror",
+      "source": "https://artifactsbenchmark.github.io/",
       "splits": {
         "nightly": "artifact-family balanced slice",
         "release": "locked artifact creation release suite",
@@ -2132,7 +2136,7 @@
         "long_context"
       ],
       "release_gate": "long_context_release",
-      "source": "official_current_release_or_authorized_mirror",
+      "source": "https://huggingface.co/datasets/MuLabPKU/LooGLE-v2",
       "splits": {
         "nightly": "dependency-distance balanced slice",
         "release": "locked LooGLE v2 release suite",
@@ -3693,9 +3697,9 @@
       "release_gate": "agent_tool_release",
       "source": "https://github.com/openclaw/clawbench",
       "splits": {
-        "smoke": "one public browser task",
         "nightly": "public reproducible ClawBench slice",
-        "release": "locked authorized ClawBench release suite"
+        "release": "locked authorized ClawBench release suite",
+        "smoke": "one public browser task"
       },
       "task_format": "jsonl_browser_agent_task"
     },
@@ -3723,9 +3727,9 @@
       "release_gate": "coding_release",
       "source": "https://huggingface.co/datasets/nebius/SWE-rebench-V2",
       "splits": {
-        "smoke": "one public dev SWE-rebench issue",
         "nightly": "language/repo balanced SWE-rebench slice",
-        "release": "locked authorized SWE-rebench V2 suite"
+        "release": "locked authorized SWE-rebench V2 suite",
+        "smoke": "one public dev SWE-rebench issue"
       },
       "task_format": "jsonl_patch_task"
     },
@@ -3752,9 +3756,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://huggingface.co/datasets/AudioMarathon/AudioMarathon",
       "splits": {
-        "smoke": "one public long-audio task",
         "nightly": "task-balanced long-audio slice",
-        "release": "locked authorized AudioMarathon suite"
+        "release": "locked authorized AudioMarathon suite",
+        "smoke": "one public long-audio task"
       },
       "task_format": "csv_long_audio_qa"
     },
@@ -3780,9 +3784,9 @@
       "release_gate": "generation_release",
       "source": "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench",
       "splits": {
-        "smoke": "one public image-generation prompt",
         "nightly": "instruction-balanced OneIG slice",
-        "release": "locked authorized OneIG-Bench suite"
+        "release": "locked authorized OneIG-Bench suite",
+        "smoke": "one public image-generation prompt"
       },
       "task_format": "jsonl_image_generation_prompt"
     },
@@ -3808,9 +3812,9 @@
       "release_gate": "reasoning_release",
       "source": "https://matharena.ai/",
       "splits": {
-        "smoke": "one public MathArena task",
         "nightly": "current public MathArena slice",
-        "release": "locked authorized MathArena release suite"
+        "release": "locked authorized MathArena release suite",
+        "smoke": "one public MathArena task"
       },
       "task_format": "jsonl_math_competition_task"
     },
@@ -3838,9 +3842,9 @@
       "release_gate": "coding_release",
       "source": "https://huggingface.co/datasets/MiniMaxAI/OctoCodingBench",
       "splits": {
-        "smoke": "one public AGENTS-style coding task",
         "nightly": "rule/scaffold-balanced OctoCodingBench slice",
-        "release": "locked authorized OctoCodingBench suite"
+        "release": "locked authorized OctoCodingBench suite",
+        "smoke": "one public AGENTS-style coding task"
       },
       "task_format": "jsonl_agentic_repo_instruction_task"
     },
@@ -3868,9 +3872,9 @@
       "release_gate": "coding_release",
       "source": "https://huggingface.co/datasets/Nicole-Yi/GitTaskBench",
       "splits": {
-        "smoke": "one public repo-grounded task",
         "nightly": "domain-balanced GitTaskBench slice",
-        "release": "locked authorized GitTaskBench suite"
+        "release": "locked authorized GitTaskBench suite",
+        "smoke": "one public repo-grounded task"
       },
       "task_format": "jsonl_repo_grounded_task"
     },
@@ -3897,9 +3901,9 @@
       "release_gate": "coding_release",
       "source": "https://huggingface.co/datasets/maxRyeery/VeriSoftBench",
       "splits": {
-        "smoke": "one public Lean verification task",
         "nightly": "repository-balanced VeriSoftBench slice",
-        "release": "locked authorized VeriSoftBench suite"
+        "release": "locked authorized VeriSoftBench suite",
+        "smoke": "one public Lean verification task"
       },
       "task_format": "jsonl_formal_verification_task"
     },
@@ -3925,9 +3929,9 @@
       "release_gate": "reasoning_release",
       "source": "https://imobench.github.io/",
       "splits": {
-        "smoke": "one public IMO-style problem",
         "nightly": "difficulty-balanced IMO-Bench slice",
-        "release": "locked authorized IMO-Bench suite"
+        "release": "locked authorized IMO-Bench suite",
+        "smoke": "one public IMO-style problem"
       },
       "task_format": "jsonl_math_competition_task"
     },
@@ -3959,9 +3963,9 @@
       "release_gate": "long_context_release",
       "source": "https://huggingface.co/datasets/openai/graphwalks",
       "splits": {
-        "smoke": "one public graphwalk task",
         "nightly": "length-balanced graphwalk slice",
-        "release": "locked authorized graphwalk suite"
+        "release": "locked authorized graphwalk suite",
+        "smoke": "one public graphwalk task"
       },
       "task_format": "jsonl_long_context_graph_task"
     },
@@ -3994,9 +3998,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://huggingface.co/datasets/ZhaoweiWang/MMLongBench",
       "splits": {
-        "smoke": "one public visual long-context item",
         "nightly": "visual-RAG and PDF-summary balanced slice",
-        "release": "locked authorized MMLongBench suite"
+        "release": "locked authorized MMLongBench suite",
+        "smoke": "one public visual long-context item"
       },
       "task_format": "jsonl_multimodal_long_context_item"
     },
@@ -4030,9 +4034,9 @@
       "release_gate": "agent_tool_release",
       "source": "https://huggingface.co/datasets/GAIR/AgencyBench",
       "splits": {
-        "smoke": "one public long-horizon agency task",
         "nightly": "domain-balanced AgencyBench slice",
-        "release": "locked authorized AgencyBench suite"
+        "release": "locked authorized AgencyBench suite",
+        "smoke": "one public long-horizon agency task"
       },
       "task_format": "jsonl_long_horizon_agent_task"
     },
@@ -4066,9 +4070,9 @@
       "release_gate": "agent_tool_release",
       "source": "https://github.com/hailsham/mcpverse",
       "splits": {
-        "smoke": "one public MCPVerse tool task",
         "nightly": "tool-family balanced MCPVerse slice",
-        "release": "locked authorized MCPVerse server snapshot"
+        "release": "locked authorized MCPVerse server snapshot",
+        "smoke": "one public MCPVerse tool task"
       },
       "task_format": "jsonl_mcpverse_tool_task"
     },
@@ -4210,6 +4214,7 @@
         "quarantine_successful_mobile_traces",
         "license_review_required"
       ],
+      "materialization_note": "Do not stream the public HF media payload during public-dev curation; materialize from an operator-authorized descriptor/source override so task rows are bounded and reportable.",
       "metrics": [
         "mobile_task_success_rate",
         "audio_grounding_accuracy",
@@ -4223,7 +4228,6 @@
         "mobile",
         "tool_schema"
       ],
-      "materialization_note": "Do not stream the public HF media payload during public-dev curation; materialize from an operator-authorized descriptor/source override so task rows are bounded and reportable.",
       "release_gate": "agent_tool_release",
       "source": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
       "splits": {
@@ -4293,9 +4297,9 @@
       "release_gate": "agent_tool_release",
       "source": "https://huggingface.co/datasets/ServiceNow/ui-vision",
       "splits": {
-        "smoke": "one UI-Vision desktop grounding item",
         "nightly": "application-balanced UI-Vision slice",
-        "release": "locked authorized UI-Vision screenshot/action snapshot"
+        "release": "locked authorized UI-Vision screenshot/action snapshot",
+        "smoke": "one UI-Vision desktop grounding item"
       },
       "task_format": "jsonl_desktop_gui_vision_task"
     },
@@ -4329,9 +4333,9 @@
       "release_gate": "agent_tool_release",
       "source": "https://github.com/SalesforceAIResearch/LoCoBench-Agent",
       "splits": {
-        "smoke": "one public 10K-token coding-agent task",
         "nightly": "10K/100K/1M LoCoBench-Agent slice",
-        "release": "locked authorized LoCoBench-Agent suite"
+        "release": "locked authorized LoCoBench-Agent suite",
+        "smoke": "one public 10K-token coding-agent task"
       },
       "task_format": "jsonl_long_context_agent_task"
     },
@@ -4361,9 +4365,9 @@
       "release_gate": "coding_release",
       "source": "https://huggingface.co/datasets/MERA-evaluation/SWE-MERA",
       "splits": {
-        "smoke": "one public dev SWE-MERA task",
         "nightly": "dev/lite/multilang balanced SWE-MERA slice",
-        "release": "locked authorized SWE-MERA suite"
+        "release": "locked authorized SWE-MERA suite",
+        "smoke": "one public dev SWE-MERA task"
       },
       "task_format": "jsonl_patch_task"
     },
@@ -4391,9 +4395,9 @@
       "release_gate": "coding_release",
       "source": "https://github.com/SakanaAI/ALE-Bench",
       "splits": {
-        "smoke": "one public algorithm-engineering task",
         "nightly": "heuristic-problem balanced ALE-Bench slice",
-        "release": "locked authorized ALE-Bench suite"
+        "release": "locked authorized ALE-Bench suite",
+        "smoke": "one public algorithm-engineering task"
       },
       "task_format": "jsonl_algorithm_engineering_task"
     },
@@ -4420,9 +4424,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://huggingface.co/datasets/ShadenA/MathNet",
       "splits": {
-        "smoke": "one public multimodal math problem",
         "nightly": "country/topic/diagram balanced MathNet slice",
-        "release": "locked authorized MathNet suite"
+        "release": "locked authorized MathNet suite",
+        "smoke": "one public multimodal math problem"
       },
       "task_format": "jsonl_multimodal_math_task"
     },
@@ -4448,9 +4452,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://huggingface.co/datasets/video-reasoning/morse-500",
       "splits": {
-        "smoke": "one public MORSE-500 video task",
         "nightly": "category-balanced MORSE-500 slice",
-        "release": "locked authorized MORSE-500 suite"
+        "release": "locked authorized MORSE-500 suite",
+        "smoke": "one public MORSE-500 video task"
       },
       "task_format": "jsonl_video_reasoning_task"
     },
@@ -4477,9 +4481,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://huggingface.co/datasets/vector-institute/sonic-o1",
       "splits": {
-        "smoke": "one gated-access SONIC-O1 public item when authorized",
         "nightly": "task1/task2/task3 balanced SONIC-O1 slice",
-        "release": "locked authorized SONIC-O1 suite"
+        "release": "locked authorized SONIC-O1 suite",
+        "smoke": "one gated-access SONIC-O1 public item when authorized"
       },
       "task_format": "jsonl_audio_video_reasoning_task"
     },
@@ -4507,9 +4511,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://huggingface.co/datasets/MBZUAI/ViMUL-Bench",
       "splits": {
-        "smoke": "one multilingual audio-video QA item",
         "nightly": "language-balanced ViMUL-Bench slice",
-        "release": "locked authorized ViMUL-Bench media snapshot"
+        "release": "locked authorized ViMUL-Bench media snapshot",
+        "smoke": "one multilingual audio-video QA item"
       },
       "task_format": "jsonl_multilingual_audio_video_qa_task"
     },
@@ -4537,9 +4541,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://huggingface.co/datasets/wulin222/MME-Unify",
       "splits": {
-        "smoke": "one public unified multimodal item",
         "nightly": "category-balanced MME-Unify slice",
-        "release": "locked authorized MME-Unify suite"
+        "release": "locked authorized MME-Unify suite",
+        "smoke": "one public unified multimodal item"
       },
       "task_format": "jsonl_unified_multimodal_task"
     },
@@ -4566,9 +4570,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://huggingface.co/datasets/ICTNLP/LongSpeech-Eval",
       "splits": {
-        "smoke": "one public long-speech QA item",
         "nightly": "duration/language balanced long-speech slice",
-        "release": "locked authorized long-speech suite"
+        "release": "locked authorized long-speech suite",
+        "smoke": "one public long-speech QA item"
       },
       "task_format": "jsonl_long_speech_qa"
     },
@@ -4596,9 +4600,9 @@
       "release_gate": "generation_release",
       "source": "https://huggingface.co/datasets/bosonai/EmergentTTS-Eval",
       "splits": {
-        "smoke": "one public expressive TTS prompt",
         "nightly": "category/evolution-depth balanced EmergentTTS-Eval slice",
-        "release": "locked authorized EmergentTTS-Eval suite"
+        "release": "locked authorized EmergentTTS-Eval suite",
+        "smoke": "one public expressive TTS prompt"
       },
       "task_format": "jsonl_tts_generation_prompt"
     },
@@ -4627,9 +4631,9 @@
       "release_gate": "generation_release",
       "source": "https://huggingface.co/datasets/wcy1122/Long-TTS-Eval",
       "splits": {
-        "smoke": "one long English and one long Chinese TTS prompt",
         "nightly": "long/hard and en/zh balanced Long-TTS-Eval slice",
-        "release": "locked authorized Long-TTS-Eval suite"
+        "release": "locked authorized Long-TTS-Eval suite",
+        "smoke": "one long English and one long Chinese TTS prompt"
       },
       "task_format": "jsonl_long_tts_generation_prompt"
     },
@@ -4655,9 +4659,9 @@
       "release_gate": "generation_release",
       "source": "https://huggingface.co/datasets/Hui519/TTA-Bench",
       "splits": {
-        "smoke": "one public text-to-audio item",
         "nightly": "domain-balanced TTA-Bench slice",
-        "release": "locked authorized TTA-Bench suite"
+        "release": "locked authorized TTA-Bench suite",
+        "smoke": "one public text-to-audio item"
       },
       "task_format": "jsonl_text_to_audio_generation_prompt"
     },
@@ -4684,9 +4688,9 @@
       "release_gate": "generation_release",
       "source": "https://huggingface.co/datasets/AnonyData/NV-Bench",
       "splits": {
-        "smoke": "one authorized nonverbal vocalization item",
         "nightly": "language/speaker balanced NV-Bench slice",
-        "release": "locked authorized NV-Bench suite"
+        "release": "locked authorized NV-Bench suite",
+        "smoke": "one authorized nonverbal vocalization item"
       },
       "task_format": "jsonl_nonverbal_tts_prompt"
     },
@@ -4713,9 +4717,9 @@
       "release_gate": "agent_tool_release",
       "source": "https://huggingface.co/MCPToolBench",
       "splits": {
-        "smoke": "one MCPToolBench++ preview fixture",
         "nightly": "tool-category balanced MCPToolBench++ slice",
-        "release": "locked authorized MCPToolBench++ suite"
+        "release": "locked authorized MCPToolBench++ suite",
+        "smoke": "one MCPToolBench++ preview fixture"
       },
       "task_format": "jsonl_mcp_tool_task"
     },
@@ -4742,9 +4746,9 @@
       "release_gate": "agent_tool_release",
       "source": "https://webbench.ai/",
       "splits": {
-        "smoke": "one authorized WebBench web task",
         "nightly": "domain-balanced WebBench public/dev slice",
-        "release": "locked authorized WebBench suite"
+        "release": "locked authorized WebBench suite",
+        "smoke": "one authorized WebBench web task"
       },
       "task_format": "jsonl_browser_agent_task"
     },
@@ -4771,9 +4775,9 @@
       "release_gate": "reasoning_release",
       "source": "https://huggingface.co/datasets/LumiOpen/mAIME2025",
       "splits": {
-        "smoke": "one multilingual AIME 2025 item",
         "nightly": "language-balanced mAIME2025 slice",
-        "release": "locked mAIME2025 suite"
+        "release": "locked mAIME2025 suite",
+        "smoke": "one multilingual AIME 2025 item"
       },
       "task_format": "jsonl_math_item"
     },
@@ -4804,9 +4808,9 @@
       "release_gate": "long_context_release",
       "source": "https://arxiv.org/abs/2601.09723",
       "splits": {
-        "smoke": "one public-domain novel context probe",
         "nightly": "English/Chinese SagaScale slice",
-        "release": "locked authorized SagaScale suite"
+        "release": "locked authorized SagaScale suite",
+        "smoke": "one public-domain novel context probe"
       },
       "task_format": "jsonl_long_context_reasoning"
     },
@@ -4838,9 +4842,9 @@
       "release_gate": "long_context_release",
       "source": "https://github.com/ulab-uiuc/AcademicEval",
       "splits": {
-        "smoke": "one live arXiv title/abstract task",
         "nightly": "fresh arXiv paper slice",
-        "release": "locked live AcademicEval snapshot"
+        "release": "locked live AcademicEval snapshot",
+        "smoke": "one live arXiv title/abstract task"
       },
       "task_format": "jsonl_academic_generation_task"
     },
@@ -4867,9 +4871,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://mpbench.github.io/",
       "splits": {
-        "smoke": "one multimodal process-error item",
         "nightly": "paradigm-balanced MPBench slice",
-        "release": "locked authorized MPBench suite"
+        "release": "locked authorized MPBench suite",
+        "smoke": "one multimodal process-error item"
       },
       "task_format": "jsonl_multimodal_process_item"
     },
@@ -4896,9 +4900,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://arxiv.org/abs/2506.12285",
       "splits": {
-        "smoke": "one music instruction-following item",
         "nightly": "MIR task-balanced CMI-Bench slice",
-        "release": "locked authorized CMI-Bench suite"
+        "release": "locked authorized CMI-Bench suite",
+        "smoke": "one music instruction-following item"
       },
       "task_format": "jsonl_music_instruction_item"
     },
@@ -4925,9 +4929,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://arxiv.org/abs/2510.19055",
       "splits": {
-        "smoke": "one MUSE music-perception item",
         "nightly": "task-balanced MUSE slice",
-        "release": "locked authorized MUSE suite"
+        "release": "locked authorized MUSE suite",
+        "smoke": "one MUSE music-perception item"
       },
       "task_format": "jsonl_music_reasoning_item"
     },
@@ -4954,9 +4958,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://github.com/LJungang/RTV-Bench",
       "splits": {
-        "smoke": "one multi-timestamp video QA item",
         "nightly": "domain-balanced RTV-Bench slice",
-        "release": "locked authorized RTV-Bench suite"
+        "release": "locked authorized RTV-Bench suite",
+        "smoke": "one multi-timestamp video QA item"
       },
       "task_format": "jsonl_realtime_video_qa"
     },
@@ -4984,9 +4988,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://maverix-benchmark.github.io/",
       "splits": {
-        "smoke": "one MAVERIX audio-video reasoning item",
         "nightly": "subtitle/audio/video balanced MAVERIX slice",
-        "release": "locked authorized MAVERIX suite"
+        "release": "locked authorized MAVERIX suite",
+        "smoke": "one MAVERIX audio-video reasoning item"
       },
       "task_format": "jsonl_audio_visual_reasoning_item"
     },
@@ -5014,9 +5018,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://github.com/OpenGVLab/RIVER",
       "splits": {
-        "smoke": "one RIVER real-time interaction item",
         "nightly": "category-balanced RIVER public/dev slice",
-        "release": "locked authorized RIVER Bench suite"
+        "release": "locked authorized RIVER Bench suite",
+        "smoke": "one RIVER real-time interaction item"
       },
       "task_format": "jsonl_realtime_video_interaction"
     },
@@ -5841,9 +5845,9 @@
       "release_gate": "agent_tool_release",
       "source": "https://videowebarena.github.io/",
       "splits": {
-        "smoke": "one video tutorial web task",
         "nightly": "tutorial/site balanced public VideoWebArena slice",
-        "release": "locked authorized VideoWebArena snapshot"
+        "release": "locked authorized VideoWebArena snapshot",
+        "smoke": "one video tutorial web task"
       },
       "task_format": "jsonl_video_web_agent_task"
     },
@@ -5872,9 +5876,9 @@
       "release_gate": "agent_tool_release",
       "source": "https://github.com/agentsea/osuniverse",
       "splits": {
-        "smoke": "one desktop GUI task with validator",
         "nightly": "application-balanced OSUniverse public slice",
-        "release": "locked authorized OSUniverse task snapshot"
+        "release": "locked authorized OSUniverse task snapshot",
+        "smoke": "one desktop GUI task with validator"
       },
       "task_format": "jsonl_desktop_gui_agent_task"
     },
@@ -5902,9 +5906,9 @@
       "release_gate": "multimodal_understanding_release",
       "source": "https://huggingface.co/datasets/mipal/AVATAR",
       "splits": {
-        "smoke": "one single-sound and one offscreen localization item",
         "nightly": "scenario-balanced AVATAR public descriptor slice",
-        "release": "locked authorized AVATAR media snapshot"
+        "release": "locked authorized AVATAR media snapshot",
+        "smoke": "one single-sound and one offscreen localization item"
       },
       "task_format": "jsonl_audio_visual_localization_task"
     },
@@ -5933,9 +5937,9 @@
       "release_gate": "long_context_release",
       "source": "https://github.com/google-deepmind/loft",
       "splits": {
-        "smoke": "one 128k retrieval prompt",
         "nightly": "task-category balanced LOFT slice",
-        "release": "locked authorized LOFT 1M-context snapshot"
+        "release": "locked authorized LOFT 1M-context snapshot",
+        "smoke": "one 128k retrieval prompt"
       },
       "task_format": "jsonl_loft_long_context_task"
     },
@@ -5962,9 +5966,9 @@
       "release_gate": "reasoning_release",
       "source": "https://epoch.ai/benchmarks/frontiermath",
       "splits": {
-        "smoke": "public/debug problem only",
         "nightly": "operator-authorized public tier slice",
-        "release": "controlled FrontierMath authorized snapshot"
+        "release": "controlled FrontierMath authorized snapshot",
+        "smoke": "public/debug problem only"
       },
       "task_format": "jsonl_frontier_math_task"
     },
@@ -5990,9 +5994,9 @@
       "release_gate": "generation_release",
       "source": "https://arxiv.org/abs/2505.11493",
       "splits": {
-        "smoke": "one grounded image edit task",
         "nightly": "edit-type balanced GIE-Bench descriptor slice",
-        "release": "locked authorized GIE-Bench snapshot"
+        "release": "locked authorized GIE-Bench snapshot",
+        "smoke": "one grounded image edit task"
       },
       "task_format": "jsonl_grounded_image_edit_eval_task"
     },
@@ -6018,9 +6022,9 @@
       "release_gate": "generation_release",
       "source": "https://arxiv.org/abs/2506.09988",
       "splits": {
-        "smoke": "one human-template image edit inspection item",
         "nightly": "instruction-category balanced EditInspector slice",
-        "release": "locked authorized EditInspector snapshot"
+        "release": "locked authorized EditInspector snapshot",
+        "smoke": "one human-template image edit inspection item"
       },
       "task_format": "jsonl_image_edit_inspection_task"
     },
@@ -6048,9 +6052,9 @@
       "release_gate": "coding_release",
       "source": "https://huggingface.co/datasets/microsoft/FEA-Bench",
       "splits": {
-        "smoke": "one repository feature-implementation task",
         "nightly": "repo/language-balanced FEA-Bench slice",
-        "release": "locked authorized FEA-Bench snapshot"
+        "release": "locked authorized FEA-Bench snapshot",
+        "smoke": "one repository feature-implementation task"
       },
       "task_format": "jsonl_repo_feature_implementation_task"
     },
@@ -6076,9 +6080,9 @@
       "release_gate": "generation_release",
       "source": "https://huggingface.co/datasets/worldrl/WorldGenBench",
       "splits": {
-        "smoke": "two world-knowledge T2I prompts",
         "nightly": "domain/region-balanced WorldGenBench prompt slice",
-        "release": "locked authorized WorldGenBench snapshot"
+        "release": "locked authorized WorldGenBench snapshot",
+        "smoke": "two world-knowledge T2I prompts"
       },
       "task_format": "jsonl_t2i_world_knowledge_checklist_task"
     },
@@ -6104,11 +6108,314 @@
       "release_gate": "generation_release",
       "source": "https://arxiv.org/abs/2505.18775",
       "splits": {
-        "smoke": "one perception-centric and one cognition-centric image generation task",
         "nightly": "task-family-balanced OmniGenBench descriptor slice",
-        "release": "locked authorized OmniGenBench snapshot"
+        "release": "locked authorized OmniGenBench snapshot",
+        "smoke": "one perception-centric and one cognition-centric image generation task"
       },
       "task_format": "jsonl_image_instruction_generation_eval_task"
+    },
+    {
+      "adapter_kind": "parametric_factuality_no_tool_eval",
+      "axis": "factuality",
+      "benchmark_id": "factuality_simpleqa_verified_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "no_tool_or_search_for_reportable",
+        "pin_autorater_prompt_and_model"
+      ],
+      "metrics": [
+        "exact_or_semantic_accuracy",
+        "abstention_rate",
+        "calibration_brier",
+        "unsupported_answer_rate"
+      ],
+      "modalities": [
+        "text"
+      ],
+      "release_gate": "factuality_release",
+      "source": "https://huggingface.co/datasets/google/simpleqa-verified",
+      "splits": {
+        "nightly": "topic-balanced SimpleQA Verified public-dev slice",
+        "release": "locked authorized SimpleQA Verified snapshot with no-tool attestation",
+        "smoke": "ten SimpleQA Verified public-dev factuality questions"
+      },
+      "task_format": "jsonl_factuality_qa_task"
+    },
+    {
+      "adapter_kind": "grounded_factuality_context_eval",
+      "axis": "factuality",
+      "benchmark_id": "factuality_facts_grounding_2026",
+      "holdout_policy": [
+        "hide_judge_labels",
+        "answer_only_from_context",
+        "pin_judge_prompt_and_model"
+      ],
+      "metrics": [
+        "grounded_factuality_score",
+        "context_support_rate",
+        "unsupported_claim_rate",
+        "answer_completeness"
+      ],
+      "modalities": [
+        "text",
+        "documents",
+        "long_context"
+      ],
+      "release_gate": "factuality_release",
+      "source": "https://huggingface.co/datasets/google/FACTS-grounding-public",
+      "splits": {
+        "nightly": "public FACTS grounding context slice",
+        "release": "locked authorized FACTS grounding snapshot",
+        "smoke": "eight public grounding prompts with context documents"
+      },
+      "task_format": "jsonl_grounded_factuality_task"
+    },
+    {
+      "adapter_kind": "multimodal_agentic_search_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_mc_search_mmrag_2026",
+      "holdout_policy": [
+        "hide_gold_subqa_chain_until_scoring",
+        "pin_offline_kb_hashes",
+        "quarantine_successful_retrieval_traces"
+      ],
+      "metrics": [
+        "final_answer_f1",
+        "hit_per_step",
+        "rollout_deviation",
+        "planning_accuracy",
+        "modality_switch_accuracy"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "retrieval",
+        "browser",
+        "long_context"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://mc-search-project.github.io/",
+      "splits": {
+        "nightly": "topology-balanced MC-Search public-dev slice",
+        "release": "locked MC-Search snapshot with offline KB hashes",
+        "smoke": "five MC-Search public examples covering text/image retrieval topologies"
+      },
+      "task_format": "jsonl_multimodal_agentic_search_task"
+    },
+    {
+      "adapter_kind": "ocrbench_v2_multimodal_ocr_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_ocrbench_v2_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_images",
+        "pin_eval_script_commit"
+      ],
+      "metrics": [
+        "ocr_exact_match",
+        "normalized_edit_distance",
+        "document_vqa_accuracy",
+        "ui_text_accuracy"
+      ],
+      "modalities": [
+        "image",
+        "text",
+        "document",
+        "ui"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://99franklin.github.io/ocrbench_v2/",
+      "splits": {
+        "nightly": "task-family balanced OCRBench v2 public-dev slice",
+        "release": "locked OCRBench v2 snapshot with image hashes",
+        "smoke": "fifty OCRBench v2 public test rows"
+      },
+      "task_format": "jsonl_multimodal_ocr_task"
+    },
+    {
+      "adapter_kind": "omnidocbench_document_parse_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_omnidocbench_2026",
+      "holdout_policy": [
+        "hide_ground_truth_markdown",
+        "hash_document_images",
+        "pin_metric_container_digest"
+      ],
+      "metrics": [
+        "normalized_edit_distance",
+        "bleu",
+        "meteor",
+        "table_teds",
+        "reading_order_edit"
+      ],
+      "modalities": [
+        "image",
+        "document",
+        "markdown",
+        "tables",
+        "math"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://github.com/opendatalab/OmniDocBench",
+      "splits": {
+        "nightly": "language/layout balanced OmniDocBench public-dev slice",
+        "release": "locked OmniDocBench v1.5/v1.6 snapshot",
+        "smoke": "ten document parsing public examples"
+      },
+      "task_format": "jsonl_document_parse_task"
+    },
+    {
+      "adapter_kind": "cc_ocr_v2_hard_ocr_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_cc_ocr_v2_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_images",
+        "pin_task_track_list"
+      ],
+      "metrics": [
+        "text_recognition_accuracy",
+        "document_parse_score",
+        "kie_f1",
+        "document_vqa_accuracy"
+      ],
+      "modalities": [
+        "image",
+        "text",
+        "document",
+        "ocr"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://github.com/Eioss/CC-OCR-V2",
+      "splits": {
+        "nightly": "track-balanced CC-OCR-V2 public-dev slice",
+        "release": "locked CC-OCR-V2 snapshot",
+        "smoke": "twenty CC-OCR-V2 hard OCR rows"
+      },
+      "task_format": "jsonl_multimodal_ocr_task"
+    },
+    {
+      "adapter_kind": "real5_omnidocbench_robust_parse_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_real5_omnidocbench_2026",
+      "holdout_policy": [
+        "hide_ground_truth_markdown",
+        "hash_realworld_images",
+        "stratify_photographic_distortions"
+      ],
+      "metrics": [
+        "overall_document_parse_score",
+        "text_edit_distance",
+        "formula_cdm",
+        "table_teds",
+        "reading_order_edit"
+      ],
+      "modalities": [
+        "image",
+        "document",
+        "markdown",
+        "tables",
+        "math"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/PaddlePaddle/Real5-OmniDocBench",
+      "splits": {
+        "nightly": "scenario-balanced Real5 public-dev slice",
+        "release": "locked Real5-OmniDocBench snapshot",
+        "smoke": "five scenario probes across scanning, warping, screen, illumination, and skew"
+      },
+      "task_format": "jsonl_document_parse_robustness_task"
+    },
+    {
+      "adapter_kind": "agent_time_horizon_hcast_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_metr_time_horizon_hcast_2026",
+      "holdout_policy": [
+        "hide_private_tasks",
+        "record_human_time_calibration",
+        "quarantine_all_agent_traces"
+      ],
+      "metrics": [
+        "fifty_percent_time_horizon_hours",
+        "eighty_percent_time_horizon_hours",
+        "task_success_rate",
+        "cost_per_success"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "terminal",
+        "tools"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://metr.org/time-horizons/",
+      "splits": {
+        "nightly": "authorized public HCAST-style dev tasks only",
+        "release": "METR-authorized HCAST/Time Horizons snapshot",
+        "smoke": "self-contained short software task fixture"
+      },
+      "task_format": "jsonl_human_calibrated_agent_task"
+    },
+    {
+      "adapter_kind": "agent_rl_pipeline_engineering_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_agent2_rl_bench_2026",
+      "holdout_policy": [
+        "hide_reference_rl_pipelines",
+        "pin_training_container_digest",
+        "record_reward_improvement_claims"
+      ],
+      "metrics": [
+        "pipeline_runs_successfully",
+        "reward_improvement",
+        "ablation_quality",
+        "wall_seconds",
+        "gpu_hours"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "terminal",
+        "training"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://www.microsoft.com/en-us/research/publication/agent2-rl-bench-can-llm-agents-engineer-agentic-rl-post-training/",
+      "splits": {
+        "nightly": "public Agent^2 RL-Bench dev tasks when released",
+        "release": "locked authorized Agent^2 RL-Bench snapshot",
+        "smoke": "one tiny RL posttraining pipeline repair fixture"
+      },
+      "task_format": "jsonl_rl_pipeline_agent_task"
+    },
+    {
+      "adapter_kind": "agent_memory_long_horizon_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_memgym_2026",
+      "holdout_policy": [
+        "hide_future_session_tasks",
+        "pin_memory_store_state",
+        "quarantine_memory_writes"
+      ],
+      "metrics": [
+        "multi_session_success_rate",
+        "memory_retrieval_precision",
+        "temporal_consistency",
+        "context_efficiency"
+      ],
+      "modalities": [
+        "text",
+        "tools",
+        "memory",
+        "long_context"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://arxiv.org/abs/2605.20833",
+      "splits": {
+        "nightly": "public memory-gym task slice when released",
+        "release": "locked authorized MemGym snapshot",
+        "smoke": "two multi-session memory tasks"
+      },
+      "task_format": "jsonl_agent_memory_task"
     }
   ],
   "contamination_controls": [
@@ -6204,7 +6511,11 @@
       "agent_ui_vision_2026",
       "agent_tobench_mm_toolbench_2026",
       "agent_videowebarena_2026",
-      "agent_osuniverse_gui_2026"
+      "agent_osuniverse_gui_2026",
+      "agent_mc_search_mmrag_2026",
+      "agent_metr_time_horizon_hcast_2026",
+      "agent_agent2_rl_bench_2026",
+      "agent_memgym_2026"
     ],
     "coding_release": [
       "coding_swe_bench_pro_2026",
@@ -6238,6 +6549,10 @@
       "deployment_turboquant_kv_1m_2026",
       "deployment_nemotron_media_perf_2026",
       "deployment_mediaperf_2026"
+    ],
+    "factuality_release": [
+      "factuality_simpleqa_verified_2026",
+      "factuality_facts_grounding_2026"
     ],
     "generation_release": [
       "generation_image_edit_2026",
@@ -6350,7 +6665,11 @@
       "multimodal_stepeval_audio_360_2026",
       "multimodal_parsebench_2026",
       "multimodal_audiomcq_strongac_2026",
-      "multimodal_avatar_av_localization_2026"
+      "multimodal_avatar_av_localization_2026",
+      "multimodal_ocrbench_v2_2026",
+      "multimodal_omnidocbench_2026",
+      "multimodal_cc_ocr_v2_2026",
+      "multimodal_real5_omnidocbench_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",
@@ -6420,228 +6739,25 @@
     "deployment_turboquant_kv_1m_2026",
     "deployment_performance_2026"
   ],
-  "reportable_task_roots": {
-    "agent_bfcl_v4_2026": [
-      "data/eval/reportable_2026/bfcl_v4_authorized.jsonl"
-    ],
-    "agent_browsecomp_long_context_2026": [
-      "data/eval/reportable_2026/browsecomp_long_context_authorized.jsonl"
-    ],
-    "agent_gdpval_2026": [
-      "data/eval/reportable_2026/gdpval_authorized.jsonl"
-    ],
-    "agent_mcp_bench_2026": [
-      "data/eval/reportable_2026/mcp_bench_authorized.jsonl"
-    ],
-    "agent_mcp_atlas_2026": [
-      "data/eval/reportable_2026/mcp_atlas_authorized.jsonl"
-    ],
-    "agent_mcp_universe_2026": [
-      "data/eval/reportable_2026/mcp_universe_authorized.jsonl"
-    ],
-    "agent_mcp_workflows_2026": [
-      "data/eval/reportable_2026/mcpmark_authorized.jsonl"
-    ],
-    "agent_world_model_rl_2026": [
-      "data/eval/reportable_2026/agent_world_model_rl_authorized.jsonl"
-    ],
-    "agent_tool_genesis_2026": [
-      "data/eval/reportable_2026/tool_genesis_authorized.jsonl"
-    ],
-    "agent_agentif_2025": [
-      "data/eval/reportable_2026/agentif_authorized.jsonl"
-    ],
-    "agent_webgym_tasks_2026": [
-      "data/eval/reportable_2026/webgym_tasks_authorized.jsonl"
-    ],
-    "agent_omniagentbench_2026": [
-      "data/eval/reportable_2026/omniagentbench_authorized.jsonl"
-    ],
-    "agent_paperbench_2026": [
-      "data/eval/reportable_2026/paperbench_authorized.jsonl"
-    ],
-    "agent_tau3_2026": [
-      "data/eval/reportable_2026/tau3_authorized.jsonl"
-    ],
-    "agent_terminal_bench_2026": [
-      "data/eval/reportable_2026/terminal_bench_authorized.jsonl"
-    ],
-    "agent_theagentcompany_enterprise_2026": [
-      "data/eval/reportable_2026/theagentcompany_authorized.jsonl"
-    ],
-    "coding_livecodebench_2026": [
-      "data/eval/reportable_2026/livecodebench_authorized.jsonl"
-    ],
-    "coding_multi_swe_bench_2026": [
-      "data/eval/reportable_2026/multi_swe_bench_authorized.jsonl"
-    ],
-    "coding_nous_rlvr_coding_2026": [
-      "data/eval/reportable_2026/nous_rlvr_coding_authorized.jsonl"
-    ],
-    "coding_swe_bench_live_2026": [
-      "data/eval/reportable_2026/swe_bench_live_authorized.jsonl"
-    ],
-    "coding_swe_bench_pro_2026": [
-      "data/eval/reportable_2026/swe_bench_pro_authorized.jsonl"
-    ],
-    "coding_swe_bench_plus_2026": [
-      "data/eval/reportable_2026/swe_bench_plus_authorized.jsonl"
-    ],
-    "coding_swe_polybench_2026": [
-      "data/eval/reportable_2026/swe_polybench_authorized.jsonl"
-    ],
-    "coding_swe_smith_2026": [
-      "data/eval/reportable_2026/swe_smith_authorized.jsonl"
-    ],
-    "coding_swe_lancer_2026": [
-      "data/eval/reportable_2026/swe_lancer_authorized.jsonl"
-    ],
-    "coding_beyondswe_2026": [
-      "data/eval/reportable_2026/beyondswe_authorized.jsonl"
-    ],
-    "coding_contextbench_2026": [
-      "data/eval/reportable_2026/contextbench_authorized.jsonl"
-    ],
-    "coding_ccbench_2026": [
-      "data/eval/reportable_2026/ccbench_authorized.jsonl"
-    ],
-    "coding_computeeval_cuda_2026": [
-      "data/eval/reportable_2026/computeeval_cuda_authorized.jsonl"
-    ],
-    "generation_audio_speech_2026": [
-      "data/eval/reportable_2026/audio_speech_authorized.jsonl"
-    ],
-    "generation_ttsds2_2026": [
-      "data/eval/reportable_2026/ttsds2_authorized.jsonl"
-    ],
-    "generation_image_edit_2026": [
-      "data/eval/reportable_2026/image_edit_authorized.jsonl"
-    ],
-    "generation_music_2026": [
-      "data/eval/reportable_2026/music_generation_authorized.jsonl"
-    ],
-    "generation_video_2026": [
-      "data/eval/reportable_2026/video_generation_authorized.jsonl"
-    ],
-    "long_context_helmet_longproc_2026": [
-      "data/eval/reportable_2026/helmet_longproc_authorized.jsonl"
-    ],
-    "long_context_longcodebench_2026": [
-      "data/eval/reportable_2026/longcodebench_authorized.jsonl"
-    ],
-    "long_context_officeqa_2026": [
-      "data/eval/reportable_2026/officeqa_authorized.jsonl"
-    ],
-    "long_context_mrcr_2026": [
-      "data/eval/reportable_2026/mrcr_authorized.jsonl"
-    ],
-    "multimodal_audiobench_mmau_2026": [
-      "data/eval/reportable_2026/audiobench_mmau_authorized.jsonl"
-    ],
-    "multimodal_jointavbench_2026": [
-      "data/eval/reportable_2026/jointavbench_authorized.jsonl"
-    ],
-    "multimodal_lvomnibench_2026": [
-      "data/eval/reportable_2026/lvomnibench_authorized.jsonl"
-    ],
-    "multimodal_mmar_audio_music_reasoning_2026": [
-      "data/eval/reportable_2026/mmar_audio_music_reasoning_authorized.jsonl"
-    ],
-    "multimodal_mmmu_pro_2026": [
-      "data/eval/reportable_2026/mmmu_pro_authorized.jsonl"
-    ],
-    "multimodal_parsebench_2026": [
-      "data/eval/reportable_2026/parsebench_authorized.jsonl"
-    ],
-    "multimodal_audiomcq_strongac_2026": [
-      "data/eval/reportable_2026/audiomcq_strongac_authorized.jsonl"
-    ],
-    "multimodal_video_understanding_2026": [
-      "data/eval/reportable_2026/video_mme_v2_authorized.jsonl"
-    ],
-    "reasoning_arc_agi2_2026": [
-      "data/eval/reportable_2026/arc_agi2_authorized.jsonl"
-    ],
-    "reasoning_arc_agi3_2026": [
-      "data/eval/reportable_2026/arc_agi3_authorized.jsonl"
-    ],
-    "reasoning_hle_rolling_2026": [
-      "data/eval/reportable_2026/hle_rolling_authorized.jsonl"
-    ],
-    "reasoning_rlvr_linearity_math_2026": [
-      "data/eval/reportable_2026/rlvr_linearity_math_authorized.jsonl"
-    ],
-    "agent_clawbench_browser_2026": [
-      "data/eval/reportable_2026/clawbench_browser_authorized.jsonl"
-    ],
-    "coding_swe_rebench_v2_2026": [
-      "data/eval/reportable_2026/swe_rebench_v2_authorized.jsonl"
-    ],
-    "generation_oneig_bench_2026": [
-      "data/eval/reportable_2026/oneig_bench_authorized.jsonl"
-    ],
-    "long_context_longproc_2026": [
-      "data/eval/reportable_2026/longproc_authorized.jsonl"
-    ],
-    "long_context_nolima_1m_2026": [
-      "data/eval/reportable_2026/nolima_1m_authorized.jsonl"
-    ],
-    "multimodal_audiomarathon_2026": [
-      "data/eval/reportable_2026/audiomarathon_authorized.jsonl"
-    ],
-    "multimodal_rewardbench2_2026": [
-      "data/eval/reportable_2026/multimodal_rewardbench2_authorized.jsonl"
-    ],
-    "reasoning_matharena_2026": [
-      "data/eval/reportable_2026/matharena_authorized.jsonl"
-    ],
-    "safety_tool_security_2026": [
-      "data/eval/reportable_2026/tool_security_authorized.jsonl"
-    ],
-    "safety_mcp_security_bench_2026": [
-      "data/eval/reportable_2026/mcp_security_bench_authorized.jsonl"
-    ],
-    "deployment_turboquant_kv_1m_2026": [
-      "data/eval/reportable_2026/turboquant_kv_1m_authorized.jsonl"
-    ],
-    "deployment_performance_2026": [
-      "data/eval/reportable_2026/deployment_performance_authorized.jsonl"
-    ],
-    "agent_videowebarena_2026": [
-      "data/eval/reportable_2026/agent_videowebarena_authorized.jsonl"
-    ],
-    "agent_osuniverse_gui_2026": [
-      "data/eval/reportable_2026/agent_osuniverse_gui_authorized.jsonl"
-    ],
-    "multimodal_avatar_av_localization_2026": [
-      "data/eval/reportable_2026/multimodal_avatar_av_localization_authorized.jsonl"
-    ],
-    "coding_swe_bench_multimodal_2026": [
-      "data/eval/reportable_2026/coding_swe_bench_multimodal_authorized.jsonl"
-    ],
-    "long_context_loft_2026": [
-      "data/eval/reportable_2026/long_context_loft_authorized.jsonl"
-    ],
-    "reasoning_frontiermath_2026": [
-      "data/eval/reportable_2026/reasoning_frontiermath_authorized.jsonl"
-    ],
-    "generation_gie_bench_2026": [
-      "data/eval/reportable_2026/generation_gie_bench_authorized.jsonl"
-    ],
-    "generation_editinspector_2026": [
-      "data/eval/reportable_2026/generation_editinspector_authorized.jsonl"
-    ],
-    "coding_fea_bench_2026": [
-      "data/eval/reportable_2026/coding_fea_bench_2026_authorized.jsonl"
-    ],
-    "generation_worldgenbench_2026": [
-      "data/eval/reportable_2026/generation_worldgenbench_2026_authorized.jsonl"
-    ],
-    "generation_omnigenbench_2026": [
-      "data/eval/reportable_2026/generation_omnigenbench_2026_authorized.jsonl"
-    ]
-  },
   "reportable_snapshots": {
+    "agent_agent2_rl_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agent_agent2_rl_bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agent_agent2_rl_bench_2026-authorized-2026-current",
+      "source": "https://www.microsoft.com/en-us/research/publication/agent2-rl-bench-can-llm-agents-engineer-agentic-rl-post-training/",
+      "task_root": "data/eval/reportable_2026/agent_agent2_rl_bench_2026_authorized.jsonl"
+    },
+    "agent_agentif_2025": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agentif-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agentif-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/THU-KEG/AgentIF",
+      "task_root": "data/eval/reportable_2026/agentif_authorized.jsonl"
+    },
     "agent_bfcl_v4_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "bfcl-v4-authorized-2026-current",
@@ -6660,6 +6776,15 @@
       "source": "https://huggingface.co/datasets/openai/BrowseCompLongContext",
       "task_root": "data/eval/reportable_2026/browsecomp_long_context_authorized.jsonl"
     },
+    "agent_clawbench_browser_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agent-clawbench-browser-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agent-clawbench-browser-authorized-2026-current",
+      "source": "https://github.com/openclaw/clawbench",
+      "task_root": "data/eval/reportable_2026/clawbench_browser_authorized.jsonl"
+    },
     "agent_gdpval_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "gdpval-authorized-2026-current",
@@ -6669,14 +6794,14 @@
       "source": "https://huggingface.co/datasets/openai/gdpval",
       "task_root": "data/eval/reportable_2026/gdpval_authorized.jsonl"
     },
-    "agent_mcp_bench_2026": {
+    "agent_mc_search_mmrag_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "mcp-bench-authorized-2026-current",
+      "dataset_revision": "agent_mc_search_mmrag-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "mcp-bench-authorized-2026-current",
-      "source": "https://github.com/Accenture/mcp-bench",
-      "task_root": "data/eval/reportable_2026/mcp_bench_authorized.jsonl"
+      "snapshot_id": "agent_mc_search_mmrag_2026-authorized-2026-current",
+      "source": "https://mc-search-project.github.io/",
+      "task_root": "data/eval/reportable_2026/agent_mc_search_mmrag_2026_authorized.jsonl"
     },
     "agent_mcp_atlas_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6686,6 +6811,15 @@
       "snapshot_id": "mcp-atlas-authorized-2026-current",
       "source": "https://huggingface.co/datasets/ScaleAI/MCP-Atlas",
       "task_root": "data/eval/reportable_2026/mcp_atlas_authorized.jsonl"
+    },
+    "agent_mcp_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "mcp-bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "mcp-bench-authorized-2026-current",
+      "source": "https://github.com/Accenture/mcp-bench",
+      "task_root": "data/eval/reportable_2026/mcp_bench_authorized.jsonl"
     },
     "agent_mcp_universe_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6705,51 +6839,42 @@
       "source": "https://github.com/eval-sys/mcpmark",
       "task_root": "data/eval/reportable_2026/mcpmark_authorized.jsonl"
     },
-    "agent_world_model_rl_2026": {
+    "agent_memgym_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "agent-world-model-rl-authorized-2026-current",
+      "dataset_revision": "agent_memgym-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "agent-world-model-rl-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/Snowflake/AgentWorldModel-1K",
-      "task_root": "data/eval/reportable_2026/agent_world_model_rl_authorized.jsonl"
+      "snapshot_id": "agent_memgym_2026-authorized-2026-current",
+      "source": "https://arxiv.org/abs/2605.20833",
+      "task_root": "data/eval/reportable_2026/agent_memgym_2026_authorized.jsonl"
     },
-    "agent_tool_genesis_2026": {
+    "agent_metr_time_horizon_hcast_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "tool-genesis-authorized-2026-current",
+      "dataset_revision": "agent_metr_time_horizon_hcast-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "tool-genesis-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/tool-genesis/Tool-Genesis-Benchmark",
-      "task_root": "data/eval/reportable_2026/tool_genesis_authorized.jsonl"
-    },
-    "agent_agentif_2025": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "agentif-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "agentif-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/THU-KEG/AgentIF",
-      "task_root": "data/eval/reportable_2026/agentif_authorized.jsonl"
-    },
-    "agent_webgym_tasks_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "webgym-tasks-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "webgym-tasks-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/microsoft/webgym_tasks",
-      "task_root": "data/eval/reportable_2026/webgym_tasks_authorized.jsonl"
+      "snapshot_id": "agent_metr_time_horizon_hcast_2026-authorized-2026-current",
+      "source": "https://metr.org/time-horizons/",
+      "task_root": "data/eval/reportable_2026/agent_metr_time_horizon_hcast_2026_authorized.jsonl"
     },
     "agent_omniagentbench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "omniagentbench-authorized-2026-current",
-      "min_tasks": 1,
       "materialization_note": "Requires an operator-supplied manifest/source override; public HF loading is intentionally disabled in the built-in materializer to avoid unbounded media downloads.",
+      "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
       "snapshot_id": "omniagentbench-authorized-2026-current",
       "source": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
       "task_root": "data/eval/reportable_2026/omniagentbench_authorized.jsonl"
+    },
+    "agent_osuniverse_gui_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agent_osuniverse_gui-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agent_osuniverse_gui-authorized-2026-current",
+      "source": "https://github.com/agentsea/osuniverse",
+      "task_root": "data/eval/reportable_2026/agent_osuniverse_gui_authorized.jsonl"
     },
     "agent_paperbench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6787,6 +6912,87 @@
       "source": "https://github.com/TheAgentCompany/TheAgentCompany",
       "task_root": "data/eval/reportable_2026/theagentcompany_authorized.jsonl"
     },
+    "agent_tool_genesis_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "tool-genesis-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "tool-genesis-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/tool-genesis/Tool-Genesis-Benchmark",
+      "task_root": "data/eval/reportable_2026/tool_genesis_authorized.jsonl"
+    },
+    "agent_videowebarena_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agent_videowebarena-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agent_videowebarena-authorized-2026-current",
+      "source": "https://videowebarena.github.io/",
+      "task_root": "data/eval/reportable_2026/agent_videowebarena_authorized.jsonl"
+    },
+    "agent_webgym_tasks_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "webgym-tasks-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "webgym-tasks-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/microsoft/webgym_tasks",
+      "task_root": "data/eval/reportable_2026/webgym_tasks_authorized.jsonl"
+    },
+    "agent_world_model_rl_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agent-world-model-rl-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agent-world-model-rl-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/Snowflake/AgentWorldModel-1K",
+      "task_root": "data/eval/reportable_2026/agent_world_model_rl_authorized.jsonl"
+    },
+    "coding_beyondswe_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "beyondswe-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "beyondswe-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/AweAI-Team/BeyondSWE",
+      "task_root": "data/eval/reportable_2026/beyondswe_authorized.jsonl"
+    },
+    "coding_ccbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "ccbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "ccbench-authorized-2026-current",
+      "source": "https://ccbench.org/",
+      "task_root": "data/eval/reportable_2026/ccbench_authorized.jsonl"
+    },
+    "coding_computeeval_cuda_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "computeeval-cuda-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "computeeval-cuda-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/nvidia/compute-eval",
+      "task_root": "data/eval/reportable_2026/computeeval_cuda_authorized.jsonl"
+    },
+    "coding_contextbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "contextbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "contextbench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/Contextbench/ContextBench",
+      "task_root": "data/eval/reportable_2026/contextbench_authorized.jsonl"
+    },
+    "coding_fea_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "coding_fea_bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "coding_fea_bench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/microsoft/FEA-Bench",
+      "task_root": "data/eval/reportable_2026/coding_fea_bench_2026_authorized.jsonl"
+    },
     "coding_livecodebench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "livecodebench-authorized-2026-current",
@@ -6823,14 +7029,14 @@
       "source": "https://github.com/microsoft/SWE-bench-Live",
       "task_root": "data/eval/reportable_2026/swe_bench_live_authorized.jsonl"
     },
-    "coding_swe_bench_pro_2026": {
+    "coding_swe_bench_multimodal_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "swe-bench-pro-authorized-2026-current",
+      "dataset_revision": "coding_swe_bench_multimodal-authorized-2026-current",
       "min_tasks": 1,
-      "snapshot_authorization": "authorized_private",
-      "snapshot_id": "swe-bench-pro-authorized-2026-current",
-      "source": "https://scale.com/blog/swe-bench-pro",
-      "task_root": "data/eval/reportable_2026/swe_bench_pro_authorized.jsonl"
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "coding_swe_bench_multimodal-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/SWE-bench/SWE-bench_Multimodal",
+      "task_root": "data/eval/reportable_2026/coding_swe_bench_multimodal_authorized.jsonl"
     },
     "coding_swe_bench_plus_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6841,23 +7047,14 @@
       "source": "https://arxiv.org/abs/2512.17419",
       "task_root": "data/eval/reportable_2026/swe_bench_plus_authorized.jsonl"
     },
-    "coding_swe_polybench_2026": {
+    "coding_swe_bench_pro_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "swe-polybench-authorized-2026-current",
+      "dataset_revision": "swe-bench-pro-authorized-2026-current",
       "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "swe-polybench-authorized-2026-current",
-      "source": "https://github.com/amazon-science/SWE-PolyBench",
-      "task_root": "data/eval/reportable_2026/swe_polybench_authorized.jsonl"
-    },
-    "coding_swe_smith_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "swe-smith-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "swe-smith-authorized-2026-current",
-      "source": "https://github.com/SWE-bench/SWE-smith",
-      "task_root": "data/eval/reportable_2026/swe_smith_authorized.jsonl"
+      "snapshot_authorization": "authorized_private",
+      "snapshot_id": "swe-bench-pro-authorized-2026-current",
+      "source": "https://scale.com/blog/swe-bench-pro",
+      "task_root": "data/eval/reportable_2026/swe_bench_pro_authorized.jsonl"
     },
     "coding_swe_lancer_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6868,41 +7065,68 @@
       "source": "https://github.com/openai/SWELancer-Benchmark",
       "task_root": "data/eval/reportable_2026/swe_lancer_authorized.jsonl"
     },
-    "coding_beyondswe_2026": {
+    "coding_swe_polybench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "beyondswe-authorized-2026-current",
+      "dataset_revision": "swe-polybench-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "beyondswe-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/AweAI-Team/BeyondSWE",
-      "task_root": "data/eval/reportable_2026/beyondswe_authorized.jsonl"
+      "snapshot_id": "swe-polybench-authorized-2026-current",
+      "source": "https://github.com/amazon-science/SWE-PolyBench",
+      "task_root": "data/eval/reportable_2026/swe_polybench_authorized.jsonl"
     },
-    "coding_contextbench_2026": {
+    "coding_swe_rebench_v2_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "contextbench-authorized-2026-current",
+      "dataset_revision": "coding-swe-rebench-v2-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "contextbench-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/Contextbench/ContextBench",
-      "task_root": "data/eval/reportable_2026/contextbench_authorized.jsonl"
+      "snapshot_id": "coding-swe-rebench-v2-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/nebius/SWE-rebench-V2",
+      "task_root": "data/eval/reportable_2026/swe_rebench_v2_authorized.jsonl"
     },
-    "coding_ccbench_2026": {
+    "coding_swe_smith_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "ccbench-authorized-2026-current",
+      "dataset_revision": "swe-smith-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "ccbench-authorized-2026-current",
-      "source": "https://ccbench.org/",
-      "task_root": "data/eval/reportable_2026/ccbench_authorized.jsonl"
+      "snapshot_id": "swe-smith-authorized-2026-current",
+      "source": "https://github.com/SWE-bench/SWE-smith",
+      "task_root": "data/eval/reportable_2026/swe_smith_authorized.jsonl"
     },
-    "coding_computeeval_cuda_2026": {
+    "deployment_performance_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "computeeval-cuda-authorized-2026-current",
+      "dataset_revision": "deployment-performance-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "authorized_private",
+      "snapshot_id": "deployment-performance-authorized-2026-current",
+      "source": "internal_hardware_matrix_jsonl",
+      "task_root": "data/eval/reportable_2026/deployment_performance_authorized.jsonl"
+    },
+    "deployment_turboquant_kv_1m_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "turboquant-kv-1m-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "authorized_private",
+      "snapshot_id": "turboquant-kv-1m-authorized-2026-current",
+      "source": "https://openreview.net/pdf/7d33913c9a4f47c8abb294d6beb85d30124747ca.pdf",
+      "task_root": "data/eval/reportable_2026/turboquant_kv_1m_authorized.jsonl"
+    },
+    "factuality_facts_grounding_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "factuality_facts_grounding-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "computeeval-cuda-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/nvidia/compute-eval",
-      "task_root": "data/eval/reportable_2026/computeeval_cuda_authorized.jsonl"
+      "snapshot_id": "factuality_facts_grounding_2026-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/google/FACTS-grounding-public",
+      "task_root": "data/eval/reportable_2026/factuality_facts_grounding_2026_authorized.jsonl"
+    },
+    "factuality_simpleqa_verified_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "factuality_simpleqa_verified-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "factuality_simpleqa_verified_2026-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/google/simpleqa-verified",
+      "task_root": "data/eval/reportable_2026/factuality_simpleqa_verified_2026_authorized.jsonl"
     },
     "generation_audio_speech_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6913,14 +7137,23 @@
       "source": "https://huggingface.co/datasets/hlt-lab/voicebench",
       "task_root": "data/eval/reportable_2026/audio_speech_authorized.jsonl"
     },
-    "generation_ttsds2_2026": {
+    "generation_editinspector_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "ttsds2-authorized-2026-current",
+      "dataset_revision": "generation_editinspector-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "ttsds2-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/ttsds/listening_test",
-      "task_root": "data/eval/reportable_2026/ttsds2_authorized.jsonl"
+      "snapshot_id": "generation_editinspector-authorized-2026-current",
+      "source": "https://arxiv.org/abs/2506.09988",
+      "task_root": "data/eval/reportable_2026/generation_editinspector_authorized.jsonl"
+    },
+    "generation_gie_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "generation_gie_bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "generation_gie_bench-authorized-2026-current",
+      "source": "https://arxiv.org/abs/2505.11493",
+      "task_root": "data/eval/reportable_2026/generation_gie_bench_authorized.jsonl"
     },
     "generation_image_edit_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6940,6 +7173,33 @@
       "source": "https://huggingface.co/datasets/music-arena/music-arena-dataset",
       "task_root": "data/eval/reportable_2026/music_generation_authorized.jsonl"
     },
+    "generation_omnigenbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "generation_omnigenbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "generation_omnigenbench-authorized-2026-current",
+      "source": "https://arxiv.org/abs/2505.18775",
+      "task_root": "data/eval/reportable_2026/generation_omnigenbench_2026_authorized.jsonl"
+    },
+    "generation_oneig_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "generation-oneig-bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "generation-oneig-bench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench",
+      "task_root": "data/eval/reportable_2026/oneig_bench_authorized.jsonl"
+    },
+    "generation_ttsds2_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "ttsds2-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "ttsds2-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/ttsds/listening_test",
+      "task_root": "data/eval/reportable_2026/ttsds2_authorized.jsonl"
+    },
     "generation_video_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "video-generation-authorized-2026-current",
@@ -6948,6 +7208,15 @@
       "snapshot_id": "video-generation-authorized-2026-current",
       "source": "https://github.com/Vchitect/VBench",
       "task_root": "data/eval/reportable_2026/video_generation_authorized.jsonl"
+    },
+    "generation_worldgenbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "generation_worldgenbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "generation_worldgenbench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/worldrl/WorldGenBench",
+      "task_root": "data/eval/reportable_2026/generation_worldgenbench_2026_authorized.jsonl"
     },
     "long_context_helmet_longproc_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6958,6 +7227,15 @@
       "source": "official_current_release_or_authorized_mirror",
       "task_root": "data/eval/reportable_2026/helmet_longproc_authorized.jsonl"
     },
+    "long_context_loft_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "long_context_loft-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "long_context_loft-authorized-2026-current",
+      "source": "https://github.com/google-deepmind/loft",
+      "task_root": "data/eval/reportable_2026/long_context_loft_authorized.jsonl"
+    },
     "long_context_longcodebench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "longcodebench-authorized-2026-current",
@@ -6967,14 +7245,14 @@
       "source": "https://huggingface.co/papers/2505.07897",
       "task_root": "data/eval/reportable_2026/longcodebench_authorized.jsonl"
     },
-    "long_context_officeqa_2026": {
+    "long_context_longproc_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "officeqa-authorized-2026-current",
+      "dataset_revision": "long-context-longproc-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "officeqa-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/databricks/officeqa",
-      "task_root": "data/eval/reportable_2026/officeqa_authorized.jsonl"
+      "snapshot_id": "long-context-longproc-authorized-2026-current",
+      "source": "https://github.com/princeton-pli/LongProc",
+      "task_root": "data/eval/reportable_2026/longproc_authorized.jsonl"
     },
     "long_context_mrcr_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -6985,6 +7263,24 @@
       "source": "https://github.com/hsiehjackson/RULER",
       "task_root": "data/eval/reportable_2026/mrcr_authorized.jsonl"
     },
+    "long_context_nolima_1m_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "long-context-nolima-1m-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "long-context-nolima-1m-authorized-2026-current",
+      "source": "https://github.com/adobe-research/NoLiMa",
+      "task_root": "data/eval/reportable_2026/nolima_1m_authorized.jsonl"
+    },
+    "long_context_officeqa_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "officeqa-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "officeqa-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/databricks/officeqa",
+      "task_root": "data/eval/reportable_2026/officeqa_authorized.jsonl"
+    },
     "multimodal_audiobench_mmau_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "audiobench-mmau-authorized-2026-current",
@@ -6993,6 +7289,42 @@
       "snapshot_id": "audiobench-mmau-authorized-2026-current",
       "source": "https://huggingface.co/datasets/gamma-lab-umd/MMAU-test",
       "task_root": "data/eval/reportable_2026/audiobench_mmau_authorized.jsonl"
+    },
+    "multimodal_audiomarathon_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multimodal-audiomarathon-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "multimodal-audiomarathon-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/AudioMarathon/AudioMarathon",
+      "task_root": "data/eval/reportable_2026/audiomarathon_authorized.jsonl"
+    },
+    "multimodal_audiomcq_strongac_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "audiomcq-strongac-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "audiomcq-strongac-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/Harland/AudioMCQ-StrongAC-GeminiCoT",
+      "task_root": "data/eval/reportable_2026/audiomcq_strongac_authorized.jsonl"
+    },
+    "multimodal_avatar_av_localization_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multimodal_avatar_av_localization-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "multimodal_avatar_av_localization-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/mipal/AVATAR",
+      "task_root": "data/eval/reportable_2026/multimodal_avatar_av_localization_authorized.jsonl"
+    },
+    "multimodal_cc_ocr_v2_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multimodal_cc_ocr_v2-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "multimodal_cc_ocr_v2_2026-authorized-2026-current",
+      "source": "https://github.com/Eioss/CC-OCR-V2",
+      "task_root": "data/eval/reportable_2026/multimodal_cc_ocr_v2_2026_authorized.jsonl"
     },
     "multimodal_jointavbench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -7030,6 +7362,24 @@
       "source": "https://mmmu-benchmark.github.io/",
       "task_root": "data/eval/reportable_2026/mmmu_pro_authorized.jsonl"
     },
+    "multimodal_ocrbench_v2_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multimodal_ocrbench_v2-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "multimodal_ocrbench_v2_2026-authorized-2026-current",
+      "source": "https://99franklin.github.io/ocrbench_v2/",
+      "task_root": "data/eval/reportable_2026/multimodal_ocrbench_v2_2026_authorized.jsonl"
+    },
+    "multimodal_omnidocbench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multimodal_omnidocbench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "multimodal_omnidocbench_2026-authorized-2026-current",
+      "source": "https://github.com/opendatalab/OmniDocBench",
+      "task_root": "data/eval/reportable_2026/multimodal_omnidocbench_2026_authorized.jsonl"
+    },
     "multimodal_parsebench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "parsebench-authorized-2026-current",
@@ -7039,14 +7389,23 @@
       "source": "https://huggingface.co/datasets/llamaindex/ParseBench",
       "task_root": "data/eval/reportable_2026/parsebench_authorized.jsonl"
     },
-    "multimodal_audiomcq_strongac_2026": {
+    "multimodal_real5_omnidocbench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "audiomcq-strongac-authorized-2026-current",
+      "dataset_revision": "multimodal_real5_omnidocbench-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "audiomcq-strongac-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/Harland/AudioMCQ-StrongAC-GeminiCoT",
-      "task_root": "data/eval/reportable_2026/audiomcq_strongac_authorized.jsonl"
+      "snapshot_id": "multimodal_real5_omnidocbench_2026-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/PaddlePaddle/Real5-OmniDocBench",
+      "task_root": "data/eval/reportable_2026/multimodal_real5_omnidocbench_2026_authorized.jsonl"
+    },
+    "multimodal_rewardbench2_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multimodal-rewardbench2-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "multimodal-rewardbench2-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/rl-research/multimodal-rewardbench-2",
+      "task_root": "data/eval/reportable_2026/multimodal_rewardbench2_authorized.jsonl"
     },
     "multimodal_video_understanding_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -7075,6 +7434,15 @@
       "source": "https://arcprize.org/arc-agi/3",
       "task_root": "data/eval/reportable_2026/arc_agi3_authorized.jsonl"
     },
+    "reasoning_frontiermath_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "reasoning_frontiermath-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "reasoning_frontiermath-authorized-2026-current",
+      "source": "https://epoch.ai/benchmarks/frontiermath",
+      "task_root": "data/eval/reportable_2026/reasoning_frontiermath_authorized.jsonl"
+    },
     "reasoning_hle_rolling_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "hle-rolling-authorized-2026-current",
@@ -7083,78 +7451,6 @@
       "snapshot_id": "hle-rolling-authorized-2026-current",
       "source": "https://huggingface.co/datasets/cais/hle",
       "task_root": "data/eval/reportable_2026/hle_rolling_authorized.jsonl"
-    },
-    "reasoning_rlvr_linearity_math_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "rlvr-linearity-math-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "rlvr-linearity-math-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
-      "task_root": "data/eval/reportable_2026/rlvr_linearity_math_authorized.jsonl"
-    },
-    "agent_clawbench_browser_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "agent-clawbench-browser-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "agent-clawbench-browser-authorized-2026-current",
-      "source": "https://github.com/openclaw/clawbench",
-      "task_root": "data/eval/reportable_2026/clawbench_browser_authorized.jsonl"
-    },
-    "coding_swe_rebench_v2_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "coding-swe-rebench-v2-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "coding-swe-rebench-v2-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/nebius/SWE-rebench-V2",
-      "task_root": "data/eval/reportable_2026/swe_rebench_v2_authorized.jsonl"
-    },
-    "generation_oneig_bench_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "generation-oneig-bench-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "generation-oneig-bench-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench",
-      "task_root": "data/eval/reportable_2026/oneig_bench_authorized.jsonl"
-    },
-    "long_context_longproc_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "long-context-longproc-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "long-context-longproc-authorized-2026-current",
-      "source": "https://github.com/princeton-pli/LongProc",
-      "task_root": "data/eval/reportable_2026/longproc_authorized.jsonl"
-    },
-    "long_context_nolima_1m_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "long-context-nolima-1m-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "long-context-nolima-1m-authorized-2026-current",
-      "source": "https://github.com/adobe-research/NoLiMa",
-      "task_root": "data/eval/reportable_2026/nolima_1m_authorized.jsonl"
-    },
-    "multimodal_audiomarathon_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "multimodal-audiomarathon-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "multimodal-audiomarathon-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/AudioMarathon/AudioMarathon",
-      "task_root": "data/eval/reportable_2026/audiomarathon_authorized.jsonl"
-    },
-    "multimodal_rewardbench2_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "multimodal-rewardbench2-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "multimodal-rewardbench2-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/rl-research/multimodal-rewardbench-2",
-      "task_root": "data/eval/reportable_2026/multimodal_rewardbench2_authorized.jsonl"
     },
     "reasoning_matharena_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -7165,14 +7461,14 @@
       "source": "https://matharena.ai/",
       "task_root": "data/eval/reportable_2026/matharena_authorized.jsonl"
     },
-    "safety_tool_security_2026": {
+    "reasoning_rlvr_linearity_math_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "tool-security-authorized-2026-current",
+      "dataset_revision": "rlvr-linearity-math-authorized-2026-current",
       "min_tasks": 1,
-      "snapshot_authorization": "authorized_private",
-      "snapshot_id": "tool-security-authorized-2026-current",
-      "source": "internal_red_team_jsonl_and_authorized_public_slices",
-      "task_root": "data/eval/reportable_2026/tool_security_authorized.jsonl"
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "rlvr-linearity-math-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
+      "task_root": "data/eval/reportable_2026/rlvr_linearity_math_authorized.jsonl"
     },
     "safety_mcp_security_bench_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -7183,123 +7479,266 @@
       "source": "https://huggingface.co/datasets/DongsenZhang/MSB",
       "task_root": "data/eval/reportable_2026/mcp_security_bench_authorized.jsonl"
     },
-    "deployment_turboquant_kv_1m_2026": {
+    "safety_tool_security_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "turboquant-kv-1m-authorized-2026-current",
+      "dataset_revision": "tool-security-authorized-2026-current",
       "min_tasks": 1,
       "snapshot_authorization": "authorized_private",
-      "snapshot_id": "turboquant-kv-1m-authorized-2026-current",
-      "source": "https://openreview.net/pdf/7d33913c9a4f47c8abb294d6beb85d30124747ca.pdf",
-      "task_root": "data/eval/reportable_2026/turboquant_kv_1m_authorized.jsonl"
-    },
-    "deployment_performance_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "deployment-performance-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "authorized_private",
-      "snapshot_id": "deployment-performance-authorized-2026-current",
-      "source": "internal_hardware_matrix_jsonl",
-      "task_root": "data/eval/reportable_2026/deployment_performance_authorized.jsonl"
-    },
-    "agent_videowebarena_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "agent_videowebarena-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "agent_videowebarena-authorized-2026-current",
-      "source": "https://videowebarena.github.io/",
-      "task_root": "data/eval/reportable_2026/agent_videowebarena_authorized.jsonl"
-    },
-    "agent_osuniverse_gui_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "agent_osuniverse_gui-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "agent_osuniverse_gui-authorized-2026-current",
-      "source": "https://github.com/agentsea/osuniverse",
-      "task_root": "data/eval/reportable_2026/agent_osuniverse_gui_authorized.jsonl"
-    },
-    "multimodal_avatar_av_localization_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "multimodal_avatar_av_localization-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "multimodal_avatar_av_localization-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/mipal/AVATAR",
-      "task_root": "data/eval/reportable_2026/multimodal_avatar_av_localization_authorized.jsonl"
-    },
-    "coding_swe_bench_multimodal_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "coding_swe_bench_multimodal-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "coding_swe_bench_multimodal-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/SWE-bench/SWE-bench_Multimodal",
-      "task_root": "data/eval/reportable_2026/coding_swe_bench_multimodal_authorized.jsonl"
-    },
-    "long_context_loft_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "long_context_loft-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "long_context_loft-authorized-2026-current",
-      "source": "https://github.com/google-deepmind/loft",
-      "task_root": "data/eval/reportable_2026/long_context_loft_authorized.jsonl"
-    },
-    "reasoning_frontiermath_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "reasoning_frontiermath-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "reasoning_frontiermath-authorized-2026-current",
-      "source": "https://epoch.ai/benchmarks/frontiermath",
-      "task_root": "data/eval/reportable_2026/reasoning_frontiermath_authorized.jsonl"
-    },
-    "generation_gie_bench_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "generation_gie_bench-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "generation_gie_bench-authorized-2026-current",
-      "source": "https://arxiv.org/abs/2505.11493",
-      "task_root": "data/eval/reportable_2026/generation_gie_bench_authorized.jsonl"
-    },
-    "generation_editinspector_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "generation_editinspector-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "generation_editinspector-authorized-2026-current",
-      "source": "https://arxiv.org/abs/2506.09988",
-      "task_root": "data/eval/reportable_2026/generation_editinspector_authorized.jsonl"
-    },
-    "coding_fea_bench_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "coding_fea_bench-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "coding_fea_bench-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/microsoft/FEA-Bench",
-      "task_root": "data/eval/reportable_2026/coding_fea_bench_2026_authorized.jsonl"
-    },
-    "generation_worldgenbench_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "generation_worldgenbench-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "generation_worldgenbench-authorized-2026-current",
-      "source": "https://huggingface.co/datasets/worldrl/WorldGenBench",
-      "task_root": "data/eval/reportable_2026/generation_worldgenbench_2026_authorized.jsonl"
-    },
-    "generation_omnigenbench_2026": {
-      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
-      "dataset_revision": "generation_omnigenbench-authorized-2026-current",
-      "min_tasks": 1,
-      "snapshot_authorization": "official_or_authorized_current_release",
-      "snapshot_id": "generation_omnigenbench-authorized-2026-current",
-      "source": "https://arxiv.org/abs/2505.18775",
-      "task_root": "data/eval/reportable_2026/generation_omnigenbench_2026_authorized.jsonl"
+      "snapshot_id": "tool-security-authorized-2026-current",
+      "source": "internal_red_team_jsonl_and_authorized_public_slices",
+      "task_root": "data/eval/reportable_2026/tool_security_authorized.jsonl"
     }
+  },
+  "reportable_task_roots": {
+    "agent_agent2_rl_bench_2026": [
+      "data/eval/reportable_2026/agent_agent2_rl_bench_2026_authorized.jsonl"
+    ],
+    "agent_agentif_2025": [
+      "data/eval/reportable_2026/agentif_authorized.jsonl"
+    ],
+    "agent_bfcl_v4_2026": [
+      "data/eval/reportable_2026/bfcl_v4_authorized.jsonl"
+    ],
+    "agent_browsecomp_long_context_2026": [
+      "data/eval/reportable_2026/browsecomp_long_context_authorized.jsonl"
+    ],
+    "agent_clawbench_browser_2026": [
+      "data/eval/reportable_2026/clawbench_browser_authorized.jsonl"
+    ],
+    "agent_gdpval_2026": [
+      "data/eval/reportable_2026/gdpval_authorized.jsonl"
+    ],
+    "agent_mc_search_mmrag_2026": [
+      "data/eval/reportable_2026/agent_mc_search_mmrag_2026_authorized.jsonl"
+    ],
+    "agent_mcp_atlas_2026": [
+      "data/eval/reportable_2026/mcp_atlas_authorized.jsonl"
+    ],
+    "agent_mcp_bench_2026": [
+      "data/eval/reportable_2026/mcp_bench_authorized.jsonl"
+    ],
+    "agent_mcp_universe_2026": [
+      "data/eval/reportable_2026/mcp_universe_authorized.jsonl"
+    ],
+    "agent_mcp_workflows_2026": [
+      "data/eval/reportable_2026/mcpmark_authorized.jsonl"
+    ],
+    "agent_memgym_2026": [
+      "data/eval/reportable_2026/agent_memgym_2026_authorized.jsonl"
+    ],
+    "agent_metr_time_horizon_hcast_2026": [
+      "data/eval/reportable_2026/agent_metr_time_horizon_hcast_2026_authorized.jsonl"
+    ],
+    "agent_omniagentbench_2026": [
+      "data/eval/reportable_2026/omniagentbench_authorized.jsonl"
+    ],
+    "agent_osuniverse_gui_2026": [
+      "data/eval/reportable_2026/agent_osuniverse_gui_authorized.jsonl"
+    ],
+    "agent_paperbench_2026": [
+      "data/eval/reportable_2026/paperbench_authorized.jsonl"
+    ],
+    "agent_tau3_2026": [
+      "data/eval/reportable_2026/tau3_authorized.jsonl"
+    ],
+    "agent_terminal_bench_2026": [
+      "data/eval/reportable_2026/terminal_bench_authorized.jsonl"
+    ],
+    "agent_theagentcompany_enterprise_2026": [
+      "data/eval/reportable_2026/theagentcompany_authorized.jsonl"
+    ],
+    "agent_tool_genesis_2026": [
+      "data/eval/reportable_2026/tool_genesis_authorized.jsonl"
+    ],
+    "agent_videowebarena_2026": [
+      "data/eval/reportable_2026/agent_videowebarena_authorized.jsonl"
+    ],
+    "agent_webgym_tasks_2026": [
+      "data/eval/reportable_2026/webgym_tasks_authorized.jsonl"
+    ],
+    "agent_world_model_rl_2026": [
+      "data/eval/reportable_2026/agent_world_model_rl_authorized.jsonl"
+    ],
+    "coding_beyondswe_2026": [
+      "data/eval/reportable_2026/beyondswe_authorized.jsonl"
+    ],
+    "coding_ccbench_2026": [
+      "data/eval/reportable_2026/ccbench_authorized.jsonl"
+    ],
+    "coding_computeeval_cuda_2026": [
+      "data/eval/reportable_2026/computeeval_cuda_authorized.jsonl"
+    ],
+    "coding_contextbench_2026": [
+      "data/eval/reportable_2026/contextbench_authorized.jsonl"
+    ],
+    "coding_fea_bench_2026": [
+      "data/eval/reportable_2026/coding_fea_bench_2026_authorized.jsonl"
+    ],
+    "coding_livecodebench_2026": [
+      "data/eval/reportable_2026/livecodebench_authorized.jsonl"
+    ],
+    "coding_multi_swe_bench_2026": [
+      "data/eval/reportable_2026/multi_swe_bench_authorized.jsonl"
+    ],
+    "coding_nous_rlvr_coding_2026": [
+      "data/eval/reportable_2026/nous_rlvr_coding_authorized.jsonl"
+    ],
+    "coding_swe_bench_live_2026": [
+      "data/eval/reportable_2026/swe_bench_live_authorized.jsonl"
+    ],
+    "coding_swe_bench_multimodal_2026": [
+      "data/eval/reportable_2026/coding_swe_bench_multimodal_authorized.jsonl"
+    ],
+    "coding_swe_bench_plus_2026": [
+      "data/eval/reportable_2026/swe_bench_plus_authorized.jsonl"
+    ],
+    "coding_swe_bench_pro_2026": [
+      "data/eval/reportable_2026/swe_bench_pro_authorized.jsonl"
+    ],
+    "coding_swe_lancer_2026": [
+      "data/eval/reportable_2026/swe_lancer_authorized.jsonl"
+    ],
+    "coding_swe_polybench_2026": [
+      "data/eval/reportable_2026/swe_polybench_authorized.jsonl"
+    ],
+    "coding_swe_rebench_v2_2026": [
+      "data/eval/reportable_2026/swe_rebench_v2_authorized.jsonl"
+    ],
+    "coding_swe_smith_2026": [
+      "data/eval/reportable_2026/swe_smith_authorized.jsonl"
+    ],
+    "deployment_performance_2026": [
+      "data/eval/reportable_2026/deployment_performance_authorized.jsonl"
+    ],
+    "deployment_turboquant_kv_1m_2026": [
+      "data/eval/reportable_2026/turboquant_kv_1m_authorized.jsonl"
+    ],
+    "factuality_facts_grounding_2026": [
+      "data/eval/reportable_2026/factuality_facts_grounding_2026_authorized.jsonl"
+    ],
+    "factuality_simpleqa_verified_2026": [
+      "data/eval/reportable_2026/factuality_simpleqa_verified_2026_authorized.jsonl"
+    ],
+    "generation_audio_speech_2026": [
+      "data/eval/reportable_2026/audio_speech_authorized.jsonl"
+    ],
+    "generation_editinspector_2026": [
+      "data/eval/reportable_2026/generation_editinspector_authorized.jsonl"
+    ],
+    "generation_gie_bench_2026": [
+      "data/eval/reportable_2026/generation_gie_bench_authorized.jsonl"
+    ],
+    "generation_image_edit_2026": [
+      "data/eval/reportable_2026/image_edit_authorized.jsonl"
+    ],
+    "generation_music_2026": [
+      "data/eval/reportable_2026/music_generation_authorized.jsonl"
+    ],
+    "generation_omnigenbench_2026": [
+      "data/eval/reportable_2026/generation_omnigenbench_2026_authorized.jsonl"
+    ],
+    "generation_oneig_bench_2026": [
+      "data/eval/reportable_2026/oneig_bench_authorized.jsonl"
+    ],
+    "generation_ttsds2_2026": [
+      "data/eval/reportable_2026/ttsds2_authorized.jsonl"
+    ],
+    "generation_video_2026": [
+      "data/eval/reportable_2026/video_generation_authorized.jsonl"
+    ],
+    "generation_worldgenbench_2026": [
+      "data/eval/reportable_2026/generation_worldgenbench_2026_authorized.jsonl"
+    ],
+    "long_context_helmet_longproc_2026": [
+      "data/eval/reportable_2026/helmet_longproc_authorized.jsonl"
+    ],
+    "long_context_loft_2026": [
+      "data/eval/reportable_2026/long_context_loft_authorized.jsonl"
+    ],
+    "long_context_longcodebench_2026": [
+      "data/eval/reportable_2026/longcodebench_authorized.jsonl"
+    ],
+    "long_context_longproc_2026": [
+      "data/eval/reportable_2026/longproc_authorized.jsonl"
+    ],
+    "long_context_mrcr_2026": [
+      "data/eval/reportable_2026/mrcr_authorized.jsonl"
+    ],
+    "long_context_nolima_1m_2026": [
+      "data/eval/reportable_2026/nolima_1m_authorized.jsonl"
+    ],
+    "long_context_officeqa_2026": [
+      "data/eval/reportable_2026/officeqa_authorized.jsonl"
+    ],
+    "multimodal_audiobench_mmau_2026": [
+      "data/eval/reportable_2026/audiobench_mmau_authorized.jsonl"
+    ],
+    "multimodal_audiomarathon_2026": [
+      "data/eval/reportable_2026/audiomarathon_authorized.jsonl"
+    ],
+    "multimodal_audiomcq_strongac_2026": [
+      "data/eval/reportable_2026/audiomcq_strongac_authorized.jsonl"
+    ],
+    "multimodal_avatar_av_localization_2026": [
+      "data/eval/reportable_2026/multimodal_avatar_av_localization_authorized.jsonl"
+    ],
+    "multimodal_cc_ocr_v2_2026": [
+      "data/eval/reportable_2026/multimodal_cc_ocr_v2_2026_authorized.jsonl"
+    ],
+    "multimodal_jointavbench_2026": [
+      "data/eval/reportable_2026/jointavbench_authorized.jsonl"
+    ],
+    "multimodal_lvomnibench_2026": [
+      "data/eval/reportable_2026/lvomnibench_authorized.jsonl"
+    ],
+    "multimodal_mmar_audio_music_reasoning_2026": [
+      "data/eval/reportable_2026/mmar_audio_music_reasoning_authorized.jsonl"
+    ],
+    "multimodal_mmmu_pro_2026": [
+      "data/eval/reportable_2026/mmmu_pro_authorized.jsonl"
+    ],
+    "multimodal_ocrbench_v2_2026": [
+      "data/eval/reportable_2026/multimodal_ocrbench_v2_2026_authorized.jsonl"
+    ],
+    "multimodal_omnidocbench_2026": [
+      "data/eval/reportable_2026/multimodal_omnidocbench_2026_authorized.jsonl"
+    ],
+    "multimodal_parsebench_2026": [
+      "data/eval/reportable_2026/parsebench_authorized.jsonl"
+    ],
+    "multimodal_real5_omnidocbench_2026": [
+      "data/eval/reportable_2026/multimodal_real5_omnidocbench_2026_authorized.jsonl"
+    ],
+    "multimodal_rewardbench2_2026": [
+      "data/eval/reportable_2026/multimodal_rewardbench2_authorized.jsonl"
+    ],
+    "multimodal_video_understanding_2026": [
+      "data/eval/reportable_2026/video_mme_v2_authorized.jsonl"
+    ],
+    "reasoning_arc_agi2_2026": [
+      "data/eval/reportable_2026/arc_agi2_authorized.jsonl"
+    ],
+    "reasoning_arc_agi3_2026": [
+      "data/eval/reportable_2026/arc_agi3_authorized.jsonl"
+    ],
+    "reasoning_frontiermath_2026": [
+      "data/eval/reportable_2026/reasoning_frontiermath_authorized.jsonl"
+    ],
+    "reasoning_hle_rolling_2026": [
+      "data/eval/reportable_2026/hle_rolling_authorized.jsonl"
+    ],
+    "reasoning_matharena_2026": [
+      "data/eval/reportable_2026/matharena_authorized.jsonl"
+    ],
+    "reasoning_rlvr_linearity_math_2026": [
+      "data/eval/reportable_2026/rlvr_linearity_math_authorized.jsonl"
+    ],
+    "safety_mcp_security_bench_2026": [
+      "data/eval/reportable_2026/mcp_security_bench_authorized.jsonl"
+    ],
+    "safety_tool_security_2026": [
+      "data/eval/reportable_2026/tool_security_authorized.jsonl"
+    ]
   },
   "run_cycles": {
     "nightly": {
@@ -7451,6 +7890,11 @@
       "https://arxiv.org/abs/2604.15804",
       "https://research.nvidia.com/labs/cosmos-lab/cosmos-predict2/"
     ],
+    "reasoning_2026": [
+      "https://matharena.ai/",
+      "https://huggingface.co/MathArena",
+      "https://imobench.github.io/"
+    ],
     "swe_bench": [
       "https://github.com/SWE-bench/SWE-bench",
       "https://github.com/scaleapi/SWE-bench_Pro-os",
@@ -7471,11 +7915,6 @@
       "https://omni-bench.github.io/",
       "https://github.com/microsoft/STATE-Bench",
       "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard"
-    ],
-    "reasoning_2026": [
-      "https://matharena.ai/",
-      "https://huggingface.co/MathArena",
-      "https://imobench.github.io/"
     ]
   },
   "storage": {

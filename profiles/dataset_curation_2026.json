@@ -25700,6 +25700,521 @@
             "page_image"
           ]
         }
+      },
+      {
+        "name": "NVIDIA Nemotron-SFT Agentic v2",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "nvidia/Nemotron-SFT-Agentic-v2",
+        "url": "https://huggingface.co/datasets/nvidia/Nemotron-SFT-Agentic-v2",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "splits": [
+          "interactive_agent",
+          "search",
+          "tool_calling"
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "train",
+        "license": "CC-BY-4.0 with Apache-2.0 and MIT components",
+        "license_tier": "attribution_permissive_mixture",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Use tool calling, search, and interactive-agent rows for SFT, tool-policy reward replay, and heldout agent trajectory probes after row-level schema validation.",
+        "curriculum_axes": [
+          "agentic_sft",
+          "tool_calling",
+          "search_agent",
+          "multi_turn_tool_use",
+          "reward_replay"
+        ],
+        "field_map": {
+          "id": [
+            "uuid",
+            "id",
+            "metadata.uuid",
+            "sample_id"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "question",
+            "tools"
+          ],
+          "target": [
+            "messages",
+            "response",
+            "answer",
+            "tool_calls",
+            "metadata"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "tools",
+            "messages"
+          ]
+        }
+      },
+      {
+        "name": "NVIDIA OpenCodeInstruct",
+        "family": "coding_agentic",
+        "hf_id": "nvidia/OpenCodeInstruct",
+        "url": "https://huggingface.co/datasets/nvidia/OpenCodeInstruct",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "code",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Prioritize code SFT rows with unit-test and LLM-judgement metadata for verifier-aware code training.",
+        "curriculum_axes": [
+          "code_sft",
+          "unit_test_supervision",
+          "algorithmic_code",
+          "verifier_friendly"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid"
+          ],
+          "prompt": [
+            "input",
+            "prompt",
+            "question"
+          ],
+          "target": [
+            "output",
+            "answer",
+            "completion",
+            "unit_tests",
+            "tests_execution_status",
+            "average_test_score",
+            "llm_judgement"
+          ]
+        }
+      },
+      {
+        "name": "NVIDIA Nemotron-SFT OpenCode v1",
+        "family": "coding_agentic",
+        "hf_id": "nvidia/Nemotron-SFT-OpenCode-v1",
+        "url": "https://huggingface.co/datasets/nvidia/Nemotron-SFT-OpenCode-v1",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "configs": [
+          "general",
+          "bash_only_tool",
+          "bash_only_tool_skills",
+          "question_tool",
+          "agent_skills",
+          "agent_skills_question_tool"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Use OpenCode agent traces for CLI-code SFT, bash/tool routing, skill selection, and ask-user clarification behavior.",
+        "curriculum_axes": [
+          "opencode_agent",
+          "cli_tool_use",
+          "repo_navigation",
+          "ask_user_clarification",
+          "skill_loading"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "sample_id"
+          ],
+          "prompt": [
+            "messages",
+            "question",
+            "instruction",
+            "tools"
+          ],
+          "target": [
+            "messages",
+            "trajectory",
+            "answer",
+            "patch",
+            "tool_calls"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "tools",
+            "messages"
+          ]
+        }
+      },
+      {
+        "name": "NVIDIA Nemotron-SFT Math v3",
+        "family": "math_reasoning",
+        "hf_id": "nvidia/Nemotron-SFT-Math-v3",
+        "url": "https://huggingface.co/datasets/nvidia/Nemotron-SFT-Math-v3",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "CC-BY-4.0 for AoPS-derived samples; CC-BY-SA-4.0 for StackExchange-derived samples",
+        "license_tier": "attribution_sharealike_per_sample",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Use per-sample license metadata and preserve tool_usage labels so Python TIR and no-tool reasoning can be routed separately.",
+        "curriculum_axes": [
+          "math_reasoning",
+          "tool_integrated_reasoning",
+          "verified_answer",
+          "multi_trajectory_reasoning",
+          "rlvr"
+        ],
+        "field_map": {
+          "id": [
+            "uuid",
+            "id"
+          ],
+          "prompt": [
+            "problem",
+            "messages"
+          ],
+          "target": [
+            "messages",
+            "expected_answer",
+            "tool_usage",
+            "tools",
+            "data_source",
+            "license"
+          ],
+          "tool_calls": [
+            "tools",
+            "messages"
+          ]
+        }
+      },
+      {
+        "name": "FinePhrase",
+        "family": "text_pretraining",
+        "hf_id": "HuggingFaceFW/finephrase",
+        "url": "https://huggingface.co/datasets/HuggingFaceFW/finephrase",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "configs": [
+          "all",
+          "faq",
+          "math",
+          "table",
+          "tutorial"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "ODC-BY",
+        "license_tier": "attribution",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Sample from topic configs for high-quality phrase/question reformulation and long-tail educational text; keep URL provenance fields.",
+        "curriculum_axes": [
+          "text_pretraining",
+          "synthetic_phrase_generation",
+          "educational_text",
+          "math_text",
+          "table_text"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "url"
+          ],
+          "prompt": [
+            "text",
+            "url",
+            "dataset"
+          ],
+          "target": [
+            "text",
+            "rollout_results",
+            "score",
+            "int_score",
+            "token_count",
+            "language"
+          ]
+        }
+      },
+      {
+        "name": "NVIDIA Retrieval Synthetic NVDocs v1",
+        "family": "long_context",
+        "hf_id": "nvidia/Retrieval-Synthetic-NVDocs-v1",
+        "url": "https://huggingface.co/datasets/nvidia/Retrieval-Synthetic-NVDocs-v1",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "long_context",
+        "use_policy": "train",
+        "license": "CC-BY-4.0 with Llama 3.1/3.3 downstream redistribution notice for generated-data-trained models",
+        "license_tier": "attribution_with_model_license_notice",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Preserve chunks, question-answer supervision, document artifacts, and evaluation metadata for retrieval/RAG and long-context reward routing.",
+        "curriculum_axes": [
+          "retrieval",
+          "rag",
+          "long_context",
+          "document_chunks",
+          "multi_hop_qa"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "document_id"
+          ],
+          "prompt": [
+            "question",
+            "query",
+            "qa_generation",
+            "chunks"
+          ],
+          "target": [
+            "answer",
+            "relevant_passages",
+            "chunks",
+            "document_artifacts",
+            "qa_evaluations",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "ChartVerse SFT 1.8M",
+        "family": "omnimodal_understanding",
+        "hf_id": "opendatalab/ChartVerse-SFT-1800K",
+        "url": "https://huggingface.co/datasets/opendatalab/ChartVerse-SFT-1.8M",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "image",
+        "use_policy": "research_internal",
+        "license": "Apache-2.0 chart VLM SFT; keep VLM/document-style source out of train until chart benchmark overlap review clears",
+        "license_tier": "permissive_vlm_research_only",
+        "source_review_status": "vlm_document_research_only_2026_05_25",
+        "materialization_note": "Research-only chart VLM slice; do not promote into train until chart/image benchmark overlap and source-image handling are reviewed.",
+        "curriculum_axes": [
+          "chart_reasoning",
+          "programmatic_chart_synthesis",
+          "vlm_sft",
+          "document_visual_reasoning",
+          "research_only"
+        ],
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "prompt": [
+            "question",
+            "images",
+            "code"
+          ],
+          "target": [
+            "answer",
+            "code_solution",
+            "cot_solution",
+            "code"
+          ],
+          "media": [
+            "images"
+          ]
+        }
+      },
+      {
+        "name": "Microsoft World-R1",
+        "family": "video_generation",
+        "hf_id": "microsoft/World-R1",
+        "url": "https://huggingface.co/datasets/microsoft/World-R1",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "configs": [
+          "final",
+          "enhanced"
+        ],
+        "splits": [
+          "train",
+          "dynamic"
+        ],
+        "max_records": 2048,
+        "target_modality": "video",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Prompt-only text-to-video posttraining data; route test split separately if needed and keep train/dynamic prompts in generation curriculum.",
+        "curriculum_axes": [
+          "text_to_video",
+          "world_simulation",
+          "camera_motion",
+          "dynamic_scene_regularization",
+          "prompt_suite"
+        ],
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "prompt": [
+            "prompt"
+          ],
+          "target": [
+            "prompt",
+            "_hf_config",
+            "_hf_split"
+          ]
+        }
+      },
+      {
+        "name": "Rapidata Kling v2.1 Master T2V Preferences",
+        "family": "video_generation",
+        "hf_id": "Rapidata/text-2-video-human-preferences-kling-v2.1-master",
+        "url": "https://huggingface.co/datasets/Rapidata/text-2-video-human-preferences-kling-v2.1-master",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "video",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Use as video reward/preference data; preserve model names, weighted dimension scores, and detailed human-vote payloads.",
+        "curriculum_axes": [
+          "text_to_video_preference",
+          "video_reward_model",
+          "human_preference",
+          "alignment_coherence_preference",
+          "kling_v2_1"
+        ],
+        "field_map": {
+          "id": [
+            "file_name1",
+            "file_name2",
+            "prompt"
+          ],
+          "prompt": [
+            "prompt"
+          ],
+          "target": [
+            "weighted_results1_Preference",
+            "weighted_results2_Preference",
+            "weighted_results1_Alignment",
+            "weighted_results2_Alignment",
+            "weighted_results1_Coherence",
+            "weighted_results2_Coherence",
+            "detailedResults_Preference",
+            "detailedResults_Alignment",
+            "detailedResults_Coherence",
+            "model1",
+            "model2"
+          ],
+          "media": [
+            "video1",
+            "video2",
+            "file_name1",
+            "file_name2"
+          ]
+        }
+      },
+      {
+        "name": "DatapointAI TTS Human Preferences Large",
+        "family": "audio_music_speech",
+        "hf_id": "datapointai/tts-human-preferences-large",
+        "url": "https://huggingface.co/datasets/datapointai/tts-human-preferences-large",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2700,
+        "target_modality": "audio",
+        "use_policy": "research_internal",
+        "license": "CC-BY-4.0; gated/contact-share access conditions require local approval before train materialization",
+        "license_tier": "gated_attribution_review",
+        "source_review_status": "gated_reward_candidate_review_required_2026_05_25",
+        "materialization_note": "Strong TTS reward candidate with pairwise human labels; keep research-internal until gated-access approval and audio rights review are complete.",
+        "curriculum_axes": [
+          "tts_preference",
+          "audio_reward_model",
+          "human_preference",
+          "dpo",
+          "voice_quality"
+        ],
+        "field_map": {
+          "id": [
+            "prompt",
+            "audio_a_voice_id",
+            "audio_b_voice_id"
+          ],
+          "prompt": [
+            "prompt",
+            "strategy",
+            "strategy_detail"
+          ],
+          "target": [
+            "weighted_results_audio_a",
+            "weighted_results_audio_b",
+            "num_annotations",
+            "detailed_results",
+            "strategy",
+            "strategy_detail"
+          ],
+          "media": [
+            "audio_a",
+            "audio_b"
+          ]
+        }
       }
     ],
     "enabled": true,

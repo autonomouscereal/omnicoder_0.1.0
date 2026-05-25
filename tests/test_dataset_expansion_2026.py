@@ -1619,6 +1619,63 @@ def test_repo_dataset_registry_covers_eighteenth_wave_live_media_agent_sources()
         assert expansion.source_use_bucket(by_name[name]) == "research_internal"
 
 
+def test_repo_dataset_registry_covers_nineteenth_wave_trainable_reward_eval_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "nineteenth_wave_trainable_reward_eval_2026_05_25"
+
+    expected_policy = {
+        "NVIDIA Nemotron-SFT Agentic v2": "train",
+        "NVIDIA OpenCodeInstruct": "train",
+        "NVIDIA Nemotron-SFT OpenCode v1": "train",
+        "NVIDIA Nemotron-SFT Math v3": "train",
+        "FinePhrase": "train",
+        "NVIDIA Retrieval Synthetic NVDocs v1": "train",
+        "ChartVerse SFT 1.8M": "research_internal",
+        "Microsoft World-R1": "train",
+        "Rapidata Kling v2.1 Master T2V Preferences": "train",
+        "DatapointAI TTS Human Preferences Large": "research_internal",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    assert by_name["NVIDIA Nemotron-SFT Agentic v2"]["hf_id"] == "nvidia/Nemotron-SFT-Agentic-v2"
+    assert by_name["NVIDIA OpenCodeInstruct"]["hf_id"] == "nvidia/OpenCodeInstruct"
+    assert by_name["NVIDIA Nemotron-SFT OpenCode v1"]["hf_id"] == "nvidia/Nemotron-SFT-OpenCode-v1"
+    assert by_name["NVIDIA Nemotron-SFT Math v3"]["hf_id"] == "nvidia/Nemotron-SFT-Math-v3"
+    assert by_name["FinePhrase"]["hf_id"] == "HuggingFaceFW/finephrase"
+    assert by_name["NVIDIA Retrieval Synthetic NVDocs v1"]["hf_id"] == "nvidia/Retrieval-Synthetic-NVDocs-v1"
+    assert by_name["ChartVerse SFT 1.8M"]["hf_id"] == "opendatalab/ChartVerse-SFT-1800K"
+    assert by_name["Microsoft World-R1"]["configs"] == ["final", "enhanced"]
+    assert by_name["Rapidata Kling v2.1 Master T2V Preferences"]["hf_id"] == "Rapidata/text-2-video-human-preferences-kling-v2.1-master"
+    assert by_name["DatapointAI TTS Human Preferences Large"]["hf_id"] == "datapointai/tts-human-preferences-large"
+    assert "audio_b" in by_name["DatapointAI TTS Human Preferences Large"]["field_map"]["media"]
+    assert "images" in by_name["ChartVerse SFT 1.8M"]["field_map"]["media"]
+
+    train_names = {
+        "NVIDIA Nemotron-SFT Agentic v2",
+        "NVIDIA OpenCodeInstruct",
+        "NVIDIA Nemotron-SFT OpenCode v1",
+        "NVIDIA Nemotron-SFT Math v3",
+        "FinePhrase",
+        "NVIDIA Retrieval Synthetic NVDocs v1",
+        "Microsoft World-R1",
+        "Rapidata Kling v2.1 Master T2V Preferences",
+    }
+    for name in train_names:
+        assert by_name[name]["contamination_status"] == "clean"
+        assert by_name[name]["protected_benchmark_scan"] == "clean"
+        assert expansion.source_use_bucket(by_name[name]) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], {"prompt": "p", "answer": "a"}) == "train"
+
+    assert expansion.source_use_bucket(by_name["ChartVerse SFT 1.8M"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["DatapointAI TTS Human Preferences Large"]) == "research_internal"
+    assert "humair025/suno-audio" not in {str(entry.get("hf_id")) for entry in entries}
+
+
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))

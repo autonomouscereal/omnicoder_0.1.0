@@ -44,12 +44,10 @@
     "out_dir": "",
     "model": "Qwen/Qwen3-4B",
     "min_quality": 0.35,
-    "limit": 0,
-    "dry_run": true
+    "limit": 0
   },
   "sft_qlora": {
     "enabled": false,
-    "dry_run": true,
     "model": "Qwen/Qwen3-4B",
     "max_seq_len": 4096,
     "max_steps": 1000,

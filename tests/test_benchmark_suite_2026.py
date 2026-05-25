@@ -996,3 +996,32 @@ def test_run_reportable_requires_model_patch_not_oracle_patch(
     assert payload["status"] == "needs_data"
     assert result["status"] == "local_only"
     assert task_score["has_model_output"] is False
+
+
+def test_suite_profile_includes_nineteenth_wave_factuality_doc_agent_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    expected_gates = {
+        "factuality_simpleqa_verified_2026": "factuality_release",
+        "factuality_facts_grounding_2026": "factuality_release",
+        "agent_mc_search_mmrag_2026": "agent_tool_release",
+        "agent_metr_time_horizon_hcast_2026": "agent_tool_release",
+        "agent_agent2_rl_bench_2026": "agent_tool_release",
+        "agent_memgym_2026": "agent_tool_release",
+        "multimodal_ocrbench_v2_2026": "multimodal_understanding_release",
+        "multimodal_omnidocbench_2026": "multimodal_understanding_release",
+        "multimodal_cc_ocr_v2_2026": "multimodal_understanding_release",
+        "multimodal_real5_omnidocbench_2026": "multimodal_understanding_release",
+    }
+    for benchmark_id, gate in expected_gates.items():
+        assert benchmark_id in adapters
+        assert benchmark_id in suite["release_gates"][gate]
+        assert benchmark_id in suite["reportable_snapshots"]
+        assert benchmark_id in suite["reportable_task_roots"]
+
+    assert adapters["factuality_simpleqa_verified_2026"]["source"] == (
+        "https://huggingface.co/datasets/google/simpleqa-verified"
+    )
+    assert adapters["agent_mc_search_mmrag_2026"]["source"] == "https://mc-search-project.github.io/"
+    assert "document_vqa_accuracy" in adapters["multimodal_ocrbench_v2_2026"]["metrics"]

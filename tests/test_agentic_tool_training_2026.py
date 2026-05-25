@@ -114,6 +114,78 @@ def test_full_harness_default_includes_agentic_tool_stage() -> None:
     assert stages.index("export_sft") < stages.index("agentic_tool_training") < stages.index("teacher_jobs")
 
 
+def _capture_full_harness_commands(tmp_path: Path, monkeypatch, profile: dict, source: Path) -> list[list[str]]:
+    commands: list[list[str]] = []
+
+    def fake_run_command(cmd: list[str], log_path: Path, cwd: Path, env: dict | None = None) -> tuple[int, dict]:
+        commands.append(cmd)
+        return 0, {}
+
+    monkeypatch.setattr(full_harness_2026, "run_command", fake_run_command)
+    registry = full_harness_2026.JsonlRunRegistry(tmp_path / "registry")
+    run_id = "dry-run-hardening"
+    registry.create_run("test", "recipe", "profile", "preset", {}, run_id=run_id)
+    paths = full_harness_2026.ensure_dirs(tmp_path / "run")
+    current = {"sft": source}
+
+    full_harness_2026.execute_stage(
+        "agentic_tool_training",
+        run_id,
+        registry,
+        profile,
+        paths,
+        Path(__file__).resolve().parents[1],
+        current,
+        dry_run=False,
+    )
+    full_harness_2026.execute_stage(
+        "sft_qlora_bridge",
+        run_id,
+        registry,
+        profile,
+        paths,
+        Path(__file__).resolve().parents[1],
+        current,
+        dry_run=False,
+    )
+    return commands
+
+
+def test_full_harness_agentic_tool_and_qlora_live_by_default(tmp_path: Path, monkeypatch) -> None:
+    source = _write_jsonl(tmp_path / "train.jsonl", [{"messages": [{"role": "user", "content": "use a tool"}]}])
+    profile = {
+        "agentic_tool_training": {
+            "enabled": True,
+            "profile": "profiles/agentic_tool_training_2026.json",
+            "input_jsonl": str(source),
+        },
+        "sft_qlora": {"enabled": True},
+    }
+
+    agentic_cmd, qlora_cmd = _capture_full_harness_commands(tmp_path, monkeypatch, profile, source)
+
+    assert "--dry-run" not in agentic_cmd
+    assert "--dry_run" not in qlora_cmd
+
+
+def test_full_harness_preserves_explicit_stage_dry_run_flags(tmp_path: Path, monkeypatch) -> None:
+    source = _write_jsonl(tmp_path / "train.jsonl", [{"messages": [{"role": "user", "content": "use a tool"}]}])
+    profile = {
+        "agentic_tool_training": {
+            "enabled": True,
+            "profile": "profiles/agentic_tool_training_2026.json",
+            "input_jsonl": str(source),
+            "dry_run": True,
+        },
+        "sft_qlora": {"enabled": True, "dry_run": True},
+    }
+
+    agentic_cmd, qlora_cmd = _capture_full_harness_commands(tmp_path, monkeypatch, profile, source)
+
+    assert "--dry-run" in agentic_cmd
+    assert "--dry_run" in qlora_cmd
+
+
 def test_task_domains_detects_math_code_terminal_browser_tool() -> None:
     assert "math" in tooltrain.task_domains({"text": "Solve this latex equation and put the final answer in \\boxed{}."})
     assert "code" in tooltrain.task_domains({"text": "Run pytest after applying this def-based patch."})

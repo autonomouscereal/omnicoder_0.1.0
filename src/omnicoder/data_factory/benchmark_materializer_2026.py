@@ -138,6 +138,25 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "research",
         "splits": ["test", "validation"],
     },
+    "agent_mc_search_mmrag_2026": {
+        "source": "https://mc-search-project.github.io/",
+        "git": "https://github.com/YennNing/MC-Search.git",
+        "hf": [{"id": "YennNing/MC-Search", "splits": ["train", "test", "validation"]}],
+        "kind": "agent_tool_multimodal",
+        "splits": ["train", "test", "validation"],
+    },
+    "agent_metr_time_horizon_hcast_2026": {
+        "source": "https://metr.org/time-horizons/",
+        "kind": "agent_tool",
+    },
+    "agent_agent2_rl_bench_2026": {
+        "source": "https://www.microsoft.com/en-us/research/publication/agent2-rl-bench-can-llm-agents-engineer-agentic-rl-post-training/",
+        "kind": "agent_tool",
+    },
+    "agent_memgym_2026": {
+        "source": "https://arxiv.org/abs/2605.20833",
+        "kind": "agent_tool",
+    },
     "agent_theagentcompany_enterprise_2026": {
         "source": "https://github.com/TheAgentCompany/TheAgentCompany",
         "git": "https://github.com/TheAgentCompany/TheAgentCompany.git",
@@ -448,6 +467,18 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "snapshot_requires_operator_manifest": True,
         "kind": "reasoning",
     },
+    "factuality_simpleqa_verified_2026": {
+        "source": "https://huggingface.co/datasets/google/simpleqa-verified",
+        "hf": [{"id": "google/simpleqa-verified", "config": "simpleqa_verified", "splits": ["eval"]}],
+        "kind": "factuality",
+        "splits": ["eval"],
+    },
+    "factuality_facts_grounding_2026": {
+        "source": "https://huggingface.co/datasets/google/FACTS-grounding-public",
+        "hf": [{"id": "google/FACTS-grounding-public", "config": "examples", "splits": ["public"]}],
+        "kind": "factuality_grounding",
+        "splits": ["public"],
+    },
     "reasoning_maime2025_2026": {
         "source": "https://huggingface.co/datasets/LumiOpen/mAIME2025",
         "hf": ["LumiOpen/mAIME2025"],
@@ -625,6 +656,29 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         ],
         "kind": "document_ai",
         "splits": ["chart", "layout", "table", "text_content", "text_formatting"],
+    },
+    "multimodal_ocrbench_v2_2026": {
+        "source": "https://99franklin.github.io/ocrbench_v2/",
+        "git": "https://github.com/Yuliang-Liu/MultimodalOCR.git",
+        "hf": [{"id": "lmms-lab/OCRBench-v2", "splits": ["test", "validation", "train"]}],
+        "kind": "document_ai",
+        "splits": ["test", "validation", "train"],
+    },
+    "multimodal_omnidocbench_2026": {
+        "source": "https://github.com/opendatalab/OmniDocBench",
+        "git": "https://github.com/opendatalab/OmniDocBench.git",
+        "kind": "document_ai",
+    },
+    "multimodal_cc_ocr_v2_2026": {
+        "source": "https://github.com/Eioss/CC-OCR-V2",
+        "git": "https://github.com/Eioss/CC-OCR-V2.git",
+        "kind": "document_ai",
+    },
+    "multimodal_real5_omnidocbench_2026": {
+        "source": "https://huggingface.co/datasets/PaddlePaddle/Real5-OmniDocBench",
+        "hf": [{"id": "PaddlePaddle/Real5-OmniDocBench", "splits": ["train", "test", "validation"]}],
+        "kind": "document_ai",
+        "splits": ["train", "test", "validation"],
     },
     "multimodal_mme_unify_2026": {
         "source": "https://huggingface.co/datasets/wulin222/MME-Unify",

@@ -1,6 +1,5 @@
 {
   "agentic_tool_training": {
-    "dry_run": true,
     "enabled": true,
     "environment_rl_2026": {
       "async_generation": true,

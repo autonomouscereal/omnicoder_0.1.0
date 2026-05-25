@@ -192,6 +192,17 @@ OmniGenBench for broad image-generation instruction following. BFCL v4 is also
 mirrored into the dataset curation registry as an eval-only function-calling
 source. These are release gates, not training-answer feeds.
 
+The nineteenth-wave additions harden the release gates that were still too
+thin for factuality, document understanding, and autonomous multimodal agents.
+SimpleQA Verified and FACTS Grounding create a separate factuality release gate;
+MC-Search, METR Time Horizons/HCAST, Agent^2 RL-Bench, and MemGym extend the
+agent-tool gate toward multimodal search, time-horizon forecasting, RL
+posttraining engineering, and memory stress tests; OCRBench v2, OmniDocBench,
+CC-OCR-V2, and Real5-OmniDocBench extend the multimodal-understanding gate for
+OCR, layout, table, chart, and real-scene document robustness. Public-dev rows
+may feed regression and realignment; reportable claims still require the
+authorized snapshot roots declared in the profile.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \

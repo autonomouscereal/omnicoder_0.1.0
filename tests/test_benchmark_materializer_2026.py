@@ -1098,9 +1098,15 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "agent_webbench_2026",
         "agent_clawbench_browser_2026",
         "agent_browsecomp_long_context_2026",
+        "agent_mc_search_mmrag_2026",
+        "agent_metr_time_horizon_hcast_2026",
+        "agent_agent2_rl_bench_2026",
+        "agent_memgym_2026",
         "agent_theagentcompany_enterprise_2026",
         "agent_paperbench_2026",
         "agent_gdpval_2026",
+        "factuality_simpleqa_verified_2026",
+        "factuality_facts_grounding_2026",
         "reasoning_arc_agi2_2026",
         "reasoning_arc_agi3_2026",
         "coding_swe_lancer_2026",
@@ -1173,6 +1179,10 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "long_context_officeqa_2026",
         "multimodal_audiomcq_strongac_2026",
         "multimodal_parsebench_2026",
+        "multimodal_ocrbench_v2_2026",
+        "multimodal_omnidocbench_2026",
+        "multimodal_cc_ocr_v2_2026",
+        "multimodal_real5_omnidocbench_2026",
         "multimodal_smmbench_2026",
         "multimodal_vimul_bench_2026",
     }
@@ -1207,6 +1217,11 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["multimodal_mme_unify_2026"]["hf"][0]["id"] == "wulin222/MME-Unify"
     assert materializer.KNOWN_BENCHMARKS["generation_long_tts_eval_2026"]["hf"][0]["id"] == "wcy1122/Long-TTS-Eval"
     assert materializer.KNOWN_BENCHMARKS["agent_livemcpbench_2026"]["hf"] == ["ICIP/LiveMCPBench"]
+    assert materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"]["hf"][0]["id"] == "YennNing/MC-Search"
+    assert materializer.KNOWN_BENCHMARKS["agent_metr_time_horizon_hcast_2026"]["source"] == "https://metr.org/time-horizons/"
+    assert materializer.KNOWN_BENCHMARKS["agent_memgym_2026"]["source"] == "https://arxiv.org/abs/2605.20833"
+    assert materializer.KNOWN_BENCHMARKS["factuality_simpleqa_verified_2026"]["hf"][0]["config"] == "simpleqa_verified"
+    assert materializer.KNOWN_BENCHMARKS["factuality_facts_grounding_2026"]["hf"][0]["config"] == "examples"
     assert materializer.KNOWN_BENCHMARKS["agent_sra_bench_2026"]["hf"][0]["id"] == "WeihangSu/SRA-Bench"
     assert materializer.KNOWN_BENCHMARKS["agent_skillret_2026"]["hf"][0]["config"] == "queries"
     assert materializer.KNOWN_BENCHMARKS["long_context_memoryagentbench_2026"]["hf"][0]["id"] == "ai-hyz/MemoryAgentBench"
@@ -1261,6 +1276,14 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["multimodal_audiomcq_strongac_2026"]["hf"][0]["id"] == "Harland/AudioMCQ-StrongAC-GeminiCoT"
     assert materializer.KNOWN_BENCHMARKS["multimodal_parsebench_2026"]["hf"][0]["id"] == "llamaindex/ParseBench"
     assert "table" in materializer.KNOWN_BENCHMARKS["multimodal_parsebench_2026"]["splits"]
+    assert materializer.KNOWN_BENCHMARKS["multimodal_ocrbench_v2_2026"]["hf"][0]["id"] == "lmms-lab/OCRBench-v2"
+    assert materializer.KNOWN_BENCHMARKS["multimodal_omnidocbench_2026"]["git"] == (
+        "https://github.com/opendatalab/OmniDocBench.git"
+    )
+    assert materializer.KNOWN_BENCHMARKS["multimodal_cc_ocr_v2_2026"]["git"] == "https://github.com/Eioss/CC-OCR-V2.git"
+    assert materializer.KNOWN_BENCHMARKS["multimodal_real5_omnidocbench_2026"]["hf"][0]["id"] == (
+        "PaddlePaddle/Real5-OmniDocBench"
+    )
     smmbench = materializer.KNOWN_BENCHMARKS["multimodal_smmbench_2026"]["hf"][0]
     assert smmbench["id"] == "HuacanChai/SMMBench"
     assert smmbench["revision"] == "d19ef39f8b73cea533ad34532c6ba9a70637ea25"

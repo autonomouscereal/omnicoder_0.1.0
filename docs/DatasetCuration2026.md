@@ -156,6 +156,15 @@ Current high-value registry families:
   clear. FineVision materialization is pinned to the DoclingMatix subset, and
   LightOnOCR is pinned to its `pdfa_train` split with `content` mapped as the
   OCR target.
+- Nineteenth-wave May 25, 2026 additions prioritize trainable SFT/reward data:
+  Nemotron-SFT-Agentic-v2, OpenCodeInstruct, Nemotron-SFT-OpenCode-v1,
+  Nemotron-SFT-Math-v3, FinePhrase, Retrieval-Synthetic-NVDocs-v1,
+  World-R1, and Rapidata Kling v2.1 text-to-video preferences are train-eligible
+  with clean scan metadata. ChartVerse-SFT-1.8M is kept research-internal as a
+  VLM/chart/document source until benchmark-overlap review clears it, and
+  DatapointAI TTS human preferences stay research-internal until gated access
+  and audio-rights review clear train promotion. `humair025/suno-audio` is not
+  registered.
 - Math/reasoning second wave: R-HORIZON, Reasoning Core formal-reasoning
   environments, UniRRM-RL, Nemotron Math Proofs, UltraData-Math, GLM-5.1
   reasoning traces, MathVision, Nemotron RL super blends, Nemotron 3 Nano RL

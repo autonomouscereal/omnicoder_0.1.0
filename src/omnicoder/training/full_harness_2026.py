@@ -251,7 +251,7 @@ def execute_stage(
             "--min-quality", str(float(tool_cfg.get("min_quality") or data_cfg.get("min_quality") or 0.0)),
             "--limit", str(int(tool_cfg.get("limit") or 0)),
         ]
-        if _as_bool(tool_cfg.get("dry_run", True)):
+        if _as_bool(tool_cfg.get("dry_run", False)):
             cmd.append("--dry-run")
         current["agentic_tool_manifest"] = manifest
         current["agentic_tool_sft"] = out_dir / "tool_sft.jsonl"
@@ -308,7 +308,7 @@ def execute_stage(
             cmd.append("--packing")
         if _as_bool(qlora_cfg.get("assistant_only_loss", True)):
             cmd.append("--assistant_only_loss")
-        if _as_bool(qlora_cfg.get("dry_run", True)):
+        if _as_bool(qlora_cfg.get("dry_run", False)):
             cmd.append("--dry_run")
         current["sft_qlora_manifest"] = manifest
     elif stage == "native_train":
