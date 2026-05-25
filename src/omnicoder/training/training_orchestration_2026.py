@@ -2639,6 +2639,17 @@ def distributed_training_plan(cfg: dict[str, Any], args: argparse.Namespace | No
         placement_devices = ",".join(str(item) for item in placement_devices_value)
     else:
         placement_devices = str(placement_devices_value)
+    normalized_mode = mode.lower().replace("-", "_")
+    if normalized_mode in {"pipeline", "pipeline_stage", "pipelined"}:
+        rank_parts = ",".join(part.strip() for part in rank_device_map.split(",") if part.strip())
+        placement_parts = ",".join(part.strip() for part in placement_devices.split(",") if part.strip())
+        if not rank_parts and placement_parts:
+            rank_device_map = placement_parts
+        elif rank_parts and placement_parts and rank_parts != placement_parts:
+            raise ValueError(
+                "pipeline_stage placement_devices must match rank_device_map when both are set; "
+                f"got placement_devices={placement_parts!r} rank_device_map={rank_parts!r}"
+            )
     placement_layer_counts_value = arg_value(args, "placement_layer_counts", "") or distributed.get("placement_layer_counts") or plan.get("placement_layer_counts") or ""
     if isinstance(placement_layer_counts_value, list):
         placement_layer_counts = ",".join(str(item) for item in placement_layer_counts_value)

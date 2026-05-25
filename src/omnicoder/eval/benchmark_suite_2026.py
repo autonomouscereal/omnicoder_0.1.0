@@ -644,12 +644,16 @@ def attach_snapshot_metadata(row: dict[str, Any], descriptor: dict[str, Any] | N
         ("official_snapshot_id", "official_snapshot_id"),
         ("authorized_snapshot_id", "authorized_snapshot_id"),
         ("snapshot_sha256", "snapshot_sha256"),
+        ("task_file_sha256", "task_file_sha256"),
+        ("official_task_sha256", "official_task_sha256"),
+        ("manifest_sha256", "manifest_sha256"),
         ("dataset_revision", "dataset_revision"),
         ("task_revision", "task_revision"),
         ("source", "source"),
         ("dataset_source", "dataset_source"),
         ("authorization_ref", "authorization_ref"),
         ("license_ref", "license_ref"),
+        ("official_scorer_ref", "official_scorer_ref"),
         ("split", "split"),
     ):
         value = descriptor.get(src)
@@ -736,6 +740,16 @@ def task_has_reportable_metadata(task: dict[str, Any]) -> bool:
         or task.get("dataset_snapshot")
         or ""
     ).strip()
+    source_hash = str(
+        task.get("snapshot_sha256")
+        or task.get("task_file_sha256")
+        or task.get("official_task_sha256")
+        or task.get("manifest_sha256")
+        or task.get("source_sha256")
+        or ""
+    ).strip()
+    license_ref = str(task.get("license_ref") or "").strip()
+    scorer_ref = str(task.get("official_scorer_ref") or "").strip()
     authorization = str(
         task.get("snapshot_authorization")
         or task.get("authorization")
@@ -754,7 +768,11 @@ def task_has_reportable_metadata(task: dict[str, Any]) -> bool:
         "official_or_authorized_current_release",
     }
     has_revision = revision.lower() not in {"", "unknown", "none", "null"}
-    return bool(source) and has_revision and bool(snapshot) and authorization in authorized_values
+    placeholder_hashes = {"", "unknown", "none", "null", "<operator_supplied_sha256>", "operator_required"}
+    has_hash = source_hash.lower() not in placeholder_hashes and not source_hash.lower().startswith("operator_required")
+    has_license = license_ref.lower() not in {"", "unknown", "none", "null"}
+    has_scorer = scorer_ref.lower() not in {"", "unknown", "none", "null"}
+    return bool(source) and has_revision and bool(snapshot) and has_hash and has_license and has_scorer and authorization in authorized_values
 
 
 def task_has_model_output(task: dict[str, Any], prediction: Any) -> bool:

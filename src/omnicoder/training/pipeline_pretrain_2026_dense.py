@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime
 import json
 import math
 import os
@@ -510,6 +511,22 @@ def _validate_resume_payload(
     if bool(getattr(args, "require_target_contract", False)) and saved_name and saved_name != TARGET_PRESET:
         raise ValueError(f"target contract resume requires {TARGET_PRESET!r}, got checkpoint preset {saved_name!r}")
     train_args = checkpoint.get("train_args") if isinstance(checkpoint.get("train_args"), dict) else {}
+    current_placement_counts = str(getattr(args, "placement_layer_counts", "") or "").strip()
+    saved_placement_counts = str(train_args.get("placement_layer_counts") or "").strip()
+    if not saved_placement_counts:
+        saved_ranges = str(train_args.get("pipeline_stage_ranges") or "").strip()
+        try:
+            parsed_ranges = [
+                tuple(int(part.strip()) for part in segment.split(":", 1))
+                for segment in saved_ranges.split(",")
+                if segment.strip()
+            ]
+            if parsed_ranges:
+                saved_placement_counts = ",".join(str(end - start) for start, end in parsed_ranges)
+        except Exception:
+            saved_placement_counts = ""
+    if sharded and current_placement_counts and saved_placement_counts and current_placement_counts != saved_placement_counts:
+        placement_changed = True
     for key in ("pipeline_stage_ranges", "placement_layer_counts", "pipeline_microbatches", "pipeline_schedule", "fake_quant"):
         saved = train_args.get(key)
         if saved is None or saved == "":
@@ -820,19 +837,35 @@ def _pipeline_telemetry_record(
         "reserved_bytes": 0,
         "max_allocated_bytes": 0,
         "max_reserved_bytes": 0,
+        "free_bytes": 0,
+        "total_bytes": 0,
     }
     device_name = str(device)
+    device_capability = None
     if cuda_active:
         memory = {
             "allocated_bytes": int(torch.cuda.memory_allocated(device)),
             "reserved_bytes": int(torch.cuda.memory_reserved(device)),
             "max_allocated_bytes": int(torch.cuda.max_memory_allocated(device)),
             "max_reserved_bytes": int(torch.cuda.max_memory_reserved(device)),
+            "free_bytes": 0,
+            "total_bytes": 0,
         }
         try:
             device_name = str(torch.cuda.get_device_name(device))
         except Exception:
             device_name = str(device)
+        try:
+            free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+            memory["free_bytes"] = int(free_bytes)
+            memory["total_bytes"] = int(total_bytes)
+        except Exception:
+            pass
+        try:
+            capability = torch.cuda.get_device_capability(device)
+            device_capability = [int(capability[0]), int(capability[1])]
+        except Exception:
+            device_capability = None
     stage_infos = [
         {
             "stage_index": index,
@@ -851,8 +884,11 @@ def _pipeline_telemetry_record(
         "device_type": str(device.type),
         "device_index": device_index,
         "device_name": device_name,
+        "device_capability": device_capability,
         "cuda_available": bool(torch.cuda.is_available()),
         "cuda_active": cuda_active,
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+        "local_rank": int(os.environ.get("LOCAL_RANK", rank) or rank),
         **memory,
         "seq_len": int(seq_len),
         "step": int(step),
@@ -1163,6 +1199,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkpoint_sync_backend", default=os.getenv("OMNICODER2026_CHECKPOINT_SYNC_BACKEND", "filesystem"), choices=["filesystem", "barrier"])
     parser.add_argument("--checkpoint_marker_timeout_seconds", type=float, default=float(os.getenv("OMNICODER2026_CHECKPOINT_MARKER_TIMEOUT_SECONDS", "7200") or 7200))
     parser.add_argument("--checkpoint_marker_poll_seconds", type=float, default=float(os.getenv("OMNICODER2026_CHECKPOINT_MARKER_POLL_SECONDS", "2") or 2))
+    parser.add_argument("--dist_timeout_seconds", type=float, default=float(os.getenv("OMNICODER2026_DIST_TIMEOUT_SECONDS", "3600") or 3600))
     args = parser.parse_args(argv)
 
     if int(args.fake_quant_chunk_rows or 0) > 0:
@@ -1171,7 +1208,7 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["OMNICODER2026_FAKE_QUANT_MAX_FULL_ELEMENTS"] = str(int(args.fake_quant_max_full_elements))
     if not dist.is_initialized():
         backend = "nccl" if torch.cuda.is_available() else "gloo"
-        dist.init_process_group(backend=backend)
+        dist.init_process_group(backend=backend, timeout=datetime.timedelta(seconds=float(args.dist_timeout_seconds)))
     rank = int(dist.get_rank())
     world_size = int(dist.get_world_size())
     device = rank_device(rank, args.rank_device_map)

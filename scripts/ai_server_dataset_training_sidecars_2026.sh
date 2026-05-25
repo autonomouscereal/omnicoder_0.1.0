@@ -413,7 +413,7 @@ p40_teacher_rollouts() {
   log "launch P40 teacher rollouts"
   local pids=()
   if [[ -s "$job_dir/shard_gpu1.jsonl" ]]; then
-    "$PYTHON_BIN" -m omnicoder.data_factory.openai_teacher_rollout_2026 \
+    CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" -m omnicoder.data_factory.openai_teacher_rollout_2026 \
       --input "$job_dir/shard_gpu1.jsonl" \
       --out "$out_dir/qwen36_gpu1.jsonl" \
       --base-url http://127.0.0.1:18084/v1 \
@@ -426,7 +426,7 @@ p40_teacher_rollouts() {
     pids+=("$!")
   fi
   if [[ -s "$job_dir/shard_gpu2.jsonl" ]]; then
-    "$PYTHON_BIN" -m omnicoder.data_factory.openai_teacher_rollout_2026 \
+    CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" -m omnicoder.data_factory.openai_teacher_rollout_2026 \
       --input "$job_dir/shard_gpu2.jsonl" \
       --out "$out_dir/qwen36_gpu2.jsonl" \
       --base-url http://127.0.0.1:18082/v1 \
@@ -439,7 +439,7 @@ p40_teacher_rollouts() {
     pids+=("$!")
   fi
   if [[ -s "$job_dir/shard_gpu3.jsonl" ]]; then
-    "$PYTHON_BIN" -m omnicoder.data_factory.openai_teacher_rollout_2026 \
+    CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" -m omnicoder.data_factory.openai_teacher_rollout_2026 \
       --input "$job_dir/shard_gpu3.jsonl" \
       --out "$out_dir/qwen36_gpu3.jsonl" \
       --base-url http://127.0.0.1:18085/v1 \

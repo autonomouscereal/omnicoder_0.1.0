@@ -34,6 +34,14 @@ parameter count. The staged AI-server job defaults to `ledger_probe` because it
 is the full-330k-token-ledger learning verifier used before scaling; it must not
 be reported as the production-size model.
 
+For the fast-card 20B lane, host GPUs `0,4,6` are exposed to the container as
+ranks `0,1,2`; P40s stay out of the synchronous pipeline stage. The pipeline
+trainer now accepts `OMNICODER2026_DIST_TIMEOUT_SECONDS` for long startup and
+first-collective phases, and telemetry records per-rank free/total VRAM,
+device capability, visible-device mapping, and local rank. OpenAI-compatible
+teacher rollout jobs are launched as HTTP clients with `CUDA_VISIBLE_DEVICES=""`
+so P40 service processes, not rollout clients, own GPU memory.
+
 ## Orchestration Ladder
 
 1. Collect immutable 2025-2026 traces and media manifests.

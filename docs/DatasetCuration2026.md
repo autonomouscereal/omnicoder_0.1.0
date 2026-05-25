@@ -401,6 +401,13 @@ form OCR, FinePDFs English for PDF-derived long-context text, and HelpSteer3 as
 reward-only attribution data. The train bucket remains fail-closed on unsafe
 license markers, synthetic-only rows, and contamination status.
 
+The twenty-fourth-wave registry slice extends the live agentic/code/browser
+lane with Aureth Agent SFT Curriculum, AFM CodeAgent SFT, LiteCoder Terminal RL
+Preview, LiteCoder Terminal World Model SFT, and LexBench Browser. The train
+bucket only accepts reviewed permissive rows; terminal world-model rows remain
+research-internal until the license scan is complete, and LexBench Browser is
+kept as eval holdout to avoid browser-benchmark contamination.
+
 ## Quality And Safety
 
 The curation layer stores scores instead of only dropping rows. It tracks

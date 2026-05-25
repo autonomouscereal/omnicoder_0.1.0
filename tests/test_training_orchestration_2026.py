@@ -5,6 +5,8 @@ import argparse
 import os
 from pathlib import Path
 
+import pytest
+
 import omnicoder.training.training_orchestration_2026 as orch
 
 
@@ -324,6 +326,37 @@ def test_pipeline_stage_launcher_uses_torchrun_without_dense_only_flags():
     assert cmd[cmd.index("--placement_layer_counts") + 1] == "16,16,32"
     assert cmd[cmd.index("--pipeline_schedule") + 1] == "gpipe"
     assert cmd[cmd.index("--pipeline_microbatches") + 1] == "1"
+
+
+def test_pipeline_stage_uses_placement_devices_as_rank_map_alias():
+    cfg = {
+        "training_plan": {
+            "distributed_training": {
+                "mode": "pipeline_stage",
+                "nproc_per_node": 3,
+                "placement_devices": ["0", "1", "2"],
+                "placement_layer_counts": [16, 16, 32],
+            }
+        }
+    }
+    plan = orch.distributed_training_plan(cfg, _runtime_args())
+    assert plan["rank_device_map"] == "0,1,2"
+
+
+def test_pipeline_stage_rejects_mismatched_rank_and_placement_devices():
+    cfg = {
+        "training_plan": {
+            "distributed_training": {
+                "mode": "pipeline_stage",
+                "nproc_per_node": 3,
+                "rank_device_map": ["0", "1", "2"],
+                "placement_devices": ["0", "2", "1"],
+                "placement_layer_counts": [16, 16, 32],
+            }
+        }
+    }
+    with pytest.raises(ValueError, match="placement_devices must match rank_device_map"):
+        orch.distributed_training_plan(cfg, _runtime_args())
 
 
 def test_checkpoint_complete_marker_supports_sharded_directories(tmp_path):

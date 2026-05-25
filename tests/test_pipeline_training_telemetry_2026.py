@@ -51,6 +51,9 @@ def test_pipeline_telemetry_cpu_fallback_writes_jsonl(tmp_path, monkeypatch) -> 
     assert record["reserved_bytes"] == 0
     assert record["max_allocated_bytes"] == 0
     assert record["max_reserved_bytes"] == 0
+    assert record["free_bytes"] == 0
+    assert record["total_bytes"] == 0
+    assert record["device_capability"] is None
     assert record["seq_len"] == 128
     assert record["step"] == 7
     assert record["placement_layer_counts"] == [1, 2]
@@ -67,7 +70,11 @@ def test_pipeline_telemetry_records_cuda_memory_and_ranked_path(tmp_path, monkey
     monkeypatch.setattr(pipeline.torch.cuda, "memory_reserved", lambda current: 22)
     monkeypatch.setattr(pipeline.torch.cuda, "max_memory_allocated", lambda current: 33)
     monkeypatch.setattr(pipeline.torch.cuda, "max_memory_reserved", lambda current: 44)
+    monkeypatch.setattr(pipeline.torch.cuda, "mem_get_info", lambda current: (55, 66))
+    monkeypatch.setattr(pipeline.torch.cuda, "get_device_capability", lambda current: (8, 6))
     monkeypatch.setattr(pipeline.torch.cuda, "get_device_name", lambda current: "Mock CUDA")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,4,6")
+    monkeypatch.setenv("LOCAL_RANK", "2")
 
     record = pipeline._pipeline_telemetry_record(
         args=args,
@@ -91,6 +98,11 @@ def test_pipeline_telemetry_records_cuda_memory_and_ranked_path(tmp_path, monkey
     assert record["reserved_bytes"] == 22
     assert record["max_allocated_bytes"] == 33
     assert record["max_reserved_bytes"] == 44
+    assert record["free_bytes"] == 55
+    assert record["total_bytes"] == 66
+    assert record["device_capability"] == [8, 6]
+    assert record["cuda_visible_devices"] == "0,4,6"
+    assert record["local_rank"] == 2
     assert record["stage_index"] == 2
     assert record["layer_count"] == 4
     assert record["has_head"] is True

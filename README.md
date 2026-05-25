@@ -28,9 +28,12 @@ sharded checkpoints. The fast-card AI-server profile maps host GPUs `0,4,6` to
 container ranks `0,1,2` with `16,16,32` layer placement, keeping the largest
 shard and final head on the RTX 8000 without the failed 34-layer recompute
 spike. P40s are sidecars for teacher rollout,
-probe jobs, and curation, not synchronous 20B target shards. Reportable
-benchmark gates now require authorized snapshot metadata and separate model
-outputs; smoke/contract fixtures are explicitly local-only.
+probe jobs, and curation, not synchronous 20B target shards. OpenAI-compatible
+teacher rollout sidecars run as HTTP clients with `CUDA_VISIBLE_DEVICES=""`,
+so they do not pin stray tensors on P40s or collide with model servers.
+Reportable benchmark gates now require authorized snapshot metadata,
+task-file hashes, license references, official scorer references, and separate
+model outputs; smoke/contract fixtures are explicitly local-only.
 
 The canonical fast-card launcher now defaults to `run-full`, not the narrower
 `run-real` lane. Production runs can widen heldout and benchmark sample-loss
@@ -100,6 +103,12 @@ chunks, and passes `OMNICODER2026_LM_LOSS_CHUNK_TOKENS=64` into Docker to trim
 final-head transient logits. `OMNICODER2026_FFN_CHUNK_TOKENS=256` chunks the
 SwiGLU sequence path during fake-quant recompute so 2048-token posttraining
 does not build full intermediate FFN activations on the final rank.
+Distributed pipeline initialization also accepts
+`OMNICODER2026_DIST_TIMEOUT_SECONDS` so a full-size shard load and first NCCL
+collective can survive long startup phases instead of tripping the default
+short watchdog before the first loss point is recorded. Pipeline telemetry
+records per-rank free/total VRAM, CUDA capability, `CUDA_VISIBLE_DEVICES`, and
+`LOCAL_RANK` for run audits.
 
 Long-context-only recovery is also first-class. Use
 `training-orchestration-2026 run-long-context` or
@@ -347,12 +356,15 @@ right teacher family instead of the P40 text/tool rollout path.
 Official/protected benchmark rows remain release-gate evidence only; missing
 official metadata now produces `local_only` benchmark results instead of being
 misreported as public leaderboard quality.
-The benchmark profile now also carries a nineteenth-wave factuality/document/
-agentic-search expansion: SimpleQA Verified, FACTS Grounding, MC-Search,
-METR/HCAST, Agent^2 RL-Bench, MemGym, OCRBench v2, OmniDocBench, CC-OCR-V2,
-and Real5-OmniDocBench. These are wired into reportable snapshot roots first,
-with public-dev materialization used only for regression and training
-realignment.
+The benchmark profile now also carries a reportable-core hardening pass:
+MathArena keeps math reasoning represented inside the 25-task release gate, and
+TerminalWorld-style parquet/materialized task roots are supported as local
+regression rows until authorized release snapshots are supplied.
+
+The latest dataset registry wave adds train/eval coverage for Aureth Agent SFT
+Curriculum, AFM CodeAgent SFT, LiteCoder Terminal RL Preview, LiteCoder
+Terminal World Model SFT, and LexBench Browser. Train promotion remains
+license- and contamination-gated; browser benchmark rows remain eval holdout.
 
 ## Why This Exists
 

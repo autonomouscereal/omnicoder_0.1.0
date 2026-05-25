@@ -169,6 +169,8 @@ def test_openai_teacher_rollout_expands_multidevice_job(tmp_path, monkeypatch):
         assert command[command.index("--out") + 1].endswith(f"qwen36_gpu{device}.jsonl")
         assert command[command.index("--thermal-gpu-index") + 1] == device
         assert "--resume" in command
+        env = sidecar.launch_env(job, profile)
+        assert env["CUDA_VISIBLE_DEVICES"] == ""
 
 
 def test_dry_run_launch_writes_manifest_without_spawning_heavy_jobs(tmp_path, monkeypatch):

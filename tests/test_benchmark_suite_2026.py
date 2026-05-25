@@ -364,6 +364,18 @@ def test_suite_profile_includes_sixteenth_wave_video_gui_av_and_edit_gates() -> 
     assert adapters["long_context_loft_2026"]["source"] == "https://github.com/google-deepmind/loft"
 
 
+def test_reportable_core25_keeps_math_and_hash_license_requirements() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    core25 = suite["reportable_core_25"]
+    requirements = set(suite["reportability_policy"]["reportable_score_requires"])
+
+    assert len(core25) == 25
+    assert "reasoning_matharena_2026" in core25
+    assert "snapshot_sha256_or_task_file_sha256" in requirements
+    assert "license_ref" in requirements
+    assert "official_scorer_ref" in requirements
+
+
 def test_suite_profile_includes_seventeenth_wave_feature_and_generation_gates() -> None:
     suite = runner.load_profile(runner.DEFAULT_PROFILE)
     adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
@@ -613,6 +625,8 @@ def _reportable_profile(tmp_path: Path) -> tuple[Path, Path]:
             "snapshot_authorization": "authorized_private",
             "snapshot_sha256": "sha256:arc-agi3-smoke",
             "authorization_ref": "internal-authorized-eval-ledger",
+            "license_ref": "authorized-eval-ledger:arc-agi3",
+            "official_scorer_ref": "arc-agi3-official-scorer-2026",
             "source": "https://arcprize.org/arc-agi/3",
             "reportable": True,
             "success": True,
@@ -628,6 +642,8 @@ def _reportable_profile(tmp_path: Path) -> tuple[Path, Path]:
             "snapshot_authorization": "authorized_private",
             "snapshot_sha256": "sha256:swe-live-smoke",
             "authorization_ref": "internal-authorized-eval-ledger",
+            "license_ref": "authorized-eval-ledger:swe-live",
+            "official_scorer_ref": "swe-bench-live-official-eval-2026",
             "source": "https://arxiv.org/abs/2505.23419",
             "reportable": True,
             "patch": "diff --git a/a.py b/a.py",
@@ -643,6 +659,8 @@ def _reportable_profile(tmp_path: Path) -> tuple[Path, Path]:
             "snapshot_authorization": "authorized_private",
             "snapshot_sha256": "sha256:mmmu-pro-smoke",
             "authorization_ref": "internal-authorized-eval-ledger",
+            "license_ref": "authorized-eval-ledger:mmmu-pro",
+            "official_scorer_ref": "mmmu-pro-official-eval-2026",
             "source": "https://mmmu-benchmark.github.io/",
             "reportable": True,
             "question": "Which option matches the diagram?",
@@ -769,6 +787,41 @@ def test_run_reportable_rejects_reportable_true_without_authorized_snapshot(
     assert result["score_json"]["reportable_score"] is False
 
 
+def test_run_reportable_rejects_missing_license_and_scorer_metadata(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    profile_path, tasks = _reportable_profile(tmp_path)
+    rows = _jsonl_rows(tasks)
+    rows[0].pop("license_ref")
+    rows[0].pop("official_scorer_ref")
+    tasks.write_text(json.dumps(rows[0]) + "\n", encoding="utf-8")
+
+    assert (
+        runner.main(
+            [
+                "--profile",
+                str(profile_path),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "run-reportable",
+                "--adapter",
+                "reasoning_arc_agi3_2026",
+                "--tasks",
+                str(tasks),
+                "--run-id",
+                "missing-license-scorer-fixture",
+            ]
+        )
+        == 0
+    )
+
+    payload = _json_from_stdout(capsys)
+    result = _jsonl_rows(Path(payload["results"]))[0]
+    assert payload["status"] == "needs_data"
+    assert result["status"] == "local_only"
+    assert result["score_json"]["reportable_score"] is False
+
+
 def test_run_reportable_accepts_authorized_snapshot_descriptor(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -785,6 +838,8 @@ def test_run_reportable_accepts_authorized_snapshot_descriptor(
             "snapshot_authorization": "authorized_private",
             "snapshot_sha256": "sha256:descriptor",
             "authorization_ref": "authorized-eval-ledger",
+            "license_ref": "authorized-eval-ledger:arc-agi3",
+            "official_scorer_ref": "arc-agi3-official-scorer-2026",
             "dataset_revision": "arc-agi3-authorized-2026-05",
             "source": "https://arcprize.org/arc-agi/3",
             "task_root": str(tasks),

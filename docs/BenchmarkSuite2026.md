@@ -74,13 +74,21 @@ has run.
 Reportable mode is stricter than smoke. A task row must come from an official or
 explicitly authorized snapshot descriptor in `reportable_snapshots`, or carry
 task-level `snapshot_id`, `snapshot_authorization`, source, and revision
-metadata itself. Oracle-only rows are local-only: ARC/SWE/MMMU style task files
-must include a separate model output, patch, action trajectory, tool call, or
+metadata itself. It must also carry a non-placeholder snapshot/task hash,
+license reference, and official scorer reference before a score can be marked
+reportable. Oracle-only rows are local-only: ARC/SWE/MMMU style task files must
+include a separate model output, patch, action trajectory, tool call, or
 artifact prediction, or the runner marks the score `local_only` even when the
 gold fields are present. The training checkpoint gate writes
 `checkpoint_predictions.jsonl` from explicit model/eval-adapter outputs and
 passes it to `run-reportable`; missing authorized snapshots still fail closed
 under the default `missing_reportable_policy`.
+
+The `reportable_core_25` gate intentionally keeps a live math reasoning slot
+through `reasoning_matharena_2026` rather than using deployment-only checks to
+fill the suite. Deployment latency, q4, GGUF, and native-1M context checks stay
+in the release profile, but leaderboard-style claims require task hashes,
+license/scorer metadata, and separate model predictions.
 
 ### Benchmark Materialization
 

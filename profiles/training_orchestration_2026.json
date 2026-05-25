@@ -321,6 +321,7 @@
           "http://127.0.0.1:18082/v1",
           "http://127.0.0.1:18085/v1"
         ],
+        "cuda_visible_devices": "",
         "device": "1,2,3",
         "enabled": true,
         "job_id": "p40_qwen36_agentic_math_code_teacher_rollouts",
@@ -992,7 +993,7 @@
         "4",
         "6"
       ],
-      "main_gpu_policy": "PipelineStage torchrun inside a container exposing host GPUs 0,4,6 only: container rank 0 maps to RTX 3090 with 16 layers, rank 1 maps to RTX 3090 with 14 layers, and rank 2 maps to RTX 8000 with 34 layers plus norm/output head. P40s stay out of the synchronous target path and run asynchronous sidecar jobs after the target path is stable.",
+      "main_gpu_policy": "PipelineStage torchrun inside a container exposing host GPUs 0,4,6 only: container rank 0 maps to RTX 3090 with 16 layers, rank 1 maps to RTX 3090 with 16 layers, and rank 2 maps to RTX 8000 with 32 layers plus norm/output head. P40s stay out of the synchronous target path and run asynchronous sidecar jobs after the target path is stable.",
       "mode": "pipeline_stage",
       "nproc_per_node": 3,
       "optimizer": "adafactor",

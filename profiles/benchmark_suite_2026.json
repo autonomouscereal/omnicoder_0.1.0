@@ -6708,6 +6708,9 @@
       "task_jsonl_with_oracle",
       "dataset_revision_or_task_revision",
       "source_or_dataset_source",
+      "license_ref",
+      "snapshot_sha256_or_task_file_sha256",
+      "official_scorer_ref",
       "model_prediction_or_patch_or_artifact",
       "score_json.reportable_score_true"
     ]
@@ -6731,13 +6734,13 @@
     "long_context_mrcr_2026",
     "long_context_helmet_longproc_2026",
     "long_context_longcodebench_2026",
+    "reasoning_matharena_2026",
     "generation_image_edit_2026",
     "generation_video_2026",
     "generation_audio_speech_2026",
     "generation_music_2026",
     "safety_tool_security_2026",
-    "deployment_turboquant_kv_1m_2026",
-    "deployment_performance_2026"
+    "deployment_turboquant_kv_1m_2026"
   ],
   "reportable_snapshots": {
     "agent_agent2_rl_bench_2026": {

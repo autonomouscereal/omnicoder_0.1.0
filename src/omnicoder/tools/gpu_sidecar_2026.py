@@ -563,7 +563,10 @@ def materialize_jobs(profile_path: str | Path, profile: dict[str, Any], args: ar
 def launch_env(job: dict[str, Any], profile: dict[str, Any]) -> dict[str, str]:
     cfg = sidecar_cfg(profile)
     env = os.environ.copy()
-    visible_devices = "" if str(job["device"]).strip().lower() == "cpu" else str(job["device"])
+    visible_override = job.get("cuda_visible_devices")
+    if visible_override is None and normalize_job_type(job.get("job_type")) == "openai_compatible_teacher_rollout":
+        visible_override = ""
+    visible_devices = str(visible_override) if visible_override is not None else ("" if str(job["device"]).strip().lower() == "cpu" else str(job["device"]))
     env.update(
         {
             "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
