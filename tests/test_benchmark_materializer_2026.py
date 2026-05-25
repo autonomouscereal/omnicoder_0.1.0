@@ -315,6 +315,55 @@ def test_materializer_normalizes_long_context_prompt_aliases() -> None:
     assert task["answer"] == "name\tprice\nexample\t1"
 
 
+def test_materializer_normalizes_countdown_rewardbench_and_oneig_aliases() -> None:
+    countdown = materializer.normalize_task(
+        "long_context_longproc_2026",
+        {"nums": [21, 16, 17, 26], "target": 46, "solution_text": "21 + 16 = 37\n37 - 17 = 20\n26 + 20 = 46"},
+        {"kind": "long_context", "source": "fixture"},
+        {"adapter_kind": "long_input_long_output_process_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    reward_pair = materializer.normalize_task(
+        "multimodal_rewardbench2_2026",
+        {
+            "pair_id": "pair-1",
+            "prompt_text": "<image_0> Make this product photo look cinematic.",
+            "response_a_text": "<image_0>",
+            "response_b_text": "<image_0>",
+            "chosen": "a",
+        },
+        {"kind": "multimodal_mcq", "source": "fixture"},
+        {"adapter_kind": "multimodal_reward_pair_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    oneig = materializer.normalize_task(
+        "generation_oneig_bench_2026",
+        {"id": "001", "prompt_en": "A crisp studio photo of a transparent smartwatch."},
+        {"kind": "image_generation", "source": "fixture"},
+        {"adapter_kind": "image_generation_instruction_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert countdown is not None
+    assert "target 46" in countdown["prompt"]
+    assert countdown["answer"].startswith("21 + 16")
+    assert reward_pair is not None
+    assert reward_pair["prompt"].startswith("<image_0>")
+    assert reward_pair["choices"] == ["<image_0>", "<image_0>"]
+    assert reward_pair["answer"] == "a"
+    assert oneig is not None
+    assert oneig["prompt"].startswith("A crisp studio")
+
+
 def test_materializer_tracks_2026_official_source_mirrors() -> None:
     required = {
         "agent_mcp_bench_2026",

@@ -367,7 +367,7 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     },
     "generation_oneig_bench_2026": {
         "source": "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench",
-        "hf": [{"id": "OneIG-Bench/OneIG-Bench", "config": "OneIG-Bench", "splits": ["test", "validation", "train"]}],
+        "hf": [{"id": "OneIG-Bench/OneIG-Bench", "config": "OneIG-Bench", "splits": ["train"]}],
         "kind": "image_generation",
         "splits": ["test", "validation", "train"],
     },
@@ -1011,6 +1011,8 @@ def normalize_task(
             "question",
             "instruction",
             "query",
+            "prompt_text",
+            "prompt_en",
             "problem",
             "task",
             "input_prompt",
@@ -1026,6 +1028,10 @@ def normalize_task(
         ),
     )
     choices = normalize_choices(first_value(raw, ("choices", "options", "candidates", "endings", "answers")))
+    if choices in (None, "", [], {}) and (
+        raw.get("response_a_text") not in (None, "", [], {}) or raw.get("response_b_text") not in (None, "", [], {})
+    ):
+        choices = [make_jsonable(raw.get("response_a_text") or ""), make_jsonable(raw.get("response_b_text") or "")]
     answer = first_value(
         raw,
         (
@@ -1043,8 +1049,18 @@ def normalize_task(
             "output",
             "gold_answer",
             "strategy_hint",
+            "chosen",
+            "preference",
         ),
     )
+    if prompt is None and raw.get("nums") not in (None, "", [], {}) and raw.get("target") not in (None, "", [], {}):
+        prompt = (
+            "Solve this Countdown arithmetic task. Use each number at most once "
+            f"to reach target {raw.get('target')}. Numbers: {make_jsonable(raw.get('nums'))}."
+        )
+        answer = first_value(raw, ("solution_text", "solution")) or answer
+    if answer is None:
+        answer = first_value(raw, ("solution_text", "solution"))
     row: dict[str, Any] = {
         "schema": TASK_SCHEMA,
         "benchmark_id": benchmark_id,
@@ -1069,7 +1085,20 @@ def normalize_task(
     if answer not in (None, "", [], {}):
         row["answer"] = make_jsonable(answer)
 
-    for media_key in ("image", "images", "image_path", "video", "video_path", "audio", "audio_path", "subtitles", "subtitle"):
+    for media_key in (
+        "image",
+        "images",
+        "image_path",
+        "prompt_images",
+        "response_a_images",
+        "response_b_images",
+        "video",
+        "video_path",
+        "audio",
+        "audio_path",
+        "subtitles",
+        "subtitle",
+    ):
         value = raw.get(media_key)
         if value not in (None, "", [], {}):
             row[media_key] = make_jsonable(value)
