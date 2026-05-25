@@ -4653,7 +4653,9 @@
         "hf_id": "HuggingFaceM4/FineVision",
         "license": "mixed source licenses; prompts where applicable CC-BY-4.0",
         "license_tier": "source_license_varies",
+        "config": "DoclingMatix",
         "max_records": 2048,
+        "materialization_note": "Use the explicit DoclingMatix subset for document/OCR-heavy VLM rows; wider FineVision subsets require per-source license and contamination review before train promotion.",
         "name": "FineVision",
         "splits": [
           "train"
@@ -25654,7 +25656,7 @@
         "last_verified": "2026-05-25",
         "registry_wave": "eighteenth_wave_live_media_agent_data_2026_05_25",
         "splits": [
-          "train"
+          "pdfa_train"
         ],
         "max_records": 1024,
         "target_modality": "image",
@@ -25686,6 +25688,7 @@
           "target": [
             "text",
             "markdown",
+            "content",
             "transcription",
             "answer",
             "html",

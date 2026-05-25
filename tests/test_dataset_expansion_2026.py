@@ -966,6 +966,7 @@ def test_repo_dataset_registry_covers_new_agentic_and_multimodal_sources() -> No
     assert by_name["Captioned AI Music Snippets"]["use_policy"] == "research_internal"
     assert by_name["Cambrian-P-Data"]["use_policy"] == "train"
     assert by_name["FineVision"]["use_policy"] == "research_internal"
+    assert by_name["FineVision"]["config"] == "DoclingMatix"
     assert by_name["WorldSpeech"]["use_policy"] == "research_internal"
     assert by_name["AVGen-Bench"]["use_policy"] == "eval_only"
     assert by_name["MMMU Pro"]["use_policy"] == "eval_only"
@@ -1606,6 +1607,8 @@ def test_repo_dataset_registry_covers_eighteenth_wave_live_media_agent_sources()
     assert by_name["Raon OpenTTS Pool Commercial Core"]["splits"] == ["core"]
     assert by_name["Toucan Agentic Thinking MiniMax-M2.1"]["hf_id"] == "agent-data/toucan-agentic-thinking"
     assert by_name["LightOnOCR Mix 0126"]["hf_id"] == "lightonai/LightOnOCR-mix-0126"
+    assert by_name["LightOnOCR Mix 0126"]["splits"] == ["pdfa_train"]
+    assert "content" in by_name["LightOnOCR Mix 0126"]["field_map"]["target"]
 
     assert expansion.source_use_bucket(by_name["Raon OpenTTS Pool Commercial Core"]) == "train"
     assert expansion.training_bucket_for_record(

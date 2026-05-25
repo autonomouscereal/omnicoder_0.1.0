@@ -148,7 +148,8 @@ mix:
   Kimina/Lean proof rows, FoVer process-verifier labels, TritonBench,
   KernelBench research rows, UTBoost/LiveCodeBench eval rows, ARC-AGI-2
   public-training rows, and SWE-Agent LM 32B R2E-Gym trajectory review rows.
-- Multimodal generation and reward: FineVision/FineVisionMax, ScaleEdit,
+- Multimodal generation and reward: FineVision/FineVisionMax, with FineVision
+  pinned to the DoclingMatix subset for bounded materialization, ScaleEdit,
   GPT-Image-Edit, NHR-Edit, CrispEdit, BAGEL-World, Rapidata image
   preferences, HPDv3, ImgEdit, UniREdit, BLIP3o, UniWorld, text-to-image DPO
   preferences, VideoGen-RewardBench, Rapidata text/image-to-video preferences,

@@ -153,7 +153,9 @@ Current high-value registry families:
   protected-benchmark scan tags; Toucan Agentic Thinking MiniMax-M2.1 and
   LightOnOCR Mix 0126 are useful internal distillation/reward candidates, but
   stay research/internal until teacher-provenance and source-document reviews
-  clear.
+  clear. FineVision materialization is pinned to the DoclingMatix subset, and
+  LightOnOCR is pinned to its `pdfa_train` split with `content` mapped as the
+  OCR target.
 - Math/reasoning second wave: R-HORIZON, Reasoning Core formal-reasoning
   environments, UniRRM-RL, Nemotron Math Proofs, UltraData-Math, GLM-5.1
   reasoning traces, MathVision, Nemotron RL super blends, Nemotron 3 Nano RL
