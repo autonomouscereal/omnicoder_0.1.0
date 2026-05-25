@@ -2230,6 +2230,60 @@ def test_repo_dataset_registry_covers_twenty_sixth_wave_web_gui_science_audio_co
     assert expansion.source_use_bucket(by_name["OmniAction Review Holdout"]) == "blocked_until_review"
 
 
+def test_repo_dataset_registry_covers_twenty_seventh_wave_agentic_longcontext_video_mcp_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25"
+
+    expected_policy = {
+        "DeepSeek V4 Distill 8000x": "research_internal",
+        "DeepSeek V4 Pro Agent Traces": "research_internal",
+        "Codex SWE-bench Pro Traces": "research_internal",
+        "PolicyLayer MCP Server Catalogue": "train",
+        "Needle-1M Bench MVP": "eval_only",
+        "MERRIN Encrypted Holdout": "blocked_until_review",
+        "AgentVidBench": "eval_only",
+        "FINAL-Bench Leaderboard Holdout": "eval_only",
+        "AudioX IFcaps Review Holdout": "blocked_until_review",
+        "Olympiad Integer Math Reasoning": "train",
+        "Math Reasoning Benchmark 2026": "eval_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    assert by_name["ContextBench TraceBench"]["splits"] == ["verified", "full"]
+    assert by_name["NJU CodeTraceBench"]["splits"] == ["verified", "full"]
+    assert expansion.source_use_bucket(by_name["DeepSeek V4 Distill 8000x"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["DeepSeek V4 Pro Agent Traces"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["Codex SWE-bench Pro Traces"]) == "research_internal"
+    assert by_name["PolicyLayer MCP Server Catalogue"]["remote_files"][0]["format"] == "jsonl"
+    assert by_name["PolicyLayer MCP Server Catalogue"]["contamination_status"] == "clean"
+    assert expansion.source_use_bucket(by_name["PolicyLayer MCP Server Catalogue"]) == "train"
+    assert len(by_name["Needle-1M Bench MVP"]["remote_files"]) == 4
+    assert expansion.source_use_bucket(by_name["Needle-1M Bench MVP"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["MERRIN Encrypted Holdout"]) == "blocked_until_review"
+    assert by_name["AgentVidBench"]["configs"] == ["questions"]
+    assert expansion.source_use_bucket(by_name["AgentVidBench"]) == "eval_holdout"
+    assert by_name["FINAL-Bench Leaderboard Holdout"]["configs"] == [
+        "agent",
+        "image",
+        "llm",
+        "music",
+        "video",
+        "vlm_flagship",
+    ]
+    assert expansion.source_use_bucket(by_name["FINAL-Bench Leaderboard Holdout"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["AudioX IFcaps Review Holdout"]) == "blocked_until_review"
+    assert by_name["Olympiad Integer Math Reasoning"]["hf_id"] == "mihailgribov/olympiad_style_integer_math_reasoning"
+    assert by_name["Olympiad Integer Math Reasoning"]["protected_benchmark_scan"] == "clean"
+    assert expansion.source_use_bucket(by_name["Olympiad Integer Math Reasoning"]) == "train"
+    assert by_name["Math Reasoning Benchmark 2026"]["splits"] == ["test"]
+    assert expansion.source_use_bucket(by_name["Math Reasoning Benchmark 2026"]) == "eval_holdout"
+
+
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))

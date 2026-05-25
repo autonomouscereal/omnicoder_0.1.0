@@ -7295,8 +7295,8 @@
         "max_records": 3316,
         "name": "ContextBench TraceBench",
         "splits": [
-          "full",
-          "train"
+          "verified",
+          "full"
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/Contextbench/Tracebench",
@@ -7333,8 +7333,8 @@
         "max_records": 3316,
         "name": "NJU CodeTraceBench",
         "splits": [
-          "full",
-          "train"
+          "verified",
+          "full"
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/NJU-LINK/CodeTraceBench",
@@ -29881,6 +29881,577 @@
             "actions",
             "steps",
             "trajectory"
+          ]
+        }
+      },
+      {
+        "name": "DeepSeek V4 Distill 8000x",
+        "family": "long_context",
+        "hf_id": "Jackrong/DeepSeek-V4-Distill-8000x",
+        "url": "https://huggingface.co/datasets/Jackrong/DeepSeek-V4-Distill-8000x",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "long_context",
+        "use_policy": "research_internal",
+        "license": "MIT",
+        "license_tier": "permissive_distillation_provenance_review",
+        "source_review_status": "research_internal_model_distillation_provenance_review_2026_05_25",
+        "materialization_note": "DeepSeek V4 distilled long-reasoning rows are kept research-internal until source-model and generated-CoT provenance review is complete.",
+        "curriculum_axes": [
+          "deepseek_v4_distill",
+          "long_context_reasoning",
+          "math_science_cot",
+          "distillation_review"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "problem",
+            "messages"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "solution",
+            "completion",
+            "messages"
+          ]
+        }
+      },
+      {
+        "name": "DeepSeek V4 Pro Agent Traces",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "TeichAI/DeepSeek-v4-Pro-Agent",
+        "url": "https://huggingface.co/datasets/TeichAI/DeepSeek-v4-Pro-Agent",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "target_modality": "tool",
+        "use_policy": "research_internal",
+        "license": "license not declared on API",
+        "license_tier": "unknown_agent_trace_review",
+        "source_review_status": "research_internal_agent_trace_license_review_2026_05_25",
+        "materialization_note": "Recent DeepSeek V4 agent traces are useful for critique/reward modeling but are not train-promoted without license and successful-trajectory quarantine.",
+        "curriculum_axes": [
+          "deepseek_v4_agent",
+          "tool_trace",
+          "reasoning_trace_review",
+          "agentic_distillation"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "trace_id"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "instruction",
+            "task"
+          ],
+          "target": [
+            "messages",
+            "trajectory",
+            "tool_calls",
+            "answer",
+            "completion"
+          ],
+          "trajectory": [
+            "messages",
+            "steps",
+            "events",
+            "trajectory"
+          ]
+        }
+      },
+      {
+        "name": "Codex SWE-bench Pro Traces",
+        "family": "coding_agentic",
+        "hf_id": "Inferact/codex_swebenchpro_traces",
+        "url": "https://huggingface.co/datasets/Inferact/codex_swebenchpro_traces",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 610,
+        "target_modality": "code",
+        "use_policy": "research_internal",
+        "license": "MIT",
+        "license_tier": "permissive_swebench_overlap_review",
+        "source_review_status": "research_internal_successful_trace_quarantine_required_2026_05_25",
+        "materialization_note": "Codex SWE-bench Pro traces are held for internal reward/process modeling until benchmark-overlap and success-label quarantine are verified.",
+        "curriculum_axes": [
+          "codex_trace",
+          "swebench_pro",
+          "repo_editing",
+          "tool_trajectory"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "instance_id",
+            "task_id"
+          ],
+          "prompt": [
+            "messages",
+            "problem_statement",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "messages",
+            "patch",
+            "trajectory",
+            "answer"
+          ],
+          "trajectory": [
+            "messages",
+            "events",
+            "steps",
+            "trajectory"
+          ],
+          "verifier_labels": [
+            "tests",
+            "success",
+            "metadata",
+            "score"
+          ]
+        }
+      },
+      {
+        "name": "PolicyLayer MCP Server Catalogue",
+        "family": "agentic_tool_reasoning",
+        "url": "https://huggingface.co/datasets/PolicyLayer/mcp-server-catalogue",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "remote_files": [
+          {
+            "url": "https://huggingface.co/datasets/PolicyLayer/mcp-server-catalogue/resolve/main/servers.jsonl",
+            "format": "jsonl"
+          },
+          {
+            "url": "https://huggingface.co/datasets/PolicyLayer/mcp-server-catalogue/resolve/main/tools.jsonl",
+            "format": "jsonl"
+          }
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25_attribution_required",
+        "materialization_note": "MCP server/tool catalogue rows train tool-schema selection, capability routing, and risk-aware tool metadata handling.",
+        "curriculum_axes": [
+          "mcp_catalogue",
+          "tool_schema",
+          "capability_routing",
+          "agentic_tool_safety"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "server_id",
+            "tool_id",
+            "name"
+          ],
+          "prompt": [
+            "name",
+            "description",
+            "server",
+            "input_schema",
+            "metadata"
+          ],
+          "target": [
+            "description",
+            "tools",
+            "input_schema",
+            "output_schema",
+            "metadata"
+          ],
+          "tool_calls": [
+            "tools",
+            "input_schema",
+            "capabilities"
+          ]
+        }
+      },
+      {
+        "name": "Needle-1M Bench MVP",
+        "family": "long_context",
+        "url": "https://huggingface.co/datasets/drawais/needle-1M-bench-mvp",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "remote_files": [
+          {
+            "url": "https://huggingface.co/datasets/drawais/needle-1M-bench-mvp/resolve/main/data/needles_50k.json",
+            "format": "json"
+          },
+          {
+            "url": "https://huggingface.co/datasets/drawais/needle-1M-bench-mvp/resolve/main/data/needles_250k.json",
+            "format": "json"
+          },
+          {
+            "url": "https://huggingface.co/datasets/drawais/needle-1M-bench-mvp/resolve/main/data/needles_500k.json",
+            "format": "json"
+          },
+          {
+            "url": "https://huggingface.co/datasets/drawais/needle-1M-bench-mvp/resolve/main/data/needles_1000k.json",
+            "format": "json"
+          }
+        ],
+        "max_records": 512,
+        "target_modality": "long_context",
+        "use_policy": "eval_only",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Needle-1M rows are reportable long-context retrieval probes only; no train promotion.",
+        "curriculum_axes": [
+          "needle_1m",
+          "long_context_retrieval",
+          "million_token_eval",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "needle_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "context",
+            "needle",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "target",
+            "expected_answer"
+          ],
+          "verifier_labels": [
+            "length",
+            "position",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "MERRIN Encrypted Holdout",
+        "family": "long_context",
+        "hf_id": "HanNight/MERRIN",
+        "url": "https://huggingface.co/datasets/HanNight/MERRIN",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "config": "default",
+        "splits": [
+          "test"
+        ],
+        "max_records": 162,
+        "target_modality": "long_context",
+        "use_policy": "blocked_until_review",
+        "license": "encrypted benchmark access policy",
+        "license_tier": "encrypted_eval_holdout_blocked_until_authorized",
+        "source_review_status": "blocked_until_plaintext_authorization_2026_05_25",
+        "materialization_note": "Encrypted long-context benchmark rows are registered for release-gate awareness but blocked until authorization and plaintext handling policy are explicit.",
+        "curriculum_axes": [
+          "long_context_reasoning",
+          "encrypted_holdout",
+          "release_gate",
+          "blocked"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "context"
+          ],
+          "target": [
+            "answer",
+            "target"
+          ]
+        }
+      },
+      {
+        "name": "AgentVidBench",
+        "family": "video_generation",
+        "hf_id": "agentvidbench/agentvidbench",
+        "url": "https://huggingface.co/datasets/agentvidbench/agentvidbench",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "configs": [
+          "questions"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 512,
+        "target_modality": "video",
+        "use_policy": "eval_only",
+        "license": "cc family, exact terms review",
+        "license_tier": "generic_cc_eval_holdout_review",
+        "source_review_status": "public_eval_reviewed_2026_05_25_no_train_until_exact_license",
+        "materialization_note": "AgentVidBench video-agent questions are held out for video/agentic multimodal evaluation.",
+        "curriculum_axes": [
+          "video_agent_eval",
+          "temporal_reasoning",
+          "multimodal_tool_use",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "question_id",
+            "video_id"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "expected_answer",
+            "label"
+          ],
+          "media": [
+            "video",
+            "video_path",
+            "transcript"
+          ],
+          "verifier_labels": [
+            "rubric",
+            "metadata",
+            "category"
+          ]
+        }
+      },
+      {
+        "name": "FINAL-Bench Leaderboard Holdout",
+        "family": "omnimodal_understanding",
+        "hf_id": "FINAL-Bench/ALL-Bench-Leaderboard",
+        "url": "https://huggingface.co/datasets/FINAL-Bench/ALL-Bench-Leaderboard",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "configs": [
+          "agent",
+          "image",
+          "llm",
+          "music",
+          "video",
+          "vlm_flagship"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 256,
+        "target_modality": "text",
+        "use_policy": "eval_only",
+        "license": "leaderboard benchmark metadata",
+        "license_tier": "benchmark_leaderboard_eval_holdout",
+        "source_review_status": "public_eval_metadata_reviewed_2026_05_25",
+        "materialization_note": "Leaderboard rows are benchmark metadata for coverage/reporting only and are never training data.",
+        "curriculum_axes": [
+          "benchmark_leaderboard",
+          "agent_image_music_video",
+          "reporting_guardrail",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "benchmark",
+            "model"
+          ],
+          "prompt": [
+            "benchmark",
+            "task",
+            "description",
+            "model"
+          ],
+          "target": [
+            "score",
+            "metrics",
+            "result"
+          ],
+          "verifier_labels": [
+            "modality",
+            "leaderboard",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "AudioX IFcaps Review Holdout",
+        "family": "audio_music_speech",
+        "hf_id": "HKUSTAudio/AudioX-IFcaps",
+        "url": "https://huggingface.co/datasets/HKUSTAudio/AudioX-IFcaps",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 256,
+        "target_modality": "audio",
+        "use_policy": "blocked_until_review",
+        "license": "CC-BY-NC-ND-4.0 gated",
+        "license_tier": "noncommercial_no_derivatives_gated_blocked",
+        "source_review_status": "blocked_noncommercial_no_derivatives_2026_05_25",
+        "materialization_note": "Instruction-following audio caption data is relevant for unified audio/music generation but blocked by gated noncommercial no-derivatives terms.",
+        "curriculum_axes": [
+          "instruction_audio_caption",
+          "text_to_audio",
+          "music_generation",
+          "license_blocked"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "prompt": [
+            "instruction",
+            "caption",
+            "prompt"
+          ],
+          "target": [
+            "caption",
+            "answer",
+            "description"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "Olympiad Integer Math Reasoning",
+        "family": "math_reasoning",
+        "hf_id": "mihailgribov/olympiad_style_integer_math_reasoning",
+        "url": "https://huggingface.co/datasets/mihailgribov/olympiad_style_integer_math_reasoning",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25_attribution_required",
+        "materialization_note": "Olympiad-style integer reasoning rows strengthen verifiable math reasoning and proof-like scratchpad supervision.",
+        "curriculum_axes": [
+          "olympiad_math",
+          "integer_reasoning",
+          "proof_style",
+          "rlvr_seed"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "problem_id"
+          ],
+          "prompt": [
+            "problem",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "reasoning",
+            "solution",
+            "answer"
+          ],
+          "verifier_labels": [
+            "answer",
+            "metadata",
+            "difficulty"
+          ]
+        }
+      },
+      {
+        "name": "Math Reasoning Benchmark 2026",
+        "family": "math_reasoning",
+        "hf_id": "sumeetrm/math-reasoning-benchmark",
+        "url": "https://huggingface.co/datasets/sumeetrm/math-reasoning-benchmark",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",
+        "config": "default",
+        "splits": [
+          "test"
+        ],
+        "max_records": 512,
+        "target_modality": "text",
+        "use_policy": "eval_only",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Small 2026 math reasoning benchmark is held out for eval-only regression checks.",
+        "curriculum_axes": [
+          "math_reasoning_eval",
+          "benchmark_holdout",
+          "verifiable_answer"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "problem_id"
+          ],
+          "prompt": [
+            "problem",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "target"
+          ],
+          "verifier_labels": [
+            "metadata",
+            "difficulty",
+            "answer"
           ]
         }
       }
