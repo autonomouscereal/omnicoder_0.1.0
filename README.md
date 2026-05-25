@@ -209,6 +209,12 @@ mix:
   benchmark material. HF image/audio/video features are otherwise cast
   metadata-only during curation and benchmark materialization so rows can be
   extracted without media codec failures.
+- Thirteenth-wave May 25, 2026 additions add Agentic-MME, MM-ToolBench/TOBench
+  tracking, ABC-Bench, LongBench-Pro, MEGA-Bench, StepEval-Audio-360, and
+  IndiMathBench to release gates. The dataset registry also stages
+  DeepResearch-9K, MMFineReason-1.8M Qwen3-VL Thinking, and Lean Math Formal
+  Corpus v4.27.0 as research-internal sources until license/decontamination
+  review clears them for weight-bearing training.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for

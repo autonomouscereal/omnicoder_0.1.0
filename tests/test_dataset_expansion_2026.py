@@ -1354,6 +1354,40 @@ def test_repo_dataset_registry_covers_twelfth_wave_agent_memory_sources() -> Non
     assert expansion.source_use_bucket(by_name["SMMBench Source-Distributed Multimodal Memory"]) == "eval_holdout"
 
 
+def test_repo_dataset_registry_covers_thirteenth_wave_agentic_math_multimodal_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "thirteenth_wave_agentic_math_multimodal_2026_05_25"
+
+    expected_policy = {
+        "Agentic-MME": "eval_only",
+        "ABC-Bench Backend Agent Tasks": "eval_only",
+        "LongBench-Pro": "eval_only",
+        "MEGA-Bench": "eval_only",
+        "StepEval-Audio-360": "eval_only",
+        "IndiMathBench": "eval_only",
+        "DeepResearch-9K": "research_internal",
+        "MMFineReason-1.8M Qwen3-VL Thinking": "research_internal",
+        "Lean Math Formal Corpus v4.27.0": "research_internal",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["use_policy"] == policy
+        assert by_name[name]["registry_wave"] == wave
+
+    assert by_name["Agentic-MME"]["hf_id"] == "Agentic-MME/Agentic-MME"
+    assert by_name["ABC-Bench Backend Agent Tasks"]["license"] == "ODC-BY"
+    assert by_name["LongBench-Pro"]["target_modality"] == "long_context"
+    assert by_name["StepEval-Audio-360"]["target_modality"] == "audio"
+    assert by_name["IndiMathBench"]["repo"] == "https://github.com/prmbiy/IndiMathBench.git"
+    assert by_name["MMFineReason-1.8M Qwen3-VL Thinking"]["hf_id"].endswith("Qwen3-VL-235B-Thinking")
+    assert expansion.source_use_bucket(by_name["LongBench-Pro"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["StepEval-Audio-360"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["DeepResearch-9K"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["Lean Math Formal Corpus v4.27.0"]) == "research_internal"
+
+
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))

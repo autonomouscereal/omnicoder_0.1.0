@@ -23675,6 +23675,377 @@
         "target_modality": "image",
         "url": "https://huggingface.co/datasets/HuacanChai/SMMBench",
         "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "visual_clue_reasoning",
+          "tool_use",
+          "web_search_grounding",
+          "multi_step_multimodal_reasoning",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "question_id",
+            "sample_id"
+          ],
+          "media": [
+            "image",
+            "images",
+            "image_path"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "label",
+            "choices"
+          ]
+        },
+        "hf_id": "Agentic-MME/Agentic-MME",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 418,
+        "name": "Agentic-MME",
+        "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "image",
+        "url": "https://huggingface.co/datasets/Agentic-MME/Agentic-MME",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "backend_coding_agent",
+          "repo_exploration",
+          "service_boot",
+          "api_test_repair",
+          "benchmark_holdout"
+        ],
+        "family": "coding_agentic",
+        "field_map": {
+          "id": [
+            "task_id"
+          ],
+          "prompt": [
+            "instruction"
+          ],
+          "target": [
+            "category",
+            "tags"
+          ]
+        },
+        "hf_id": "OpenMOSS-Team/ABC-Bench",
+        "last_verified": "2026-05-25",
+        "license": "ODC-BY",
+        "license_tier": "attribution_eval_holdout",
+        "max_records": 224,
+        "name": "ABC-Bench Backend Agent Tasks",
+        "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "code",
+        "url": "https://huggingface.co/datasets/OpenMOSS-Team/ABC-Bench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "bilingual_long_context",
+          "length_bucket_8k_to_256k",
+          "global_and_partial_context",
+          "difficulty_stratified",
+          "benchmark_holdout"
+        ],
+        "family": "long_context",
+        "field_map": {
+          "context": [
+            "context"
+          ],
+          "id": [
+            "id"
+          ],
+          "prompt": [
+            "question_nonthinking",
+            "question_thinking"
+          ],
+          "target": [
+            "answer",
+            "difficulty",
+            "token_length"
+          ]
+        },
+        "hf_id": "caskcsg/LongBench-Pro",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 512,
+        "name": "LongBench-Pro",
+        "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "long_context",
+        "url": "https://huggingface.co/datasets/caskcsg/LongBench-Pro",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "realworld_multimodal_tasks",
+          "custom_metric_metadata",
+          "core_and_open_subsets",
+          "image_video_document_reasoning",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "task_name",
+            "query_id",
+            "id"
+          ],
+          "media": [
+            "query_media",
+            "example_media",
+            "global_media"
+          ],
+          "prompt": [
+            "query_text",
+            "task_description",
+            "example_text"
+          ],
+          "target": [
+            "answer",
+            "metric_info",
+            "task_category"
+          ]
+        },
+        "hf_id": "TIGER-Lab/MEGA-Bench",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0 with source media provenance notes",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 512,
+        "name": "MEGA-Bench",
+        "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "core",
+          "open"
+        ],
+        "target_modality": "image",
+        "url": "https://huggingface.co/datasets/TIGER-Lab/MEGA-Bench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "audio_conversation",
+          "speech_emotion_control",
+          "voice_understanding",
+          "audio_reasoning",
+          "benchmark_holdout"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "audio": [
+            "conversation.audio_filename"
+          ],
+          "id": [
+            "conversation_id"
+          ],
+          "prompt": [
+            "conversation"
+          ],
+          "target": [
+            "category",
+            "conversation"
+          ]
+        },
+        "hf_id": "stepfun-ai/StepEval-Audio-360",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 137,
+        "name": "StepEval-Audio-360",
+        "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/stepfun-ai/StepEval-Audio-360",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "lean4_formal_math",
+          "olympiad_reasoning",
+          "proof_search",
+          "react_scaffold",
+          "benchmark_holdout"
+        ],
+        "family": "math_reasoning",
+        "field_map": {
+          "id": [
+            "name",
+            "problem_id",
+            "theorem_name"
+          ],
+          "prompt": [
+            "informal_statement",
+            "statement",
+            "problem"
+          ],
+          "target": [
+            "formal_statement",
+            "proof",
+            "category"
+          ]
+        },
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_eval_holdout",
+        "max_records": 312,
+        "name": "IndiMathBench",
+        "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "repo": "https://github.com/prmbiy/IndiMathBench.git",
+        "source_year": 2025,
+        "splits": [
+          "indimathbench.json"
+        ],
+        "target_modality": "text",
+        "url": "https://github.com/prmbiy/IndiMathBench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "deep_research",
+          "search_trajectory",
+          "multi_hop_qa",
+          "teacher_trace_quality_filter",
+          "decontam_required"
+        ],
+        "family": "long_context",
+        "field_map": {
+          "id": [
+            "question"
+          ],
+          "prompt": [
+            "question",
+            "search trajectory"
+          ],
+          "target": [
+            "final answer",
+            "difficulty"
+          ],
+          "trajectory": [
+            "search trajectory"
+          ]
+        },
+        "hf_id": "artillerywu/DeepResearch-9K",
+        "last_verified": "2026-05-25",
+        "license": "license not declared on dataset card",
+        "license_tier": "unknown_review",
+        "max_records": 1024,
+        "name": "DeepResearch-9K",
+        "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "long_context",
+        "url": "https://huggingface.co/datasets/artillerywu/DeepResearch-9K",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "multimodal_stem_reasoning",
+          "long_form_cot",
+          "qwen3_vl_distillation",
+          "caption_grounding",
+          "source_license_audit_required"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "media": [
+            "image"
+          ],
+          "prompt": [
+            "question",
+            "original_question"
+          ],
+          "target": [
+            "answer",
+            "original_answer",
+            "source"
+          ]
+        },
+        "hf_id": "OpenDataArena/MMFineReason-1.8M-Qwen3-VL-235B-Thinking",
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0 wrapper; individual source datasets may have their own licenses",
+        "license_tier": "source_license_varies_review",
+        "max_records": 2048,
+        "name": "MMFineReason-1.8M Qwen3-VL Thinking",
+        "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "image",
+        "url": "https://huggingface.co/datasets/OpenDataArena/MMFineReason-1.8M-Qwen3-VL-235B-Thinking",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "lean4_compile_success",
+          "formal_math_sft",
+          "mathlib_v427",
+          "theorem_statement_alignment",
+          "source_license_audit_required"
+        ],
+        "family": "math_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "theorem_name"
+          ],
+          "prompt": [
+            "nl_statement",
+            "informal_statement",
+            "fl_statement"
+          ],
+          "target": [
+            "fl_statement",
+            "fl_proof",
+            "compile_success"
+          ]
+        },
+        "hf_id": "iiis-lean/lean-math-formal-corpus",
+        "last_verified": "2026-05-25",
+        "license": "normalized derivative of multiple public datasets; follow original source licenses",
+        "license_tier": "source_license_varies_review",
+        "max_records": 2048,
+        "name": "Lean Math Formal Corpus v4.27.0",
+        "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "text",
+        "url": "https://huggingface.co/datasets/iiis-lean/lean-math-formal-corpus",
+        "use_policy": "research_internal"
       }
     ],
     "enabled": true,

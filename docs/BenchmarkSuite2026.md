@@ -160,6 +160,15 @@ For SMMBench specifically, the task contract uses HF raw
 fallback. The HF `default/train` imagefolder split is image-only and is not a
 valid scorable benchmark source.
 
+The thirteenth-wave benchmark expansion adds Agentic-MME, MM-ToolBench/TOBench
+tracking, ABC-Bench, LongBench-Pro, MEGA-Bench, StepEval-Audio-360, and
+IndiMathBench. These cover visual tool-use, closed-loop omnimodal MCP
+workflows, backend coding agents, bilingual 8k-256k long-context reasoning,
+real-world multimodal task metrics, audio conversation understanding, and Lean4
+formal math. TOBench remains metadata-only until executable tasks and license
+terms are published; the other rows materialize from official HF/GitHub
+sources for public-dev regression and stay held out from training.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \

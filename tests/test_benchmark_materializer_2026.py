@@ -739,6 +739,77 @@ def test_materializer_normalizes_agentic_omni_benchmark_wave_aliases() -> None:
     assert emergent_tts["rubric"] == {"prosody": "relieved whisper"}
 
 
+def test_materializer_normalizes_thirteenth_wave_2026_aliases() -> None:
+    longbench = materializer.normalize_task(
+        "long_context_longbench_pro_2026",
+        {
+            "id": "lbp-1",
+            "context": "A very long bilingual context.",
+            "question_nonthinking": "Give the answer directly.",
+            "answer": ["ACE"],
+            "token_length": "256k",
+            "primary_task": "QA",
+            "secondary_task": "global integration",
+            "contextual_requirement": "Full",
+        },
+        {"kind": "long_context", "source": "fixture"},
+        {"adapter_kind": "long_context_bilingual_pro_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    stepeval = materializer.normalize_task(
+        "multimodal_stepeval_audio_360_2026",
+        {
+            "conversation_id": 32,
+            "conversation": [
+                {"audio_filename": "conversation_id_32_turn_1.wav", "role": "user", "text": "七十七乘七十七等于多少？"},
+                {"audio_filename": None, "role": "assistant", "text": "5929"},
+            ],
+            "category": "Logical Reasoning",
+        },
+        {"kind": "multimodal_audio", "source": "fixture"},
+        {"adapter_kind": "stepeval_audio_omni_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    mega = materializer.normalize_task(
+        "multimodal_megabench_2026",
+        {
+            "task_name": "traffic_future_prediction_from_line_plot",
+            "query_text": "Predict the next road occupancy value.",
+            "query_media": ["traffic_12_0.0832.jpg"],
+            "example_media": ["traffic_0_0.0148.jpg"],
+            "answer": {"Answer": "0.0832"},
+            "metric_info": {"response_parse_function": "answer_string"},
+        },
+        {"kind": "multimodal", "source": "fixture"},
+        {"adapter_kind": "mega_bench_realworld_multimodal_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert longbench is not None
+    assert longbench["prompt"] == "Give the answer directly."
+    assert longbench["answer"] == ["ACE"]
+    assert longbench["token_length"] == "256k"
+    assert stepeval is not None
+    assert stepeval["prompt"].startswith("七十七")
+    assert stepeval["answer"] == "5929"
+    assert stepeval["audio"] == ["conversation_id_32_turn_1.wav"]
+    assert stepeval["conversation"][0]["role"] == "user"
+    assert mega is not None
+    assert mega["prompt"].startswith("Predict")
+    assert mega["query_media"] == ["traffic_12_0.0832.jpg"]
+    assert mega["example_media"] == ["traffic_0_0.0148.jpg"]
+    assert mega["metric_info"]["response_parse_function"] == "answer_string"
+
+
 def test_smmbench_cluster_qa_rows_are_scorable_and_imagefolder_rows_are_rejected(tmp_path: Path) -> None:
     root = tmp_path / "smmbench"
     cluster = root / "Dataset" / "Samples" / "cluster_1"

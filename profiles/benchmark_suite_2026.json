@@ -5066,6 +5066,230 @@
         "smoke": "one cross-source multimodal memory item"
       },
       "task_format": "jsonl_source_distributed_multimodal_memory"
+    },
+    {
+      "adapter_kind": "closed_loop_omnimodal_tool_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_tobench_mm_toolbench_2026",
+      "holdout_policy": [
+        "release_pending_no_training_rows",
+        "verify_mcp_server_artifacts",
+        "quarantine_successful_tool_trajectories",
+        "human_audit_required_before_reportable"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "artifact_verification_pass_rate",
+        "self_correction_rate",
+        "tool_error_recovery_rate"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "tool_schema",
+        "artifact"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/papers/2605.16909",
+      "splits": {
+        "nightly": "release-pending metadata-only tracker",
+        "release": "authorized MM-ToolBench/TOBench executable task snapshot",
+        "smoke": "one closed-loop omnimodal tool task after source release"
+      },
+      "task_format": "jsonl_closed_loop_omnimodal_tool_task"
+    },
+    {
+      "adapter_kind": "agentic_multimodal_reasoning_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_agentic_mme_2026",
+      "holdout_policy": [
+        "hide_answer_keys",
+        "hash_image_assets",
+        "separate_tool_and_search_traces",
+        "quarantine_successful_agentic_traces"
+      ],
+      "metrics": [
+        "agentic_vqa_accuracy",
+        "tool_use_success_rate",
+        "web_search_grounding_score",
+        "multi_step_reasoning_accuracy"
+      ],
+      "modalities": [
+        "image",
+        "text",
+        "tool_schema",
+        "web_search"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/Agentic-MME/Agentic-MME",
+      "splits": {
+        "nightly": "capability-balanced Agentic-MME public slice",
+        "release": "locked Agentic-MME snapshot with media hashes",
+        "smoke": "one visual clue tool-use item"
+      },
+      "task_format": "jsonl_agentic_multimodal_vqa_tool_task"
+    },
+    {
+      "adapter_kind": "backend_coding_agent_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_abc_bench_2026",
+      "holdout_policy": [
+        "hide_test_runner_outputs_until_scoring",
+        "hash_repo_snapshots",
+        "separate_public_train_from_reportable_tasks",
+        "quarantine_successful_repo_trajectories"
+      ],
+      "metrics": [
+        "api_test_pass_rate",
+        "service_boot_success",
+        "implementation_correctness",
+        "environment_setup_success"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "repository",
+        "terminal"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/OpenMOSS-Team/ABC-Bench",
+      "splits": {
+        "nightly": "language-balanced ABC-Bench public slice",
+        "release": "locked ABC-Bench backend task snapshot",
+        "smoke": "one backend route implementation task"
+      },
+      "task_format": "jsonl_backend_coding_agent_task"
+    },
+    {
+      "adapter_kind": "long_context_bilingual_pro_eval",
+      "axis": "long_context",
+      "benchmark_id": "long_context_longbench_pro_2026",
+      "context_windows": [
+        8192,
+        16384,
+        32768,
+        65536,
+        131072,
+        262144,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_answer_key_until_scoring",
+        "preserve_context_length_bucket",
+        "record_language_and_difficulty",
+        "hash_long_context"
+      ],
+      "metrics": [
+        "answer_component_f1",
+        "bilingual_accuracy",
+        "difficulty_bucket_accuracy",
+        "length_bucket_degradation"
+      ],
+      "modalities": [
+        "text",
+        "long_context"
+      ],
+      "release_gate": "long_context_release",
+      "source": "https://huggingface.co/datasets/caskcsg/LongBench-Pro",
+      "splits": {
+        "nightly": "length/language/difficulty balanced LongBench-Pro slice",
+        "release": "locked LongBench-Pro test snapshot",
+        "smoke": "one 8k and one 256k bilingual item"
+      },
+      "task_format": "jsonl_longbench_pro_task"
+    },
+    {
+      "adapter_kind": "mega_bench_realworld_multimodal_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_megabench_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_media_assets",
+        "preserve_task_metric_metadata",
+        "separate_core_and_open_subsets"
+      ],
+      "metrics": [
+        "per_task_metric_score",
+        "core_task_accuracy",
+        "open_task_judge_score",
+        "media_grounding_score"
+      ],
+      "modalities": [
+        "image",
+        "video",
+        "text",
+        "document"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/TIGER-Lab/MEGA-Bench",
+      "splits": {
+        "nightly": "core/open balanced MEGA-Bench descriptor slice",
+        "release": "locked MEGA-Bench media snapshot",
+        "smoke": "one core image task and one open-ended task"
+      },
+      "task_format": "jsonl_megabench_multimodal_task"
+    },
+    {
+      "adapter_kind": "stepeval_audio_omni_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_stepeval_audio_360_2026",
+      "holdout_policy": [
+        "hide_reference_text_until_scoring",
+        "hash_audio_assets",
+        "preserve_conversation_turn_order",
+        "record_audio_language_category"
+      ],
+      "metrics": [
+        "audio_understanding_accuracy",
+        "speech_emotion_control_score",
+        "voice_reasoning_accuracy",
+        "conversation_following_score"
+      ],
+      "modalities": [
+        "audio",
+        "speech",
+        "text"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/stepfun-ai/StepEval-Audio-360",
+      "splits": {
+        "nightly": "category-balanced StepEval-Audio-360 test slice",
+        "release": "locked StepEval-Audio-360 audio snapshot",
+        "smoke": "one audio conversation item"
+      },
+      "task_format": "jsonl_audio_conversation_understanding_task"
+    },
+    {
+      "adapter_kind": "lean4_formal_math_eval",
+      "axis": "reasoning",
+      "benchmark_id": "reasoning_indimathbench_2026",
+      "holdout_policy": [
+        "hide_solutions_until_scoring",
+        "verify_lean_toolchain_version",
+        "record_compilation_result",
+        "quarantine_successful_prover_traces"
+      ],
+      "metrics": [
+        "lean_compile_success",
+        "proof_search_success",
+        "domain_accuracy",
+        "react_turn_efficiency"
+      ],
+      "modalities": [
+        "text",
+        "formal_math",
+        "code"
+      ],
+      "release_gate": "reasoning_release",
+      "source": "https://github.com/prmbiy/IndiMathBench",
+      "splits": {
+        "nightly": "domain-balanced IndiMathBench public slice",
+        "release": "locked IndiMathBench Lean4 snapshot",
+        "smoke": "one geometry and one number theory theorem"
+      },
+      "task_format": "jsonl_lean4_formal_math_task"
     }
   ],
   "contamination_controls": [
@@ -5151,7 +5375,8 @@
       "agent_livemcpbench_2026",
       "agent_sra_bench_2026",
       "agent_skillret_2026",
-      "agent_state_bench_2026"
+      "agent_state_bench_2026",
+      "agent_tobench_mm_toolbench_2026"
     ],
     "coding_release": [
       "coding_swe_bench_pro_2026",
@@ -5172,7 +5397,8 @@
       "coding_gittaskbench_2026",
       "coding_verisoftbench_2026",
       "coding_swe_mera_2026",
-      "coding_ale_bench_2026"
+      "coding_ale_bench_2026",
+      "coding_abc_bench_2026"
     ],
     "deployment_performance_release": [
       "deployment_performance_2026",
@@ -5234,7 +5460,8 @@
       "long_context_sagascale_2026",
       "long_context_academiceval_2026",
       "long_context_memoryagentbench_2026",
-      "long_context_ama_bench_2026"
+      "long_context_ama_bench_2026",
+      "long_context_longbench_pro_2026"
     ],
     "multimodal_understanding_release": [
       "multimodal_mmmu_pro_2026",
@@ -5277,7 +5504,10 @@
       "multimodal_omnigaia_2026",
       "multimodal_omnirag_agent_2026",
       "multimodal_vstat_visual_state_tracking_2026",
-      "multimodal_smmbench_2026"
+      "multimodal_smmbench_2026",
+      "multimodal_agentic_mme_2026",
+      "multimodal_megabench_2026",
+      "multimodal_stepeval_audio_360_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",
@@ -5291,7 +5521,8 @@
       "reasoning_livebench_math_2026",
       "reasoning_matharena_2026",
       "reasoning_imo_bench_2026",
-      "reasoning_maime2025_2026"
+      "reasoning_maime2025_2026",
+      "reasoning_indimathbench_2026"
     ],
     "safety_security_release": [
       "safety_tool_security_2026",

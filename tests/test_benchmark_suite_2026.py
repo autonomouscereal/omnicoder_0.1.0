@@ -266,6 +266,30 @@ def test_suite_profile_includes_twelfth_wave_agent_memory_gates() -> None:
     assert "agent_memory" in adapters["multimodal_smmbench_2026"]["modalities"]
 
 
+def test_suite_profile_includes_thirteenth_wave_agentic_math_multimodal_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    expected = {
+        "agent_tobench_mm_toolbench_2026": "agent_tool_release",
+        "multimodal_agentic_mme_2026": "multimodal_understanding_release",
+        "coding_abc_bench_2026": "coding_release",
+        "long_context_longbench_pro_2026": "long_context_release",
+        "multimodal_megabench_2026": "multimodal_understanding_release",
+        "multimodal_stepeval_audio_360_2026": "multimodal_understanding_release",
+        "reasoning_indimathbench_2026": "reasoning_release",
+    }
+    for adapter_id, gate in expected.items():
+        assert adapter_id in adapters
+        assert adapter_id in suite["release_gates"][gate]
+
+    assert adapters["multimodal_agentic_mme_2026"]["source"] == "https://huggingface.co/datasets/Agentic-MME/Agentic-MME"
+    assert adapters["coding_abc_bench_2026"]["adapter_kind"] == "backend_coding_agent_eval"
+    assert adapters["long_context_longbench_pro_2026"]["context_windows"][-2] == 262144
+    assert "audio" in adapters["multimodal_stepeval_audio_360_2026"]["modalities"]
+    assert adapters["reasoning_indimathbench_2026"]["task_format"] == "jsonl_lean4_formal_math_task"
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")

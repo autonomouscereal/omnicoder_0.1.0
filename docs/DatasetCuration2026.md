@@ -231,6 +231,14 @@ Current high-value registry families:
   STATE-Bench is wired in the benchmark suite as a stateful tool/memory
   evaluation rather than as train data, because its value is the locked
   enterprise task loop and state-mutating scoring contract.
+- Thirteenth-wave May 25, 2026 additions: Agentic-MME, ABC-Bench,
+  LongBench-Pro, MEGA-Bench, StepEval-Audio-360, and IndiMathBench are
+  registered as eval/benchmark-holdout sources under
+  `thirteenth_wave_agentic_math_multimodal_2026_05_25`. DeepResearch-9K,
+  MMFineReason-1.8M Qwen3-VL Thinking, and Lean Math Formal Corpus v4.27.0 are
+  staged as research-internal candidates because their dataset cards require
+  license, provenance, or decontamination review before they can be promoted
+  into train buckets.
 
 The external loader now casts HF `Audio`, `Video`, and `Image` features with
 `decode=False` before iteration. That keeps metadata rows from VSTAT, Tricky

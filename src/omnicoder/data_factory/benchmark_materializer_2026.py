@@ -173,6 +173,16 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/microsoft/STATE-Bench.git",
         "kind": "agent_tool",
     },
+    "agent_tobench_mm_toolbench_2026": {
+        "source": "https://huggingface.co/papers/2605.16909",
+        "kind": "agent_tool_multimodal",
+    },
+    "multimodal_agentic_mme_2026": {
+        "source": "https://huggingface.co/datasets/Agentic-MME/Agentic-MME",
+        "hf": ["Agentic-MME/Agentic-MME"],
+        "kind": "agent_tool_multimodal",
+        "splits": ["train"],
+    },
     "coding_swe_bench_live_2026": {
         "source": "https://huggingface.co/datasets/SWE-bench-Live/SWE-bench-Live",
         "git": "https://github.com/microsoft/SWE-bench-Live.git",
@@ -215,6 +225,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "source": "https://github.com/SakanaAI/ALE-Bench",
         "git": "https://github.com/SakanaAI/ALE-Bench.git",
         "kind": "coding",
+    },
+    "coding_abc_bench_2026": {
+        "source": "https://huggingface.co/datasets/OpenMOSS-Team/ABC-Bench",
+        "hf": ["OpenMOSS-Team/ABC-Bench"],
+        "kind": "coding",
+        "splits": ["train"],
     },
     "coding_multi_swe_bench_2026": {
         "source": "https://multi-swe-bench.github.io/",
@@ -316,6 +332,11 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/google-deepmind/superhuman.git",
         "kind": "math",
     },
+    "reasoning_indimathbench_2026": {
+        "source": "https://github.com/prmbiy/IndiMathBench",
+        "git": "https://github.com/prmbiy/IndiMathBench.git",
+        "kind": "formal_verification",
+    },
     "long_context_mrcr_2026": {
         "source": "https://huggingface.co/datasets/openai/mrcr",
         "hf": ["openai/mrcr"],
@@ -333,6 +354,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "hf": ["THUDM/LongBench-v2", "THUDM/LongBench"],
         "kind": "long_context",
         "splits": ["test", "validation", "dev"],
+    },
+    "long_context_longbench_pro_2026": {
+        "source": "https://huggingface.co/datasets/caskcsg/LongBench-Pro",
+        "hf": ["caskcsg/LongBench-Pro"],
+        "kind": "long_context",
+        "splits": ["test"],
     },
     "long_context_graphwalks_2026": {
         "source": "https://huggingface.co/datasets/openai/graphwalks",
@@ -575,6 +602,21 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         ],
         "kind": "multimodal_agent_memory",
         "splits": ["train"],
+    },
+    "multimodal_megabench_2026": {
+        "source": "https://huggingface.co/datasets/TIGER-Lab/MEGA-Bench",
+        "hf": [
+            {"id": "TIGER-Lab/MEGA-Bench", "config": "core", "splits": ["test", "train"]},
+            {"id": "TIGER-Lab/MEGA-Bench", "config": "open", "splits": ["test", "train"]},
+        ],
+        "kind": "multimodal",
+        "splits": ["test", "train"],
+    },
+    "multimodal_stepeval_audio_360_2026": {
+        "source": "https://huggingface.co/datasets/stepfun-ai/StepEval-Audio-360",
+        "hf": ["stepfun-ai/StepEval-Audio-360"],
+        "kind": "multimodal_audio",
+        "splits": ["test"],
     },
     "multimodal_maverix_av_reasoning_2026": {
         "source": "https://maverix-benchmark.github.io/",
@@ -1677,6 +1719,9 @@ def normalize_task(
             "question",
             "instruction",
             "query",
+            "query_text",
+            "question_nonthinking",
+            "question_thinking",
             "question_text",
             "prompt_text",
             "prompt_en",
@@ -1744,6 +1789,26 @@ def normalize_task(
     if answer is None and isinstance(raw.get("multi_choice_QA"), dict):
         mcq = raw["multi_choice_QA"]
         answer = first_value(mcq, ("multi_choice_QA_answer", "answer", "label", "target"))
+    if prompt is None and isinstance(raw.get("conversation"), list):
+        for message in raw["conversation"]:
+            if not isinstance(message, dict):
+                continue
+            if str(message.get("role") or "").lower() == "user" and message.get("text") not in (None, "", [], {}):
+                prompt = message.get("text")
+                break
+            if str(message.get("role") or "").lower() == "user" and message.get("content") not in (None, "", [], {}):
+                prompt = message.get("content")
+                break
+    if answer is None and isinstance(raw.get("conversation"), list):
+        for message in reversed(raw["conversation"]):
+            if not isinstance(message, dict):
+                continue
+            if str(message.get("role") or "").lower() == "assistant" and message.get("text") not in (None, "", [], {}):
+                answer = message.get("text")
+                break
+            if str(message.get("role") or "").lower() == "assistant" and message.get("content") not in (None, "", [], {}):
+                answer = message.get("content")
+                break
     if prompt is None and raw.get("nums") not in (None, "", [], {}) and raw.get("target") not in (None, "", [], {}):
         prompt = (
             "Solve this Countdown arithmetic task. Use each number at most once "
@@ -1811,6 +1876,11 @@ def normalize_task(
         "wav_path",
         "prompt_wav",
         "reference_audio",
+        "audio_filename",
+        "query_media",
+        "example_media",
+        "global_media",
+        "media",
         "image_list",
         "needle_image_list",
         "subtitles",
@@ -1819,6 +1889,14 @@ def normalize_task(
         value = raw.get(media_key)
         if value not in (None, "", [], {}):
             row["images" if media_key == "image_list" else media_key] = make_jsonable(value)
+    if "audio" not in row and isinstance(raw.get("conversation"), list):
+        audio_files = [
+            message.get("audio_filename")
+            for message in raw["conversation"]
+            if isinstance(message, dict) and message.get("audio_filename") not in (None, "", [], {})
+        ]
+        if audio_files:
+            row["audio"] = make_jsonable(audio_files)
 
     if any(token in kind for token in ("tool", "bfcl", "mcp")):
         tools = first_value(raw, ("tools", "enabled_tools", "functions", "tool_schema", "function", "apis", "mcp_servers", "server_name", "servers"))
@@ -1930,6 +2008,15 @@ def normalize_task(
         "time_limit",
         "memory_limit",
         "conversation",
+        "token_length",
+        "primary_task",
+        "secondary_task",
+        "contextual_requirement",
+        "query_text",
+        "example_text",
+        "metric_info",
+        "task_name",
+        "task_description",
         "opening_message",
         "task_summary",
         "task_requirements",
