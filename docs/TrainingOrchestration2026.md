@@ -152,7 +152,9 @@ schedule, low-memory Adafactor, q4 fake-quant hooks, allocator fragmentation
 mitigation, and media-tree mounts:
 `OMNICODER_LM_LOSS_CHUNK_TOKENS` defaults to `64` so final-rank language
 model logits are chunked below the trainer's 128-token fallback during
-20B posttraining.
+20B posttraining. `OMNICODER_FFN_CHUNK_TOKENS` defaults to `256` and is passed
+as `OMNICODER2026_FFN_CHUNK_TOKENS` to chunk the SwiGLU sequence dimension
+during fake-quant backward recompute.
 
 ```bash
 cd /home/cereal/omnicoder_2026_work

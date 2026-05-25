@@ -1189,6 +1189,10 @@ def test_mc_search_parquet_rows_with_array_media_are_scorable() -> None:
     assert task["target"] == "The image shows the referenced clock tower."
     assert task["media"][0]["bytes"] == "<bytes:6>"
     assert materializer.is_scorable_task(task, materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"])
+    ungrounded = dict(task)
+    for key in ("media", "tools", "expected_tool_call", "context_document", "evidence", "subqa_chain", "trajectory", "checkpoints"):
+        ungrounded.pop(key, None)
+    assert not materializer.is_scorable_task(ungrounded, materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"])
 
 
 def test_hf_rows_falls_back_to_raw_hub_files(monkeypatch, tmp_path: Path) -> None:
@@ -1432,6 +1436,10 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["multimodal_mme_unify_2026"]["hf"][0]["id"] == "wulin222/MME-Unify"
     assert materializer.KNOWN_BENCHMARKS["generation_long_tts_eval_2026"]["hf"][0]["id"] == "wcy1122/Long-TTS-Eval"
     assert materializer.KNOWN_BENCHMARKS["agent_livemcpbench_2026"]["hf"] == ["ICIP/LiveMCPBench"]
+    assert materializer.KNOWN_BENCHMARKS["agent_bfcl_v4_tool_calling_2026"]["hf"] == ["gorilla-llm/Berkeley-Function-Calling-Leaderboard"]
+    assert materializer.KNOWN_BENCHMARKS["coding_livecodebench_v6_2026"]["hf"][0]["id"] == "livecodebench/code_generation_lite"
+    assert materializer.KNOWN_BENCHMARKS["agent_terminal_bench_core_2026"]["hf"] == ["terminal-bench/terminal-bench-2-1"]
+    assert materializer.KNOWN_BENCHMARKS["agent_terminalworld_2026"]["git"] == "https://github.com/EuniAI/TerminalWorld.git"
     assert materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"]["hf"][0]["id"] == "YennNing/MC-Search"
     assert materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"]["hf"][0]["files"] == ["data/train-*.parquet"]
     assert materializer.KNOWN_BENCHMARKS["agent_metr_time_horizon_hcast_2026"]["source"] == "https://metr.org/time-horizons/"
@@ -1480,6 +1488,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["coding_computeeval_cuda_2026"]["hf"][0]["id"] == "nvidia/compute-eval"
     assert materializer.KNOWN_BENCHMARKS["coding_computeeval_cuda_2026"]["splits"] == ["eval"]
     assert materializer.KNOWN_BENCHMARKS["long_context_loft_2026"]["git"] == "https://github.com/google-deepmind/loft.git"
+    assert materializer.KNOWN_BENCHMARKS["long_context_loft_2026"]["hf"][0]["files"] == ["**/*.jsonl", "**/*.json", "**/*.parquet"]
     assert materializer.KNOWN_BENCHMARKS["reasoning_frontiermath_2026"]["snapshot_requires_operator_manifest"] is True
     assert materializer.KNOWN_BENCHMARKS["multimodal_avatar_av_localization_2026"]["snapshot_requires_operator_manifest"] is True
     assert materializer.KNOWN_BENCHMARKS["generation_gie_bench_2026"]["snapshot_requires_operator_manifest"] is True

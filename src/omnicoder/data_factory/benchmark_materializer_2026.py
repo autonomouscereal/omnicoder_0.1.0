@@ -41,6 +41,13 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "tool",
         "splits": ["test", "validation", "train"],
     },
+    "agent_bfcl_v4_tool_calling_2026": {
+        "source": "https://gorilla.cs.berkeley.edu/leaderboard.html",
+        "git": "https://github.com/ShishirPatil/gorilla.git",
+        "hf": ["gorilla-llm/Berkeley-Function-Calling-Leaderboard"],
+        "kind": "tool",
+        "splits": ["test", "validation", "train"],
+    },
     "agent_tau3_2026": {
         "source": "https://github.com/sierra-research/tau2-bench",
         "git": "https://github.com/sierra-research/tau2-bench.git",
@@ -116,6 +123,19 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "agent_terminal_bench_2_1_2026": {
         "source": "https://github.com/harbor-framework/terminal-bench-2-1",
         "git": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "hf": ["terminal-bench/terminal-bench-2-1"],
+        "kind": "terminal",
+    },
+    "agent_terminal_bench_core_2026": {
+        "source": "https://www.tbench.ai/leaderboard/terminal-bench/2.1",
+        "git": "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "hf": ["terminal-bench/terminal-bench-2-1"],
+        "kind": "terminal",
+    },
+    "agent_terminalworld_2026": {
+        "source": "https://github.com/EuniAI/TerminalWorld",
+        "git": "https://github.com/EuniAI/TerminalWorld.git",
+        "hf": [{"id": "EuniAI/TerminalWorld", "files": ["**/*.json", "**/*.jsonl", "**/task.toml", "**/instruction.md"]}],
         "kind": "terminal",
     },
     "agent_browsergym_webarena_verified_2026": {
@@ -305,6 +325,13 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "source": "https://github.com/LiveCodeBench/LiveCodeBench",
         "git": "https://github.com/LiveCodeBench/LiveCodeBench.git",
         "hf": ["livecodebench/code_generation_lite", "livecodebench/execution-v2"],
+        "kind": "coding",
+        "splits": ["test", "validation"],
+    },
+    "coding_livecodebench_v6_2026": {
+        "source": "https://github.com/LiveCodeBench/LiveCodeBench",
+        "git": "https://github.com/LiveCodeBench/LiveCodeBench.git",
+        "hf": [{"id": "livecodebench/code_generation_lite", "splits": ["test", "validation"], "files": ["*.jsonl", "*.json", "*.parquet", "**/*.jsonl", "**/*.json", "**/*.parquet"]}],
         "kind": "coding",
         "splits": ["test", "validation"],
     },
@@ -554,6 +581,7 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "long_context_loft_2026": {
         "source": "https://github.com/google-deepmind/loft",
         "git": "https://github.com/google-deepmind/loft.git",
+        "hf": [{"id": "google-deepmind/loft", "files": ["**/*.jsonl", "**/*.json", "**/*.parquet"]}],
         "kind": "long_context",
     },
     "long_context_nolima_1m_2026": {
@@ -2727,7 +2755,20 @@ def is_scorable_task(row: dict[str, Any], spec: dict[str, Any]) -> bool:
                 return False
         return bool(row.get("prompt") and row.get("target") and row.get("media"))
     if "agent_tool_multimodal" in kind:
-        return bool(row.get("prompt") and row.get("target"))
+        grounded = any(
+            has_value(row.get(key))
+            for key in (
+                "media",
+                "tools",
+                "expected_tool_call",
+                "context_document",
+                "evidence",
+                "subqa_chain",
+                "trajectory",
+                "checkpoints",
+            )
+        )
+        return bool(row.get("prompt") and row.get("target") and grounded)
     return True
 
 

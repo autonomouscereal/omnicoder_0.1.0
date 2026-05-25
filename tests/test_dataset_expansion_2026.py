@@ -84,6 +84,68 @@ def test_dataset_expansion_materializes_license_tiered_rows(tmp_path: Path, monk
     assert train_row["contamination_status"] == "clean"
 
 
+def test_dataset_expansion_splits_conversation_prompt_and_target(tmp_path: Path) -> None:
+    plan = _training_profile(tmp_path)["training_plan"]
+    entry = {
+        "name": "unit_conversation",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "contamination_status": "clean",
+        "field_map": {
+            "prompt": ["conversations", "conversations.value"],
+            "target": ["conversations", "conversations.value"],
+            "trajectory": ["conversations"],
+        },
+    }
+    record = {
+        "id": "conv-1",
+        "conversations": [
+            {"from": "human", "value": "Use the terminal to inspect the failing test."},
+            {"from": "gpt", "value": "I will inspect the logs, run the targeted test, and patch the failure."},
+        ],
+    }
+
+    row = expansion.record_to_training_row(entry, record, plan, 0)
+
+    assert row is not None
+    assert row["input_json"]["messages"][0]["content"] == "Use the terminal to inspect the failing test."
+    assert row["target_json"]["content"] == "I will inspect the logs, run the targeted test, and patch the failure."
+    assert row["input_json"]["messages"][0]["content"] != row["target_json"]["content"]
+    assert row["trajectory"][0]["from"] == "human"
+
+
+def test_dataset_expansion_preserves_pairwise_preference_targets(tmp_path: Path) -> None:
+    plan = _training_profile(tmp_path)["training_plan"]
+    entry = {
+        "name": "unit_preference",
+        "family": "agentic_tool_reasoning",
+        "target_modality": "tool",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_reward_model",
+        "use_policy": "reward_only",
+        "field_map": {"prompt": ["prompt"], "target": ["response1", "response2", "overall_preference"]},
+    }
+    record = {
+        "id": "pref-1",
+        "prompt": "Choose the safer tool plan.",
+        "response1": "Call the tool with validated arguments.",
+        "response2": "Call the tool with raw user input.",
+        "overall_preference": "response1",
+    }
+
+    row = expansion.record_to_training_row(entry, record, plan, 0)
+
+    assert row is not None
+    target = json.loads(row["target_json"]["content"])
+    assert target["response1"] == "Call the tool with validated arguments."
+    assert target["response2"] == "Call the tool with raw user input."
+    assert target["overall_preference"] == "response1"
+    assert row["training_bucket"] == "research_internal"
+
+
 def test_dataset_expansion_blocks_unknown_contamination_from_train(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
@@ -1796,6 +1858,35 @@ def test_repo_dataset_registry_covers_twenty_first_wave_ocr_video_tool_reward_so
     assert by_name["NVIDIA HelpSteer3"]["configs"] == ["preference", "edit", "edit_quality", "feedback", "principle"]
     assert expansion.source_use_bucket(by_name["NVIDIA HelpSteer3"]) == "research_internal"
     assert by_name["HuggingFace FinePDFs English"]["config"] == "eng_Latn"
+
+
+def test_repo_dataset_registry_covers_twenty_second_wave_agent_audio_ocr_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "twenty_second_wave_agent_audio_ocr_2026_05_25"
+
+    expected_policy = {
+        "NVIDIA OCR Synthetic Multilingual v1": "train",
+        "LAION Got Talent Orpheus Voice Tags": "train",
+        "StephenZhu SWE-Play Trajectories": "research_internal",
+        "Meituan LongCat Audio Turing Test": "reward_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    assert by_name["NVIDIA OCR Synthetic Multilingual v1"]["license_tier"] == "attribution_train_ok"
+    assert "verifier_labels" in by_name["NVIDIA OCR Synthetic Multilingual v1"]["field_map"]
+    assert expansion.source_use_bucket(by_name["NVIDIA OCR Synthetic Multilingual v1"]) == "train"
+    assert by_name["LAION Got Talent Orpheus Voice Tags"]["license"] == "Apache-2.0"
+    assert "emotion_tags" in by_name["LAION Got Talent Orpheus Voice Tags"]["field_map"]["verifier_labels"]
+    assert expansion.source_use_bucket(by_name["LAION Got Talent Orpheus Voice Tags"]) == "train"
+    assert by_name["StephenZhu SWE-Play Trajectories"]["field_map"]["trajectory"] == ["messages"]
+    assert expansion.source_use_bucket(by_name["StephenZhu SWE-Play Trajectories"]) == "research_internal"
+    assert "non_commercial" in by_name["Meituan LongCat Audio Turing Test"]["license_tier"]
+    assert expansion.source_use_bucket(by_name["Meituan LongCat Audio Turing Test"]) == "research_internal"
 
 
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:

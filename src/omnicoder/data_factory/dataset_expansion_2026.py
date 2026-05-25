@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import time
 from collections import Counter, defaultdict
 from itertools import islice
@@ -226,6 +227,86 @@ def field_text(record: dict[str, Any], fields: Any) -> str:
         text = first_string(value)
         if text:
             return text
+    return ""
+
+
+USER_ROLE_ALIASES = {"user", "human", "customer", "client", "question", "prompt", "instruction"}
+ASSISTANT_ROLE_ALIASES = {"assistant", "gpt", "bot", "model", "agent", "answer", "response"}
+
+
+def normalized_role(value: Any) -> str:
+    return re.sub(r"[^a-z0-9_]+", "_", str(value or "").strip().lower()).strip("_")
+
+
+def conversation_message_text(message: dict[str, Any]) -> str:
+    for key in ("content", "value", "text", "message", "utterance"):
+        if key in message:
+            text = first_string(message[key])
+            if text:
+                return text
+    return first_string(message)
+
+
+def conversation_role_text(value: Any, role_aliases: set[str], *, reverse: bool = False) -> str:
+    if isinstance(value, list):
+        iterable = reversed(value) if reverse else value
+        for item in iterable:
+            text = conversation_role_text(item, role_aliases, reverse=reverse)
+            if text:
+                return text
+    if isinstance(value, dict):
+        role = ""
+        for role_key in ("role", "from", "speaker", "author", "source"):
+            if role_key in value:
+                role = normalized_role(value.get(role_key))
+                break
+        if role and role in role_aliases:
+            return conversation_message_text(value)
+        for child_key in ("messages", "conversation", "conversations", "turns", "dialogue"):
+            child = value.get(child_key)
+            if child not in (None, "", [], {}):
+                text = conversation_role_text(child, role_aliases, reverse=reverse)
+                if text:
+                    return text
+    return ""
+
+
+def field_conversation_text(record: dict[str, Any], fields: Any, role_aliases: set[str], *, reverse: bool = False) -> str:
+    if isinstance(fields, str):
+        fields = [fields]
+    if not isinstance(fields, list):
+        fields = []
+    for field in fields:
+        if not isinstance(field, str):
+            continue
+        candidates = [field]
+        if "." in field:
+            candidates.append(field.split(".", 1)[0])
+        for candidate in candidates:
+            value = dotted_value(record, candidate)
+            if value is None:
+                continue
+            text = conversation_role_text(value, role_aliases, reverse=reverse)
+            if text:
+                return text
+    return ""
+
+
+def preference_pair_text(record: dict[str, Any]) -> str:
+    pairs = {
+        "response1": dotted_value(record, "response1") or dotted_value(record, "response_1"),
+        "response2": dotted_value(record, "response2") or dotted_value(record, "response_2"),
+        "chosen": dotted_value(record, "chosen"),
+        "rejected": dotted_value(record, "rejected"),
+        "overall_preference": dotted_value(record, "overall_preference") or dotted_value(record, "preference"),
+        "feedback": dotted_value(record, "feedback"),
+        "principle": dotted_value(record, "principle"),
+    }
+    compact = {key: first_string(value) for key, value in pairs.items() if first_string(value)}
+    if any(key in compact for key in ("response1", "response2", "chosen", "rejected")) and any(
+        key in compact for key in ("overall_preference", "feedback", "principle", "chosen")
+    ):
+        return json.dumps(compact, ensure_ascii=True, sort_keys=True)[:4000]
     return ""
 
 
@@ -699,8 +780,23 @@ def materialize_source_rows(entry: dict[str, Any], root: Path, args: argparse.Na
 
 def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: dict[str, Any], row_index: int) -> dict[str, Any] | None:
     field_map = entry.get("field_map") if isinstance(entry.get("field_map"), dict) else {}
-    prompt = field_text(record, field_map.get("prompt") or ["instruction", "question", "prompt", "input", "problem", "title", "Brief_Caption"])
-    target = fallback_target(entry, record)
+    prompt_fields = field_map.get("prompt") or ["instruction", "question", "prompt", "input", "problem", "title", "Brief_Caption"]
+    target_fields = field_map.get("target") or [
+        "solution",
+        "answer",
+        "completion",
+        "response",
+        "output",
+        "target",
+        "caption",
+        "detailed_caption",
+        "Brief_Caption",
+        "Detailed_Caption",
+        "main_caption",
+        "alt_caption",
+    ]
+    prompt = field_conversation_text(record, prompt_fields, USER_ROLE_ALIASES) or field_text(record, prompt_fields)
+    target = field_conversation_text(record, target_fields, ASSISTANT_ROLE_ALIASES, reverse=True) or preference_pair_text(record) or fallback_target(entry, record)
     if not prompt:
         prompt = fallback_prompt(entry, record)
     if not target:

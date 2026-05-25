@@ -1301,8 +1301,10 @@ def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args
     assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"' in script
     assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-16}"' in script
     assert 'LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"' in script
+    assert 'FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-256}"' in script
     assert '-e PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"' in script
     assert '-e OMNICODER2026_LM_LOSS_CHUNK_TOKENS="$LM_LOSS_CHUNK_TOKENS"' in script
+    assert '-e OMNICODER2026_FFN_CHUNK_TOKENS="$FFN_CHUNK_TOKENS"' in script
     branch = script.split('if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then', 1)[1].split(
         'elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then',
         1,

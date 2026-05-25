@@ -97,7 +97,9 @@ placement change. The May 25 2048-token retries showed that `16,8,40` and
 `16,16,32` only overfilled a 3090 with the larger 64-row fake-quant chunks.
 The current default keeps the 32-layer RTX 8000 shard, uses 16-row fake-quant
 chunks, and passes `OMNICODER2026_LM_LOSS_CHUNK_TOKENS=64` into Docker to trim
-final-head transient logits.
+final-head transient logits. `OMNICODER2026_FFN_CHUNK_TOKENS=256` chunks the
+SwiGLU sequence path during fake-quant recompute so 2048-token posttraining
+does not build full intermediate FFN activations on the final rank.
 
 Long-context-only recovery is also first-class. Use
 `training-orchestration-2026 run-long-context` or

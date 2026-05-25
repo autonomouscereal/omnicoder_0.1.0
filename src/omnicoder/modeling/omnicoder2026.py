@@ -311,8 +311,16 @@ class SwiGLU(nn.Module):
         self.gate = lin(cfg.d_model, cfg.mlp_dim)
         self.up = lin(cfg.d_model, cfg.mlp_dim)
         self.down = lin(cfg.mlp_dim, cfg.d_model)
+        self.chunk_tokens = max(0, _env_int("OMNICODER2026_FFN_CHUNK_TOKENS", 0))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.chunk_tokens > 0 and x.shape[-2] > self.chunk_tokens:
+            chunks: list[torch.Tensor] = []
+            for start in range(0, x.shape[-2], self.chunk_tokens):
+                end = min(x.shape[-2], start + self.chunk_tokens)
+                x_chunk = x[..., start:end, :]
+                chunks.append(self.down(F.silu(self.gate(x_chunk)) * self.up(x_chunk)))
+            return torch.cat(chunks, dim=-2)
         return self.down(F.silu(self.gate(x)) * self.up(x))
 
 

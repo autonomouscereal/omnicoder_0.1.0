@@ -27145,6 +27145,226 @@
         }
       },
       {
+        "name": "NVIDIA OCR Synthetic Multilingual v1",
+        "family": "omnimodal_understanding",
+        "hf_id": "nvidia/OCR-Synthetic-Multilingual-v1",
+        "url": "https://huggingface.co/datasets/nvidia/OCR-Synthetic-Multilingual-v1",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_second_wave_agent_audio_ocr_2026_05_25",
+        "splits": [
+          "train",
+          "validation"
+        ],
+        "max_records": 4096,
+        "target_modality": "image",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_train_ok",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Large NVIDIA multilingual synthetic OCR/layout corpus. HDF5 source files require a converter sidecar before bulk training rows are admitted.",
+        "curriculum_axes": [
+          "multilingual_ocr",
+          "layout_detection",
+          "document_reading_order",
+          "image_to_text",
+          "verifier_bounding_boxes"
+        ],
+        "field_map": {
+          "id": [
+            "sample_id",
+            "id",
+            "image_id"
+          ],
+          "prompt": [
+            "prompt",
+            "instruction",
+            "language",
+            "document_type"
+          ],
+          "target": [
+            "labels",
+            "annotations",
+            "text",
+            "reading_order",
+            "transcription"
+          ],
+          "media": [
+            "image",
+            "images",
+            "image_path"
+          ],
+          "verifier_labels": [
+            "annotations",
+            "dimensions",
+            "bboxes",
+            "reading_order"
+          ]
+        }
+      },
+      {
+        "name": "LAION Got Talent Orpheus Voice Tags",
+        "family": "audio_music_speech",
+        "hf_id": "laion/laions_got_talent_with_voice_emotion_speed_tags_for_orpheus_tuning",
+        "url": "https://huggingface.co/datasets/laion/laions_got_talent_with_voice_emotion_speed_tags_for_orpheus_tuning",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_second_wave_agent_audio_ocr_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "audio",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Emotional multilingual synthetic voice-acting rows for TTS/prosody tokens and audio reward modeling.",
+        "curriculum_axes": [
+          "tts_generation",
+          "emotion_control",
+          "prosody_tags",
+          "voice_style",
+          "audio_reward_modeling"
+        ],
+        "field_map": {
+          "id": [
+            "sample_id",
+            "id",
+            "audio_id"
+          ],
+          "prompt": [
+            "text",
+            "prompt",
+            "emotion",
+            "emotion_tags"
+          ],
+          "target": [
+            "whisper_transcription",
+            "text",
+            "caption"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "url"
+          ],
+          "verifier_labels": [
+            "emotion_tags",
+            "voice",
+            "characters_per_second",
+            "accent",
+            "language_code"
+          ]
+        }
+      },
+      {
+        "name": "StephenZhu SWE-Play Trajectories",
+        "family": "coding_agentic",
+        "hf_id": "StephenZhu/SWE-Play-trajectories",
+        "url": "https://huggingface.co/collections/StephenZhu/swe-playground",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_second_wave_agent_audio_ocr_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "code",
+        "use_policy": "research_internal",
+        "license": "unknown",
+        "license_tier": "review_required",
+        "source_review_status": "public_shape_reviewed_license_pending_2026_05_25",
+        "materialization_note": "OpenHands-style SWE-Play messages for coding-agent trajectory shaping; held research-internal until license is explicit.",
+        "curriculum_axes": [
+          "coding_agent_trajectory",
+          "openhands_messages",
+          "repo_repair",
+          "tool_use",
+          "terminal_reasoning"
+        ],
+        "field_map": {
+          "id": [
+            "source",
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "messages",
+            "instruction",
+            "prompt"
+          ],
+          "target": [
+            "messages",
+            "answer",
+            "response"
+          ],
+          "trajectory": [
+            "messages"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "actions"
+          ]
+        }
+      },
+      {
+        "name": "Meituan LongCat Audio Turing Test",
+        "family": "audio_music_speech",
+        "hf_id": "meituan-longcat/Audio-Turing-Test-Corpus",
+        "url": "https://huggingface.co/datasets/meituan-longcat/Audio-Turing-Test-Corpus",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_second_wave_agent_audio_ocr_2026_05_25",
+        "splits": [
+          "train",
+          "test"
+        ],
+        "max_records": 2048,
+        "target_modality": "audio",
+        "use_policy": "reward_only",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "non_commercial_reward_only",
+        "source_review_status": "public_reward_reviewed_noncommercial_2026_05_25",
+        "materialization_note": "TTS naturalness/trap evaluation corpus; non-commercial rows stay out of train and feed reward/eval only.",
+        "curriculum_axes": [
+          "tts_eval",
+          "audio_naturalness_reward",
+          "prosody_judgment",
+          "trap_question_detection"
+        ],
+        "field_map": {
+          "id": [
+            "ID",
+            "id",
+            "sample_id"
+          ],
+          "prompt": [
+            "Text",
+            "text",
+            "Dimension"
+          ],
+          "target": [
+            "Ground Truth",
+            "ground_truth",
+            "answer"
+          ],
+          "media": [
+            "audio",
+            "audio_path"
+          ],
+          "verifier_labels": [
+            "Dimension",
+            "Split",
+            "Ground Truth"
+          ]
+        }
+      },
+      {
         "name": "HuggingFace FinePDFs English",
         "family": "text_pretraining",
         "hf_id": "HuggingFaceFW/finepdfs",
