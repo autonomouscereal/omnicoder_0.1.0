@@ -30420,6 +30420,12 @@
         "splits": [
           "test"
         ],
+        "remote_files": [
+          {
+            "url": "https://huggingface.co/datasets/sumeetrm/math-reasoning-benchmark/resolve/main/data/example_data.json",
+            "format": "json"
+          }
+        ],
         "max_records": 512,
         "target_modality": "text",
         "use_policy": "eval_only",
@@ -30452,6 +30458,589 @@
             "metadata",
             "difficulty",
             "answer"
+          ]
+        }
+      },
+      {
+        "name": "Kimi K2.6 Reasoning 3300x WandB",
+        "family": "long_context",
+        "hf_id": "trjxter/Kimi-K2.6-Reasoning-3300x-WandB",
+        "url": "https://huggingface.co/datasets/trjxter/Kimi-K2.6-Reasoning-3300x-WandB",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "data_files": {
+          "train": "train.jsonl"
+        },
+        "max_records": 1024,
+        "target_modality": "long_context",
+        "use_policy": "research_internal",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_distillation_provenance_review",
+        "source_review_status": "research_internal_model_distillation_provenance_review_2026_05_25",
+        "materialization_note": "Fresh Kimi K2.6 reasoning traces are useful for long-context critique and reward-model distillation but stay out of train until provenance and benchmark-overlap review completes.",
+        "curriculum_axes": [
+          "kimi_k2_6",
+          "long_context_reasoning",
+          "distillation_review",
+          "process_reward"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "messages",
+            "problem"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "solution",
+            "completion",
+            "messages"
+          ]
+        }
+      },
+      {
+        "name": "Kimi K2.6 Claude Code Traces",
+        "family": "coding_agentic",
+        "hf_id": "armand0e/kimi-k2.6-claude-code-traces",
+        "url": "https://huggingface.co/datasets/armand0e/kimi-k2.6-claude-code-traces",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "data_files": {
+          "train": "*.jsonl"
+        },
+        "max_records": 1024,
+        "target_modality": "code",
+        "use_policy": "research_internal",
+        "license": "license not declared on API",
+        "license_tier": "unknown_agent_trace_review",
+        "source_review_status": "research_internal_agent_trace_license_and_overlap_review_2026_05_25",
+        "materialization_note": "Kimi/Claude coding traces are quarantined for internal process-model analysis until license, private-trace leakage, and SWE benchmark overlap checks pass.",
+        "curriculum_axes": [
+          "kimi_k2_6",
+          "claude_code_trace",
+          "repo_editing",
+          "tool_trajectory"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "trace_id",
+            "uuid",
+            "instance_id"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "problem_statement",
+            "instruction"
+          ],
+          "target": [
+            "messages",
+            "trajectory",
+            "patch",
+            "answer"
+          ],
+          "trajectory": [
+            "messages",
+            "events",
+            "steps",
+            "trajectory"
+          ]
+        }
+      },
+      {
+        "name": "Kimi K2.6 Agent Rollouts",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "armand0e/kimi-k2.6-agent",
+        "url": "https://huggingface.co/datasets/armand0e/kimi-k2.6-agent",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "data_files": {
+          "train": "rollout-*.jsonl"
+        },
+        "max_records": 1024,
+        "target_modality": "tool",
+        "use_policy": "research_internal",
+        "license": "license not declared on API",
+        "license_tier": "unknown_agent_trace_review",
+        "source_review_status": "research_internal_agent_rollout_license_review_2026_05_25",
+        "materialization_note": "Kimi K2.6 agent rollouts seed reward critique and tool trajectory analysis but do not train-promote before success-label and license review.",
+        "curriculum_axes": [
+          "kimi_k2_6",
+          "agent_rollout",
+          "tool_use",
+          "trajectory_reward"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "trace_id",
+            "uuid"
+          ],
+          "prompt": [
+            "messages",
+            "prompt",
+            "task",
+            "instruction"
+          ],
+          "target": [
+            "messages",
+            "trajectory",
+            "tool_calls",
+            "answer"
+          ],
+          "trajectory": [
+            "messages",
+            "steps",
+            "events",
+            "trajectory"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "actions",
+            "steps"
+          ]
+        }
+      },
+      {
+        "name": "Kimi K2.5 Reasoning 1M Cleaned",
+        "family": "long_context",
+        "hf_id": "rAVEUK/Kimi-K2.5-Reasoning-1M-Cleaned",
+        "url": "https://huggingface.co/datasets/rAVEUK/Kimi-K2.5-Reasoning-1M-Cleaned",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "configs": [
+          "General-Distillation",
+          "PHD-Science",
+          "General-Math",
+          "MultilingualSTEM"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "long_context",
+        "use_policy": "research_internal",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_distillation_provenance_review",
+        "source_review_status": "research_internal_kimi_distillation_overlap_review_2026_05_25",
+        "materialization_note": "Large Kimi K2.5 cleaned reasoning set is kept research-internal to prevent unreviewed generated-CoT and benchmark leakage from entering base train.",
+        "curriculum_axes": [
+          "kimi_k2_5",
+          "million_row_reasoning",
+          "stem_reasoning",
+          "long_context_distillation"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "messages",
+            "problem"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "solution",
+            "completion",
+            "messages"
+          ]
+        }
+      },
+      {
+        "name": "Agent Tool Recall 2026",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "sohaibdevv/Agent-Tool-Recall-2026",
+        "url": "https://huggingface.co/datasets/sohaibdevv/Agent-Tool-Recall-2026",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "data_files": {
+          "train": "comprehensive_agent_sft_50.jsonl"
+        },
+        "max_records": 50,
+        "target_modality": "tool",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Small but current tool-recall SFT rows are train-safe and strengthen basic agent/tool selection behavior.",
+        "curriculum_axes": [
+          "tool_recall",
+          "agent_sft",
+          "function_selection",
+          "tool_schema"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "task_id"
+          ],
+          "prompt": [
+            "prompt",
+            "instruction",
+            "messages",
+            "query"
+          ],
+          "target": [
+            "response",
+            "answer",
+            "completion",
+            "tool"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "tools",
+            "function_call"
+          ]
+        }
+      },
+      {
+        "name": "UIUC RLVR Code Mix",
+        "family": "coding_agentic",
+        "hf_id": "uiuc-kang-lab/RLVR-Code-Mix",
+        "url": "https://huggingface.co/datasets/uiuc-kang-lab/RLVR-Code-Mix",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "data_files": {
+          "train": "data.parquet"
+        },
+        "max_records": 2048,
+        "target_modality": "code",
+        "use_policy": "research_internal",
+        "license": "license not declared on API",
+        "license_tier": "unknown_rlvr_code_review",
+        "source_review_status": "research_internal_rlvr_code_license_review_2026_05_25",
+        "materialization_note": "RLVR code examples are useful for verifier/reward replay but are held internal until source licensing and benchmark overlap are checked.",
+        "curriculum_axes": [
+          "rlvr_code",
+          "verifiable_coding",
+          "reward_replay",
+          "coding_reasoning"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "problem_id",
+            "task_id"
+          ],
+          "prompt": [
+            "prompt",
+            "problem",
+            "question",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "response",
+            "completion"
+          ],
+          "verifier_labels": [
+            "tests",
+            "reward",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "Chess Puzzles RLVR",
+        "family": "math_reasoning",
+        "hf_id": "codingmonster1234/chess-puzzles-rlvr",
+        "url": "https://huggingface.co/datasets/codingmonster1234/chess-puzzles-rlvr",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "splits": [
+          "train",
+          "validation"
+        ],
+        "max_records": 2048,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Chess RLVR puzzle rows add compact symbolic planning and verifiable reward signals without relying on protected coding/math holdouts.",
+        "curriculum_axes": [
+          "chess_reasoning",
+          "rlvr",
+          "symbolic_planning",
+          "verifiable_answer"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "puzzle_id",
+            "task_id"
+          ],
+          "prompt": [
+            "prompt",
+            "fen",
+            "board",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "moves",
+            "target"
+          ],
+          "verifier_labels": [
+            "reward",
+            "metadata",
+            "legal_moves"
+          ]
+        }
+      },
+      {
+        "name": "Long Context Attention Labels 64K 128K",
+        "family": "long_context",
+        "hf_id": "KevinDavidHayes/long-context-attention-labels-64k-128k",
+        "url": "https://huggingface.co/datasets/KevinDavidHayes/long-context-attention-labels-64k-128k",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "data_files": {
+          "train": [
+            "data/olmo3_128k.jsonl",
+            "data/olmo3_64k.jsonl",
+            "data/qwen25_128k.jsonl",
+            "data/qwen25_64k.jsonl"
+          ]
+        },
+        "max_records": 1024,
+        "target_modality": "long_context",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Attention-label rows provide long-context retention and layer-attention supervision signals for 64K/128K curriculum staging toward 1M context.",
+        "curriculum_axes": [
+          "long_context_attention",
+          "retention_labels",
+          "million_context_curriculum",
+          "layer_attention"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "uuid"
+          ],
+          "prompt": [
+            "prompt",
+            "context",
+            "input",
+            "sequence"
+          ],
+          "target": [
+            "labels",
+            "answer",
+            "target",
+            "attention_labels"
+          ],
+          "verifier_labels": [
+            "metadata",
+            "threshold",
+            "labels"
+          ]
+        }
+      },
+      {
+        "name": "VideoEffect 130K",
+        "family": "video_generation",
+        "hf_id": "lc03lc/VideoEffect-130K",
+        "url": "https://huggingface.co/datasets/lc03lc/VideoEffect-130K",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 128,
+        "target_modality": "video",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Bounded video/effect prompt rows extend text-to-video and video transformation coverage without training on protected video benchmark answers.",
+        "curriculum_axes": [
+          "video_generation",
+          "video_effect",
+          "text_to_video",
+          "temporal_editing"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "file"
+          ],
+          "prompt": [
+            "prompt",
+            "caption",
+            "text",
+            "description"
+          ],
+          "target": [
+            "video",
+            "video_path",
+            "caption",
+            "description"
+          ],
+          "media": [
+            "video",
+            "video_path",
+            "mp4",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "MiniMax OctoCodingBench Holdout",
+        "family": "coding_agentic",
+        "hf_id": "MiniMaxAI/OctoCodingBench",
+        "url": "https://huggingface.co/datasets/MiniMaxAI/OctoCodingBench",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "data_files": {
+          "train": "OctoCodingBench.jsonl"
+        },
+        "max_records": 256,
+        "target_modality": "code",
+        "use_policy": "eval_only",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "MiniMax OctoCodingBench is an eval holdout for multi-language, multi-domain code capability and is never train-promoted.",
+        "curriculum_axes": [
+          "octocodingbench",
+          "coding_eval",
+          "minimax",
+          "benchmark_holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "problem_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "problem",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "tests",
+            "target"
+          ],
+          "verifier_labels": [
+            "tests",
+            "language",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "Suno AI Music Dataset Review",
+        "family": "music_generation",
+        "hf_id": "Kukedlc/suno-ai-music-dataset",
+        "url": "https://huggingface.co/datasets/Kukedlc/suno-ai-music-dataset",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 128,
+        "target_modality": "music",
+        "use_policy": "research_internal",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_generated_music_review",
+        "source_review_status": "research_internal_generated_music_rights_review_2026_05_25",
+        "materialization_note": "Generated music metadata may help prompt/style analysis, but audio rights and generator provenance require review before any training promotion.",
+        "curriculum_axes": [
+          "music_generation",
+          "style_prompting",
+          "generated_audio_review",
+          "ace_step_distillation"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "track_id"
+          ],
+          "prompt": [
+            "prompt",
+            "tags",
+            "description",
+            "lyrics"
+          ],
+          "target": [
+            "audio",
+            "music",
+            "caption",
+            "description"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "music",
+            "file"
           ]
         }
       }

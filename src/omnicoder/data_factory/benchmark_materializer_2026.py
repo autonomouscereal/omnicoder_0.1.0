@@ -531,7 +531,13 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     },
     "reasoning_math_reasoning_benchmark_2026": {
         "source": "https://huggingface.co/datasets/sumeetrm/math-reasoning-benchmark",
-        "hf": [{"id": "sumeetrm/math-reasoning-benchmark", "config": "default", "splits": ["test"]}],
+        "hf": [
+            {
+                "id": "sumeetrm/math-reasoning-benchmark",
+                "splits": ["test"],
+                "files": ["data/example_data.json"],
+            }
+        ],
         "kind": "math",
         "splits": ["test"],
     },

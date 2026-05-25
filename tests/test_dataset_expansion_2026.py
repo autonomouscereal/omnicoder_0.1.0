@@ -2281,7 +2281,65 @@ def test_repo_dataset_registry_covers_twenty_seventh_wave_agentic_longcontext_vi
     assert by_name["Olympiad Integer Math Reasoning"]["protected_benchmark_scan"] == "clean"
     assert expansion.source_use_bucket(by_name["Olympiad Integer Math Reasoning"]) == "train"
     assert by_name["Math Reasoning Benchmark 2026"]["splits"] == ["test"]
+    assert by_name["Math Reasoning Benchmark 2026"]["remote_files"][0]["format"] == "json"
     assert expansion.source_use_bucket(by_name["Math Reasoning Benchmark 2026"]) == "eval_holdout"
+
+
+def test_repo_dataset_registry_covers_twenty_eighth_wave_kimi_rlvr_video_music_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "twenty_eighth_wave_kimi_rlvr_video_music_2026_05_25"
+
+    expected_policy = {
+        "Kimi K2.6 Reasoning 3300x WandB": "research_internal",
+        "Kimi K2.6 Claude Code Traces": "research_internal",
+        "Kimi K2.6 Agent Rollouts": "research_internal",
+        "Kimi K2.5 Reasoning 1M Cleaned": "research_internal",
+        "Agent Tool Recall 2026": "train",
+        "UIUC RLVR Code Mix": "research_internal",
+        "Chess Puzzles RLVR": "train",
+        "Long Context Attention Labels 64K 128K": "train",
+        "VideoEffect 130K": "train",
+        "MiniMax OctoCodingBench Holdout": "eval_only",
+        "Suno AI Music Dataset Review": "research_internal",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    assert by_name["Kimi K2.6 Reasoning 3300x WandB"]["data_files"] == {"train": "train.jsonl"}
+    assert expansion.source_use_bucket(by_name["Kimi K2.6 Reasoning 3300x WandB"]) == "research_internal"
+    assert by_name["Kimi K2.6 Claude Code Traces"]["data_files"] == {"train": "*.jsonl"}
+    assert expansion.source_use_bucket(by_name["Kimi K2.6 Claude Code Traces"]) == "research_internal"
+    assert by_name["Kimi K2.6 Agent Rollouts"]["data_files"] == {"train": "rollout-*.jsonl"}
+    assert expansion.source_use_bucket(by_name["Kimi K2.6 Agent Rollouts"]) == "research_internal"
+    assert by_name["Kimi K2.5 Reasoning 1M Cleaned"]["configs"] == [
+        "General-Distillation",
+        "PHD-Science",
+        "General-Math",
+        "MultilingualSTEM",
+    ]
+    assert expansion.source_use_bucket(by_name["Kimi K2.5 Reasoning 1M Cleaned"]) == "research_internal"
+    assert by_name["Agent Tool Recall 2026"]["data_files"] == {"train": "comprehensive_agent_sft_50.jsonl"}
+    assert expansion.source_use_bucket(by_name["Agent Tool Recall 2026"]) == "train"
+    assert by_name["Agent Tool Recall 2026"]["protected_benchmark_scan"] == "clean"
+    assert by_name["UIUC RLVR Code Mix"]["data_files"] == {"train": "data.parquet"}
+    assert expansion.source_use_bucket(by_name["UIUC RLVR Code Mix"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["Chess Puzzles RLVR"]) == "train"
+    assert by_name["Chess Puzzles RLVR"]["protected_benchmark_scan"] == "clean"
+    assert by_name["Long Context Attention Labels 64K 128K"]["data_files"]["train"] == [
+        "data/olmo3_128k.jsonl",
+        "data/olmo3_64k.jsonl",
+        "data/qwen25_128k.jsonl",
+        "data/qwen25_64k.jsonl",
+    ]
+    assert expansion.source_use_bucket(by_name["Long Context Attention Labels 64K 128K"]) == "train"
+    assert expansion.source_use_bucket(by_name["VideoEffect 130K"]) == "train"
+    assert by_name["MiniMax OctoCodingBench Holdout"]["data_files"] == {"train": "OctoCodingBench.jsonl"}
+    assert expansion.source_use_bucket(by_name["MiniMax OctoCodingBench Holdout"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["Suno AI Music Dataset Review"]) == "research_internal"
 
 
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:
