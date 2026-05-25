@@ -176,11 +176,31 @@ def first_string(value: Any) -> str:
         parts = [first_string(item) for item in value[:8]]
         return "\n".join(part for part in parts if part)
     if isinstance(value, dict):
-        for key in ("content", "text", "caption", "answer", "solution", "prompt", "question", "instruction"):
+        for key in (
+            "content",
+            "text",
+            "value",
+            "natural_text",
+            "markdown",
+            "caption",
+            "answer",
+            "solution",
+            "ground_truth",
+            "label",
+            "name",
+            "prompt",
+            "question",
+            "instruction",
+        ):
             if key in value:
                 text = first_string(value[key])
                 if text:
                     return text
+        if any(key in value for key in ("objects", "bbox", "bounding_box", "text_sequence", "layout")):
+            try:
+                return json.dumps(value, ensure_ascii=True, sort_keys=True)[:4000]
+            except Exception:
+                return str(value)[:4000]
     return ""
 
 

@@ -1158,6 +1158,39 @@ def test_materializer_hardens_2026_factuality_search_and_document_rows() -> None
     assert real5["media"][0]["bytes"] == "<bytes:5>"
 
 
+def test_mc_search_parquet_rows_with_array_media_are_scorable() -> None:
+    class ArrayLike:
+        size = 1
+
+        def tolist(self):
+            return [{"bytes": b"abc123", "path": "mc-search/page.png"}]
+
+    task = materializer.normalize_task(
+        "agent_mc_search_mmrag_2026",
+        {
+            "index": 8,
+            "question": "Which visual evidence supports the passage?",
+            "answer": "The image shows the referenced clock tower.",
+            "image": ArrayLike(),
+            "image_titles": "['Torre del Reloj']",
+            "image_ids": "['30351515']",
+            "graph_type": "Parallel Visual-Textual Fork",
+            "subqa_chain": "[{'subquestion': 'What is pictured?', 'answer': 'clock tower'}]",
+        },
+        materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"],
+        {"adapter_kind": "multimodal_agent_memory"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert task is not None
+    assert task["target"] == "The image shows the referenced clock tower."
+    assert task["media"][0]["bytes"] == "<bytes:6>"
+    assert materializer.is_scorable_task(task, materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"])
+
+
 def test_hf_rows_falls_back_to_raw_hub_files(monkeypatch, tmp_path: Path) -> None:
     remote_file = tmp_path / "mmlong.jsonl"
     _write_jsonl(
@@ -1400,6 +1433,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["generation_long_tts_eval_2026"]["hf"][0]["id"] == "wcy1122/Long-TTS-Eval"
     assert materializer.KNOWN_BENCHMARKS["agent_livemcpbench_2026"]["hf"] == ["ICIP/LiveMCPBench"]
     assert materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"]["hf"][0]["id"] == "YennNing/MC-Search"
+    assert materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"]["hf"][0]["files"] == ["data/train-*.parquet"]
     assert materializer.KNOWN_BENCHMARKS["agent_metr_time_horizon_hcast_2026"]["source"] == "https://metr.org/time-horizons/"
     assert materializer.KNOWN_BENCHMARKS["agent_memgym_2026"]["source"] == "https://arxiv.org/abs/2605.20833"
     assert materializer.KNOWN_BENCHMARKS["factuality_simpleqa_verified_2026"]["hf"][0]["config"] == "simpleqa_verified"

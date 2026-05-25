@@ -141,7 +141,7 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "agent_mc_search_mmrag_2026": {
         "source": "https://mc-search-project.github.io/",
         "git": "https://github.com/YennNing/MC-Search.git",
-        "hf": [{"id": "YennNing/MC-Search", "splits": ["train"], "files": ["*.parquet", "**/*.parquet", "*.json", "**/*.json"]}],
+        "hf": [{"id": "YennNing/MC-Search", "splits": ["train"], "files": ["data/train-*.parquet"]}],
         "kind": "agent_tool_multimodal",
         "splits": ["train"],
         "required_assets": ["data/KB/all_docs.json", "data/KB/all_image_infos.json", "data/KB/knowledge_base_emb.tar.gz"],
@@ -1150,6 +1150,12 @@ def make_jsonable(value: Any) -> Any:
         return str(value)
     if isinstance(value, bytes):
         return f"<bytes:{len(value)}>"
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        try:
+            return make_jsonable(tolist())
+        except Exception:
+            pass
     if isinstance(value, list):
         return [make_jsonable(item) for item in value[:200]]
     if isinstance(value, tuple):
@@ -1169,6 +1175,12 @@ def has_value(value: Any) -> bool:
         return bool(value)
     if isinstance(value, (list, tuple, set, dict)):
         return bool(value)
+    size = getattr(value, "size", None)
+    if size is not None:
+        try:
+            return int(size) > 0
+        except Exception:
+            return True
     return True
 
 
@@ -1177,7 +1189,7 @@ def first_value(raw: dict[str, Any], keys: tuple[str, ...]) -> Any:
     for key in keys:
         lookup = key if key in raw else casefold_keys.get(str(key).casefold(), key)
         value = raw.get(lookup)
-        if value not in (None, "", [], {}):
+        if has_value(value):
             return value
     return None
 
@@ -1522,7 +1534,7 @@ def read_json_rows(path: Path, limit: int) -> list[dict[str, Any]]:
                     break
             return out[:limit]
         if isinstance(value, dict):
-            if any(value.get(key) not in (None, "", [], {}) for key in row_like_keys):
+            if any(has_value(value.get(key)) for key in row_like_keys):
                 return [value]
             for key in ("data", "examples", "questions", "items", "tasks", "records", "validation", "test", "train"):
                 child = value.get(key)
@@ -1545,7 +1557,7 @@ def read_json_rows(path: Path, limit: int) -> list[dict[str, Any]]:
 
     candidates: Any = payload
     if isinstance(payload, dict):
-        if any(payload.get(key) not in (None, "", [], {}) for key in row_like_keys):
+        if any(has_value(payload.get(key)) for key in row_like_keys):
             candidates = [payload]
         else:
             for key in ("data", "examples", "questions", "items", "tasks", "records", "validation", "test", "train"):
@@ -1690,7 +1702,7 @@ def read_mcp_bench_rows(path: Path, limit: int) -> list[dict[str, Any]]:
                 row.setdefault("servers", servers)
                 row.setdefault("tools", [{"name": str(name).strip()} for name in servers if str(name).strip()])
             for key in ("combination_name", "combination_type"):
-                if block.get(key) not in (None, "", [], {}):
+                if has_value(block.get(key)):
                     row.setdefault(key, block[key])
             row.setdefault("prompt", task.get("task_description") or task.get("fuzzy_description"))
             row.setdefault("_source_file", str(path))
@@ -1742,7 +1754,7 @@ def read_agent_company_scenario_rows(path: Path, limit: int) -> list[dict[str, A
             row.setdefault("answer", strategy_hint)
         if checkpoints:
             row.setdefault("checkpoints", checkpoints)
-        if dependencies not in (None, "", [], {}):
+        if has_value(dependencies):
             row.setdefault("dependencies", make_jsonable(dependencies))
         row.setdefault("_source_file", str(path))
         rows.append(row)
@@ -2218,7 +2230,7 @@ def normalize_task(
             "_source_index",
         ),
     )
-    if benchmark_id == "generation_ttsds2_2026" and raw.get("id") not in (None, "", [], {}) and raw.get("annotator") not in (None, "", [], {}):
+    if benchmark_id == "generation_ttsds2_2026" and has_value(raw.get("id")) and has_value(raw.get("annotator")):
         task_id = f"{raw.get('id')}:{raw.get('annotator')}"
     prompt = first_value(
         raw,
@@ -2274,9 +2286,7 @@ def normalize_task(
     choices = normalize_choices(first_value(raw, ("choices", "choice", "options", "candidates", "endings", "answers", "text_choices", "image_choices")))
     if choices in (None, "", [], {}) and isinstance(raw.get("multi_choice_QA"), dict):
         choices = normalize_choices(first_value(raw["multi_choice_QA"], ("multi_choice_QA_options", "options", "choices")))
-    if choices in (None, "", [], {}) and (
-        raw.get("response_a_text") not in (None, "", [], {}) or raw.get("response_b_text") not in (None, "", [], {})
-    ):
+    if not has_value(choices) and (has_value(raw.get("response_a_text")) or has_value(raw.get("response_b_text"))):
         choices = [make_jsonable(raw.get("response_a_text") or ""), make_jsonable(raw.get("response_b_text") or "")]
     answer = first_value(
         raw,
@@ -2341,23 +2351,23 @@ def normalize_task(
         for message in raw["conversation"]:
             if not isinstance(message, dict):
                 continue
-            if str(message.get("role") or "").lower() == "user" and message.get("text") not in (None, "", [], {}):
+            if str(message.get("role") or "").lower() == "user" and has_value(message.get("text")):
                 prompt = message.get("text")
                 break
-            if str(message.get("role") or "").lower() == "user" and message.get("content") not in (None, "", [], {}):
+            if str(message.get("role") or "").lower() == "user" and has_value(message.get("content")):
                 prompt = message.get("content")
                 break
     if answer is None and isinstance(raw.get("conversation"), list):
         for message in reversed(raw["conversation"]):
             if not isinstance(message, dict):
                 continue
-            if str(message.get("role") or "").lower() == "assistant" and message.get("text") not in (None, "", [], {}):
+            if str(message.get("role") or "").lower() == "assistant" and has_value(message.get("text")):
                 answer = message.get("text")
                 break
-            if str(message.get("role") or "").lower() == "assistant" and message.get("content") not in (None, "", [], {}):
+            if str(message.get("role") or "").lower() == "assistant" and has_value(message.get("content")):
                 answer = message.get("content")
                 break
-    if prompt is None and raw.get("nums") not in (None, "", [], {}) and raw.get("target") not in (None, "", [], {}):
+    if prompt is None and has_value(raw.get("nums")) and has_value(raw.get("target")):
         prompt = (
             "Solve this Countdown arithmetic task. Use each number at most once "
             f"to reach target {raw.get('target')}. Numbers: {make_jsonable(raw.get('nums'))}."
@@ -2396,9 +2406,9 @@ def normalize_task(
     if prompt is not None:
         row["prompt"] = make_jsonable(prompt)
         row["question"] = make_jsonable(first_value(raw, ("question",)) or prompt)
-    if choices not in (None, "", [], {}):
+    if has_value(choices):
         row["choices"] = choices
-    if answer not in (None, "", [], {}):
+    if has_value(answer):
         row["answer"] = make_jsonable(answer)
         row["target"] = make_jsonable(answer)
     elif benchmark_id == "factuality_facts_grounding_2026":
@@ -2423,7 +2433,7 @@ def normalize_task(
             ("text_evidence", "ctxs"),
         ):
             value = evidence.get(media_key)
-            if value not in (None, "", [], {}):
+            if has_value(value):
                 row.setdefault(row_key, make_jsonable(value))
 
     for media_key in (
@@ -2471,13 +2481,13 @@ def normalize_task(
         "subtitle",
     ):
         value = raw.get(media_key)
-        if value not in (None, "", [], {}):
+        if has_value(value):
             row["images" if media_key == "image_list" else media_key] = make_jsonable(value)
     if "audio" not in row and isinstance(raw.get("conversation"), list):
         audio_files = [
             message.get("audio_filename")
             for message in raw["conversation"]
-            if isinstance(message, dict) and message.get("audio_filename") not in (None, "", [], {})
+            if isinstance(message, dict) and has_value(message.get("audio_filename"))
         ]
         if audio_files:
             row["audio"] = make_jsonable(audio_files)
@@ -2499,9 +2509,9 @@ def normalize_task(
                 "task_tool",
             ),
         )
-        if tools not in (None, "", [], {}):
+        if has_value(tools):
             row["tools"] = normalize_tool_call(tools)
-        if expected not in (None, "", [], {}):
+        if has_value(expected):
             row["expected_tool_call"] = normalize_tool_call(expected)
         for key in (
             "output_format",
@@ -2526,7 +2536,7 @@ def normalize_task(
             "final_assistant_response",
         ):
             value = raw.get(key)
-            if value not in (None, "", [], {}):
+            if has_value(value):
                 row[key] = make_jsonable(value)
 
     if any(token in kind for token in ("swe", "repo", "patch", "coding", "formal_verification")):
@@ -2568,7 +2578,7 @@ def normalize_task(
             "timeouts",
         ):
             value = raw.get(key)
-            if value not in (None, "", [], {}):
+            if has_value(value):
                 row[key] = make_jsonable(value)
 
     for key in (
@@ -2664,13 +2674,13 @@ def normalize_task(
         "extra",
     ):
         value = first_value(raw, (key,))
-        if value not in (None, "", [], {}):
+        if has_value(value):
             row[key] = make_jsonable(value)
 
     if any(token in kind for token in ("terminal", "browser", "desktop")):
         for key in ("setup", "command", "commands", "oracle", "environment", "start_url", "sites", "workspace"):
             value = raw.get(key)
-            if value not in (None, "", [], {}):
+            if has_value(value):
                 row[key] = make_jsonable(value)
 
     if "generation" in kind:
@@ -2702,7 +2712,7 @@ def normalize_task(
 def is_scorable_task(row: dict[str, Any], spec: dict[str, Any]) -> bool:
     kind = str(spec.get("kind") or "").lower()
     if "multimodal_agent_memory" in kind:
-        return bool(row.get("prompt") or row.get("question")) and row.get("answer") not in (None, "", [], {})
+        return bool(row.get("prompt") or row.get("question")) and has_value(row.get("answer"))
     if "factuality_grounding" in kind:
         return bool(row.get("prompt") and row.get("target") and row.get("context_document"))
     if "document_ai" in kind:

@@ -26754,11 +26754,14 @@
         "source_year": 2025,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
-        "splits": [
+        "configs": [
           "00_documents",
           "01_books",
           "02_loc_transcripts",
           "03_national_archives"
+        ],
+        "splits": [
+          "train"
         ],
         "max_records": 4096,
         "target_modality": "long_context",
@@ -26791,6 +26794,7 @@
           ],
           "target": [
             "answer",
+            "natural_text",
             "text",
             "markdown",
             "gt_markdown",
@@ -26799,6 +26803,8 @@
           "media": [
             "image",
             "image_path",
+            "pdf_relpath",
+            "url",
             "pdf",
             "document"
           ]
@@ -26835,7 +26841,8 @@
           "id": [
             "id",
             "qid",
-            "task_id"
+            "task_id",
+            "extra_info.index"
           ],
           "prompt": [
             "prompt",
@@ -26844,6 +26851,7 @@
             "context"
           ],
           "target": [
+            "reward_model.ground_truth",
             "answer",
             "solution",
             "ground_truth",
@@ -26862,6 +26870,13 @@
         "splits": [
           "train"
         ],
+        "data_files": {
+          "train": [
+            "videorefer-short-caption-500k.json",
+            "videorefer-detailed-caption-125k.json",
+            "videorefer-qa-75k.json"
+          ]
+        },
         "max_records": 4096,
         "target_modality": "video",
         "use_policy": "train",
@@ -26885,12 +26900,17 @@
             "sample_id"
           ],
           "prompt": [
+            "conversations",
+            "conversations.value",
             "prompt",
             "question",
             "caption",
             "instruction"
           ],
           "target": [
+            "annotation",
+            "conversations",
+            "conversations.value",
             "answer",
             "response",
             "detailed_caption",
@@ -26959,12 +26979,10 @@
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
-        "configs": [
+        "config": "test",
+        "splits": [
           "graph_syn_datasets",
           "open_datasets"
-        ],
-        "splits": [
-          "train"
         ],
         "max_records": 4096,
         "target_modality": "tool",
@@ -26989,12 +27007,16 @@
             "sample_id"
           ],
           "prompt": [
+            "conversations",
+            "conversations.value",
             "prompt",
             "instruction",
             "messages",
             "question"
           ],
           "target": [
+            "conversations",
+            "conversations.value",
             "answer",
             "response",
             "tool_calls",
@@ -27003,7 +27025,11 @@
           "tool_calls": [
             "tool_calls",
             "function_call",
-            "actions"
+            "actions",
+            "tools"
+          ],
+          "trajectory": [
+            "conversations"
           ]
         }
       },
@@ -27100,6 +27126,7 @@
             "image"
           ],
           "target": [
+            "objects",
             "answer",
             "labels",
             "fields",
@@ -27109,7 +27136,11 @@
           "media": [
             "image",
             "image_path",
+            "file_name",
             "file"
+          ],
+          "verifier_labels": [
+            "objects"
           ]
         }
       },

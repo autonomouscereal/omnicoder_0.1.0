@@ -1778,13 +1778,21 @@ def test_repo_dataset_registry_covers_twenty_first_wave_ocr_video_tool_reward_so
         assert expansion.source_use_bucket(by_name[name]) == "train"
 
     assert by_name["AllenAI olmOCR SynthMix 1025"]["license_tier"] == "attribution_train_ok"
-    assert by_name["AllenAI olmOCR Mix 1025"]["splits"] == [
+    assert by_name["AllenAI olmOCR Mix 1025"]["configs"] == [
         "00_documents",
         "01_books",
         "02_loc_transcripts",
         "03_national_archives",
     ]
-    assert by_name["Nanbeige ToolMind Full"]["configs"] == ["graph_syn_datasets", "open_datasets"]
+    assert by_name["AllenAI olmOCR Mix 1025"]["splits"] == ["train"]
+    assert by_name["DAMO VideoRefer 700K"]["data_files"]["train"] == [
+        "videorefer-short-caption-500k.json",
+        "videorefer-detailed-caption-125k.json",
+        "videorefer-qa-75k.json",
+    ]
+    assert by_name["Nanbeige ToolMind Full"]["config"] == "test"
+    assert by_name["Nanbeige ToolMind Full"]["splits"] == ["graph_syn_datasets", "open_datasets"]
+    assert by_name["CommonForms"]["field_map"]["verifier_labels"] == ["objects"]
     assert by_name["NVIDIA HelpSteer3"]["configs"] == ["preference", "edit", "edit_quality", "feedback", "principle"]
     assert expansion.source_use_bucket(by_name["NVIDIA HelpSteer3"]) == "research_internal"
     assert by_name["HuggingFace FinePDFs English"]["config"] == "eng_Latn"
