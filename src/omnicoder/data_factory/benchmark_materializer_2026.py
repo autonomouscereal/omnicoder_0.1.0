@@ -30,8 +30,16 @@ DEFAULT_PROFILE = "profiles/benchmark_suite_2026.json"
 KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "agent_bfcl_v4_2026": {
         "source": "https://gorilla.cs.berkeley.edu/leaderboard.html",
+        "git": "https://github.com/ShishirPatil/gorilla.git",
         "hf": ["gorilla-llm/Berkeley-Function-Calling-Leaderboard"],
         "kind": "tool",
+        "splits": ["test", "validation", "train"],
+    },
+    "agent_tau3_2026": {
+        "source": "https://github.com/sierra-research/tau2-bench",
+        "git": "https://github.com/sierra-research/tau2-bench.git",
+        "hf": ["HuggingFaceH4/tau2-bench-data"],
+        "kind": "agent_tool",
         "splits": ["test", "validation", "train"],
     },
     "agent_mcp_workflows_2026": {
@@ -68,14 +76,18 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "research",
     },
     "coding_swe_bench_live_2026": {
-        "source": "https://github.com/microsoft/SWE-bench-Live",
+        "source": "https://huggingface.co/datasets/SWE-bench-Live/SWE-bench-Live",
         "git": "https://github.com/microsoft/SWE-bench-Live.git",
+        "hf": ["SWE-bench-Live/SWE-bench-Live"],
         "kind": "swe",
+        "splits": ["test", "train"],
     },
     "coding_swe_bench_pro_2026": {
-        "source": "https://github.com/scaleapi/SWE-bench_Pro-os",
+        "source": "https://huggingface.co/datasets/ScaleAI/SWE-bench_Pro",
         "git": "https://github.com/scaleapi/SWE-bench_Pro-os.git",
+        "hf": ["ScaleAI/SWE-bench_Pro"],
         "kind": "swe",
+        "splits": ["test", "train"],
     },
     "coding_livecodebench_2026": {
         "source": "https://github.com/LiveCodeBench/LiveCodeBench",
@@ -125,29 +137,39 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "splits": ["test", "validation", "dev"],
     },
     "multimodal_video_understanding_2026": {
-        "source": "https://github.com/MME-Benchmarks/Video-MME-v2",
+        "source": "https://huggingface.co/datasets/MME-Benchmarks/Video-MME-v2",
         "git": "https://github.com/MME-Benchmarks/Video-MME-v2.git",
+        "hf": ["MME-Benchmarks/Video-MME-v2"],
         "kind": "video",
+        "splits": ["test", "validation"],
     },
     "multimodal_video_mme_v2_grouped_2026": {
-        "source": "https://github.com/MME-Benchmarks/Video-MME-v2",
+        "source": "https://huggingface.co/datasets/MME-Benchmarks/Video-MME-v2",
         "git": "https://github.com/MME-Benchmarks/Video-MME-v2.git",
+        "hf": ["MME-Benchmarks/Video-MME-v2"],
         "kind": "video",
+        "splits": ["test", "validation"],
     },
     "multimodal_lvbench_2026": {
-        "source": "https://github.com/zai-org/LVBench",
+        "source": "https://huggingface.co/datasets/zai-org/LVBench",
         "git": "https://github.com/zai-org/LVBench.git",
+        "hf": ["zai-org/LVBench"],
         "kind": "video",
+        "splits": ["test", "validation"],
     },
     "multimodal_lvomnibench_2026": {
-        "source": "https://github.com/KD-TAO/LVOmniBench",
+        "source": "https://huggingface.co/datasets/KD-TAO/LVOmniBench",
         "git": "https://github.com/KD-TAO/LVOmniBench.git",
+        "hf": ["KD-TAO/LVOmniBench"],
         "kind": "video_audio",
+        "splits": ["test", "validation"],
     },
     "multimodal_jointavbench_2026": {
-        "source": "https://github.com/roverx12345/JointAVBench",
+        "source": "https://huggingface.co/datasets/JointAVBench/JointAVBench",
         "git": "https://github.com/roverx12345/JointAVBench.git",
+        "hf": ["JointAVBench/JointAVBench"],
         "kind": "video_audio",
+        "splits": ["test", "validation", "train"],
     },
     "multimodal_audiobench_2026": {
         "source": "https://github.com/AudioLLMs/AudioBench",
@@ -196,12 +218,18 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "audio_generation",
     },
     "generation_music_2026": {
-        "source": "https://www.musicarena.ai/",
+        "source": "https://huggingface.co/datasets/music-arena/music-arena-dataset",
+        "git": "https://github.com/gclef-cmu/music-arena.git",
+        "hf": ["music-arena/music-arena-dataset"],
         "kind": "music_generation",
+        "splits": ["train", "test", "validation"],
     },
     "generation_music_arena_2026": {
-        "source": "https://www.musicarena.ai/",
+        "source": "https://huggingface.co/datasets/music-arena/music-arena-dataset",
+        "git": "https://github.com/gclef-cmu/music-arena.git",
+        "hf": ["music-arena/music-arena-dataset"],
         "kind": "music_generation",
+        "splits": ["train", "test", "validation"],
     },
     "generation_text_to_audio_pref_2026": {
         "source": "https://huggingface.co/datasets/Rapidata/text-2-audio-human-preference-benchmark",
