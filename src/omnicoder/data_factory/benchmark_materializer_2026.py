@@ -136,14 +136,9 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "source": "https://github.com/EuniAI/TerminalWorld",
         "git": "https://github.com/EuniAI/TerminalWorld.git",
         "hf": [
-            {
-                "id": "EuniAI/TerminalWorld",
-                "files": [
-                    "verified/**/*.parquet",
-                    "sample/**/*.parquet",
-                    "full/**/*.parquet",
-                ],
-            }
+            {"id": "EuniAI/TerminalWorld", "config": "verified", "splits": ["test"]},
+            {"id": "EuniAI/TerminalWorld", "config": "sample", "splits": ["test"]},
+            {"id": "EuniAI/TerminalWorld", "config": "full", "splits": ["test"]},
         ],
         "kind": "terminal",
     },

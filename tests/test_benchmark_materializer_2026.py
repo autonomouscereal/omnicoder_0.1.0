@@ -303,9 +303,9 @@ def test_materializer_materializes_terminalworld_layout_assets(tmp_path: Path) -
 
 def test_materializer_terminalworld_parquet_layout_rows_are_scorable() -> None:
     spec = materializer.KNOWN_BENCHMARKS["agent_terminalworld_2026"]
-    patterns = spec["hf"][0]["files"]
-    assert "verified/**/*.parquet" in patterns
-    assert all("croissant" not in pattern for pattern in patterns)
+    configs = [item["config"] for item in spec["hf"]]
+    assert configs == ["verified", "sample", "full"]
+    assert all(item["splits"] == ["test"] for item in spec["hf"])
 
     task = materializer.normalize_task(
         "agent_terminalworld_2026",
@@ -1567,7 +1567,9 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["agent_bfcl_v4_tool_calling_2026"]["hf"] == ["gorilla-llm/Berkeley-Function-Calling-Leaderboard"]
     assert materializer.KNOWN_BENCHMARKS["coding_livecodebench_v6_2026"]["hf"][0]["id"] == "livecodebench/code_generation_lite"
     assert materializer.KNOWN_BENCHMARKS["agent_terminal_bench_core_2026"]["hf"] == ["terminal-bench/terminal-bench-2-1"]
-    assert materializer.KNOWN_BENCHMARKS["agent_terminalworld_2026"]["git"] == "https://github.com/EuniAI/TerminalWorld.git"
+    terminalworld = materializer.KNOWN_BENCHMARKS["agent_terminalworld_2026"]
+    assert terminalworld["git"] == "https://github.com/EuniAI/TerminalWorld.git"
+    assert terminalworld["hf"][0] == {"id": "EuniAI/TerminalWorld", "config": "verified", "splits": ["test"]}
     assert materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"]["hf"][0]["id"] == "YennNing/MC-Search"
     assert materializer.KNOWN_BENCHMARKS["agent_mc_search_mmrag_2026"]["hf"][0]["files"] == ["data/train-*.parquet"]
     assert materializer.KNOWN_BENCHMARKS["agent_metr_time_horizon_hcast_2026"]["source"] == "https://metr.org/time-horizons/"
