@@ -557,7 +557,7 @@ def test_hf_rows_falls_back_to_raw_hub_files(monkeypatch, tmp_path: Path) -> Non
     assert len(rows) == 1
     assert rows[0]["_hf_file"] == "mmlb_data_example/NIAH/retrieval-image_test_K128_dep6.jsonl"
     assert rows[0]["image_list"] == ["page4.png"]
-    assert any("generator failed" in error for error in errors)
+    assert not errors
 
 
 def test_materializer_tracks_2026_official_source_mirrors() -> None:

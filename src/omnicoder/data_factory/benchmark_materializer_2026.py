@@ -1101,6 +1101,11 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
             entry = {"id": dataset_id}
         if not dataset_id:
             continue
+        if isinstance(entry, dict) and (entry.get("files") or entry.get("file_patterns")):
+            file_rows, file_errors = hf_file_rows(dataset_id, entry, cache_root, limit)
+            errors.extend(file_errors)
+            if file_rows:
+                return file_rows, errors
         for split in splits:
             try:
                 if config:
