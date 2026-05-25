@@ -1511,6 +1511,45 @@ def test_repo_dataset_registry_covers_fifteenth_wave_agentic_coding_audio_source
         assert expansion.source_use_bucket(by_name[name]) == "eval_holdout"
 
 
+def test_repo_dataset_registry_covers_sixteenth_wave_multimodal_and_agentic_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "sixteenth_wave_data_benchmark_expansion_2026_05_25"
+
+    expected_policy = {
+        "PD12M Public Domain 12M": "train",
+        "BigEarthNet.txt": "research_internal",
+        "HOIGen-1M": "research_internal",
+        "Meta Omnilingual ASR Corpus": "train",
+        "GigaSpeech 2": "research_internal",
+        "AVATAR Audio-Visual Localization": "eval_only",
+        "VideoWebArena": "eval_only",
+        "OSUniverse": "eval_only",
+        "GUI-World": "research_internal",
+        "SWE-bench Multimodal": "eval_only",
+        "LOFT Long Context Frontiers": "eval_only",
+        "FrontierMath Tiers 1-4": "eval_only",
+        "GIE-Bench Grounded Image Editing": "eval_only",
+        "EditInspector": "eval_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    assert by_name["PD12M Public Domain 12M"]["license_tier"] == "public_domain_cc0"
+    assert by_name["Meta Omnilingual ASR Corpus"]["license_tier"] == "attribution"
+    assert by_name["AVATAR Audio-Visual Localization"]["materialization_note"].startswith("Large video.zip")
+    assert by_name["VideoWebArena"]["repo"] == "https://github.com/ljang0/videowebarena.git"
+    assert by_name["SWE-bench Multimodal"]["splits"] == ["dev", "test"]
+
+    assert expansion.source_use_bucket(by_name["PD12M Public Domain 12M"]) == "train"
+    assert expansion.source_use_bucket(by_name["Meta Omnilingual ASR Corpus"]) == "train"
+    for name in set(expected_policy) - {"PD12M Public Domain 12M", "Meta Omnilingual ASR Corpus"}:
+        assert expansion.source_use_bucket(by_name[name]) != "train"
+
+
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))

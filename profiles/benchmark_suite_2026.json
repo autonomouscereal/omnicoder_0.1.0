@@ -5814,6 +5814,215 @@
         "smoke": "one geometry and one number theory theorem"
       },
       "task_format": "jsonl_lean4_formal_math_task"
+    },
+    {
+      "adapter_kind": "video_webarena_agent_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_videowebarena_2026",
+      "holdout_policy": [
+        "hide_success_criteria_until_scoring",
+        "hash_tutorial_video_assets",
+        "isolate_webarena_sites",
+        "quarantine_successful_video_web_traces"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "video_step_grounding_accuracy",
+        "web_action_validity",
+        "skill_retention_delta"
+      ],
+      "modalities": [
+        "text",
+        "video",
+        "image",
+        "browser",
+        "tool_schema"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://videowebarena.github.io/",
+      "splits": {
+        "smoke": "one video tutorial web task",
+        "nightly": "tutorial/site balanced public VideoWebArena slice",
+        "release": "locked authorized VideoWebArena snapshot"
+      },
+      "task_format": "jsonl_video_web_agent_task"
+    },
+    {
+      "adapter_kind": "osuniverse_desktop_gui_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_osuniverse_gui_2026",
+      "holdout_policy": [
+        "hide_validator_outputs",
+        "snapshot_desktop_state",
+        "record_action_trajectory",
+        "quarantine_successful_gui_traces"
+      ],
+      "metrics": [
+        "desktop_task_success_rate",
+        "trajectory_validity",
+        "screenshot_state_match",
+        "validator_pass_rate"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "desktop_gui",
+        "tool_schema"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://github.com/agentsea/osuniverse",
+      "splits": {
+        "smoke": "one desktop GUI task with validator",
+        "nightly": "application-balanced OSUniverse public slice",
+        "release": "locked authorized OSUniverse task snapshot"
+      },
+      "task_format": "jsonl_desktop_gui_agent_task"
+    },
+    {
+      "adapter_kind": "avatar_audio_visual_localization_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_avatar_av_localization_2026",
+      "holdout_policy": [
+        "hide_temporal_boxes_and_masks",
+        "hash_audio_video_assets",
+        "separate_offscreen_mixed_sound_cases"
+      ],
+      "metrics": [
+        "temporal_localization_iou",
+        "sound_source_class_accuracy",
+        "offscreen_detection_accuracy",
+        "mixed_sound_disambiguation"
+      ],
+      "modalities": [
+        "video",
+        "audio",
+        "image",
+        "text"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/mipal/AVATAR",
+      "splits": {
+        "smoke": "one single-sound and one offscreen localization item",
+        "nightly": "scenario-balanced AVATAR public descriptor slice",
+        "release": "locked authorized AVATAR media snapshot"
+      },
+      "task_format": "jsonl_audio_visual_localization_task"
+    },
+    {
+      "adapter_kind": "loft_long_context_frontiers_eval",
+      "axis": "long_context",
+      "benchmark_id": "long_context_loft_2026",
+      "holdout_policy": [
+        "hide_answers_until_scoring",
+        "pin_context_length_buckets",
+        "track_task_level_licenses",
+        "quarantine_successful_long_context_traces"
+      ],
+      "metrics": [
+        "retrieval_recall",
+        "long_context_answer_accuracy",
+        "million_token_stability",
+        "modality_transfer_accuracy"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "audio",
+        "long_context"
+      ],
+      "release_gate": "long_context_release",
+      "source": "https://github.com/google-deepmind/loft",
+      "splits": {
+        "smoke": "one 128k retrieval prompt",
+        "nightly": "task-category balanced LOFT slice",
+        "release": "locked authorized LOFT 1M-context snapshot"
+      },
+      "task_format": "jsonl_loft_long_context_task"
+    },
+    {
+      "adapter_kind": "frontiermath_expert_eval",
+      "axis": "reasoning",
+      "benchmark_id": "reasoning_frontiermath_2026",
+      "holdout_policy": [
+        "private_or_authorized_problem_snapshot_only",
+        "hide_solutions_until_scoring",
+        "record_tool_assisted_proof_trace",
+        "quarantine_successful_math_traces"
+      ],
+      "metrics": [
+        "exact_answer_accuracy",
+        "proof_rubric_score",
+        "verification_pass_rate",
+        "time_to_solution_tokens"
+      ],
+      "modalities": [
+        "text",
+        "math"
+      ],
+      "release_gate": "reasoning_release",
+      "source": "https://epoch.ai/benchmarks/frontiermath",
+      "splits": {
+        "smoke": "public/debug problem only",
+        "nightly": "operator-authorized public tier slice",
+        "release": "controlled FrontierMath authorized snapshot"
+      },
+      "task_format": "jsonl_frontier_math_task"
+    },
+    {
+      "adapter_kind": "gie_bench_image_edit_eval",
+      "axis": "generation",
+      "benchmark_id": "generation_gie_bench_2026",
+      "holdout_policy": [
+        "hide_mcq_labels_until_scoring",
+        "hash_source_and_edited_images",
+        "separate_preservation_masks"
+      ],
+      "metrics": [
+        "edit_correctness_mcq",
+        "content_preservation_score",
+        "instruction_following_rate",
+        "localized_change_accuracy"
+      ],
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://arxiv.org/abs/2505.11493",
+      "splits": {
+        "smoke": "one grounded image edit task",
+        "nightly": "edit-type balanced GIE-Bench descriptor slice",
+        "release": "locked authorized GIE-Bench snapshot"
+      },
+      "task_format": "jsonl_grounded_image_edit_eval_task"
+    },
+    {
+      "adapter_kind": "editinspector_image_edit_eval",
+      "axis": "generation",
+      "benchmark_id": "generation_editinspector_2026",
+      "holdout_policy": [
+        "hide_human_verification_labels",
+        "hash_source_and_edited_images",
+        "record_annotation_template_version"
+      ],
+      "metrics": [
+        "human_template_pass_rate",
+        "edit_faithfulness",
+        "overedit_rate",
+        "artifact_rate"
+      ],
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://arxiv.org/abs/2506.09988",
+      "splits": {
+        "smoke": "one human-template image edit inspection item",
+        "nightly": "instruction-category balanced EditInspector slice",
+        "release": "locked authorized EditInspector snapshot"
+      },
+      "task_format": "jsonl_image_edit_inspection_task"
     }
   ],
   "contamination_controls": [
@@ -5907,7 +6116,9 @@
       "agent_webgym_tasks_2026",
       "agent_omniagentbench_2026",
       "agent_ui_vision_2026",
-      "agent_tobench_mm_toolbench_2026"
+      "agent_tobench_mm_toolbench_2026",
+      "agent_videowebarena_2026",
+      "agent_osuniverse_gui_2026"
     ],
     "coding_release": [
       "coding_swe_bench_pro_2026",
@@ -5968,7 +6179,9 @@
       "generation_long_tts_eval_2026",
       "generation_tta_bench_2026",
       "generation_nv_bench_2026",
-      "generation_tricky_tts_2026"
+      "generation_tricky_tts_2026",
+      "generation_gie_bench_2026",
+      "generation_editinspector_2026"
     ],
     "global_must_pass": [
       "raw_postgresql_schema_applies",
@@ -5997,7 +6210,8 @@
       "long_context_memoryagentbench_2026",
       "long_context_ama_bench_2026",
       "long_context_longbench_pro_2026",
-      "long_context_officeqa_2026"
+      "long_context_officeqa_2026",
+      "long_context_loft_2026"
     ],
     "multimodal_understanding_release": [
       "multimodal_mmmu_pro_2026",
@@ -6046,7 +6260,8 @@
       "multimodal_megabench_2026",
       "multimodal_stepeval_audio_360_2026",
       "multimodal_parsebench_2026",
-      "multimodal_audiomcq_strongac_2026"
+      "multimodal_audiomcq_strongac_2026",
+      "multimodal_avatar_av_localization_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",
@@ -6061,7 +6276,8 @@
       "reasoning_matharena_2026",
       "reasoning_imo_bench_2026",
       "reasoning_maime2025_2026",
-      "reasoning_indimathbench_2026"
+      "reasoning_indimathbench_2026",
+      "reasoning_frontiermath_2026"
     ],
     "safety_security_release": [
       "safety_tool_security_2026",
@@ -6301,6 +6517,30 @@
     ],
     "deployment_performance_2026": [
       "data/eval/reportable_2026/deployment_performance_authorized.jsonl"
+    ],
+    "agent_videowebarena_2026": [
+      "data/eval/reportable_2026/agent_videowebarena_authorized.jsonl"
+    ],
+    "agent_osuniverse_gui_2026": [
+      "data/eval/reportable_2026/agent_osuniverse_gui_authorized.jsonl"
+    ],
+    "multimodal_avatar_av_localization_2026": [
+      "data/eval/reportable_2026/multimodal_avatar_av_localization_authorized.jsonl"
+    ],
+    "coding_swe_bench_multimodal_2026": [
+      "data/eval/reportable_2026/coding_swe_bench_multimodal_authorized.jsonl"
+    ],
+    "long_context_loft_2026": [
+      "data/eval/reportable_2026/long_context_loft_authorized.jsonl"
+    ],
+    "reasoning_frontiermath_2026": [
+      "data/eval/reportable_2026/reasoning_frontiermath_authorized.jsonl"
+    ],
+    "generation_gie_bench_2026": [
+      "data/eval/reportable_2026/generation_gie_bench_authorized.jsonl"
+    ],
+    "generation_editinspector_2026": [
+      "data/eval/reportable_2026/generation_editinspector_authorized.jsonl"
     ]
   },
   "reportable_snapshots": {
@@ -6862,6 +7102,78 @@
       "snapshot_id": "deployment-performance-authorized-2026-current",
       "source": "internal_hardware_matrix_jsonl",
       "task_root": "data/eval/reportable_2026/deployment_performance_authorized.jsonl"
+    },
+    "agent_videowebarena_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agent_videowebarena-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agent_videowebarena-authorized-2026-current",
+      "source": "https://videowebarena.github.io/",
+      "task_root": "data/eval/reportable_2026/agent_videowebarena_authorized.jsonl"
+    },
+    "agent_osuniverse_gui_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agent_osuniverse_gui-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agent_osuniverse_gui-authorized-2026-current",
+      "source": "https://github.com/agentsea/osuniverse",
+      "task_root": "data/eval/reportable_2026/agent_osuniverse_gui_authorized.jsonl"
+    },
+    "multimodal_avatar_av_localization_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multimodal_avatar_av_localization-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "multimodal_avatar_av_localization-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/mipal/AVATAR",
+      "task_root": "data/eval/reportable_2026/multimodal_avatar_av_localization_authorized.jsonl"
+    },
+    "coding_swe_bench_multimodal_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "coding_swe_bench_multimodal-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "coding_swe_bench_multimodal-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/SWE-bench/SWE-bench_Multimodal",
+      "task_root": "data/eval/reportable_2026/coding_swe_bench_multimodal_authorized.jsonl"
+    },
+    "long_context_loft_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "long_context_loft-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "long_context_loft-authorized-2026-current",
+      "source": "https://github.com/google-deepmind/loft",
+      "task_root": "data/eval/reportable_2026/long_context_loft_authorized.jsonl"
+    },
+    "reasoning_frontiermath_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "reasoning_frontiermath-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "reasoning_frontiermath-authorized-2026-current",
+      "source": "https://epoch.ai/benchmarks/frontiermath",
+      "task_root": "data/eval/reportable_2026/reasoning_frontiermath_authorized.jsonl"
+    },
+    "generation_gie_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "generation_gie_bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "generation_gie_bench-authorized-2026-current",
+      "source": "https://arxiv.org/abs/2505.11493",
+      "task_root": "data/eval/reportable_2026/generation_gie_bench_authorized.jsonl"
+    },
+    "generation_editinspector_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "generation_editinspector-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "generation_editinspector-authorized-2026-current",
+      "source": "https://arxiv.org/abs/2506.09988",
+      "task_root": "data/eval/reportable_2026/generation_editinspector_authorized.jsonl"
     }
   },
   "run_cycles": {

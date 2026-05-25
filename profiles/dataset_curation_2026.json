@@ -7015,13 +7015,43 @@
           }
         ],
         "family": "coding_agentic",
-        "license": "benchmark source review",
-        "license_tier": "benchmark_holdout_review",
+        "license": "SWE-bench multimodal benchmark terms require verification before redistribution",
+        "license_tier": "benchmark_holdout",
         "max_records": 512,
         "name": "SWE-bench Multimodal",
         "target_modality": "code",
-        "url": "https://github.com/swe-bench/swe-bench",
-        "use_policy": "eval_only"
+        "url": "https://huggingface.co/datasets/SWE-bench/SWE-bench_Multimodal",
+        "use_policy": "eval_only",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "hf_id": "SWE-bench/SWE-bench_Multimodal",
+        "last_verified": "2026-05-25",
+        "source_year": 2025,
+        "splits": [
+          "dev",
+          "test"
+        ],
+        "field_map": {
+          "id": [
+            "instance_id",
+            "id"
+          ],
+          "media": [
+            "image",
+            "images",
+            "problem_statement"
+          ],
+          "prompt": [
+            "problem_statement",
+            "issue",
+            "prompt"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ]
+        }
       },
       {
         "curriculum_axes": [
@@ -24820,6 +24850,448 @@
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "public_domain_image_text",
+          "image_generation_grounding",
+          "caption_alignment",
+          "license_clean_training"
+        ],
+        "family": "image_generation_editing",
+        "field_map": {
+          "id": [
+            "id",
+            "image_id",
+            "url"
+          ],
+          "media": [
+            "image",
+            "image_url",
+            "url"
+          ],
+          "prompt": [
+            "caption",
+            "text",
+            "prompt"
+          ],
+          "target": [
+            "caption",
+            "recaption",
+            "metadata"
+          ]
+        },
+        "hf_id": "Spawning/PD12M",
+        "last_verified": "2026-05-25",
+        "license": "public domain / CC0 image-caption pairs per dataset card and AWS registry",
+        "license_tier": "public_domain_cc0",
+        "max_records": 2048,
+        "name": "PD12M Public Domain 12M",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "image",
+        "url": "https://huggingface.co/datasets/Spawning/PD12M",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "remote_sensing",
+          "sar_multispectral",
+          "image_text_vqa",
+          "license_review"
+        ],
+        "distillation_prompts": [
+          {
+            "instruction": "Create a remote-sensing image-text training row with Sentinel-1/Sentinel-2 modality tags, geospatial caption, VQA prompt, and referring-expression target metadata.",
+            "target": "multi-sensor earth-observation VLM row with provenance and benchmark split tags"
+          }
+        ],
+        "family": "omnimodal_understanding",
+        "last_verified": "2026-05-25",
+        "license": "dataset terms require source-page review before weight-bearing training",
+        "license_tier": "source_license_review",
+        "max_records": 256,
+        "name": "BigEarthNet.txt",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2026,
+        "target_modality": "image",
+        "url": "https://txt.bigearth.net/",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "human_object_interaction",
+          "video_generation",
+          "motion_captioning",
+          "license_review"
+        ],
+        "family": "video_generation",
+        "field_map": {
+          "id": [
+            "id",
+            "video_id",
+            "clip_id"
+          ],
+          "media": [
+            "video",
+            "video_path",
+            "video_url"
+          ],
+          "prompt": [
+            "caption",
+            "prompt",
+            "description"
+          ],
+          "target": [
+            "caption",
+            "detailed_caption",
+            "metadata"
+          ]
+        },
+        "hf_id": "HOIGen/HOIGen-1M",
+        "last_verified": "2026-05-25",
+        "license": "CVPR 2025 dataset; redistribution and source-video terms require audit",
+        "license_tier": "source_license_review",
+        "max_records": 1024,
+        "name": "HOIGen-1M",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "video",
+        "url": "https://huggingface.co/datasets/HOIGen/HOIGen-1M",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "multilingual_speech",
+          "asr",
+          "low_resource_languages",
+          "community_attribution"
+        ],
+        "family": "speech_audio",
+        "field_map": {
+          "id": [
+            "id",
+            "utterance_id",
+            "audio_id"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "path"
+          ],
+          "prompt": [
+            "sentence",
+            "transcription",
+            "text",
+            "language"
+          ],
+          "target": [
+            "transcription",
+            "text",
+            "translation",
+            "language"
+          ]
+        },
+        "hf_id": "facebook/omnilingual-asr-corpus",
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-4.0 corpus; attribution required",
+        "license_tier": "attribution",
+        "max_records": 1024,
+        "name": "Meta Omnilingual ASR Corpus",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/facebook/omnilingual-asr-corpus",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "multilingual_asr",
+          "thai_indonesian_vietnamese",
+          "youtube_audio",
+          "source_license_review"
+        ],
+        "family": "speech_audio",
+        "field_map": {
+          "id": [
+            "id",
+            "segment_id",
+            "audio_id"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "path"
+          ],
+          "prompt": [
+            "text",
+            "transcript",
+            "language"
+          ],
+          "target": [
+            "text",
+            "transcript",
+            "audio",
+            "duration"
+          ]
+        },
+        "hf_id": "speechcolab/gigaspeech2",
+        "last_verified": "2026-05-25",
+        "license": "GigaSpeech 2 dataset/source terms require review before commercial weight training",
+        "license_tier": "source_license_review",
+        "max_records": 1024,
+        "name": "GigaSpeech 2",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/speechcolab/gigaspeech2",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "audio_visual_localization",
+          "video_audio",
+          "offscreen_mixed_sound",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "video_id"
+          ],
+          "media": [
+            "video",
+            "audio",
+            "metadata"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "scenario"
+          ],
+          "target": [
+            "bbox",
+            "mask",
+            "label",
+            "annotations"
+          ]
+        },
+        "hf_id": "mipal/AVATAR",
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-4.0 benchmark dataset",
+        "license_tier": "attribution_eval_holdout",
+        "materialization_note": "Large video.zip and metadata.zip payload; keep as protected eval and materialize through an authorized manifest.",
+        "max_records": 256,
+        "name": "AVATAR Audio-Visual Localization",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "video",
+        "url": "https://huggingface.co/datasets/mipal/AVATAR",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "video_web_agent",
+          "long_context_video",
+          "webarena",
+          "benchmark_holdout"
+        ],
+        "distillation_prompts": [
+          {
+            "instruction": "Create a VideoWebArena-style protected eval descriptor with tutorial video metadata, website task, web state, and hidden verifier contract.",
+            "target": "jsonl video-web-agent task descriptor with no leaked answer key"
+          }
+        ],
+        "family": "terminal_browser_agents",
+        "last_verified": "2026-05-25",
+        "license": "official ICLR 2025 benchmark; task/site licenses require release snapshot review",
+        "license_tier": "benchmark_holdout",
+        "max_records": 128,
+        "name": "VideoWebArena",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "repo": "https://github.com/ljang0/videowebarena.git",
+        "source_year": 2025,
+        "target_modality": "tool",
+        "url": "https://videowebarena.github.io/",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "desktop_gui_agent",
+          "multimodal_os_tasks",
+          "automated_validation",
+          "benchmark_holdout"
+        ],
+        "distillation_prompts": [
+          {
+            "instruction": "Create an OSUniverse-style desktop GUI protected eval descriptor with app state, visual observation, action space, and automated validator metadata.",
+            "target": "jsonl desktop-agent task descriptor with hidden validator"
+          }
+        ],
+        "family": "terminal_browser_agents",
+        "last_verified": "2026-05-25",
+        "license": "GitHub benchmark repository; task assets require license review",
+        "license_tier": "benchmark_holdout",
+        "max_records": 128,
+        "name": "OSUniverse",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "repo": "https://github.com/agentsea/osuniverse.git",
+        "source_year": 2025,
+        "target_modality": "tool",
+        "url": "https://github.com/agentsea/osuniverse",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "gui_video_instruction",
+          "desktop_mobile_xr",
+          "gui_understanding",
+          "license_review"
+        ],
+        "distillation_prompts": [
+          {
+            "instruction": "Create a GUI-World-style video GUI understanding row with platform, video observation, UI grounding question, and answer/action target.",
+            "target": "video-domain GUI instruction row with source platform and split metadata"
+          }
+        ],
+        "family": "terminal_browser_agents",
+        "last_verified": "2026-05-25",
+        "license": "project terms require audit before weight-bearing use",
+        "license_tier": "source_license_review",
+        "max_records": 256,
+        "name": "GUI-World",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2025,
+        "target_modality": "video",
+        "url": "https://gui-world.github.io/",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "one_million_context",
+          "retrieval_reasoning",
+          "multi_modality_long_context",
+          "benchmark_holdout"
+        ],
+        "family": "long_context",
+        "field_map": {
+          "id": [
+            "id",
+            "query_id"
+          ],
+          "prompt": [
+            "prompt",
+            "query",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "target",
+            "gold"
+          ]
+        },
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0 code plus CC-BY/material-specific licenses per repository",
+        "license_tier": "mixed_eval_holdout",
+        "max_records": 256,
+        "name": "LOFT Long Context Frontiers",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "repo": "https://github.com/google-deepmind/loft.git",
+        "source_year": 2025,
+        "target_modality": "long_context",
+        "url": "https://github.com/google-deepmind/loft",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "frontier_math",
+          "expert_math",
+          "private_holdout",
+          "benchmark_holdout"
+        ],
+        "distillation_prompts": [
+          {
+            "instruction": "Create a FrontierMath-style protected eval descriptor with problem tier, proof/checking rubric, and no public solution leakage.",
+            "target": "jsonl frontier math eval descriptor requiring authorized problem snapshot"
+          }
+        ],
+        "family": "math_reasoning",
+        "last_verified": "2026-05-25",
+        "license": "Epoch AI controlled benchmark; public/debug slices only unless authorized",
+        "license_tier": "private_eval_holdout",
+        "max_records": 64,
+        "name": "FrontierMath Tiers 1-4",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2026,
+        "target_modality": "text",
+        "url": "https://epoch.ai/benchmarks/frontiermath",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "image_editing_eval",
+          "grounded_edit_correctness",
+          "content_preservation",
+          "benchmark_holdout"
+        ],
+        "distillation_prompts": [
+          {
+            "instruction": "Create a GIE-Bench-style image editing eval descriptor with source image, edit instruction, MCQ correctness probes, and preservation mask metadata.",
+            "target": "jsonl grounded image-edit eval task with hidden scoring rubric"
+          }
+        ],
+        "family": "image_generation_editing",
+        "last_verified": "2026-05-25",
+        "license": "paper/project dataset terms require source review before mirroring",
+        "license_tier": "benchmark_holdout",
+        "max_records": 128,
+        "name": "GIE-Bench Grounded Image Editing",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2025,
+        "target_modality": "image",
+        "url": "https://arxiv.org/abs/2505.11493",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "image_editing_eval",
+          "human_edit_annotations",
+          "instruction_verification",
+          "benchmark_holdout"
+        ],
+        "distillation_prompts": [
+          {
+            "instruction": "Create an EditInspector-style image edit eval descriptor with edit instruction, source/edited images, human annotation template, and hidden pass/fail labels.",
+            "target": "jsonl image-edit inspection task with hidden human-verification rubric"
+          }
+        ],
+        "family": "image_generation_editing",
+        "last_verified": "2026-05-25",
+        "license": "ACL 2025 benchmark; source terms require audit before mirroring",
+        "license_tier": "benchmark_holdout",
+        "max_records": 128,
+        "name": "EditInspector",
+        "registry_wave": "sixteenth_wave_data_benchmark_expansion_2026_05_25",
+        "source_year": 2025,
+        "target_modality": "image",
+        "url": "https://arxiv.org/abs/2506.09988",
         "use_policy": "eval_only"
       }
     ],

@@ -215,6 +215,16 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "browser",
         "splits": ["train", "test"],
     },
+    "agent_videowebarena_2026": {
+        "source": "https://videowebarena.github.io/",
+        "git": "https://github.com/ljang0/videowebarena.git",
+        "kind": "browser_video",
+    },
+    "agent_osuniverse_gui_2026": {
+        "source": "https://github.com/agentsea/osuniverse",
+        "git": "https://github.com/agentsea/osuniverse.git",
+        "kind": "desktop_gui",
+    },
     "agent_omniagentbench_2026": {
         "source": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
         "snapshot_requires_operator_manifest": True,
@@ -321,6 +331,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "swe",
         "splits": ["test"],
     },
+    "coding_swe_bench_multimodal_2026": {
+        "source": "https://huggingface.co/datasets/SWE-bench/SWE-bench_Multimodal",
+        "hf": [{"id": "SWE-bench/SWE-bench_Multimodal", "splits": ["dev", "test"]}],
+        "kind": "swe_repo_multimodal",
+        "splits": ["dev", "test"],
+    },
     "coding_contextbench_2026": {
         "source": "https://huggingface.co/datasets/Contextbench/ContextBench",
         "hf": [
@@ -421,6 +437,11 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "math",
         "splits": ["train"],
     },
+    "reasoning_frontiermath_2026": {
+        "source": "https://epoch.ai/benchmarks/frontiermath",
+        "snapshot_requires_operator_manifest": True,
+        "kind": "reasoning",
+    },
     "reasoning_maime2025_2026": {
         "source": "https://huggingface.co/datasets/LumiOpen/mAIME2025",
         "hf": ["LumiOpen/mAIME2025"],
@@ -491,6 +512,11 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "hf": [{"id": "Steefano/LCB", "splits": ["train", "test", "validation"]}],
         "kind": "long_context",
         "splits": ["train", "test", "validation"],
+    },
+    "long_context_loft_2026": {
+        "source": "https://github.com/google-deepmind/loft",
+        "git": "https://github.com/google-deepmind/loft.git",
+        "kind": "long_context",
     },
     "long_context_nolima_1m_2026": {
         "source": "https://github.com/adobe-research/NoLiMa",
@@ -644,6 +670,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "hf": ["JointAVBench/JointAVBench"],
         "kind": "video_audio",
         "splits": ["test", "validation", "train"],
+    },
+    "multimodal_avatar_av_localization_2026": {
+        "source": "https://huggingface.co/datasets/mipal/AVATAR",
+        "snapshot_requires_operator_manifest": True,
+        "materialization_note": "The public dataset ships multi-GB media archives; use a bounded authorized descriptor/source override for reportable and public-dev materialization.",
+        "kind": "multimodal_av_localization",
     },
     "multimodal_audiobench_2026": {
         "source": "https://github.com/AudioLLMs/AudioBench",
@@ -804,6 +836,16 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     },
     "generation_editreward_bench_2026": {
         "source": "https://github.com/TIGER-AI-Lab/EditReward",
+        "kind": "image_generation",
+    },
+    "generation_gie_bench_2026": {
+        "source": "https://arxiv.org/abs/2505.11493",
+        "snapshot_requires_operator_manifest": True,
+        "kind": "image_generation",
+    },
+    "generation_editinspector_2026": {
+        "source": "https://arxiv.org/abs/2506.09988",
+        "snapshot_requires_operator_manifest": True,
         "kind": "image_generation",
     },
     "safety_iesbench_image_edit_2026": {
@@ -1883,6 +1925,7 @@ def normalize_task(
             "thm_stmt",
             "target_theorem",
             "task",
+            "task_name",
             "input_prompt",
             "task_description",
             "fuzzy_description",
@@ -1892,6 +1935,9 @@ def normalize_task(
             "input",
             "text",
             "context",
+            "scenario",
+            "system_prompt",
+            "pdf",
             "goal",
         ),
     )
@@ -1937,6 +1983,11 @@ def normalize_task(
             "strategy_hint",
             "chosen",
             "preference",
+            "evaluator_reference",
+            "task_tool",
+            "full_code",
+            "expected_markdown",
+            "rule",
         ),
     )
     if answer is None and isinstance(raw.get("multi_choice_QA"), dict):
@@ -2053,7 +2104,21 @@ def normalize_task(
 
     if any(token in kind for token in ("tool", "bfcl", "mcp")):
         tools = first_value(raw, ("tools", "enabled_tools", "functions", "tool_schema", "function", "apis", "mcp_servers", "server_name", "servers"))
-        expected = first_value(raw, ("expected_tool_call", "ground_truth", "gtfa_claims", "checklist", "answer", "target", "output_format", "evaluators"))
+        expected = first_value(
+            raw,
+            (
+                "expected_tool_call",
+                "ground_truth",
+                "gtfa_claims",
+                "checklist",
+                "answer",
+                "target",
+                "output_format",
+                "evaluators",
+                "evaluator_reference",
+                "task_tool",
+            ),
+        )
         if tools not in (None, "", [], {}):
             row["tools"] = normalize_tool_call(tools)
         if expected not in (None, "", [], {}):
@@ -2076,6 +2141,7 @@ def normalize_task(
             "trajectory_turns",
             "tool_call_count",
             "tool_trace",
+            "task_tool",
             "reference_tool_calls",
             "final_assistant_response",
         ):
@@ -2184,6 +2250,10 @@ def normalize_task(
         "now",
         "user_simulator",
         "reference_trajectory",
+        "full_code",
+        "db_path",
+        "rule",
+        "expected_markdown",
     ):
         value = first_value(raw, (key,))
         if value not in (None, "", [], {}):

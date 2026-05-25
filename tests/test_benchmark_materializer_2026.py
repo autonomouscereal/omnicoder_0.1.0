@@ -865,6 +865,83 @@ def test_materializer_normalizes_thirteenth_wave_2026_aliases() -> None:
     assert indimath["formal_statement"] == "theorem rmo_2000_1 : True := by trivial"
 
 
+def test_materializer_normalizes_fifteenth_wave_descriptor_rows() -> None:
+    awm = materializer.normalize_task(
+        "agent_world_model_rl_2026",
+        {
+            "scenario": "content_platform_1",
+            "db_path": "./outputs/databases/content_platform_1.db",
+            "full_code": "from fastapi import FastAPI\napp = FastAPI()",
+        },
+        materializer.KNOWN_BENCHMARKS["agent_world_model_rl_2026"],
+        {"adapter_kind": "agent_world_model_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        1,
+    )
+    webgym = materializer.normalize_task(
+        "agent_webgym_tasks_2026",
+        {
+            "task_id": 142359,
+            "task_name": "Identify three distinct ways people can get involved.",
+            "website": "https://childrenontheedge.org",
+            "evaluator_reference": [{"facts": ["volunteer", "fundraise"]}],
+        },
+        materializer.KNOWN_BENCHMARKS["agent_webgym_tasks_2026"],
+        {"adapter_kind": "browser_agent_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        1,
+    )
+    msb = materializer.normalize_task(
+        "safety_mcp_security_bench_2026",
+        {
+            "agent_name": "academic_search",
+            "system_prompt": "You are an expert academic search agent.",
+            "task_tool": [{"task": "Search for three papers on ML.", "tool": "Paper_Search"}],
+        },
+        materializer.KNOWN_BENCHMARKS["safety_mcp_security_bench_2026"],
+        {"adapter_kind": "mcp_security_attack_resilience_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        1,
+    )
+    parsebench = materializer.normalize_task(
+        "multimodal_parsebench_2026",
+        {
+            "pdf": "docs/chart/report.pdf",
+            "category": "chart",
+            "id": "chart-1",
+            "type": "chart_data_point",
+            "rule": {"labels": ["IF"], "value": "0.8079"},
+            "expected_markdown": None,
+        },
+        materializer.KNOWN_BENCHMARKS["multimodal_parsebench_2026"],
+        {"adapter_kind": "document_parse_agent_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        1,
+    )
+
+    assert awm is not None
+    assert awm["prompt"] == "content_platform_1"
+    assert awm["answer"].startswith("from fastapi import FastAPI")
+    assert awm["db_path"] == "./outputs/databases/content_platform_1.db"
+    assert webgym is not None
+    assert webgym["prompt"].startswith("Identify three distinct")
+    assert webgym["answer"] == [{"facts": ["volunteer", "fundraise"]}]
+    assert msb is not None
+    assert msb["prompt"] == "You are an expert academic search agent."
+    assert msb["expected_tool_call"] == [{"task": "Search for three papers on ML.", "tool": "Paper_Search"}]
+    assert parsebench is not None
+    assert parsebench["prompt"] == "docs/chart/report.pdf"
+    assert parsebench["answer"] == {"labels": ["IF"], "value": "0.8079"}
+
+
 def test_smmbench_cluster_qa_rows_are_scorable_and_imagefolder_rows_are_rejected(tmp_path: Path) -> None:
     root = tmp_path / "smmbench"
     cluster = root / "Dataset" / "Samples" / "cluster_1"
@@ -1114,6 +1191,8 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["agent_agentif_2025"]["hf"][0]["id"] == "THU-KEG/AgentIF"
     assert materializer.KNOWN_BENCHMARKS["agent_agentif_2025"]["splits"] == ["test"]
     assert materializer.KNOWN_BENCHMARKS["agent_webgym_tasks_2026"]["hf"][0]["id"] == "microsoft/webgym_tasks"
+    assert materializer.KNOWN_BENCHMARKS["agent_videowebarena_2026"]["git"] == "https://github.com/ljang0/videowebarena.git"
+    assert materializer.KNOWN_BENCHMARKS["agent_osuniverse_gui_2026"]["git"] == "https://github.com/agentsea/osuniverse.git"
     omniagentbench = materializer.KNOWN_BENCHMARKS["agent_omniagentbench_2026"]
     assert omniagentbench["source"] == "https://huggingface.co/datasets/omniagentbench/OmniAgentBench"
     assert omniagentbench["snapshot_requires_operator_manifest"] is True
@@ -1121,10 +1200,16 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["safety_mcp_security_bench_2026"]["hf"][0]["config"] == "agent_task"
     assert materializer.KNOWN_BENCHMARKS["agent_ui_vision_2026"]["hf"][0]["id"] == "ServiceNow/ui-vision"
     assert materializer.KNOWN_BENCHMARKS["coding_beyondswe_2026"]["hf"][0]["id"] == "AweAI-Team/BeyondSWE"
+    assert materializer.KNOWN_BENCHMARKS["coding_swe_bench_multimodal_2026"]["hf"][0]["id"] == "SWE-bench/SWE-bench_Multimodal"
     assert materializer.KNOWN_BENCHMARKS["coding_contextbench_2026"]["hf"][0]["id"] == "Contextbench/ContextBench"
     assert materializer.KNOWN_BENCHMARKS["coding_ccbench_2026"]["git"] == "https://github.com/codecrafters-io/ccbench.git"
     assert materializer.KNOWN_BENCHMARKS["coding_computeeval_cuda_2026"]["hf"][0]["id"] == "nvidia/compute-eval"
     assert materializer.KNOWN_BENCHMARKS["coding_computeeval_cuda_2026"]["splits"] == ["eval"]
+    assert materializer.KNOWN_BENCHMARKS["long_context_loft_2026"]["git"] == "https://github.com/google-deepmind/loft.git"
+    assert materializer.KNOWN_BENCHMARKS["reasoning_frontiermath_2026"]["snapshot_requires_operator_manifest"] is True
+    assert materializer.KNOWN_BENCHMARKS["multimodal_avatar_av_localization_2026"]["snapshot_requires_operator_manifest"] is True
+    assert materializer.KNOWN_BENCHMARKS["generation_gie_bench_2026"]["snapshot_requires_operator_manifest"] is True
+    assert materializer.KNOWN_BENCHMARKS["generation_editinspector_2026"]["snapshot_requires_operator_manifest"] is True
     assert materializer.KNOWN_BENCHMARKS["long_context_longcodebench_2026"]["hf"][0]["id"] == "Steefano/LCB"
     assert materializer.KNOWN_BENCHMARKS["long_context_ama_bench_2026"]["hf"][0]["id"] == "AMA-bench/AMA-bench"
     assert materializer.KNOWN_BENCHMARKS["long_context_officeqa_2026"]["hf"][0]["id"] == "databricks/officeqa"

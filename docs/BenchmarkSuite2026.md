@@ -179,6 +179,13 @@ also refuses public-dev HF streaming by default because the dataset begins by
 pulling a large media payload; materialize it from a bounded authorized
 descriptor/source override.
 
+The sixteenth-wave additions expand protected release gates for multimodal
+agents and generation: VideoWebArena, OSUniverse, AVATAR audio-visual
+localization, SWE-bench Multimodal, LOFT, FrontierMath, GIE-Bench, and
+EditInspector. Large-media or private/control-plane benchmarks are represented
+as authorized snapshot contracts first; public-dev materialization is bounded
+and must not stream multi-GB archives or private rubrics.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \

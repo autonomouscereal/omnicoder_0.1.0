@@ -231,6 +231,11 @@ mix:
   built-in benchmark materializer; use an operator-authorized descriptor or
   `--source-override` snapshot so sidecars do not spend hours pulling media
   assets before bounded task rows are available.
+- Sixteenth-wave May 25, 2026 additions add PD12M and Meta Omnilingual ASR as
+  trainable rows, keep BigEarthNet.txt, HOIGen-1M, GigaSpeech 2, and GUI-World
+  in research-internal review, and add protected eval gates for VideoWebArena,
+  OSUniverse, AVATAR, SWE-bench Multimodal, LOFT, FrontierMath, GIE-Bench, and
+  EditInspector.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for

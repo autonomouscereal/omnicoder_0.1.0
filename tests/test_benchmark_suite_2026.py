@@ -338,6 +338,32 @@ def test_suite_profile_includes_fifteenth_wave_agentic_coding_audio_document_gat
     assert adapters["long_context_officeqa_2026"]["context_windows"][-1] == 1048576
 
 
+def test_suite_profile_includes_sixteenth_wave_video_gui_av_and_edit_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    expected = {
+        "agent_videowebarena_2026": "agent_tool_release",
+        "agent_osuniverse_gui_2026": "agent_tool_release",
+        "multimodal_avatar_av_localization_2026": "multimodal_understanding_release",
+        "coding_swe_bench_multimodal_2026": "coding_release",
+        "long_context_loft_2026": "long_context_release",
+        "reasoning_frontiermath_2026": "reasoning_release",
+        "generation_gie_bench_2026": "generation_release",
+        "generation_editinspector_2026": "generation_release",
+    }
+    for adapter_id, gate in expected.items():
+        assert adapter_id in adapters
+        assert adapter_id in suite["release_gates"][gate]
+        assert adapter_id in suite["reportable_snapshots"]
+        assert adapter_id in suite["reportable_task_roots"]
+
+    assert "video" in adapters["agent_videowebarena_2026"]["modalities"]
+    assert "desktop_gui" in adapters["agent_osuniverse_gui_2026"]["modalities"]
+    assert "audio" in adapters["multimodal_avatar_av_localization_2026"]["modalities"]
+    assert adapters["long_context_loft_2026"]["source"] == "https://github.com/google-deepmind/loft"
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")

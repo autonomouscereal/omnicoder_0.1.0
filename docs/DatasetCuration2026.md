@@ -248,6 +248,12 @@ Current high-value registry families:
   says the protected-benchmark scan is `clean` or `clear`. OmniAgentBench is
   kept behind an authorized descriptor/source override because direct public HF
   streaming starts with a large media payload instead of bounded task rows.
+- Sixteenth-wave May 25, 2026 additions add PD12M and Meta Omnilingual ASR as
+  trainable public-domain/attribution sources, keep BigEarthNet.txt,
+  HOIGen-1M, GigaSpeech 2, and GUI-World as research-internal candidates until
+  license/source review clears them, and register AVATAR, VideoWebArena,
+  OSUniverse, SWE-bench Multimodal, LOFT, FrontierMath, GIE-Bench, and
+  EditInspector as protected eval/benchmark-holdout sources.
 - Thirteenth-wave May 25, 2026 additions: Agentic-MME, ABC-Bench,
   LongBench-Pro, MEGA-Bench, StepEval-Audio-360, and IndiMathBench are
   registered as eval/benchmark-holdout sources under
