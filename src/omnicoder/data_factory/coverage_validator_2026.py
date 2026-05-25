@@ -68,6 +68,11 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
     teacher_rollout_dir = Path(args.teacher_rollout_dir) if args.teacher_rollout_dir else root / "weights" / "data_factory" / "teacher_rollouts" / run_id
     mixture_plan = Path(args.mixture_plan) if args.mixture_plan else root / "weights" / "training_orchestration_2026" / "runs" / run_id / "manifests" / "mixture_plan.json"
     reportable_root = Path(args.reportable_root) if args.reportable_root else root / "data" / "eval" / "reportable_2026"
+    benchmark_manifest = (
+        Path(args.benchmark_materialization_manifest)
+        if getattr(args, "benchmark_materialization_manifest", "")
+        else root / "weights" / "data_factory" / "runs" / "benchmark_materialization" / run_id / "manifests" / "benchmark_materialization_manifest.json"
+    )
     missing: list[dict[str, Any]] = []
     warnings: list[str] = []
 
@@ -159,6 +164,28 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
     if args.require_reportable_tasks and sum(reportable_counts.values()) <= 0:
         add_missing(missing, "reportable_eval_tasks", reportable_root, "missing_or_empty", 0)
 
+    benchmark_materialization_data = read_json(benchmark_manifest)
+    benchmark_records = benchmark_materialization_data.get("records") if isinstance(benchmark_materialization_data.get("records"), list) else []
+    official_benchmark_counts: dict[str, int] = {}
+    local_benchmark_counts: dict[str, int] = {}
+    official_benchmark_rows = 0
+    local_benchmark_rows = 0
+    for record in benchmark_records:
+        if not isinstance(record, dict):
+            continue
+        benchmark_id = str(record.get("benchmark_id") or "unknown")
+        rows = int(record.get("rows") or 0)
+        if bool(record.get("reportable")) and not bool(record.get("local_only")):
+            official_benchmark_counts[benchmark_id] = official_benchmark_counts.get(benchmark_id, 0) + rows
+            official_benchmark_rows += rows
+        elif rows > 0:
+            local_benchmark_counts[benchmark_id] = local_benchmark_counts.get(benchmark_id, 0) + rows
+            local_benchmark_rows += rows
+    if benchmark_materialization_data and benchmark_materialization_data.get("schema") != "omnicoder.benchmark_materializer_2026.v1":
+        warnings.append("benchmark materialization manifest schema is unrecognized")
+    if getattr(args, "require_official_reportable_tasks", False) and official_benchmark_rows <= 0:
+        add_missing(missing, "official_materialized_reportable_tasks", benchmark_manifest, "missing_or_zero_official_rows", official_benchmark_rows)
+
     status = "passed" if not missing else "needs_data"
     return {
         "schema": "omnicoder.dataset_coverage_validator_2026.v1",
@@ -175,6 +202,7 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
             "teacher_rollout_dir": str(teacher_rollout_dir),
             "mixture_plan": str(mixture_plan),
             "reportable_root": str(reportable_root),
+            "benchmark_materialization_manifest": str(benchmark_manifest),
         },
         "counts": {
             "curated_train_files": train_counts,
@@ -189,6 +217,10 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
             "qwen36_agentic_math_code_tool_rollouts": qwen_rollout_rows,
             "media_teacher_rollouts": media_rollout_counts,
             "reportable_tasks": reportable_counts,
+            "official_materialized_benchmark_tasks": official_benchmark_counts,
+            "local_materialized_benchmark_tasks": local_benchmark_counts,
+            "official_materialized_benchmark_rows": official_benchmark_rows,
+            "local_materialized_benchmark_rows": local_benchmark_rows,
         },
         "manifests": {
             "curated_status": curated_manifest_data.get("status"),
@@ -198,6 +230,8 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
             "modality_teacher_status": modality_manifest_data.get("status"),
             "teacher_rollout_status": teacher_rollout_data.get("status"),
             "mixture_status": mixture_data.get("status"),
+            "benchmark_materialization_schema": benchmark_materialization_data.get("schema"),
+            "benchmark_materialization_rows": benchmark_materialization_data.get("rows"),
         },
         "missing": missing,
         "warnings": warnings,
@@ -216,8 +250,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--teacher-rollout-dir", default="")
     parser.add_argument("--mixture-plan", default="")
     parser.add_argument("--reportable-root", default="")
+    parser.add_argument("--benchmark-materialization-manifest", default="")
     parser.add_argument("--require-media-teacher-rollouts", action="store_true")
     parser.add_argument("--require-reportable-tasks", action="store_true")
+    parser.add_argument("--require-official-reportable-tasks", action="store_true")
     parser.add_argument("--strict", action="store_true", help="Exit nonzero when required coverage is missing")
     parser.add_argument("--out", default="")
     args = parser.parse_args(argv)

@@ -212,7 +212,11 @@ def flatten_path_values(values: Any) -> list[str]:
     return paths
 
 
-def configured_reportable_roots(cfg: dict[str, Any], benchmark_profile: str) -> tuple[list[str], list[str]]:
+def configured_reportable_roots(
+    cfg: dict[str, Any],
+    benchmark_profile: str,
+    runtime_roots: Any = None,
+) -> tuple[list[str], list[str]]:
     roots: list[str] = []
     sources: list[str] = []
 
@@ -223,6 +227,7 @@ def configured_reportable_roots(cfg: dict[str, Any], benchmark_profile: str) -> 
             sources.append(source)
 
     gates = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
+    add(runtime_roots, "runtime.reportable_task_roots")
     add(cfg.get("reportable_task_roots"), "training_profile.reportable_task_roots")
     add(gates.get("reportable_task_roots"), "training_profile.benchmark_gates.reportable_task_roots")
 
@@ -3739,7 +3744,11 @@ def run_checkpoint_benchmark_gate(
 
     def run_reportable_gate(benchmark_profile: str, run_id: str) -> tuple[dict[str, Any], bool]:
         gates_cfg = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
-        reportable_roots, reportable_sources = configured_reportable_roots(cfg, benchmark_profile)
+        reportable_roots, reportable_sources = configured_reportable_roots(
+            cfg,
+            benchmark_profile,
+            arg_value(args, "reportable_task_roots", None),
+        )
         reportable_paths = existing_paths(reportable_roots, repo_root())
         missing_policy = str(
             cfg.get("missing_reportable_policy")
@@ -4588,6 +4597,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--benchmark-prediction-checkpoint-runner", dest="benchmark_prediction_checkpoint_runner", default="")
     run.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
     run.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
+    run.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
     run.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     run.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     run.set_defaults(func=run_real)
@@ -4649,6 +4659,7 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--benchmark-prediction-checkpoint-runner", dest="benchmark_prediction_checkpoint_runner", default="")
     post.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
     post.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
+    post.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
     post.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     post.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     post.set_defaults(func=run_posttrain, live_posttraining=True)
@@ -4720,6 +4731,7 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--benchmark-prediction-checkpoint-runner", dest="benchmark_prediction_checkpoint_runner", default="")
     full.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
     full.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
+    full.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
     full.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     full.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     full.set_defaults(func=run_full, live_posttraining=True)

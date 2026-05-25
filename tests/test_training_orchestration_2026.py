@@ -1444,6 +1444,30 @@ def test_configured_reportable_roots_ignore_core_benchmark_ids(tmp_path) -> None
     assert sources == [f"{benchmark_profile}.reportable_task_roots"]
 
 
+def test_configured_reportable_roots_include_runtime_materialized_roots(tmp_path) -> None:
+    benchmark_profile = tmp_path / "benchmark_profile.json"
+    benchmark_profile.write_text(
+        json.dumps(
+            {
+                "benchmarks": [{"benchmark_id": "reasoning_arc_agi3_2026", "adapter_kind": "fixture", "splits": {"smoke": "x"}}],
+                "reportable_task_roots": {
+                    "reasoning_arc_agi3_2026": ["data/eval/reportable_2026/arc_agi3_authorized.jsonl"]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    roots, sources = orch.configured_reportable_roots(
+        {},
+        str(benchmark_profile),
+        ["weights/data_factory/runs/benchmark_materialization/run_a/reportable_2026"],
+    )
+
+    assert roots[0] == "weights/data_factory/runs/benchmark_materialization/run_a/reportable_2026"
+    assert "runtime.reportable_task_roots" in sources
+
+
 def test_reportable_prediction_seed_uses_explicit_model_outputs_only(tmp_path) -> None:
     tasks = tmp_path / "tasks.jsonl"
     _write_jsonl(

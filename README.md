@@ -59,6 +59,13 @@ authorized task snapshots when a real backend is configured through
 checkpoint-runner settings. The launcher preserves argument boundaries for
 checkpoint runners with spaces, and generated prediction files are scored by
 the existing reportable gate instead of being treated as fixture outputs.
+Official/public benchmark materialization is now separate from scoring:
+`benchmark-materialize-2026` writes run-scoped task JSONL under
+`weights/data_factory/runs/benchmark_materialization/<run_id>/`, separating
+`local_2026` public/dev rows from `reportable_2026` authorized rows. The
+AI-server sidecar can opt into this with `OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1`;
+the 20B launcher can consume those roots with `OMNICODER_REPORTABLE_TASK_ROOTS`
+without mutating the live benchmark profile.
 
 The posttraining orchestrator is fail-closed for 20B pipeline replay: a failed
 or incomplete sharded optimizer stage stops the remaining replay stack instead

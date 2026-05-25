@@ -29,8 +29,10 @@ def _args(root: Path, run_id: str, **overrides):
         "teacher_rollout_dir": "",
         "mixture_plan": "",
         "reportable_root": "",
+        "benchmark_materialization_manifest": "",
         "require_media_teacher_rollouts": True,
         "require_reportable_tasks": True,
+        "require_official_reportable_tasks": False,
         "strict": False,
         "out": "",
     }
@@ -88,3 +90,37 @@ def test_coverage_validator_passes_full_run_artifacts(tmp_path: Path) -> None:
     assert report["missing"] == []
     assert report["counts"]["curated_train_files"]["train_video.jsonl"] == 1
     assert report["counts"]["media_teacher_rollouts"]["comfyui_modality_teacher_rollouts.jsonl"] == 1
+
+
+def test_coverage_validator_distinguishes_local_from_official_benchmark_materialization(tmp_path: Path) -> None:
+    manifest = tmp_path / "weights" / "data_factory" / "runs" / "benchmark_materialization" / "run_m" / "manifests" / "benchmark_materialization_manifest.json"
+    _write_json(
+        manifest,
+        {
+            "schema": "omnicoder.benchmark_materializer_2026.v1",
+            "rows": 4,
+            "records": [
+                {
+                    "benchmark_id": "agent_terminal_bench_2_1_2026",
+                    "rows": 4,
+                    "reportable": False,
+                    "local_only": True,
+                }
+            ],
+        },
+    )
+
+    report = coverage.validate_coverage(
+        _args(
+            tmp_path,
+            "run_m",
+            require_reportable_tasks=False,
+            require_media_teacher_rollouts=False,
+            require_official_reportable_tasks=True,
+        )
+    )
+
+    assert report["counts"]["local_materialized_benchmark_rows"] == 4
+    assert report["counts"]["official_materialized_benchmark_rows"] == 0
+    labels = {item["label"] for item in report["missing"]}
+    assert "official_materialized_reportable_tasks" in labels

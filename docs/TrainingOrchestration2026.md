@@ -173,6 +173,9 @@ posttraining lane. Production eval knobs are passed through:
 - `OMNICODER_BENCHMARK_CYCLE`, `OMNICODER_BENCHMARK_MIN_TASKS`, and
   `OMNICODER_BENCHMARK_PREDICTIONS` wire reportable scoring once real
   model-generated predictions exist.
+- `OMNICODER_REPORTABLE_TASK_ROOTS` is a comma-separated list of run-scoped
+  authorized benchmark task roots, for example
+  `weights/data_factory/runs/benchmark_materialization/<run_id>/reportable_2026`.
 - `OMNICODER_RERUN_HELDOUT_EVALS=1` invalidates stale heldout sample-loss
   JSON, and resumed stages also reject cached evals when checkpoint, seq_len,
   record cap, or eval/test paths differ.
@@ -253,6 +256,13 @@ OMNICODER_MEDIA_TEACHER_ROLLOUT_MODE=live \
 OMNICODER_MEDIA_TEACHER_LIMIT=64 \
 scripts/ai_server_dataset_training_sidecars_2026.sh media-teacher-rollouts
 
+# Fetch/scan real public-dev benchmark suites into run-scoped local_2026 rows.
+OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
+OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \
+OMNICODER_BENCHMARK_MATERIALIZATION_MODE=public-dev \
+OMNICODER_BENCHMARK_MATERIALIZATION_LIMIT=128 \
+scripts/ai_server_dataset_training_sidecars_2026.sh benchmark-materialize
+
 # Read-only proof that artifacts are materialized, not just declared.
 OMNICODER_REQUIRE_MEDIA_TEACHER_ROLLOUTS=1 \
 OMNICODER_REQUIRE_REPORTABLE_TASKS=1 \
@@ -273,6 +283,7 @@ The sidecar runner writes run-scoped outputs under:
 - `weights/data_factory/trace_orchestrator_2026/teacher_jobs/<run_id>`
 - `weights/data_factory/runs/teacher_jobs/<run_id>/modality`
 - `weights/data_factory/teacher_rollouts/<run_id>`
+- `weights/data_factory/runs/benchmark_materialization/<run_id>`
 - `weights/training_orchestration_2026/runs/<run_id>/manifests/mixture_plan.json`
 
 It promotes `latest` symlinks only after outputs exist. The target training
@@ -291,6 +302,11 @@ teacher jobs, Qwen/P40 rollout outputs, optional Qwen/LTX/ACE media rollout
 outputs, mixture plans, and reportable eval task roots. Set
 `OMNICODER_COVERAGE_STRICT=1` when missing materialized coverage should stop a
 promotion or next-stage launch.
+When `benchmark-materialize` has run, coverage also reads
+`weights/data_factory/runs/benchmark_materialization/<run_id>/manifests/benchmark_materialization_manifest.json`
+and reports local-only versus official/authorized task counts separately.
+`OMNICODER_REQUIRE_OFFICIAL_REPORTABLE_TASKS=1` prevents public-dev benchmark
+rows from satisfying official release-gate coverage.
 
 `media-teacher-rollouts` consumes
 `weights/data_factory/runs/teacher_jobs/<run_id>/modality/all_modality_teacher_jobs.jsonl`

@@ -23,6 +23,17 @@ LOCAL_TRACE_SOURCE="${OMNICODER_LOCAL_TRACE_SOURCE:-weights/curated_datasets_202
 COVERAGE_STRICT="${OMNICODER_COVERAGE_STRICT:-0}"
 REQUIRE_MEDIA_TEACHER_ROLLOUTS="${OMNICODER_REQUIRE_MEDIA_TEACHER_ROLLOUTS:-1}"
 REQUIRE_REPORTABLE_TASKS="${OMNICODER_REQUIRE_REPORTABLE_TASKS:-0}"
+REQUIRE_OFFICIAL_REPORTABLE_TASKS="${OMNICODER_REQUIRE_OFFICIAL_REPORTABLE_TASKS:-0}"
+MATERIALIZE_BENCHMARK_TASKS="${OMNICODER_MATERIALIZE_BENCHMARK_TASKS:-0}"
+BENCHMARK_PROFILE="${OMNICODER_BENCHMARK_PROFILE:-profiles/benchmark_suite_2026.json}"
+BENCHMARK_MATERIALIZATION_ROOT="${OMNICODER_BENCHMARK_MATERIALIZATION_ROOT:-weights/data_factory/runs/benchmark_materialization/${RUN_ID}}"
+BENCHMARK_MATERIALIZATION_LIMIT="${OMNICODER_BENCHMARK_MATERIALIZATION_LIMIT:-128}"
+BENCHMARK_MATERIALIZATION_SUITE="${OMNICODER_BENCHMARK_MATERIALIZATION_SUITE:-known}"
+BENCHMARK_MATERIALIZATION_MODE="${OMNICODER_BENCHMARK_MATERIALIZATION_MODE:-public-dev}"
+BENCHMARK_MATERIALIZE_DOWNLOAD="${OMNICODER_BENCHMARK_MATERIALIZE_DOWNLOAD:-1}"
+BENCHMARK_MATERIALIZE_STRICT="${OMNICODER_BENCHMARK_MATERIALIZE_STRICT:-0}"
+BENCHMARK_MATERIALIZE_PROFILE_ROOTS="${OMNICODER_BENCHMARK_MATERIALIZE_PROFILE_ROOTS:-0}"
+REPORTABLE_ROOT="${OMNICODER_REPORTABLE_ROOT:-}"
 MEDIA_TEACHER_ROLLOUT_MODE="${OMNICODER_MEDIA_TEACHER_ROLLOUT_MODE:-live}"
 MEDIA_TEACHER_LIMIT="${OMNICODER_MEDIA_TEACHER_LIMIT:-$TEACHER_LIMIT}"
 ACTION="${1:-all}"
@@ -538,6 +549,35 @@ media_teacher_rollouts() {
   log "media teacher rollout dir: $out_dir"
 }
 
+benchmark_materialize() {
+  local out_dir="$BENCHMARK_MATERIALIZATION_ROOT"
+  local manifest="$out_dir/manifests/benchmark_materialization_manifest.json"
+  mkdir -p "$out_dir/logs"
+  local args=(
+    -m omnicoder.data_factory.benchmark_materializer_2026
+    --profile "$BENCHMARK_PROFILE"
+    --run-id "$RUN_ID"
+    --out-root "$out_dir"
+    --manifest-out "$manifest"
+    --suite "$BENCHMARK_MATERIALIZATION_SUITE"
+    --mode "$BENCHMARK_MATERIALIZATION_MODE"
+    --limit "$BENCHMARK_MATERIALIZATION_LIMIT"
+    materialize
+  )
+  if truthy "$BENCHMARK_MATERIALIZE_DOWNLOAD"; then
+    args+=(--download)
+  fi
+  if truthy "$BENCHMARK_MATERIALIZE_STRICT"; then
+    args+=(--strict)
+  fi
+  if truthy "$BENCHMARK_MATERIALIZE_PROFILE_ROOTS"; then
+    args+=(--write-profile-reportable-roots)
+  fi
+  log "materialize official/public benchmark task JSONLs"
+  CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" "${args[@]}" | tee "$out_dir/logs/benchmark_materializer.stdout.json"
+  log "benchmark materialization manifest: $manifest"
+}
+
 status() {
   preflight
   log "latest external manifest"
@@ -555,12 +595,33 @@ PY
   find weights/agentic_tool_training_2026 -maxdepth 1 -name 'tool_*.jsonl' -print -exec wc -l {} \; 2>/dev/null || true
   log "modality teacher job counts"
   find "${TEACHER_JOB_ROOT}/latest/modality" -maxdepth 1 -name '*.jsonl' -print -exec wc -l {} \; 2>/dev/null || true
+  log "benchmark materialization"
+  if [[ -f "$BENCHMARK_MATERIALIZATION_ROOT/manifests/benchmark_materialization_manifest.json" ]]; then
+    "$PYTHON_BIN" - <<PY
+import json
+from pathlib import Path
+p = Path("$BENCHMARK_MATERIALIZATION_ROOT/manifests/benchmark_materialization_manifest.json")
+data = json.loads(p.read_text(encoding="utf-8"))
+print(json.dumps({k: data.get(k) for k in ("run_id", "mode", "materialized", "needs_data", "rows")}, indent=2))
+PY
+  else
+    echo "missing: $BENCHMARK_MATERIALIZATION_ROOT/manifests/benchmark_materialization_manifest.json"
+  fi
 }
 
 coverage_report() {
   local out_dir="weights/data_factory/runs/${RUN_ID}"
   local report="$out_dir/coverage_report.json"
+  local benchmark_manifest="$BENCHMARK_MATERIALIZATION_ROOT/manifests/benchmark_materialization_manifest.json"
   local args=(--root "$ROOT" --run-id "$RUN_ID" --out "$report")
+  if [[ -n "$REPORTABLE_ROOT" ]]; then
+    args+=(--reportable-root "$REPORTABLE_ROOT")
+  elif [[ -d "$BENCHMARK_MATERIALIZATION_ROOT/reportable_2026" ]]; then
+    args+=(--reportable-root "$BENCHMARK_MATERIALIZATION_ROOT/reportable_2026")
+  fi
+  if [[ -f "$benchmark_manifest" ]]; then
+    args+=(--benchmark-materialization-manifest "$benchmark_manifest")
+  fi
   if truthy "$COVERAGE_STRICT"; then
     args+=(--strict)
   fi
@@ -569,6 +630,9 @@ coverage_report() {
   fi
   if truthy "$REQUIRE_REPORTABLE_TASKS"; then
     args+=(--require-reportable-tasks)
+  fi
+  if truthy "$REQUIRE_OFFICIAL_REPORTABLE_TASKS"; then
+    args+=(--require-official-reportable-tasks)
   fi
   log "validate run-scoped materialized coverage"
   "$PYTHON_BIN" -m omnicoder.data_factory.coverage_validator_2026 "${args[@]}" | tee "$out_dir/coverage_report.stdout.json"
@@ -585,6 +649,7 @@ case "$ACTION" in
   mix-plan) mix_plan ;;
   p40-teacher) p40_teacher_rollouts ;;
   media-teacher-rollouts) media_teacher_rollouts ;;
+  benchmark-materialize) benchmark_materialize ;;
   coverage-report) coverage_report ;;
   status) status ;;
   all)
@@ -595,6 +660,9 @@ case "$ACTION" in
     external_expansion
     teacher_jobs
     modality_teacher_jobs
+    if truthy "$MATERIALIZE_BENCHMARK_TASKS"; then
+      benchmark_materialize
+    fi
     mix_plan
     p40_teacher_rollouts
     media_teacher_rollouts

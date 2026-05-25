@@ -82,6 +82,54 @@ gold fields are present. The training checkpoint gate writes
 passes it to `run-reportable`; missing authorized snapshots still fail closed
 under the default `missing_reportable_policy`.
 
+### Benchmark Materialization
+
+Use `benchmark-materialize-2026` to fetch or scan real benchmark suites before
+scoring. It writes run-scoped artifacts instead of mutating the canonical
+profile:
+
+```powershell
+python -m omnicoder.data_factory.benchmark_materializer_2026 `
+  --profile profiles/benchmark_suite_2026.json `
+  --run-id <run_id> `
+  --suite core25 `
+  --mode public-dev `
+  --download `
+  materialize
+```
+
+Outputs land under:
+
+```text
+weights/data_factory/runs/benchmark_materialization/<run_id>/
+  local_2026/*.jsonl
+  reportable_2026/*.jsonl
+  manifests/benchmark_materialization_manifest.json
+```
+
+Public/dev rows from suites such as Terminal-Bench, BFCL, LiveBench,
+LiveCodeBench, MMMU-Pro, Video-MME-v2, AudioBench, VBench, and Music Arena are
+usable for local regression, training realignment, and failure analysis. They
+remain `local_only` until an official or explicitly authorized snapshot is
+provided with `snapshot_id`, revision, source, and authorization metadata. The
+AI-server sidecar action is opt-in:
+
+```bash
+OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
+OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \
+OMNICODER_BENCHMARK_MATERIALIZATION_MODE=public-dev \
+scripts/ai_server_dataset_training_sidecars_2026.sh benchmark-materialize
+```
+
+To evaluate a checkpoint against a run-scoped authorized root, pass it to the
+20B launcher:
+
+```bash
+OMNICODER_REPORTABLE_TASK_ROOTS=weights/data_factory/runs/benchmark_materialization/<run_id>/reportable_2026 \
+OMNICODER_REQUIRE_REPORTABLE_GATE=1 \
+scripts/ai_server_fast_pipeline_20b.sh
+```
+
 ### Reportable Prediction Harness
 
 Use `omnicoder.eval.reportable_prediction_harness_2026` to generate the

@@ -62,6 +62,7 @@ BENCHMARK_PREDICTION_API_KEY_ENV="${OMNICODER_BENCHMARK_PREDICTION_API_KEY_ENV:-
 BENCHMARK_PREDICTION_CHECKPOINT_RUNNER="${OMNICODER_BENCHMARK_PREDICTION_CHECKPOINT_RUNNER:-}"
 BENCHMARK_PREDICTION_TIMEOUT_SECONDS="${OMNICODER_BENCHMARK_PREDICTION_TIMEOUT_SECONDS:-0}"
 BENCHMARK_PREDICTION_MAX_OUTPUT_TOKENS="${OMNICODER_BENCHMARK_PREDICTION_MAX_OUTPUT_TOKENS:-0}"
+REPORTABLE_TASK_ROOTS="${OMNICODER_REPORTABLE_TASK_ROOTS:-}"
 REQUIRE_REPORTABLE_GATE="${OMNICODER_REQUIRE_REPORTABLE_GATE:-0}"
 RERUN_HELDOUT_EVALS="${OMNICODER_RERUN_HELDOUT_EVALS:-0}"
 
@@ -122,6 +123,14 @@ append_nonempty_arg shared_eval_args --benchmark-prediction-api-key-env "$BENCHM
 append_nonempty_arg shared_eval_args --benchmark-prediction-checkpoint-runner "$BENCHMARK_PREDICTION_CHECKPOINT_RUNNER"
 append_nonzero_arg shared_eval_args --benchmark-prediction-timeout-seconds "$BENCHMARK_PREDICTION_TIMEOUT_SECONDS"
 append_nonzero_arg shared_eval_args --benchmark-prediction-max-output-tokens "$BENCHMARK_PREDICTION_MAX_OUTPUT_TOKENS"
+if [[ -n "$REPORTABLE_TASK_ROOTS" ]]; then
+  IFS=',' read -r -a reportable_task_roots <<< "$REPORTABLE_TASK_ROOTS"
+  for reportable_task_root in "${reportable_task_roots[@]}"; do
+    if [[ -n "$reportable_task_root" ]]; then
+      shared_eval_args+=(--reportable-task-root "$reportable_task_root")
+    fi
+  done
+fi
 if truthy "$REQUIRE_REPORTABLE_GATE"; then
   shared_eval_args+=(--require-reportable-gate)
 fi
