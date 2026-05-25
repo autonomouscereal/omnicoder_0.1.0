@@ -4,8 +4,8 @@ set -euo pipefail
 # Canonical AI-server launcher for the 20B-class native-1M target lane.
 # Host GPUs 0,4,6 are exposed as container CUDA devices 0,1,2:
 #   rank 0 -> RTX 3090, 16 layers
-#   rank 1 -> RTX 3090, 14 layers
-#   rank 2 -> RTX 8000, 34 layers plus final norm/head
+#   rank 1 -> RTX 3090, 16 layers
+#   rank 2 -> RTX 8000, 32 layers plus final norm/head
 
 REPO="${OMNICODER_REPO:-/home/cereal/omnicoder_2026_work}"
 WEIGHTS_ROOT="${OMNICODER_WEIGHTS_ROOT:-/home/cereal/omnicoder_2026_work/weights}"
