@@ -1646,6 +1646,14 @@ def test_repo_dataset_registry_covers_nineteenth_wave_trainable_reward_eval_sour
     assert by_name["NVIDIA OpenCodeInstruct"]["hf_id"] == "nvidia/OpenCodeInstruct"
     assert by_name["NVIDIA Nemotron-SFT OpenCode v1"]["hf_id"] == "nvidia/Nemotron-SFT-OpenCode-v1"
     assert by_name["NVIDIA Nemotron-SFT OpenCode v1"]["config"] == "default"
+    assert by_name["NVIDIA Nemotron-SFT OpenCode v1"]["splits"] == [
+        "bash_only_tool_skills",
+        "bash_only_tool",
+        "general",
+        "question_tool",
+        "agent_skills",
+        "agent_skills_question_tool",
+    ]
     assert by_name["NVIDIA Nemotron-SFT Math v3"]["hf_id"] == "nvidia/Nemotron-SFT-Math-v3"
     assert by_name["FinePhrase"]["hf_id"] == "HuggingFaceFW/finephrase"
     assert by_name["NVIDIA Retrieval Synthetic NVDocs v1"]["hf_id"] == "nvidia/Retrieval-Synthetic-NVDocs-v1"
@@ -1675,6 +1683,51 @@ def test_repo_dataset_registry_covers_nineteenth_wave_trainable_reward_eval_sour
     assert expansion.source_use_bucket(by_name["ChartVerse SFT 1.8M"]) == "research_internal"
     assert expansion.source_use_bucket(by_name["DatapointAI TTS Human Preferences Large"]) == "research_internal"
     assert "humair025/suno-audio" not in {str(entry.get("hf_id")) for entry in entries}
+
+
+def test_repo_dataset_registry_covers_twentieth_wave_multimodal_agentic_reasoning_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "twentieth_wave_multimodal_agentic_reasoning_2026_05_25"
+
+    expected_policy = {
+        "Creative Professionals Agentic Tasks 1M": "research_internal",
+        "Reasoning Core Procedural Pretraining Pile": "train",
+        "Marco Longspeech": "train",
+        "Veri-Code ReForm Python2Dafny": "train",
+        "MCPHunt Agent Safety Traces": "reward_only",
+        "Rapidata Base Text-to-Video Human Preferences": "train",
+        "Voices in the Wild 2M": "train",
+        "AllenAI olmOCR Bench": "eval_only",
+        "Limbic Eval Tool Use MCP": "eval_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    train_names = {
+        "Reasoning Core Procedural Pretraining Pile",
+        "Marco Longspeech",
+        "Veri-Code ReForm Python2Dafny",
+        "Rapidata Base Text-to-Video Human Preferences",
+        "Voices in the Wild 2M",
+    }
+    for name in train_names:
+        assert by_name[name]["contamination_status"] == "clean"
+        assert by_name[name]["protected_benchmark_scan"] == "clean"
+        assert expansion.source_use_bucket(by_name[name]) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], {"prompt": "p", "answer": "a"}) == "train"
+
+    assert by_name["Creative Professionals Agentic Tasks 1M"]["synthetic_train_seed_policy"] == "teacher_distill_before_train"
+    assert expansion.source_use_bucket(by_name["Creative Professionals Agentic Tasks 1M"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["MCPHunt Agent Safety Traces"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["AllenAI olmOCR Bench"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["Limbic Eval Tool Use MCP"]) == "eval_holdout"
+    assert "audio_path" in by_name["Marco Longspeech"]["field_map"]["media"]
+    assert by_name["Veri-Code ReForm Python2Dafny"]["hf_id"] == "Veri-Code/ReForm-Python2Dafny-Dataset"
+    assert by_name["Limbic Eval Tool Use MCP"]["splits"] == ["test"]
 
 
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:

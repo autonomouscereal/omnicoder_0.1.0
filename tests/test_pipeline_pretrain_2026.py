@@ -1,16 +1,25 @@
 from __future__ import annotations
 
+import json
+import threading
+import time
+from types import SimpleNamespace
+
 import pytest
 
 torch = pytest.importorskip("torch")
 import torch.nn.functional as F
 
+import omnicoder.training.pipeline_pretrain_2026_dense as pipeline
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
 from omnicoder.training.pipeline_pretrain_2026_dense import (
     OmniCoder2026PipelineShard,
     WeightedTextJsonlDataset,
+    _rank_complete_file,
+    _wait_for_rank_checkpoint_markers,
     load_full_checkpoint_shard,
     parse_stage_ranges,
+    save_sharded_checkpoint,
     shard_spec,
     stage_ranges,
 )
@@ -44,6 +53,64 @@ def tiny_cfg(n_layers: int = 3) -> OmniCoder2026Config:
         tie_embeddings=False,
         flow_latent_dim=16,
     )
+
+
+class FakeDist:
+    def __init__(self, *, rank: int, world_size: int) -> None:
+        self.rank = int(rank)
+        self.world_size = int(world_size)
+
+    def get_rank(self) -> int:
+        return self.rank
+
+    def get_world_size(self) -> int:
+        return self.world_size
+
+    def barrier(self) -> None:
+        raise AssertionError("filesystem checkpoint sync must not call dist.barrier")
+
+
+class TinyShard:
+    spec = SimpleNamespace(stage_index=0, num_stages=3, layer_start=0, layer_end=1, has_embed=True, has_head=False)
+
+    def local_state_dict(self) -> dict[str, torch.Tensor]:
+        return {"embed.weight": torch.ones(1, 1)}
+
+
+def checkpoint_args(tmp_path, *, timeout: float = 2.0) -> SimpleNamespace:
+    data = tmp_path / "train.jsonl"
+    data.write_text('{"text":"hello"}\n', encoding="utf-8")
+    return SimpleNamespace(
+        data=str(data),
+        data_manifest="",
+        seq_len=8,
+        batch_size=1,
+        steps=1,
+        lr=1.0e-6,
+        pipeline_stage_ranges="0:1,1:2,2:3",
+        placement_layer_counts="1,1,1",
+        pipeline_microbatches=1,
+        pipeline_schedule="manual",
+        fake_quant=False,
+        optimizer="adamw",
+        optimizer_in_backward=False,
+        optimizer_in_backward_update="",
+        optimizer_in_backward_grad_clip=0.0,
+        optimizer_in_backward_adafactor_chunk_rows=0,
+        checkpoint_sync_backend="filesystem",
+        checkpoint_marker_timeout_seconds=timeout,
+        checkpoint_marker_poll_seconds=0.05,
+    )
+
+
+def wait_for_attempt_marker(checkpoint_dir, *, timeout: float = 2.0) -> dict:
+    deadline = time.monotonic() + timeout
+    attempt_path = checkpoint_dir / pipeline.CHECKPOINT_ATTEMPT_MARKER
+    while time.monotonic() < deadline:
+        if attempt_path.exists():
+            return json.loads(attempt_path.read_text(encoding="utf-8"))
+        time.sleep(0.02)
+    raise AssertionError("rank 0 did not create checkpoint attempt marker")
 
 
 def test_stage_ranges_target_contract() -> None:
@@ -123,3 +190,143 @@ def test_weighted_pipeline_dataset_uses_tool_reward_rows(tmp_path) -> None:
 
     assert ids.shape == (8,)
     assert float(weight) == pytest.approx(2.0)
+
+
+def test_filesystem_checkpoint_marker_wait_requires_all_rank_markers(tmp_path) -> None:
+    checkpoint = tmp_path / "pipeline_checkpoint"
+    checkpoint.mkdir()
+    attempt_id = "current-attempt"
+    for rank in (0, 2):
+        rank_file = checkpoint / f"rank{rank:05d}.pt"
+        rank_file.write_bytes(b"checkpoint")
+        _rank_complete_file(checkpoint, rank).write_text(
+            json.dumps(
+                {
+                    "status": "complete",
+                    "checkpoint_attempt_id": attempt_id,
+                    "rank": rank,
+                    "world_size": 3,
+                    "global_step": 11,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    with pytest.raises(TimeoutError):
+        _wait_for_rank_checkpoint_markers(
+            checkpoint,
+            world_size=3,
+            global_step=11,
+            attempt_id=attempt_id,
+            timeout_seconds=0.01,
+            poll_seconds=0.01,
+        )
+
+    rank_file = checkpoint / "rank00001.pt"
+    rank_file.write_bytes(b"checkpoint")
+    _rank_complete_file(checkpoint, 1).write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "checkpoint_attempt_id": attempt_id,
+                "rank": 1,
+                "world_size": 3,
+                "global_step": 11,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    markers = _wait_for_rank_checkpoint_markers(
+        checkpoint,
+        world_size=3,
+        global_step=11,
+        attempt_id=attempt_id,
+        timeout_seconds=0.1,
+        poll_seconds=0.01,
+    )
+    assert [marker.name for marker in markers] == [
+        "rank00000.pt.complete.json",
+        "rank00001.pt.complete.json",
+        "rank00002.pt.complete.json",
+    ]
+
+
+def test_filesystem_checkpoint_marker_wait_rejects_stale_rank_marker(tmp_path) -> None:
+    checkpoint = tmp_path / "pipeline_checkpoint"
+    checkpoint.mkdir()
+    for rank in range(3):
+        rank_file = checkpoint / f"rank{rank:05d}.pt"
+        rank_file.write_bytes(b"checkpoint")
+        _rank_complete_file(checkpoint, rank).write_text(
+            json.dumps(
+                {
+                    "status": "complete",
+                    "checkpoint_attempt_id": "stale-attempt",
+                    "rank": rank,
+                    "world_size": 3,
+                    "global_step": 11,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    with pytest.raises(TimeoutError):
+        _wait_for_rank_checkpoint_markers(
+            checkpoint,
+            world_size=3,
+            global_step=11,
+            attempt_id="current-attempt",
+            timeout_seconds=0.01,
+            poll_seconds=0.01,
+        )
+
+
+def test_save_sharded_checkpoint_filesystem_sync_finalizes_without_barrier(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "pipeline_checkpoint"
+    monkeypatch.setattr(pipeline, "dist", FakeDist(rank=0, world_size=3))
+    errors: list[BaseException] = []
+
+    def run_rank0() -> None:
+        try:
+            save_sharded_checkpoint(
+                checkpoint,
+                TinyShard(),
+                preset=SimpleNamespace(name="tiny"),
+                args=checkpoint_args(tmp_path),
+                optimizer=None,
+                global_step=11,
+                last_loss=0.25,
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=run_rank0)
+    worker.start()
+    attempt = wait_for_attempt_marker(checkpoint)
+    attempt_id = str(attempt["checkpoint_attempt_id"])
+    for rank in (1, 2):
+        rank_file = checkpoint / f"rank{rank:05d}.pt"
+        rank_file.write_bytes(b"checkpoint")
+        pipeline._atomic_write_json(
+            _rank_complete_file(checkpoint, rank),
+            {
+                "status": "complete",
+                "path": str(rank_file),
+                "bytes": rank_file.stat().st_size,
+                "format": "omnicoder2026_pipeline_stage_checkpoint_v2",
+                "rank": rank,
+                "world_size": 3,
+                "global_step": 11,
+                "last_loss": 0.25,
+                "checkpoint_attempt_id": attempt_id,
+            },
+        )
+    worker.join(timeout=3)
+
+    assert not worker.is_alive()
+    assert errors == []
+    complete = json.loads((checkpoint / ".complete.json").read_text(encoding="utf-8"))
+    assert complete["status"] == "complete"
+    assert complete["checkpoint_attempt_id"] == attempt_id
+    assert complete["rank_files"] == ["rank00000.pt", "rank00001.pt", "rank00002.pt"]

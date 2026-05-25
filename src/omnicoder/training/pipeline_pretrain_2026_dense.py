@@ -5,6 +5,9 @@ import contextlib
 import json
 import math
 import os
+import socket
+import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,6 +40,7 @@ PIPELINE_LOW_MEMORY_OPTIMIZER_NOTE = (
     "post-accumulate hooks because those can step before every pipeline "
     "microbatch has contributed to the global batch."
 )
+CHECKPOINT_ATTEMPT_MARKER = ".checkpoint_save_attempt.json"
 
 
 @dataclass(frozen=True)
@@ -188,6 +192,165 @@ class OmniCoder2026PipelineShard(nn.Module):
 
 def load_full_checkpoint_shard(path: str | Path, shard: OmniCoder2026PipelineShard) -> tuple[int, float | None]:
     return load_checkpoint_shard(path, shard)
+
+
+def _atomic_write_json(path: str | Path, payload: dict[str, Any]) -> None:
+    final_path = Path(path)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = final_path.with_name(f".{final_path.name}.{os.getpid()}.tmp")
+    try:
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp_path, final_path)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
+def _unlink_if_exists(path: str | Path) -> None:
+    try:
+        Path(path).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _rank_checkpoint_file(target: str | Path, rank: int) -> Path:
+    return Path(target) / f"rank{int(rank):05d}.pt"
+
+
+def _rank_complete_file(target: str | Path, rank: int) -> Path:
+    return Path(str(_rank_checkpoint_file(target, rank)) + ".complete.json")
+
+
+def _read_json_dict(path: str | Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _pid_exists(pid: Any) -> bool:
+    try:
+        os.kill(int(pid), 0)
+    except (TypeError, ValueError):
+        return False
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _checkpoint_attempt_file(target: str | Path) -> Path:
+    return Path(target) / CHECKPOINT_ATTEMPT_MARKER
+
+
+def _rank_marker_matches(path: Path, *, attempt_id: str, rank: int, world_size: int, global_step: int) -> bool:
+    payload = _read_json_dict(path)
+    if not payload:
+        return False
+    return (
+        payload.get("status") == "complete"
+        and str(payload.get("checkpoint_attempt_id") or "") == str(attempt_id)
+        and int(payload.get("rank", -1)) == int(rank)
+        and int(payload.get("world_size", -1)) == int(world_size)
+        and int(payload.get("global_step", -1)) == int(global_step)
+        and _rank_checkpoint_file(path.parent, rank).exists()
+    )
+
+
+def _directory_marker_matches(path: Path, *, attempt_id: str, world_size: int, global_step: int) -> bool:
+    payload = _read_json_dict(path)
+    if not payload:
+        return False
+    return (
+        payload.get("status") == "complete"
+        and str(payload.get("checkpoint_attempt_id") or "") == str(attempt_id)
+        and int(payload.get("world_size", -1)) == int(world_size)
+        and int(payload.get("global_step", -1)) == int(global_step)
+    )
+
+
+def _wait_for_checkpoint_attempt(
+    target: str | Path,
+    *,
+    world_size: int,
+    global_step: int,
+    timeout_seconds: float,
+    poll_seconds: float = 2.0,
+) -> dict[str, Any]:
+    attempt_path = _checkpoint_attempt_file(target)
+    deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+    while True:
+        payload = _read_json_dict(attempt_path)
+        rank0_host = str(payload.get("rank0_host") or "") if payload else ""
+        rank0_alive = not rank0_host or rank0_host != socket.gethostname() or _pid_exists(payload.get("rank0_pid"))
+        if (
+            payload
+            and payload.get("status") == "ready"
+            and payload.get("checkpoint_attempt_id")
+            and int(payload.get("world_size", -1)) == int(world_size)
+            and int(payload.get("global_step", -1)) == int(global_step)
+            and rank0_alive
+        ):
+            return payload
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"timed out waiting for checkpoint save attempt marker {attempt_path}")
+        time.sleep(max(0.05, float(poll_seconds)))
+
+
+def _wait_for_rank_checkpoint_markers(
+    target: str | Path,
+    *,
+    world_size: int,
+    global_step: int,
+    attempt_id: str,
+    timeout_seconds: float,
+    poll_seconds: float = 2.0,
+) -> list[Path]:
+    checkpoint_dir = Path(target)
+    expected = [_rank_complete_file(checkpoint_dir, rank) for rank in range(int(world_size))]
+    deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+    missing = [
+        path
+        for rank, path in enumerate(expected)
+        if not _rank_marker_matches(path, attempt_id=attempt_id, rank=rank, world_size=world_size, global_step=global_step)
+    ]
+    while missing:
+        if time.monotonic() >= deadline:
+            names = ", ".join(path.name for path in missing[:8])
+            raise TimeoutError(f"timed out waiting for rank checkpoint markers in {checkpoint_dir}: {names}")
+        time.sleep(max(0.05, float(poll_seconds)))
+        missing = [
+            path
+            for rank, path in enumerate(expected)
+            if not _rank_marker_matches(path, attempt_id=attempt_id, rank=rank, world_size=world_size, global_step=global_step)
+        ]
+    return expected
+
+
+def _wait_for_directory_checkpoint_marker(
+    target: str | Path,
+    *,
+    world_size: int,
+    global_step: int,
+    attempt_id: str,
+    timeout_seconds: float,
+    poll_seconds: float = 2.0,
+) -> None:
+    complete_path = Path(target) / ".complete.json"
+    deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+    while True:
+        if _directory_marker_matches(complete_path, attempt_id=attempt_id, world_size=world_size, global_step=global_step):
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"timed out waiting for complete checkpoint marker {complete_path}")
+        time.sleep(max(0.05, float(poll_seconds)))
 
 
 def _compact_json(value: Any, limit: int = 12000) -> str:
@@ -419,22 +582,55 @@ def save_sharded_checkpoint(
 ) -> None:
     target = Path(path)
     target.mkdir(parents=True, exist_ok=True)
-    if dist.get_rank() == 0:
-        for stale in (target / ".complete.json", target / "manifest.json"):
-            try:
-                stale.unlink()
-            except FileNotFoundError:
-                pass
-    dist.barrier()
-    rank_path = target / f"rank{int(dist.get_rank()):05d}.pt"
-    try:
-        Path(str(rank_path) + ".complete.json").unlink()
-    except FileNotFoundError:
-        pass
+    rank = int(dist.get_rank())
+    world_size = int(dist.get_world_size())
+    sync_backend = str(getattr(args, "checkpoint_sync_backend", "filesystem") or "filesystem").strip().lower()
+    marker_timeout = float(getattr(args, "checkpoint_marker_timeout_seconds", 7200.0) or 7200.0)
+    marker_poll = float(getattr(args, "checkpoint_marker_poll_seconds", 2.0) or 2.0)
+    if sync_backend not in {"filesystem", "barrier"}:
+        raise ValueError(f"unsupported checkpoint_sync_backend={sync_backend!r}")
+    checkpoint_attempt_id = ""
+    if sync_backend == "barrier":
+        if rank == 0:
+            for stale in (target / ".complete.json", target / "manifest.json"):
+                _unlink_if_exists(stale)
+        dist.barrier()
+    else:
+        if rank == 0:
+            checkpoint_attempt_id = uuid.uuid4().hex
+            for stale in (target / ".complete.json", target / "manifest.json", _checkpoint_attempt_file(target)):
+                _unlink_if_exists(stale)
+            for rank_index in range(world_size):
+                _unlink_if_exists(_rank_complete_file(target, rank_index))
+            _atomic_write_json(
+                _checkpoint_attempt_file(target),
+                {
+                    "status": "ready",
+                    "checkpoint_attempt_id": checkpoint_attempt_id,
+                    "checkpoint_dir": str(target),
+                    "world_size": world_size,
+                    "global_step": int(global_step),
+                    "rank0_pid": os.getpid(),
+                    "rank0_host": socket.gethostname(),
+                    "created_unix_seconds": time.time(),
+                },
+            )
+        else:
+            attempt = _wait_for_checkpoint_attempt(
+                target,
+                world_size=world_size,
+                global_step=int(global_step),
+                timeout_seconds=marker_timeout,
+                poll_seconds=marker_poll,
+            )
+            checkpoint_attempt_id = str(attempt["checkpoint_attempt_id"])
+    rank_path = _rank_checkpoint_file(target, rank)
+    _unlink_if_exists(str(rank_path) + ".complete.json")
     payload = {
         "format": "omnicoder2026_pipeline_stage_checkpoint_v2",
-        "rank": int(dist.get_rank()),
-        "world_size": int(dist.get_world_size()),
+        "rank": rank,
+        "world_size": world_size,
+        "checkpoint_attempt_id": checkpoint_attempt_id or None,
         "model_state_dict": shard.local_state_dict(),
         "optimizer_state_dict": optimizer.state_dict() if optimizer is not None and hasattr(optimizer, "state_dict") else None,
         "rng_state": _rng_state(),
@@ -463,27 +659,67 @@ def save_sharded_checkpoint(
             "optimizer_in_backward_update": str(getattr(args, "optimizer_in_backward_update", "")),
             "optimizer_in_backward_grad_clip": float(getattr(args, "optimizer_in_backward_grad_clip", 0.0) or 0.0),
             "optimizer_in_backward_adafactor_chunk_rows": int(getattr(args, "optimizer_in_backward_adafactor_chunk_rows", 0) or 0),
+            "checkpoint_sync_backend": sync_backend,
+            "checkpoint_marker_timeout_seconds": marker_timeout,
         },
         "spec": shard.spec.__dict__,
         "notes": {"pipeline_low_memory_optimizer": PIPELINE_LOW_MEMORY_OPTIMIZER_NOTE},
     }
     _atomic_torch_save(payload, rank_path)
-    dist.barrier()
-    if dist.get_rank() == 0:
+    if sync_backend == "barrier":
+        dist.barrier()
+    else:
+        _atomic_write_json(
+            _rank_complete_file(target, rank),
+            {
+                "status": "complete",
+                "path": str(rank_path),
+                "bytes": rank_path.stat().st_size,
+                "format": payload.get("format"),
+                "rank": rank,
+                "world_size": world_size,
+                "global_step": int(global_step),
+                "last_loss": last_loss,
+                "checkpoint_attempt_id": checkpoint_attempt_id,
+            },
+        )
+        if rank == 0:
+            _wait_for_rank_checkpoint_markers(
+                target,
+                world_size=world_size,
+                global_step=int(global_step),
+                attempt_id=checkpoint_attempt_id,
+                timeout_seconds=marker_timeout,
+                poll_seconds=marker_poll,
+            )
+        else:
+            _wait_for_directory_checkpoint_marker(
+                target,
+                world_size=world_size,
+                global_step=int(global_step),
+                attempt_id=checkpoint_attempt_id,
+                timeout_seconds=marker_timeout,
+                poll_seconds=marker_poll,
+            )
+            return
+    if rank == 0:
         manifest = {
             "format": "omnicoder2026_pipeline_stage_checkpoint_v2",
             "checkpoint_dir": str(target),
-            "world_size": int(dist.get_world_size()),
-            "rank_files": [f"rank{rank:05d}.pt" for rank in range(int(dist.get_world_size()))],
+            "world_size": world_size,
+            "rank_files": [f"rank{rank_index:05d}.pt" for rank_index in range(world_size)],
             "global_step": int(global_step),
             "last_loss": last_loss,
+            "checkpoint_attempt_id": checkpoint_attempt_id or None,
+            "sync_backend": sync_backend,
             "preset": preset.__dict__,
             "train_args": payload["train_args"],
             "note": "Per-stage pipeline checkpoint. Use merge tooling before GGUF/export.",
         }
-        (target / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
-        (target / ".complete.json").write_text(json.dumps({"status": "complete", **manifest}, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
-    dist.barrier()
+        _atomic_write_json(target / "manifest.json", manifest)
+        _atomic_write_json(target / ".complete.json", {"status": "complete", **manifest})
+    if sync_backend == "barrier":
+        dist.barrier()
 
 
 def rank_device(rank: int, raw_map: str) -> torch.device:
@@ -771,6 +1007,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require_target_contract", action="store_true")
     parser.add_argument("--allow_probe", action="store_true")
     parser.add_argument("--debug_events", action="store_true")
+    parser.add_argument("--checkpoint_sync_backend", default=os.getenv("OMNICODER2026_CHECKPOINT_SYNC_BACKEND", "filesystem"), choices=["filesystem", "barrier"])
+    parser.add_argument("--checkpoint_marker_timeout_seconds", type=float, default=float(os.getenv("OMNICODER2026_CHECKPOINT_MARKER_TIMEOUT_SECONDS", "7200") or 7200))
+    parser.add_argument("--checkpoint_marker_poll_seconds", type=float, default=float(os.getenv("OMNICODER2026_CHECKPOINT_MARKER_POLL_SECONDS", "2") or 2))
     args = parser.parse_args(argv)
 
     if int(args.fake_quant_chunk_rows or 0) > 0:

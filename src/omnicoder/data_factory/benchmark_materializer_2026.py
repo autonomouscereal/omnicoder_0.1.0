@@ -1158,6 +1158,16 @@ def make_jsonable(value: Any) -> Any:
     return str(value)
 
 
+def has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value)
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+    return True
+
+
 def first_value(raw: dict[str, Any], keys: tuple[str, ...]) -> Any:
     casefold_keys = {str(key).casefold(): key for key in raw}
     for key in keys:
@@ -1166,6 +1176,150 @@ def first_value(raw: dict[str, Any], keys: tuple[str, ...]) -> Any:
         if value not in (None, "", [], {}):
             return value
     return None
+
+
+def compact_metadata_value(value: Any) -> Any:
+    value = make_jsonable(value)
+    if isinstance(value, str) and len(value) > 2000:
+        return {"text_sha256": stable_hash(value), "text_length": len(value)}
+    if isinstance(value, list) and len(value) > 20:
+        return {"items_sha256": stable_hash(value), "items_length": len(value), "sample": value[:3]}
+    if isinstance(value, dict) and len(value) > 20:
+        return {"object_sha256": stable_hash(value), "keys": sorted(str(key) for key in value)[:40]}
+    return value
+
+
+def media_descriptor(value: Any, media_type: str, field: str) -> Any:
+    value = make_jsonable(value)
+    if isinstance(value, list):
+        return [media_descriptor(item, media_type, field) for item in value if has_value(item)]
+    if isinstance(value, dict):
+        descriptor: dict[str, Any] = {"type": media_type, "field": field}
+        for key in ("path", "filename", "file", "url", "src", "name"):
+            if has_value(value.get(key)):
+                descriptor[key] = value[key]
+        bytes_value = value.get("bytes")
+        if isinstance(bytes_value, str) and bytes_value.startswith("<bytes:"):
+            descriptor["bytes"] = bytes_value
+        if len(descriptor) > 2:
+            return descriptor
+        return {"type": media_type, "field": field, "value": value}
+    return {"type": media_type, "field": field, "path": value}
+
+
+def append_media(media: list[dict[str, Any]], value: Any, media_type: str, field: str) -> None:
+    if not has_value(value):
+        return
+    descriptor = media_descriptor(value, media_type, field)
+    items = descriptor if isinstance(descriptor, list) else [descriptor]
+    for item in items:
+        if isinstance(item, dict) and has_value(item):
+            media.append(item)
+
+
+def normalized_media(raw: dict[str, Any], row: dict[str, Any]) -> list[dict[str, Any]]:
+    media: list[dict[str, Any]] = []
+    for field, media_type in (
+        ("image", "image"),
+        ("images", "image"),
+        ("img", "image"),
+        ("image_url", "image"),
+        ("image_file", "image"),
+        ("image_path", "image"),
+        ("images_path", "image"),
+        ("img_path", "image"),
+        ("img_paths", "image"),
+        ("img_name", "image"),
+        ("image_name", "image"),
+        ("page_image", "image"),
+        ("page_image_path", "image"),
+        ("prompt_images", "image"),
+        ("response_a_images", "image"),
+        ("response_b_images", "image"),
+        ("image_list", "image"),
+        ("needle_image_list", "image"),
+        ("pdf", "document"),
+        ("pdf_path", "document"),
+        ("document", "document"),
+        ("document_path", "document"),
+        ("doc_path", "document"),
+        ("file_path", "document"),
+        ("video", "video"),
+        ("video_url", "video"),
+        ("video_file", "video"),
+        ("video_name", "video"),
+        ("video_path", "video"),
+        ("audio", "audio"),
+        ("audio_url", "audio"),
+        ("audio_file", "audio"),
+        ("audio_path", "audio"),
+        ("wav", "audio"),
+        ("wav_path", "audio"),
+        ("prompt_wav", "audio"),
+        ("reference_audio", "audio"),
+        ("audio_filename", "audio"),
+    ):
+        append_media(media, raw.get(field), media_type, field)
+    for field, media_type in (
+        ("images", "image"),
+        ("image", "image"),
+        ("video", "video"),
+        ("audio", "audio"),
+        ("pdf", "document"),
+    ):
+        append_media(media, row.get(field), media_type, field)
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for item in media:
+        key = stable_hash(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def normalized_metadata(raw: dict[str, Any], kind: str, profile_record: dict[str, Any]) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "kind": kind,
+        "adapter_kind": profile_record.get("adapter_kind") or "",
+        "raw_fields": sorted(str(key) for key in raw if not str(key).startswith("_")),
+    }
+    for key in (
+        "_hf_dataset",
+        "_hf_config",
+        "_hf_split",
+        "_hf_file",
+        "dataset",
+        "dataset_name",
+        "subset",
+        "split",
+        "category",
+        "subcategory",
+        "task_type",
+        "question_type",
+        "domain",
+        "language",
+        "graph_type",
+        "image_titles",
+        "image_ids",
+        "subqa_chain",
+        "page_id",
+        "page_num",
+        "page_no",
+        "doc_id",
+        "document_id",
+        "scenario",
+        "distortion",
+        "layout_type",
+        "document_type",
+        "metric_info",
+        "evaluator_reference",
+    ):
+        value = raw.get(key)
+        if has_value(value):
+            metadata[key.lstrip("_")] = compact_metadata_value(value)
+    return metadata
 
 
 def normalize_choices(value: Any) -> Any:
@@ -1979,10 +2133,16 @@ def normalize_task(
         (
             "prompt",
             "Prompt",
+            "full_prompt",
+            "user_request",
+            "system_instruction",
             "question",
+            "Question",
             "instruction",
             "query",
             "query_text",
+            "query_content",
+            "Question Content",
             "question_nonthinking",
             "question_thinking",
             "question_text",
@@ -2008,9 +2168,14 @@ def normalize_task(
             "input",
             "text",
             "context",
+            "context_document",
             "scenario",
             "system_prompt",
             "pdf",
+            "document",
+            "doc_path",
+            "img_path",
+            "image_path",
             "goal",
         ),
     )
@@ -2061,6 +2226,16 @@ def normalize_task(
             "full_code",
             "expected_markdown",
             "rule",
+            "markdown",
+            "gt",
+            "gt_parse",
+            "gt_text",
+            "gt_markdown",
+            "text_sequence",
+            "transcription",
+            "ocr",
+            "truth",
+            "annotation",
             "knowledge_checklist",
             "Knowledge Checklist",
             "requirements",
@@ -2097,6 +2272,18 @@ def normalize_task(
         answer = first_value(raw, ("solution_text", "solution")) or answer
     if answer is None:
         answer = first_value(raw, ("solution_text", "solution"))
+    if prompt is None and benchmark_id == "factuality_facts_grounding_2026":
+        system_instruction = first_value(raw, ("system_instruction",))
+        user_request = first_value(raw, ("user_request",))
+        context_document = first_value(raw, ("context_document",))
+        parts = [part for part in (system_instruction, user_request, context_document) if has_value(part)]
+        if parts:
+            prompt = "\n\n".join(str(part) for part in parts)
+    if prompt is None and "document_ai" in kind and any(
+        has_value(raw.get(key))
+        for key in ("image", "images", "img", "image_path", "img_path", "pdf", "document", "doc_path", "file_path")
+    ):
+        prompt = "Parse the document image and return the requested text, layout, table, formula, or markdown content."
     row: dict[str, Any] = {
         "schema": TASK_SCHEMA,
         "benchmark_id": benchmark_id,
@@ -2120,6 +2307,19 @@ def normalize_task(
         row["choices"] = choices
     if answer not in (None, "", [], {}):
         row["answer"] = make_jsonable(answer)
+        row["target"] = make_jsonable(answer)
+    elif benchmark_id == "factuality_facts_grounding_2026":
+        row["target"] = {
+            "kind": "facts_grounding_judged_generation",
+            "requires_context_grounding": True,
+            "requires_abstention_when_unsupported": True,
+        }
+    elif "document_ai" in kind:
+        row["target"] = {
+            "kind": "document_parse_output",
+            "format": "benchmark_native",
+            "evaluation_protocol": "omnidocbench" if "omnidocbench" in benchmark_id else "ocrbench_v2",
+        }
 
     evidence = raw.get("evidence")
     if isinstance(evidence, dict):
@@ -2140,6 +2340,17 @@ def normalize_task(
         "image_file",
         "image_path",
         "images_path",
+        "img",
+        "img_path",
+        "img_paths",
+        "img_name",
+        "page_image",
+        "page_image_path",
+        "pdf_path",
+        "document",
+        "document_path",
+        "doc_path",
+        "file_path",
         "prompt_images",
         "response_a_images",
         "response_b_images",
@@ -2330,6 +2541,26 @@ def normalize_task(
         "db_path",
         "rule",
         "expected_markdown",
+        "system_instruction",
+        "user_request",
+        "context_document",
+        "full_prompt",
+        "image_titles",
+        "image_ids",
+        "subqa_chain",
+        "question_type",
+        "dataset_name",
+        "page_id",
+        "page_num",
+        "page_no",
+        "doc_id",
+        "document_id",
+        "scenario",
+        "distortion",
+        "layout_type",
+        "document_type",
+        "gt_path",
+        "annotations",
     ):
         value = first_value(raw, (key,))
         if value not in (None, "", [], {}):
@@ -2357,6 +2588,10 @@ def normalize_task(
         ):
             if snapshot.get(key) not in (None, ""):
                 row[key] = snapshot[key]
+    media = normalized_media(raw, row)
+    if media:
+        row["media"] = media
+    row["metadata"] = normalized_metadata(raw, kind, profile_record)
     if "prompt" not in row and not any(key in row for key in ("image", "video", "audio", "repo", "tools", "command")):
         return None
     row["task_row_sha256"] = stable_hash(row)
@@ -2367,6 +2602,12 @@ def is_scorable_task(row: dict[str, Any], spec: dict[str, Any]) -> bool:
     kind = str(spec.get("kind") or "").lower()
     if "multimodal_agent_memory" in kind:
         return bool(row.get("prompt") or row.get("question")) and row.get("answer") not in (None, "", [], {})
+    if "factuality_grounding" in kind:
+        return bool(row.get("prompt") and row.get("target") and row.get("context_document"))
+    if "document_ai" in kind:
+        return bool(row.get("prompt") and row.get("target") and row.get("media"))
+    if "agent_tool_multimodal" in kind:
+        return bool(row.get("prompt") and row.get("target"))
     return True
 
 

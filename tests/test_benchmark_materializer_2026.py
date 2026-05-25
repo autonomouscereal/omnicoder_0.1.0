@@ -1041,6 +1041,122 @@ def test_smmbench_cluster_qa_rows_are_scorable_and_imagefolder_rows_are_rejected
     assert not materializer.is_scorable_task(image_only, {"kind": "multimodal_agent_memory"})
 
 
+def test_materializer_hardens_2026_factuality_search_and_document_rows() -> None:
+    cases = [
+        (
+            "factuality_facts_grounding_2026",
+            {
+                "system_instruction": "Answer only from the provided context.",
+                "user_request": "What risk factors are named in the passage?",
+                "context_document": "The passage names hypertension and low cognitive engagement as risk factors.",
+            },
+            False,
+        ),
+        (
+            "agent_mc_search_mmrag_2026",
+            {
+                "index": 7,
+                "question": "Which landmark in the image matches the text evidence?",
+                "answer": "The freestanding clock tower.",
+                "image": [{"path": "mc_search/images/clock.png", "bytes": b"abc"}],
+                "image_titles": ["Torre del Reloj"],
+                "image_ids": ["30351515"],
+                "graph_type": "Parallel Visual-Textual Fork",
+                "subqa_chain": [{"subquestion": "What is pictured?", "modality": "image", "answer": "clock tower"}],
+            },
+            True,
+        ),
+        (
+            "multimodal_ocrbench_v2_2026",
+            {
+                "question_id": "ocrbench-v2-1",
+                "question": "Read the serial number in the image.",
+                "answer": "SN-2048",
+                "image": {"path": "ocrbench/page.png", "bytes": b"fake-image-bytes"},
+                "question_type": "fine_grained_text_recognition",
+            },
+            True,
+        ),
+        (
+            "multimodal_omnidocbench_2026",
+            {
+                "page_id": "omnidoc-1",
+                "img_path": "OmniDocBench/images/page_001.png",
+                "gt_markdown": "# Invoice\n\nTotal: 12.00",
+                "document_type": "invoice",
+                "layout_type": "single_column",
+            },
+            True,
+        ),
+        (
+            "multimodal_cc_ocr_v2_2026",
+            {
+                "doc_id": "ccocr-1",
+                "image_path": "CC-OCR-V2/forms/form_001.jpg",
+                "query": "Extract all visible key-value pairs.",
+                "gt_text": "Name: Alex; Date: 2026-05-20",
+                "dataset_name": "forms",
+            },
+            True,
+        ),
+        (
+            "multimodal_real5_omnidocbench_2026",
+            {
+                "image": {"path": "Real5-OmniDocBench-Warping/page_208.png", "bytes": b"12345"},
+                "scenario": "Warping",
+            },
+            True,
+        ),
+    ]
+
+    for index, (benchmark_id, raw, requires_media) in enumerate(cases):
+        task = materializer.normalize_task(
+            benchmark_id,
+            raw,
+            materializer.KNOWN_BENCHMARKS[benchmark_id],
+            {"adapter_kind": "fixture_adapter"},
+            {},
+            "public-dev",
+            "fixture",
+            index,
+        )
+
+        assert task is not None, benchmark_id
+        assert task["prompt"], benchmark_id
+        assert task["target"] not in (None, "", [], {}), benchmark_id
+        assert task["metadata"]["raw_fields"], benchmark_id
+        if requires_media:
+            assert task["media"], benchmark_id
+        assert materializer.is_scorable_task(task, materializer.KNOWN_BENCHMARKS[benchmark_id]), benchmark_id
+
+    facts = materializer.normalize_task(
+        "factuality_facts_grounding_2026",
+        cases[0][1],
+        materializer.KNOWN_BENCHMARKS["factuality_facts_grounding_2026"],
+        {"adapter_kind": "fixture_adapter"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    real5 = materializer.normalize_task(
+        "multimodal_real5_omnidocbench_2026",
+        cases[-1][1],
+        materializer.KNOWN_BENCHMARKS["multimodal_real5_omnidocbench_2026"],
+        {"adapter_kind": "fixture_adapter"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert facts is not None
+    assert facts["target"]["kind"] == "facts_grounding_judged_generation"
+    assert real5 is not None
+    assert real5["target"]["evaluation_protocol"] == "omnidocbench"
+    assert real5["media"][0]["bytes"] == "<bytes:5>"
+
+
 def test_hf_rows_falls_back_to_raw_hub_files(monkeypatch, tmp_path: Path) -> None:
     remote_file = tmp_path / "mmlong.jsonl"
     _write_jsonl(

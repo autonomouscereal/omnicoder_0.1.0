@@ -25814,7 +25814,12 @@
         "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
         "config": "default",
         "splits": [
-          "train"
+          "bash_only_tool_skills",
+          "bash_only_tool",
+          "general",
+          "question_tool",
+          "agent_skills",
+          "agent_skills_question_tool"
         ],
         "max_records": 4096,
         "target_modality": "tool",
@@ -26206,6 +26211,466 @@
           "media": [
             "audio_a",
             "audio_b"
+          ]
+        }
+      },
+      {
+        "name": "Creative Professionals Agentic Tasks 1M",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "yatin-superintelligence/Creative-Professionals-Agentic-Tasks-1M",
+        "url": "https://huggingface.co/datasets/yatin-superintelligence/Creative-Professionals-Agentic-Tasks-1M",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "research_internal",
+        "license": "MIT; prompt-only creative professional task seeds require teacher completion before supervised train promotion",
+        "license_tier": "permissive_distillation_seed",
+        "source_review_status": "public_distillation_seed_reviewed_2026_05_25",
+        "synthetic_train_seed_policy": "teacher_distill_before_train",
+        "materialization_note": "Use as multimodal creative-professional task seeds for Qwen/LTX/ACE/Qwen-image teacher rollouts, not direct answer imitation.",
+        "curriculum_axes": [
+          "creative_agentic_planning",
+          "multimodal_task_decomposition",
+          "image_video_audio_briefing",
+          "tool_routing",
+          "professional_workflows"
+        ],
+        "field_map": {
+          "id": [
+            "batch_id",
+            "index_id",
+            "id"
+          ],
+          "prompt": [
+            "user_prompt",
+            "prompt",
+            "professional",
+            "group"
+          ],
+          "target": [
+            "user_prompt",
+            "professional",
+            "group"
+          ]
+        }
+      },
+      {
+        "name": "Reasoning Core Procedural Pretraining Pile",
+        "family": "math_reasoning",
+        "hf_id": "reasoning-core/procedural-pretraining-pile",
+        "url": "https://huggingface.co/datasets/reasoning-core/procedural-pretraining-pile",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Correct-by-design procedural tasks for scalable reasoning pretraining and RLVR without protected benchmark rows.",
+        "curriculum_axes": [
+          "procedural_reasoning",
+          "symbolic_tasks",
+          "verifiable_answers",
+          "rlvr_seed",
+          "anti_memorization"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "uuid"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "problem",
+            "input"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "output",
+            "target"
+          ]
+        }
+      },
+      {
+        "name": "Marco Longspeech",
+        "family": "speech_audio",
+        "hf_id": "AIDC-AI/Marco_Longspeech",
+        "url": "https://huggingface.co/datasets/AIDC-AI/Marco_Longspeech",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "audio",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Long-speech ASR, temporal QA, summaries, speaker/emotion/language tasks, and translation rows for 1M-context audio grounding.",
+        "curriculum_axes": [
+          "long_speech_understanding",
+          "asr",
+          "temporal_audio_qa",
+          "speaker_reasoning",
+          "audio_summary"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "audio_id",
+            "utt_id"
+          ],
+          "prompt": [
+            "instruction",
+            "question",
+            "task",
+            "prompt",
+            "audio"
+          ],
+          "target": [
+            "answer",
+            "transcript",
+            "summary",
+            "translation",
+            "label",
+            "output"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "path",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "Veri-Code ReForm Python2Dafny",
+        "family": "coding_agentic",
+        "hf_id": "Veri-Code/ReForm-Python2Dafny-Dataset",
+        "url": "https://huggingface.co/datasets/Veri-Code/ReForm-Python2Dafny-Dataset",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "code",
+        "use_policy": "train",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Python-to-Dafny formalization rows strengthen verifier-backed coding, proof repair, and tool-assisted program reasoning.",
+        "curriculum_axes": [
+          "formal_verification",
+          "python_to_dafny",
+          "proof_assisted_coding",
+          "code_reasoning",
+          "verifier_feedback"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "python",
+            "source_code",
+            "prompt",
+            "instruction",
+            "problem"
+          ],
+          "target": [
+            "dafny",
+            "target_code",
+            "solution",
+            "answer",
+            "output"
+          ]
+        }
+      },
+      {
+        "name": "MCPHunt Agent Safety Traces",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "mcphunt-benchmark/mcphunt-agent-traces",
+        "url": "https://huggingface.co/datasets/mcphunt-benchmark/mcphunt-agent-traces",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "reward_only",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_reward_model",
+        "source_review_status": "public_reward_reviewed_2026_05_25",
+        "materialization_note": "MCP risky/benign tool traces for safety process rewards, mitigation preference replay, and tool-poisoning resistance.",
+        "curriculum_axes": [
+          "mcp_tool_safety",
+          "tool_poisoning_defense",
+          "risk_label_reward",
+          "mitigation_traces",
+          "agentic_safety"
+        ],
+        "field_map": {
+          "id": [
+            "trace_id",
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "prompt",
+            "task",
+            "messages",
+            "trace"
+          ],
+          "target": [
+            "outcome",
+            "risk_label",
+            "mitigation",
+            "messages",
+            "tool_calls",
+            "trace"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "trace",
+            "messages"
+          ]
+        }
+      },
+      {
+        "name": "Rapidata Base Text-to-Video Human Preferences",
+        "family": "video_generation",
+        "hf_id": "Rapidata/text-2-video-human-preferences",
+        "url": "https://huggingface.co/datasets/Rapidata/text-2-video-human-preferences",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "video",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_reward_model",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_reward_train_reviewed_2026_05_25",
+        "materialization_note": "Pairwise T2V preference labels for motion, prompt adherence, coherence, and temporal reward calibration.",
+        "curriculum_axes": [
+          "text_to_video_preference",
+          "video_reward_model",
+          "temporal_consistency",
+          "prompt_adherence",
+          "dpo"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "prompt",
+            "annotation_id"
+          ],
+          "prompt": [
+            "prompt",
+            "text",
+            "caption"
+          ],
+          "target": [
+            "votes",
+            "preference",
+            "chosen",
+            "rejected",
+            "userScores"
+          ],
+          "media": [
+            "video",
+            "video_a",
+            "video_b"
+          ]
+        }
+      },
+      {
+        "name": "Voices in the Wild 2M",
+        "family": "speech_audio",
+        "hf_id": "zhifeixie/Voices-in-the-Wild-2M",
+        "url": "https://huggingface.co/datasets/zhifeixie/Voices-in-the-Wild-2M",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "target_modality": "audio",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Robust ASR rows across noisy, far-field, distorted, dropout, and compound acoustic conditions.",
+        "curriculum_axes": [
+          "robust_asr",
+          "noisy_speech",
+          "far_field_audio",
+          "speech_hallucination_resistance",
+          "audio_grounding"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "audio_id",
+            "file"
+          ],
+          "prompt": [
+            "instruction",
+            "prompt",
+            "audio",
+            "condition"
+          ],
+          "target": [
+            "text",
+            "transcript",
+            "normalized_text",
+            "answer"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "path",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "AllenAI olmOCR Bench",
+        "family": "omnimodal_understanding",
+        "hf_id": "allenai/olmOCR-bench",
+        "url": "https://huggingface.co/datasets/allenai/olmOCR-bench",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "long_context",
+        "use_policy": "eval_only",
+        "license": "ODC-BY; benchmark/unit-test rows stay held out",
+        "license_tier": "attribution_eval_holdout",
+        "protected_benchmark_scan": "protected_eval",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "PDF OCR/layout benchmark rows for markdown, table, and structure regression gates.",
+        "curriculum_axes": [
+          "document_ocr_eval",
+          "pdf_layout",
+          "markdown_structure",
+          "table_extraction",
+          "heldout_regression"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "pdf_id",
+            "page_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "pdf",
+            "document"
+          ],
+          "target": [
+            "answer",
+            "expected_markdown",
+            "unit_tests",
+            "checks"
+          ],
+          "media": [
+            "pdf",
+            "pdf_path",
+            "document"
+          ]
+        }
+      },
+      {
+        "name": "Limbic Eval Tool Use MCP",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "quotientai/limbic-eval-tool-use-mcp",
+        "url": "https://huggingface.co/datasets/quotientai/limbic-eval-tool-use-mcp",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
+        "config": "default",
+        "splits": [
+          "test"
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "eval_only",
+        "license": "MIT; MCP function-call correctness benchmark held out from train",
+        "license_tier": "permissive_eval_holdout",
+        "protected_benchmark_scan": "protected_eval",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Low-cost MCP tool schema/function-call correctness eval for agentic release gates.",
+        "curriculum_axes": [
+          "mcp_tool_eval",
+          "function_call_correctness",
+          "schema_following",
+          "tool_regression",
+          "heldout_eval"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "messages",
+            "question",
+            "tool_schema"
+          ],
+          "target": [
+            "answer",
+            "expected_tool_call",
+            "tool_calls",
+            "output"
+          ],
+          "tool_calls": [
+            "expected_tool_call",
+            "tool_calls"
           ]
         }
       }

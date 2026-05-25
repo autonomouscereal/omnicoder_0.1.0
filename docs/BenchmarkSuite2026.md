@@ -203,6 +203,11 @@ OCR, layout, table, chart, and real-scene document robustness. Public-dev rows
 may feed regression and realignment; reportable claims still require the
 authorized snapshot roots declared in the profile.
 
+The materializer normalizes these factuality/search/document rows into the
+same scorable task contract used by the release gate: `prompt`, `target`,
+compact `metadata`, and decode-safe `media` descriptors where the benchmark
+requires image, audio, video, PDF, or document inputs.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \

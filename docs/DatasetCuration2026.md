@@ -385,6 +385,13 @@ root-owned artifacts cannot block fresh curation passes. Curated, external,
 teacher, and agentic-tool sidecar outputs are also run-scoped by default;
 shared-path promotion is explicit opt-in through the sidecar promotion knobs.
 
+The twentieth-wave registry slice adds trainable procedural reasoning,
+formal-verification coding, long-speech/audio, robust ASR, and text-to-video
+preference rows. Creative professional prompts and MCPHunt safety traces stay
+in internal distillation/reward buckets until teacher completions or reward
+labels are promoted, while olmOCR Bench and Limbic MCP rows are held out for
+evaluation.
+
 ## Quality And Safety
 
 The curation layer stores scores instead of only dropping rows. It tracks
