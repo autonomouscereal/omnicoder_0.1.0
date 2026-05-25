@@ -1411,7 +1411,8 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
                     ds = load_dataset(dataset_id, config, split=split, cache_dir=str(cache_root / "hf"))
                 else:
                     ds = load_dataset(dataset_id, split=split, cache_dir=str(cache_root / "hf"))
-                for column, feature in getattr(ds, "features", {}).items():
+                features = getattr(ds, "features", None) or {}
+                for column, feature in features.items():
                     if feature.__class__.__name__ == "Audio":
                         ds = ds.cast_column(column, Audio(decode=False))
                     elif feature.__class__.__name__ == "Video" and Video is not None:

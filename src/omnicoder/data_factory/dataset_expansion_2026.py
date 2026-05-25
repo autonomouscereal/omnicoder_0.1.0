@@ -564,7 +564,8 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
         except Exception as exc:
             errors.append(f"{split}: {repr(exc)}")
             continue
-        for column, feature in getattr(dataset, "features", {}).items():
+        features = getattr(dataset, "features", None) or {}
+        for column, feature in features.items():
             feature_name = feature.__class__.__name__
             try:
                 if feature_name == "Audio" and audio_cls is not None:
