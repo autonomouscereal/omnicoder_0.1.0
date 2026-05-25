@@ -487,8 +487,18 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def stable_hashable(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): stable_hashable(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [stable_hashable(item) for item in value]
+    if isinstance(value, tuple):
+        return [stable_hashable(item) for item in value]
+    return value
+
+
 def stable_hash(value: Any) -> str:
-    blob = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"), default=str)
+    blob = json.dumps(stable_hashable(value), sort_keys=True, ensure_ascii=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 

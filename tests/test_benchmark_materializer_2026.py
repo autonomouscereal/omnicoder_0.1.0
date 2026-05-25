@@ -56,6 +56,13 @@ def _profile(path: Path) -> Path:
     return path
 
 
+def test_stable_hash_accepts_mixed_type_nested_keys() -> None:
+    mixed = {"outer": {True: "bool key", "true": "string key", 7: {"x": "nested"}}, "rows": [("a", "b")]}
+
+    assert materializer.stable_hash(mixed) == materializer.stable_hash(mixed)
+    assert len(materializer.stable_hash(mixed)) == 64
+
+
 def test_materializer_writes_local_public_dev_rows_without_network(tmp_path: Path) -> None:
     profile = _profile(tmp_path / "profile.json")
     source = tmp_path / "source.jsonl"
