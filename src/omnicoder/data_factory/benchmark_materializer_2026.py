@@ -204,9 +204,9 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "agent_agentif_2025": {
         "source": "https://huggingface.co/datasets/THU-KEG/AgentIF",
         "git": "https://github.com/THU-KEG/AgentIF.git",
-        "hf": [{"id": "THU-KEG/AgentIF", "splits": ["test", "train", "validation"]}],
+        "hf": [{"id": "THU-KEG/AgentIF", "splits": ["test"]}],
         "kind": "agent_tool",
-        "splits": ["test", "train", "validation"],
+        "splits": ["test"],
     },
     "agent_webgym_tasks_2026": {
         "source": "https://huggingface.co/datasets/microsoft/webgym_tasks",
@@ -337,9 +337,9 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "coding_computeeval_cuda_2026": {
         "source": "https://huggingface.co/datasets/nvidia/compute-eval",
         "git": "https://github.com/NVIDIA/compute-eval.git",
-        "hf": [{"id": "nvidia/compute-eval", "splits": ["test", "train", "validation"]}],
+        "hf": [{"id": "nvidia/compute-eval", "splits": ["eval"]}],
         "kind": "coding",
-        "splits": ["test", "train", "validation"],
+        "splits": ["eval"],
     },
     "long_context_officeqa_2026": {
         "source": "https://huggingface.co/datasets/databricks/officeqa",
@@ -584,9 +584,14 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "multimodal_parsebench_2026": {
         "source": "https://huggingface.co/datasets/llamaindex/ParseBench",
         "git": "https://github.com/run-llama/ParseBench.git",
-        "hf": [{"id": "llamaindex/ParseBench", "splits": ["test", "train", "validation"]}],
+        "hf": [
+            {
+                "id": "llamaindex/ParseBench",
+                "splits": ["chart", "layout", "table", "text_content", "text_formatting"],
+            }
+        ],
         "kind": "document_ai",
-        "splits": ["test", "train", "validation"],
+        "splits": ["chart", "layout", "table", "text_content", "text_formatting"],
     },
     "multimodal_mme_unify_2026": {
         "source": "https://huggingface.co/datasets/wulin222/MME-Unify",

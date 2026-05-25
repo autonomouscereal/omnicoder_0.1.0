@@ -24636,8 +24636,7 @@
         "repo": "https://github.com/THU-KEG/AgentIF.git",
         "source_year": 2025,
         "splits": [
-          "test",
-          "train"
+          "test"
         ],
         "target_modality": "tool",
         "url": "https://huggingface.co/datasets/THU-KEG/AgentIF",
@@ -24678,8 +24677,7 @@
         "repo": "https://github.com/NVIDIA/compute-eval.git",
         "source_year": 2026,
         "splits": [
-          "test",
-          "train"
+          "eval"
         ],
         "target_modality": "code",
         "url": "https://huggingface.co/datasets/nvidia/compute-eval",
@@ -24725,8 +24723,11 @@
         "repo": "https://github.com/run-llama/ParseBench.git",
         "source_year": 2026,
         "splits": [
-          "test",
-          "train"
+          "chart",
+          "layout",
+          "table",
+          "text_content",
+          "text_formatting"
         ],
         "target_modality": "image",
         "url": "https://huggingface.co/datasets/llamaindex/ParseBench",
@@ -24771,6 +24772,7 @@
           "train"
         ],
         "target_modality": "long_context",
+        "token_env": "HF_TOKEN",
         "url": "https://huggingface.co/datasets/databricks/officeqa",
         "use_policy": "eval_only"
       },

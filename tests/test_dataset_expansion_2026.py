@@ -1496,8 +1496,11 @@ def test_repo_dataset_registry_covers_fifteenth_wave_agentic_coding_audio_source
     assert by_name["WebGym Tasks"]["license"] == "CDLA-Permissive-2.0"
     assert by_name["AudioMCQ StrongAC Gemini CoT"]["synthetic_provenance"].startswith("Gemini CoT")
     assert by_name["NVIDIA ComputeEval"]["license_tier"] == "evaluation_license_holdout"
+    assert by_name["NVIDIA ComputeEval"]["splits"] == ["eval"]
     assert by_name["ParseBench"]["hf_id"] == "llamaindex/ParseBench"
+    assert "table" in by_name["ParseBench"]["splits"]
     assert by_name["OfficeQA"]["family"] == "long_context"
+    assert by_name["OfficeQA"]["token_env"] == "HF_TOKEN"
 
     for name in ("AgentWorldModel-1K", "WebGym Tasks", "AudioMCQ StrongAC Gemini CoT"):
         assert expansion.source_use_bucket(by_name[name]) == "train"

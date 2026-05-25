@@ -1112,6 +1112,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert "gen_envs.jsonl" in awm["files"]
     assert materializer.KNOWN_BENCHMARKS["agent_tool_genesis_2026"]["hf"][0]["id"] == "tool-genesis/Tool-Genesis-Benchmark"
     assert materializer.KNOWN_BENCHMARKS["agent_agentif_2025"]["hf"][0]["id"] == "THU-KEG/AgentIF"
+    assert materializer.KNOWN_BENCHMARKS["agent_agentif_2025"]["splits"] == ["test"]
     assert materializer.KNOWN_BENCHMARKS["agent_webgym_tasks_2026"]["hf"][0]["id"] == "microsoft/webgym_tasks"
     assert materializer.KNOWN_BENCHMARKS["agent_omniagentbench_2026"]["hf"][0]["id"] == "omniagentbench/OmniAgentBench"
     assert materializer.KNOWN_BENCHMARKS["safety_mcp_security_bench_2026"]["hf"][0]["config"] == "agent_task"
@@ -1120,11 +1121,13 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["coding_contextbench_2026"]["hf"][0]["id"] == "Contextbench/ContextBench"
     assert materializer.KNOWN_BENCHMARKS["coding_ccbench_2026"]["git"] == "https://github.com/codecrafters-io/ccbench.git"
     assert materializer.KNOWN_BENCHMARKS["coding_computeeval_cuda_2026"]["hf"][0]["id"] == "nvidia/compute-eval"
+    assert materializer.KNOWN_BENCHMARKS["coding_computeeval_cuda_2026"]["splits"] == ["eval"]
     assert materializer.KNOWN_BENCHMARKS["long_context_longcodebench_2026"]["hf"][0]["id"] == "Steefano/LCB"
     assert materializer.KNOWN_BENCHMARKS["long_context_ama_bench_2026"]["hf"][0]["id"] == "AMA-bench/AMA-bench"
     assert materializer.KNOWN_BENCHMARKS["long_context_officeqa_2026"]["hf"][0]["id"] == "databricks/officeqa"
     assert materializer.KNOWN_BENCHMARKS["multimodal_audiomcq_strongac_2026"]["hf"][0]["id"] == "Harland/AudioMCQ-StrongAC-GeminiCoT"
     assert materializer.KNOWN_BENCHMARKS["multimodal_parsebench_2026"]["hf"][0]["id"] == "llamaindex/ParseBench"
+    assert "table" in materializer.KNOWN_BENCHMARKS["multimodal_parsebench_2026"]["splits"]
     smmbench = materializer.KNOWN_BENCHMARKS["multimodal_smmbench_2026"]["hf"][0]
     assert smmbench["id"] == "HuacanChai/SMMBench"
     assert smmbench["revision"] == "d19ef39f8b73cea533ad34532c6ba9a70637ea25"
