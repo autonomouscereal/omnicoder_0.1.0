@@ -23,6 +23,7 @@ PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"
 START_STAGE="${OMNICODER_START_STAGE:-text}"
 STAGE_ORDER="${OMNICODER_STAGE_ORDER:-text,code,tool,image,video,audio,music,long_context}"
 RESUME_CHECKPOINT="${OMNICODER_RESUME_CHECKPOINT:-}"
+CURATION_MANIFEST="${OMNICODER_CURATION_MANIFEST:-}"
 POSTTRAIN_START_ALGORITHM="${OMNICODER_POSTTRAIN_START_ALGORITHM:-}"
 POSTTRAIN_ALGORITHM_ORDER="${OMNICODER_POSTTRAIN_ALGORITHM_ORDER:-}"
 
@@ -170,7 +171,49 @@ long_context_args=()
 append_nonempty_arg long_context_args --context-ladder "$CONTEXT_LADDER"
 append_nonzero_arg long_context_args --long-context-steps-per-rung "$LONG_CONTEXT_STEPS_PER_RUNG"
 
-if [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
+if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then
+  if [[ -z "$RESUME_CHECKPOINT" ]]; then
+    echo "OMNICODER_RESUME_CHECKPOINT is required for $MODE" >&2
+    exit 2
+  fi
+  curation_manifest_args=()
+  append_nonempty_arg curation_manifest_args --curation-manifest "$CURATION_MANIFEST"
+  common_args=(
+    --profile "$PROFILE"
+    --out-dir "$OUT_DIR"
+    "$MODE"
+    --preset omnicoder2026_20b_1m
+    --resume-checkpoint "$RESUME_CHECKPOINT"
+    "${curation_manifest_args[@]}"
+    --seq-len "$SEQ_LEN"
+    --batch-size "$BATCH_SIZE"
+    --lr "$LEARNING_RATE"
+    --save-interval "$SAVE_INTERVAL"
+    "${long_context_args[@]}"
+    --distributed pipeline_stage
+    --nproc-per-node 3
+    --rank-device-map "$RANK_DEVICE_MAP"
+    --placement-layer-counts "$PLACEMENT_LAYER_COUNTS"
+    --pipeline-stage-schedule gpipe
+    --pipeline-microbatches 1
+    --precision fp16
+    --init-dtype fp16
+    --optimizer adafactor
+    --optimizer-in-backward
+    --optimizer-in-backward-update lowmem_adafactor
+    --optimizer-in-backward-grad-clip 1.0
+    --optimizer-in-backward-clip-mode rms
+    --optimizer-in-backward-adafactor-chunk-rows 256
+    --optimizer-in-backward-adafactor-clip-threshold 1.0
+    --optimizer-in-backward-adafactor-decay-rate -0.8
+    --optimizer-in-backward-adafactor-eps1 1e-30
+    --activation-checkpointing
+    --fake-quant-chunk-rows 64
+    --fake-quant-max-full-elements 16777216
+    "${shared_eval_args[@]}"
+    --fake-quant
+  )
+elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
   if [[ -z "$RESUME_CHECKPOINT" ]]; then
     echo "OMNICODER_RESUME_CHECKPOINT is required for $MODE" >&2
     exit 2

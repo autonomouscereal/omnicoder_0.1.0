@@ -3260,6 +3260,12 @@ def run_long_context_curriculum_stage(
     expected_world_size = expected_pipeline_world_size(cfg, args)
     resume_completed = resume_completed_stages_enabled(plan, args)
     fake_quant = bool(arg_value(args, "fake_quant", False) or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled"))
+    curation_manifest_arg = str(arg_value(args, "curation_manifest", "") or "").strip()
+    data_manifest_path = (
+        resolve_path(curation_manifest_arg, repo_root())
+        if curation_manifest_arg
+        else out_dir / "manifests" / "curation_manifest.json"
+    )
     current_checkpoint = Path(str(checkpoint))
     rung_reports: list[dict[str, Any]] = []
     root = out_dir / "checkpoints" / "long_context_curriculum"
@@ -3317,7 +3323,7 @@ def run_long_context_curriculum_stage(
             "--log_file",
             str(train_log),
             "--data_manifest",
-            str(out_dir / "manifests" / "curation_manifest.json"),
+            str(data_manifest_path),
             "--resume",
             str(current_checkpoint),
         ]
@@ -4458,6 +4464,78 @@ def run_posttrain(args: argparse.Namespace) -> dict[str, Any]:
     return summary
 
 
+def run_long_context(args: argparse.Namespace) -> dict[str, Any]:
+    profile = load_profile(args.profile)
+    cfg = profile_cfg(profile)
+    out_dir = Path(args.out_dir or cfg.get("work_dir") or DEFAULT_OUT_DIR)
+    resume_checkpoint = Path(str(args.resume_checkpoint or "")).expanduser()
+    validation = validate_posttraining_resume_checkpoint(cfg, resume_checkpoint, args)
+    summary_path = out_dir / "long_context_resume_summary.json"
+    if validation.get("status") != "passed":
+        summary = {
+            "schema": "omnicoder.long_context_resume_result_2026.v1",
+            "schema_version": SCHEMA_VERSION,
+            "status": "failed",
+            "created_at": now_iso(),
+            "model_contract": cfg.get("model_contract"),
+            "resume_validation": validation,
+            "long_context_curriculum": {"status": "skipped", "reason": validation.get("reason")},
+            "artifacts": {"out_dir": str(out_dir), "summary": str(summary_path)},
+        }
+        write_json(summary_path, summary)
+        return summary
+    curation_manifest_arg = str(arg_value(args, "curation_manifest", "") or "").strip()
+    manifest_path = (
+        resolve_path(curation_manifest_arg, repo_root())
+        if curation_manifest_arg
+        else out_dir / "manifests" / "curation_manifest.json"
+    )
+    if not manifest_path.exists():
+        summary = {
+            "schema": "omnicoder.long_context_resume_result_2026.v1",
+            "schema_version": SCHEMA_VERSION,
+            "status": "failed",
+            "created_at": now_iso(),
+            "model_contract": cfg.get("model_contract"),
+            "resume_validation": validation,
+            "long_context_curriculum": {
+                "status": "skipped",
+                "reason": "missing_curation_manifest",
+                "curation_manifest": str(manifest_path),
+            },
+            "artifacts": {
+                "out_dir": str(out_dir),
+                "summary": str(summary_path),
+                "initial_checkpoint": str(resume_checkpoint),
+                "curation_manifest": str(manifest_path),
+            },
+        }
+        write_json(summary_path, summary)
+        return summary
+    manifest = read_json(manifest_path)
+    long_context_curriculum = run_long_context_curriculum_stage(profile, manifest, out_dir, resume_checkpoint, args)
+    summary = {
+        "schema": "omnicoder.long_context_resume_result_2026.v1",
+        "schema_version": SCHEMA_VERSION,
+        "status": long_context_curriculum.get("status", "failed"),
+        "created_at": now_iso(),
+        "model_contract": cfg.get("model_contract"),
+        "resume_validation": validation,
+        "curation": manifest,
+        "long_context_curriculum": long_context_curriculum,
+        "final_checkpoint": long_context_curriculum.get("final_checkpoint") or str(resume_checkpoint),
+        "artifacts": {
+            "out_dir": str(out_dir),
+            "summary": str(summary_path),
+            "initial_checkpoint": str(resume_checkpoint),
+            "final_checkpoint": long_context_curriculum.get("final_checkpoint") or str(resume_checkpoint),
+            "curation_manifest": str(manifest_path),
+        },
+    }
+    write_json(summary_path, summary)
+    return summary
+
+
 def run_full(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_profile(args.profile)
     out_dir = Path(args.out_dir or profile_cfg(profile).get("work_dir") or DEFAULT_OUT_DIR)
@@ -4702,6 +4780,71 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     run.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     run.set_defaults(func=run_real)
+    long = sub.add_parser(
+        "run-long-context",
+        aliases=["run-longctx"],
+        help="Resume only the native long-context curriculum ladder from an existing complete checkpoint",
+    )
+    long.add_argument("--resume-checkpoint", required=True)
+    long.add_argument("--curation-manifest", default="")
+    long.add_argument("--steps-per-stage", type=int, default=0)
+    long.add_argument("--seq-len", type=int, default=0)
+    long.add_argument("--batch-size", type=int, default=0)
+    long.add_argument("--lr", type=float, default=0.0)
+    long.add_argument("--preset", default="")
+    long.add_argument("--device", default="")
+    long.add_argument("--fake-quant", action="store_true")
+    long.add_argument("--context-ladder", dest="context_ladder", default="", help="Comma-separated real long-context curriculum ladder; defaults to the 8K..1M profile ladder")
+    long.add_argument("--long-context-steps-per-rung", dest="long_context_steps_per_rung", type=int, default=0)
+    long.add_argument("--resume-completed-stages", dest="resume_completed_stages", action="store_true", default=None, help="Skip rungs whose expected checkpoint already exists")
+    long.add_argument("--rerun-completed-stages", dest="resume_completed_stages", action="store_false", help="Retrain rungs even when their expected checkpoint exists")
+    long.add_argument("--save-interval", type=int, default=0)
+    long.add_argument("--distributed", default="")
+    long.add_argument("--nproc-per-node", type=int, default=0)
+    long.add_argument("--precision", default="")
+    long.add_argument("--init-dtype", default="")
+    long.add_argument("--optimizer", default="")
+    long.add_argument("--optimizer-in-backward", dest="optimizer_in_backward", action="store_true")
+    long.add_argument("--optimizer-in-backward-update", dest="optimizer_in_backward_update", default="")
+    long.add_argument("--optimizer-in-backward-grad-clip", dest="optimizer_in_backward_grad_clip", type=float, default=0.0)
+    long.add_argument("--optimizer-in-backward-clip-mode", dest="optimizer_in_backward_clip_mode", default="")
+    long.add_argument("--optimizer-in-backward-adafactor-chunk-rows", dest="optimizer_in_backward_adafactor_chunk_rows", type=int, default=0)
+    long.add_argument("--optimizer-in-backward-adafactor-clip-threshold", dest="optimizer_in_backward_adafactor_clip_threshold", type=float, default=0.0)
+    long.add_argument("--optimizer-in-backward-adafactor-decay-rate", dest="optimizer_in_backward_adafactor_decay_rate", type=float, default=0.0)
+    long.add_argument("--optimizer-in-backward-adafactor-eps1", dest="optimizer_in_backward_adafactor_eps1", type=float, default=0.0)
+    long.add_argument("--rank-device-map", dest="rank_device_map", default="")
+    long.add_argument("--placement", default="")
+    long.add_argument("--placement-devices", dest="placement_devices", default="")
+    long.add_argument("--placement-layer-counts", dest="placement_layer_counts", default="")
+    long.add_argument("--placement-head-device", dest="placement_head_device", type=int, default=-1)
+    long.add_argument("--placement-schedule", dest="placement_schedule", default="")
+    long.add_argument("--pipeline-stage-schedule", dest="pipeline_stage_schedule", default="")
+    long.add_argument("--pipeline-microbatches", dest="pipeline_microbatches", type=int, default=0)
+    long.add_argument("--pipeline-async-streams", dest="pipeline_async_streams", action="store_true", default=None)
+    long.add_argument("--no-pipeline-async-streams", dest="pipeline_async_streams", action="store_false")
+    long.add_argument("--activation-checkpointing", action="store_true")
+    long.add_argument("--cpu-offload", action="store_true")
+    long.add_argument("--fake-quant-chunk-rows", dest="fake_quant_chunk_rows", type=int, default=0)
+    long.add_argument("--fake-quant-max-full-elements", dest="fake_quant_max_full_elements", type=int, default=0)
+    long.add_argument("--allow-verifier-preset", action="store_true")
+    long.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=None)
+    long.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=None)
+    long.add_argument("--heldout-sample-loss-timeout-seconds", dest="heldout_sample_loss_timeout_seconds", type=int, default=0)
+    long.add_argument("--benchmark-sample-loss-timeout-seconds", dest="benchmark_sample_loss_timeout_seconds", type=int, default=0)
+    long.add_argument("--benchmark-cycle", dest="benchmark_cycle", default="")
+    long.add_argument("--benchmark-min-tasks", dest="benchmark_min_tasks", type=int, default=0)
+    long.add_argument("--benchmark-predictions", dest="benchmark_predictions", default="")
+    long.add_argument("--benchmark-prediction-backend", dest="benchmark_prediction_backend", default="")
+    long.add_argument("--benchmark-prediction-model", dest="benchmark_prediction_model", default="")
+    long.add_argument("--benchmark-prediction-base-url", dest="benchmark_prediction_base_url", default="")
+    long.add_argument("--benchmark-prediction-api-key-env", dest="benchmark_prediction_api_key_env", default="")
+    long.add_argument("--benchmark-prediction-checkpoint-runner", dest="benchmark_prediction_checkpoint_runner", default="")
+    long.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
+    long.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
+    long.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
+    long.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
+    long.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
+    long.set_defaults(func=run_long_context)
     post = sub.add_parser(
         "run-posttraining",
         aliases=["run-posttrain"],

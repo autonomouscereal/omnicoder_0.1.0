@@ -86,6 +86,14 @@ complete existing `omnicoder2026_20b_1m` checkpoint and, when needed,
 distributed reward/preference/RL replay without rerunning dense pretraining and
 without accepting incomplete sharded checkpoints.
 
+Long-context-only recovery is also first-class. Use
+`training-orchestration-2026 run-long-context` or
+`OMNICODER_MODE=run-long-context scripts/ai_server_fast_pipeline_20b.sh` with
+`OMNICODER_RESUME_CHECKPOINT` pointing at a complete sharded checkpoint and
+`OMNICODER_CURATION_MANIFEST` pointing at the curated corpus manifest. This
+runs only the native context ladder and refuses to rebuild curation, dense
+pretraining, distillation, or posttraining implicitly.
+
 Current rebuild docs:
 
 - `docs/Omnicoder2026Redesign.md`

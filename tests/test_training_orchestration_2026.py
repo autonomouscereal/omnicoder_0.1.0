@@ -1140,6 +1140,173 @@ def test_run_posttraining_cli_rejects_incomplete_sharded_checkpoint(tmp_path, mo
     assert summary["resume_validation"]["reason"] == "resume_checkpoint_incomplete"
 
 
+def test_run_long_context_cli_resumes_from_complete_sharded_checkpoint_without_training_fanout(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["model_contract"] = {"target_context_length": 4096, "target_profile": "ledger_probe"}
+    profile["training_plan"].update(
+        {
+            "preset": "ledger_probe",
+            "context_ladder": [2048, 4096],
+            "seq_len": 1024,
+            "long_context_steps_per_rung": 2,
+            "long_context_min_real_token_fraction": 0.0,
+            "long_context_min_real_tokens": 1,
+            "long_context_min_real_row_fraction": 0.0,
+            "distributed_training": {"mode": "pipeline_stage", "nproc_per_node": 3},
+        }
+    )
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    out_dir = tmp_path / "out"
+    train_jsonl = tmp_path / "curated" / "train_long_context.jsonl"
+    eval_jsonl = tmp_path / "curated" / "eval_long_context.jsonl"
+    _write_jsonl(train_jsonl, [{"target_text_token_count": 4096, "modality": "long_context"}])
+    _write_jsonl(eval_jsonl, [{"target_text_token_count": 4096, "modality": "long_context"}])
+    manifest_path = tmp_path / "curation_manifest.json"
+    orch.write_json(
+        manifest_path,
+        {
+            "per_modality_jsonl": {"long_context": str(train_jsonl)},
+            "per_modality_split_jsonl": {"long_context": {"train": str(train_jsonl), "eval": str(eval_jsonl)}},
+        },
+    )
+    checkpoint = tmp_path / "stage29_checkpoint"
+    _write_complete_sharded_checkpoint(checkpoint)
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(orch, "build_real_corpus", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no curation in long-context-only resume")))
+    monkeypatch.setattr(orch, "run_training_stages", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no dense pretraining in long-context-only resume")))
+    monkeypatch.setattr(orch, "run_posttraining_stages", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no posttraining in long-context-only resume")))
+
+    def fake_run_command(cmd, log_path, timeout_seconds=None):
+        commands.append(cmd)
+        checkpoint_out = Path(cmd[cmd.index("--out") + 1])
+        _write_complete_sharded_checkpoint(checkpoint_out, world_size=3)
+        log_file = Path(cmd[cmd.index("--log_file") + 1])
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.write_text('{"loss": 2.0}\n{"loss": 1.0}\n', encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    monkeypatch.setattr(orch, "run_sample_loss_eval", lambda *args, **kwargs: {"status": "passed"})
+    monkeypatch.setattr(orch, "run_checkpoint_benchmark_gate", lambda *args, **kwargs: {"status": "passed"})
+
+    code = orch.main(
+        [
+            "--profile",
+            str(profile_path),
+            "--out-dir",
+            str(out_dir),
+            "run-long-context",
+            "--resume-checkpoint",
+            str(checkpoint),
+            "--curation-manifest",
+            str(manifest_path),
+            "--preset",
+            "ledger_probe",
+            "--allow-verifier-preset",
+            "--distributed",
+            "pipeline_stage",
+            "--nproc-per-node",
+            "3",
+            "--seq-len",
+            "1024",
+            "--context-ladder",
+            "2048,4096",
+        ]
+    )
+    assert code == 0
+    assert len(commands) == 2
+    assert commands[0][commands[0].index("--resume") + 1] == str(checkpoint)
+    assert commands[0][commands[0].index("--data_manifest") + 1] == str(manifest_path)
+    assert commands[1][commands[1].index("--seq_len") + 1] == "4096"
+    summary = json.loads((out_dir / "long_context_resume_summary.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "passed"
+    assert summary["artifacts"]["curation_manifest"] == str(manifest_path)
+
+
+def test_run_long_context_cli_rejects_incomplete_sharded_checkpoint_before_commands(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {"mode": "pipeline_stage", "nproc_per_node": 3}
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    manifest_path = tmp_path / "curation_manifest.json"
+    orch.write_json(manifest_path, {"per_modality_jsonl": {}, "per_modality_split_jsonl": {}})
+    checkpoint = tmp_path / "incomplete_checkpoint"
+    checkpoint.mkdir()
+    commands: list[list[str]] = []
+    monkeypatch.setattr(orch, "run_command", lambda cmd, log_path: commands.append(cmd) or 0)
+
+    code = orch.main(
+        [
+            "--profile",
+            str(profile_path),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "run-long-context",
+            "--resume-checkpoint",
+            str(checkpoint),
+            "--curation-manifest",
+            str(manifest_path),
+            "--distributed",
+            "pipeline_stage",
+            "--nproc-per-node",
+            "3",
+        ]
+    )
+    assert code == 1
+    assert commands == []
+    summary = json.loads((tmp_path / "out" / "long_context_resume_summary.json").read_text(encoding="utf-8"))
+    assert summary["resume_validation"]["reason"] == "resume_checkpoint_incomplete"
+
+
+def test_run_long_context_cli_requires_existing_curation_manifest(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {"mode": "pipeline_stage", "nproc_per_node": 3}
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    checkpoint = tmp_path / "stage29_checkpoint"
+    _write_complete_sharded_checkpoint(checkpoint)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(orch, "run_command", lambda cmd, log_path: commands.append(cmd) or 0)
+
+    code = orch.main(
+        [
+            "--profile",
+            str(profile_path),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "run-long-context",
+            "--resume-checkpoint",
+            str(checkpoint),
+            "--curation-manifest",
+            str(tmp_path / "missing_manifest.json"),
+            "--distributed",
+            "pipeline_stage",
+            "--nproc-per-node",
+            "3",
+        ]
+    )
+    assert code == 1
+    assert commands == []
+    summary = json.loads((tmp_path / "out" / "long_context_resume_summary.json").read_text(encoding="utf-8"))
+    assert summary["long_context_curriculum"]["reason"] == "missing_curation_manifest"
+
+
+def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args():
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "ai_server_fast_pipeline_20b.sh").read_text(encoding="utf-8")
+    assert 'OMNICODER_CURATION_MANIFEST' in script
+    branch = script.split('if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then', 1)[1].split(
+        'elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then',
+        1,
+    )[0]
+    assert '--curation-manifest "$CURATION_MANIFEST"' in branch
+    assert '--resume-checkpoint "$RESUME_CHECKPOINT"' in branch
+    assert '--posttrain-steps' not in branch
+    assert '--start-stage' not in branch
+    assert '--distill-profile' not in branch
+
+
 def test_posttrain_start_algorithm_unknown_fails_before_training(tmp_path, monkeypatch):
     profile = _profile(tmp_path)
     profile["training_plan"]["distributed_training"] = {"mode": "pipeline_stage", "nproc_per_node": 3}

@@ -370,6 +370,20 @@ of the global short-text caps. Training rows store
 `target_char_count`; curriculum density gates prefer the target count so prompt
 or artifact padding cannot inflate the native-1M evidence.
 
+If a posttraining run has already produced a complete checkpoint and only the
+native context ladder needs to continue, use `run-long-context` instead of
+`run-full` or `run-real`. The mode validates the sharded checkpoint, requires an
+existing curation manifest, writes `long_context_resume_summary.json`, and calls
+only `run_long_context_curriculum_stage`.
+
+```bash
+OMNICODER_MODE=run-long-context \
+OMNICODER_RESUME_CHECKPOINT=/workspace/weights/training_orchestration_2026/<run>/checkpoints/posttrain/<complete_stage> \
+OMNICODER_CURATION_MANIFEST=/workspace/weights/training_orchestration_2026/<run>/manifests/curation_manifest.json \
+OMNICODER_CONTEXT_LADDER=8192,32768,131072,262144,524288,1048576 \
+scripts/ai_server_fast_pipeline_20b.sh
+```
+
 Reportable benchmark gates can generate model predictions automatically when
 authorized reportable tasks exist and no explicit prediction JSONL was supplied.
 Set `OMNICODER_BENCHMARK_PREDICTION_BACKEND` plus the matching model, base URL,
