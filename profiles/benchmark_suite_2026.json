@@ -3456,6 +3456,150 @@
         "smoke": "one public simulated-company task"
       },
       "task_format": "enterprise_workflow_state_jsonl"
+    },
+    {
+      "adapter_kind": "live_browser_agent_trace_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_clawbench_browser_2026",
+      "holdout_policy": [
+        "hide_successful_trajectories",
+        "record_live_site_snapshot",
+        "hash_browser_state"
+      ],
+      "metrics": [
+        "task_success",
+        "browser_state_match",
+        "tool_step_efficiency",
+        "configuration_reproducibility"
+      ],
+      "modalities": [
+        "text",
+        "browser",
+        "tool"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://github.com/openclaw/clawbench",
+      "splits": {
+        "smoke": "one public browser task",
+        "nightly": "public reproducible ClawBench slice",
+        "release": "locked authorized ClawBench release suite"
+      },
+      "task_format": "jsonl_browser_agent_task"
+    },
+    {
+      "adapter_kind": "large_scale_swe_rebench_patch_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_swe_rebench_v2_2026",
+      "holdout_policy": [
+        "hide_hidden_tests",
+        "hide_gold_patches",
+        "quarantine_successful_eval_trajectories"
+      ],
+      "metrics": [
+        "patch_applies",
+        "test_pass_rate",
+        "issue_resolution",
+        "trajectory_efficiency"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "git",
+        "tests"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/nebius/SWE-rebench-V2",
+      "splits": {
+        "smoke": "one public dev SWE-rebench issue",
+        "nightly": "language/repo balanced SWE-rebench slice",
+        "release": "locked authorized SWE-rebench V2 suite"
+      },
+      "task_format": "jsonl_patch_task"
+    },
+    {
+      "adapter_kind": "long_audio_understanding_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_audiomarathon_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "record_audio_duration",
+        "hash_audio_assets"
+      ],
+      "metrics": [
+        "answer_accuracy",
+        "duration_robustness",
+        "audio_tokens_per_second",
+        "memory_peak_mb"
+      ],
+      "modalities": [
+        "audio",
+        "text",
+        "long_context"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/AudioMarathon/AudioMarathon",
+      "splits": {
+        "smoke": "one public long-audio task",
+        "nightly": "task-balanced long-audio slice",
+        "release": "locked authorized AudioMarathon suite"
+      },
+      "task_format": "csv_long_audio_qa"
+    },
+    {
+      "adapter_kind": "image_generation_instruction_eval",
+      "axis": "generation",
+      "benchmark_id": "generation_oneig_bench_2026",
+      "holdout_policy": [
+        "hide_judge_labels",
+        "hash_prompt_inputs",
+        "hash_generated_artifacts"
+      ],
+      "metrics": [
+        "prompt_alignment",
+        "visual_quality",
+        "text_rendering",
+        "reasoning_fidelity"
+      ],
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench",
+      "splits": {
+        "smoke": "one public image-generation prompt",
+        "nightly": "instruction-balanced OneIG slice",
+        "release": "locked authorized OneIG-Bench suite"
+      },
+      "task_format": "jsonl_image_generation_prompt"
+    },
+    {
+      "adapter_kind": "rolling_matharena_competition_eval",
+      "axis": "reasoning",
+      "benchmark_id": "reasoning_matharena_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "record_competition_date",
+        "block_solution_leakage"
+      ],
+      "metrics": [
+        "exact_match",
+        "verified_solution_rate",
+        "reasoning_consistency",
+        "calibration_brier"
+      ],
+      "modalities": [
+        "text",
+        "math"
+      ],
+      "release_gate": "reasoning_release",
+      "source": "https://matharena.ai/",
+      "splits": {
+        "smoke": "one public MathArena task",
+        "nightly": "current public MathArena slice",
+        "release": "locked authorized MathArena release suite"
+      },
+      "task_format": "jsonl_math_competition_task"
     }
   ],
   "contamination_controls": [
@@ -3532,7 +3676,8 @@
       "agent_bfcl_v4_tool_calling_2026",
       "agent_mcpmark_universe_2026",
       "agent_browsecomp_long_context_2026",
-      "agent_theagentcompany_enterprise_2026"
+      "agent_theagentcompany_enterprise_2026",
+      "agent_clawbench_browser_2026"
     ],
     "coding_release": [
       "coding_swe_bench_pro_2026",
@@ -3547,7 +3692,8 @@
       "coding_livecodebench_v6_2026",
       "coding_ojbench_2026",
       "coding_swe_lancer_2026",
-      "coding_nous_rlvr_coding_2026"
+      "coding_nous_rlvr_coding_2026",
+      "coding_swe_rebench_v2_2026"
     ],
     "deployment_performance_release": [
       "deployment_performance_2026",
@@ -3576,7 +3722,8 @@
       "generation_text_to_audio_pref_2026",
       "generation_vbench2_intrinsic_faithfulness_2026",
       "generation_vbenchpp_trustworthiness_2026",
-      "generation_music_arena_2026"
+      "generation_music_arena_2026",
+      "generation_oneig_bench_2026"
     ],
     "global_must_pass": [
       "raw_postgresql_schema_applies",
@@ -3624,7 +3771,8 @@
       "multimodal_mmmu_pro_vision_2026",
       "multimodal_video_mme_v2_grouped_2026",
       "multimodal_audiobench_mmau_2026",
-      "multimodal_unim_any_to_any_2026"
+      "multimodal_unim_any_to_any_2026",
+      "multimodal_audiomarathon_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",
@@ -3635,7 +3783,8 @@
       "reasoning_livebench_2026",
       "reasoning_rlvr_linearity_math_2026",
       "reasoning_arc_agi3_interactive_2026",
-      "reasoning_livebench_math_2026"
+      "reasoning_livebench_math_2026",
+      "reasoning_matharena_2026"
     ],
     "safety_security_release": [
       "safety_tool_security_2026",
@@ -3784,6 +3933,30 @@
     ],
     "reasoning_rlvr_linearity_math_2026": [
       "data/eval/reportable_2026/rlvr_linearity_math_authorized.jsonl"
+    ],
+    "agent_clawbench_browser_2026": [
+      "data/eval/reportable_2026/clawbench_browser_authorized.jsonl"
+    ],
+    "coding_swe_rebench_v2_2026": [
+      "data/eval/reportable_2026/swe_rebench_v2_authorized.jsonl"
+    ],
+    "generation_oneig_bench_2026": [
+      "data/eval/reportable_2026/oneig_bench_authorized.jsonl"
+    ],
+    "long_context_longproc_2026": [
+      "data/eval/reportable_2026/longproc_authorized.jsonl"
+    ],
+    "long_context_nolima_1m_2026": [
+      "data/eval/reportable_2026/nolima_1m_authorized.jsonl"
+    ],
+    "multimodal_audiomarathon_2026": [
+      "data/eval/reportable_2026/audiomarathon_authorized.jsonl"
+    ],
+    "multimodal_rewardbench2_2026": [
+      "data/eval/reportable_2026/multimodal_rewardbench2_authorized.jsonl"
+    ],
+    "reasoning_matharena_2026": [
+      "data/eval/reportable_2026/matharena_authorized.jsonl"
     ]
   },
   "reportable_snapshots": {
@@ -4074,6 +4247,78 @@
       "snapshot_id": "rlvr-linearity-math-authorized-2026-current",
       "source": "https://huggingface.co/datasets/Miaow-Lab/RLVR-Linearity-Dataset",
       "task_root": "data/eval/reportable_2026/rlvr_linearity_math_authorized.jsonl"
+    },
+    "agent_clawbench_browser_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "agent-clawbench-browser-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "agent-clawbench-browser-authorized-2026-current",
+      "source": "https://github.com/openclaw/clawbench",
+      "task_root": "data/eval/reportable_2026/clawbench_browser_authorized.jsonl"
+    },
+    "coding_swe_rebench_v2_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "coding-swe-rebench-v2-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "coding-swe-rebench-v2-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/nebius/SWE-rebench-V2",
+      "task_root": "data/eval/reportable_2026/swe_rebench_v2_authorized.jsonl"
+    },
+    "generation_oneig_bench_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "generation-oneig-bench-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "generation-oneig-bench-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench",
+      "task_root": "data/eval/reportable_2026/oneig_bench_authorized.jsonl"
+    },
+    "long_context_longproc_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "long-context-longproc-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "long-context-longproc-authorized-2026-current",
+      "source": "https://github.com/princeton-pli/LongProc",
+      "task_root": "data/eval/reportable_2026/longproc_authorized.jsonl"
+    },
+    "long_context_nolima_1m_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "long-context-nolima-1m-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "long-context-nolima-1m-authorized-2026-current",
+      "source": "https://github.com/adobe-research/NoLiMa",
+      "task_root": "data/eval/reportable_2026/nolima_1m_authorized.jsonl"
+    },
+    "multimodal_audiomarathon_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multimodal-audiomarathon-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "multimodal-audiomarathon-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/AudioMarathon/AudioMarathon",
+      "task_root": "data/eval/reportable_2026/audiomarathon_authorized.jsonl"
+    },
+    "multimodal_rewardbench2_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "multimodal-rewardbench2-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "multimodal-rewardbench2-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/rl-research/multimodal-rewardbench-2",
+      "task_root": "data/eval/reportable_2026/multimodal_rewardbench2_authorized.jsonl"
+    },
+    "reasoning_matharena_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "reasoning-matharena-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "reasoning-matharena-authorized-2026-current",
+      "source": "https://matharena.ai/",
+      "task_root": "data/eval/reportable_2026/matharena_authorized.jsonl"
     }
   },
   "run_cycles": {
@@ -4128,7 +4373,9 @@
       "https://openai.com/index/paperbench/",
       "https://github.com/openai/mle-bench",
       "https://os-world.github.io/",
-      "https://www.minimax.io/news/minimax-m27-en"
+      "https://www.minimax.io/news/minimax-m27-en",
+      "https://github.com/openclaw/clawbench",
+      "https://huggingface.co/datasets/TIGER-Lab/ClawBench"
     ],
     "agent_search_research_2026": [
       "https://openai.com/index/browsecomp/",
@@ -4144,7 +4391,8 @@
     "coding_2026": [
       "https://multi-swe-bench.github.io/",
       "https://arxiv.org/abs/2512.17419",
-      "https://openai.com/index/introducing-evmbench/"
+      "https://openai.com/index/introducing-evmbench/",
+      "https://huggingface.co/datasets/nebius/SWE-rebench-V2"
     ],
     "deployment_quantization_2026": [
       "https://openreview.net/pdf/7d33913c9a4f47c8abb294d6beb85d30124747ca.pdf",
@@ -4157,12 +4405,14 @@
       "https://github.com/Vchitect/VBench",
       "https://vchitect.github.io/VBench-2.0-project/",
       "https://www.musicarena.ai/",
-      "https://arxiv.org/abs/2512.00336"
+      "https://arxiv.org/abs/2512.00336",
+      "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench"
     ],
     "long_audio_visual_2026": [
       "https://huggingface.co/papers/2605.07593",
       "https://machinelearning.apple.com/research/amuse",
-      "https://research.nvidia.com/labs/nemotron/files/NVIDIA-Nemotron-3-Omni-report.pdf"
+      "https://research.nvidia.com/labs/nemotron/files/NVIDIA-Nemotron-3-Omni-report.pdf",
+      "https://huggingface.co/datasets/AudioMarathon/AudioMarathon"
     ],
     "long_context": [
       "https://github.com/THUDM/LongBench",
@@ -4171,7 +4421,10 @@
     "long_context_2026": [
       "https://huggingface.co/datasets/openai/mrcr",
       "https://huggingface.co/papers/2505.07897",
-      "https://huggingface.co/papers/2602.03587"
+      "https://huggingface.co/papers/2602.03587",
+      "https://github.com/princeton-pli/LongProc",
+      "https://github.com/adobe-research/NoLiMa",
+      "https://huggingface.co/datasets/amodaresi/NoLiMa"
     ],
     "multimodal_understanding": [
       "https://github.com/MMMU-Benchmark/MMMU",
@@ -4184,7 +4437,8 @@
       "https://arxiv.org/abs/2506.20960",
       "https://arxiv.org/abs/2505.16770",
       "https://machinelearning.apple.com/research/towards-better-instruction-following",
-      "https://www.microsoft.com/en-us/research/publication/mmar-a-challenging-benchmark-for-deep-reasoning-in-speech-audio-music-and-their-mix/"
+      "https://www.microsoft.com/en-us/research/publication/mmar-a-challenging-benchmark-for-deep-reasoning-in-speech-audio-music-and-their-mix/",
+      "https://huggingface.co/datasets/rl-research/multimodal-rewardbench-2"
     ],
     "omni_eval_2026": [
       "https://arxiv.org/abs/2509.17765",
@@ -4209,6 +4463,10 @@
       "https://mcpmark.ai/docs",
       "https://github.com/mbzuai-oryx/Agent-X",
       "https://omni-bench.github.io/"
+    ],
+    "reasoning_2026": [
+      "https://matharena.ai/",
+      "https://huggingface.co/MathArena"
     ]
   },
   "storage": {

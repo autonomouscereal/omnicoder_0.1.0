@@ -122,6 +122,15 @@ TheAgentCompany workspace `scenarios.json` plus sibling `task.md`,
 schemas, enterprise actor context, oracle hints, and task prompts without
 falling back to generic JSON descriptor noise.
 
+The next registered source wave adds materializer hooks and reportable-root
+contracts for ClawBench browser-agent tasks, SWE-rebench V2 coding repair,
+LongProc long-output procedures, NoLiMa 1M retrieval/reasoning, AudioMarathon
+long-audio understanding, Multimodal RewardBench 2, OneIG-Bench image
+generation, and rolling MathArena competition tasks. These are treated the same
+way as the rest of the suite: public rows can support regression and
+realignment, while release claims still require authorized snapshot roots and
+model-generated predictions.
+
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \
 OMNICODER_BENCHMARK_MATERIALIZATION_SUITE=core25 \

@@ -62,6 +62,13 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/SalesforceAIResearch/MCP-Universe.git",
         "kind": "tool",
     },
+    "agent_clawbench_browser_2026": {
+        "source": "https://github.com/openclaw/clawbench",
+        "git": "https://github.com/openclaw/clawbench.git",
+        "hf": ["TIGER-Lab/ClawBench", "NAIL-Group/ClawBench"],
+        "kind": "browser",
+        "splits": ["test", "validation", "train"],
+    },
     "agent_terminal_bench_2026": {
         "source": "https://github.com/harbor-framework/terminal-bench-2",
         "git": "https://github.com/harbor-framework/terminal-bench-2.git",
@@ -134,6 +141,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/openai/SWELancer-Benchmark.git",
         "kind": "swe",
     },
+    "coding_swe_rebench_v2_2026": {
+        "source": "https://huggingface.co/datasets/nebius/SWE-rebench-V2",
+        "hf": ["nebius/SWE-rebench-V2"],
+        "kind": "swe",
+        "splits": ["test", "validation", "train"],
+    },
     "coding_nous_rlvr_coding_2026": {
         "source": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
         "hf": ["NousResearch/RLVR_Coding_Problems"],
@@ -162,6 +175,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "math",
         "splits": ["train", "test", "validation"],
     },
+    "reasoning_matharena_2026": {
+        "source": "https://matharena.ai/",
+        "hf": ["MathArena/aime_2026", "MathArena/hmmt_feb_2026", "MathArena/usamo_2025"],
+        "kind": "math",
+        "splits": ["test", "validation", "train"],
+    },
     "long_context_mrcr_2026": {
         "source": "https://huggingface.co/datasets/openai/mrcr",
         "hf": ["openai/mrcr"],
@@ -179,6 +198,18 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "hf": ["THUDM/LongBench-v2", "THUDM/LongBench"],
         "kind": "long_context",
         "splits": ["test", "validation", "dev"],
+    },
+    "long_context_longproc_2026": {
+        "source": "https://github.com/princeton-pli/LongProc",
+        "git": "https://github.com/princeton-pli/LongProc.git",
+        "kind": "long_context",
+    },
+    "long_context_nolima_1m_2026": {
+        "source": "https://github.com/adobe-research/NoLiMa",
+        "git": "https://github.com/adobe-research/NoLiMa.git",
+        "hf": ["amodaresi/NoLiMa"],
+        "kind": "long_context",
+        "splits": ["train", "test", "validation"],
     },
     "multimodal_mmmu_pro_2026": {
         "source": "https://huggingface.co/datasets/MMMU/MMMU_Pro",
@@ -255,6 +286,18 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/ddlBoJack/MMAR.git",
         "kind": "audio",
     },
+    "multimodal_audiomarathon_2026": {
+        "source": "https://huggingface.co/datasets/AudioMarathon/AudioMarathon",
+        "hf": ["AudioMarathon/AudioMarathon", "Hezep/AudioMarathon"],
+        "kind": "audio",
+        "splits": ["test"],
+    },
+    "multimodal_rewardbench2_2026": {
+        "source": "https://huggingface.co/datasets/rl-research/multimodal-rewardbench-2",
+        "hf": ["rl-research/multimodal-rewardbench-2"],
+        "kind": "multimodal_mcq",
+        "splits": ["test", "validation", "train"],
+    },
     "long_video_longvt_2026": {
         "source": "https://github.com/EvolvingLMMs-Lab/LongVT",
         "git": "https://github.com/EvolvingLMMs-Lab/LongVT.git",
@@ -316,6 +359,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "source": "https://github.com/llllly26/ComplexBench-Edit",
         "git": "https://github.com/llllly26/ComplexBench-Edit.git",
         "kind": "image_generation",
+    },
+    "generation_oneig_bench_2026": {
+        "source": "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench",
+        "hf": ["OneIG-Bench/OneIG-Bench"],
+        "kind": "image_generation",
+        "splits": ["test", "validation", "train"],
     },
     "generation_music_2026": {
         "source": "https://huggingface.co/datasets/music-arena/music-arena-dataset",
