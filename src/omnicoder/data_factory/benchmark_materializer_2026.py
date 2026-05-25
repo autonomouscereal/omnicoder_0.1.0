@@ -139,14 +139,9 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
             {
                 "id": "EuniAI/TerminalWorld",
                 "files": [
-                    "**/*.json",
-                    "**/*.jsonl",
-                    "**/task.toml",
-                    "**/instruction.md",
-                    "**/Dockerfile",
-                    "**/tests/**",
-                    "**/solve*",
-                    "**/solution*",
+                    "verified/**/*.parquet",
+                    "sample/**/*.parquet",
+                    "full/**/*.parquet",
                 ],
             }
         ],
@@ -2797,6 +2792,10 @@ def normalize_task(
         "task_requirements",
         "state_requirements",
         "task_env_path",
+        "artifact_path",
+        "requires_docker",
+        "is_verified",
+        "missing_required_items",
         "user_id",
         "now",
         "user_simulator",

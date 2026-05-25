@@ -789,6 +789,104 @@ def rank_device(rank: int, raw_map: str) -> torch.device:
     return torch.device("cpu")
 
 
+def _rank_telemetry_path(args: argparse.Namespace, *, rank: int, world_size: int) -> Path:
+    raw_path = str(getattr(args, "telemetry_file", "") or "").strip()
+    if raw_path:
+        if "{rank}" in raw_path:
+            return Path(raw_path.format(rank=f"{int(rank):05d}", rank_int=int(rank), world_size=int(world_size)))
+        path = Path(raw_path)
+        if int(world_size) > 1:
+            return path.with_name(f"{path.stem}.rank{int(rank):05d}{path.suffix or '.jsonl'}")
+        return path
+    return Path(args.out) / f"telemetry.rank{int(rank):05d}.jsonl"
+
+
+def _pipeline_telemetry_record(
+    *,
+    args: argparse.Namespace,
+    rank: int,
+    world_size: int,
+    device: torch.device,
+    ranges: list[tuple[int, int]],
+    spec: PipelineShardSpec,
+    seq_len: int,
+    step: int,
+    local_step: int,
+) -> dict[str, Any]:
+    cuda_active = bool(device.type == "cuda" and torch.cuda.is_available())
+    device_index = int(device.index or 0) if device.type == "cuda" else None
+    memory = {
+        "allocated_bytes": 0,
+        "reserved_bytes": 0,
+        "max_allocated_bytes": 0,
+        "max_reserved_bytes": 0,
+    }
+    device_name = str(device)
+    if cuda_active:
+        memory = {
+            "allocated_bytes": int(torch.cuda.memory_allocated(device)),
+            "reserved_bytes": int(torch.cuda.memory_reserved(device)),
+            "max_allocated_bytes": int(torch.cuda.max_memory_allocated(device)),
+            "max_reserved_bytes": int(torch.cuda.max_memory_reserved(device)),
+        }
+        try:
+            device_name = str(torch.cuda.get_device_name(device))
+        except Exception:
+            device_name = str(device)
+    stage_infos = [
+        {
+            "stage_index": index,
+            "layer_start": int(start),
+            "layer_end": int(end),
+            "layer_count": int(end - start),
+        }
+        for index, (start, end) in enumerate(ranges)
+    ]
+    return {
+        "event": "pipeline_rank_memory_telemetry",
+        "timestamp": time.time(),
+        "rank": int(rank),
+        "world_size": int(world_size),
+        "device": str(device),
+        "device_type": str(device.type),
+        "device_index": device_index,
+        "device_name": device_name,
+        "cuda_available": bool(torch.cuda.is_available()),
+        "cuda_active": cuda_active,
+        **memory,
+        "seq_len": int(seq_len),
+        "step": int(step),
+        "local_step": int(local_step),
+        "stage_index": int(spec.stage_index),
+        "num_stages": int(spec.num_stages),
+        "layer_start": int(spec.layer_start),
+        "layer_end": int(spec.layer_end),
+        "layer_count": int(spec.layer_end - spec.layer_start),
+        "has_embed": bool(spec.has_embed),
+        "has_head": bool(spec.has_head),
+        "placement_layer_counts": [int(end - start) for start, end in ranges],
+        "pipeline_stage_ranges": stage_infos,
+        "pipeline_schedule": str(getattr(args, "pipeline_schedule", "")),
+        "pipeline_microbatches": int(getattr(args, "pipeline_microbatches", 0) or 0),
+    }
+
+
+def _append_pipeline_telemetry(path: str | Path, record: dict[str, Any]) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=True, separators=(",", ":")) + "\n")
+
+
+def _reset_cuda_peak_memory(device: torch.device) -> None:
+    if device.type != "cuda" or not torch.cuda.is_available():
+        return
+    try:
+        torch.cuda.reset_peak_memory_stats(device)
+    except Exception:
+        pass
+
+
 def validate_target_device_placement(args: argparse.Namespace, ranges: list[tuple[int, int]], spec: PipelineShardSpec, device: torch.device) -> None:
     if not bool(getattr(args, "require_target_contract", False)) or device.type != "cuda":
         return
@@ -1027,6 +1125,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True)
     parser.add_argument("--resume", default="")
     parser.add_argument("--log_file", default="")
+    parser.add_argument("--telemetry_file", default=os.getenv("OMNICODER2026_PIPELINE_TELEMETRY_FILE", ""))
     parser.add_argument("--data_manifest", default="")
     parser.add_argument("--preset", default="ledger_probe")
     parser.add_argument("--rank_device_map", default="")
@@ -1105,6 +1204,7 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError(f"world_size={world_size} must match pipeline stages {ranges}")
     spec = shard_spec(rank, ranges)
     validate_target_device_placement(args, ranges, spec, device)
+    telemetry_path = _rank_telemetry_path(args, rank=rank, world_size=world_size)
     init_dtype_name = str(args.init_dtype or "auto").lower()
     if init_dtype_name == "auto":
         init_dtype_name = str(args.precision or "fp32").lower()
@@ -1179,6 +1279,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"event": "pipeline_debug", "rank": rank, "message": message}, ensure_ascii=True), flush=True)
 
     for local_step in range(int(args.steps)):
+        _reset_cuda_peak_memory(device)
         optimizer.zero_grad(set_to_none=True)
         losses: list[torch.Tensor] = []
         if rank == 0:
@@ -1211,13 +1312,27 @@ def main(argv: list[str] | None = None) -> int:
                 debug_event("schedule_step_nonzero_done")
         optimizer.step()
         debug_event("optimizer_step_done")
+        global_step = start_step + local_step + 1
+        _append_pipeline_telemetry(
+            telemetry_path,
+            _pipeline_telemetry_record(
+                args=args,
+                rank=rank,
+                world_size=world_size,
+                device=device,
+                ranges=ranges,
+                spec=spec,
+                seq_len=seq_len,
+                step=global_step,
+                local_step=local_step + 1,
+            ),
+        )
         if spec.has_head and losses:
             loss_value = float(torch.stack([loss.detach().float() for loss in losses]).mean().cpu())
             last_loss = loss_value
         loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
         dist.broadcast(loss_tensor, src=world_size - 1)
         if rank == 0:
-            global_step = start_step + local_step + 1
             _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": float(loss_tensor.cpu()), "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": float(batch_weights.detach().mean().cpu()), "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update)})
         if int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0:
             save_sharded_checkpoint(Path(args.out).with_name(f"{Path(args.out).stem}.step{start_step + local_step + 1}"), shard, preset=preset, args=args, optimizer=optimizer, global_step=start_step + local_step + 1, last_loss=float(loss_tensor.cpu()))

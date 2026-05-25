@@ -519,6 +519,209 @@ def contamination_status_for_record(entry: dict[str, Any], record: dict[str, Any
     return "unknown"
 
 
+def normalized_source_date(value: Any) -> str:
+    if value in (None, "", [], {}):
+        return "unknown"
+    text = str(value).strip()
+    match = re.search(r"(20\d{2})(?:[-/](\d{1,2})(?:[-/](\d{1,2}))?)?", text)
+    if not match:
+        return text[:10] if text else "unknown"
+    year, month, day = match.group(1), match.group(2), match.group(3)
+    if month and day:
+        return f"{year}-{int(month):02d}-{int(day):02d}"
+    if month:
+        return f"{year}-{int(month):02d}"
+    return year
+
+
+def source_date_for_record(entry: dict[str, Any], record: dict[str, Any]) -> str:
+    for source in (record, entry):
+        for key in ("source_date", "created_at", "updated_at", "published_at", "date", "timestamp", "source_year"):
+            value = source.get(key) if isinstance(source, dict) else None
+            normalized = normalized_source_date(value)
+            if normalized != "unknown":
+                return normalized
+    return "2026-05-24"
+
+
+def source_year_from_date(source_date: Any) -> str:
+    match = re.search(r"(20\d{2})", str(source_date or ""))
+    return match.group(1) if match else "unknown"
+
+
+def quality_score_for_record(entry: dict[str, Any], record: dict[str, Any]) -> float:
+    candidates: list[Any] = []
+    for source in (record, entry):
+        if not isinstance(source, dict):
+            continue
+        quality = source.get("quality")
+        if isinstance(quality, dict):
+            candidates.extend([quality.get("score"), quality.get("overall"), quality.get("quality")])
+        candidates.append(source.get("quality_score"))
+    for value in candidates:
+        if value in (None, ""):
+            continue
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            continue
+    return 0.82
+
+
+def quality_score_bucket(score: Any) -> str:
+    try:
+        value = max(0.0, min(1.0, float(score)))
+    except (TypeError, ValueError):
+        return "unknown"
+    if value >= 0.95:
+        return "0.95-1.00"
+    if value >= 0.90:
+        return "0.90-0.94"
+    if value >= 0.80:
+        return "0.80-0.89"
+    if value >= 0.70:
+        return "0.70-0.79"
+    if value >= 0.50:
+        return "0.50-0.69"
+    return "0.00-0.49"
+
+
+def rejected_row_audit(entry: dict[str, Any], record: dict[str, Any], row_index: int, reason: str) -> dict[str, Any]:
+    family = str(entry.get("family") or "external_dataset")
+    declared_modality = str(entry.get("target_modality") or FAMILY_TO_MODALITY.get(family, "text"))
+    source_date = source_date_for_record(entry, record)
+    score = quality_score_for_record(entry, record)
+    return {
+        "dataset": entry.get("name"),
+        "family": family,
+        "modality": declared_modality,
+        "training_bucket": training_bucket_for_record(entry, record),
+        "license_tier": str(entry.get("license_tier") or "unknown"),
+        "contamination_status": contamination_status_for_record(entry, record),
+        "source_date": source_date,
+        "source_year": source_year_from_date(source_date),
+        "synthetic_seed_only": bool(record.get("synthetic_seed")),
+        "quality_score": score,
+        "quality_score_bucket": quality_score_bucket(score),
+        "index": row_index,
+        "reason": reason,
+    }
+
+
+def audit_record_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    source_date = str(row.get("source_date") or "unknown")
+    quality = row.get("quality") if isinstance(row.get("quality"), dict) else {}
+    score = quality.get("score") if isinstance(quality, dict) else None
+    return {
+        "family": str(row.get("dataset_family") or "unknown"),
+        "modality": str(row.get("modality") or "unknown"),
+        "training_bucket": str(row.get("training_bucket") or "unknown"),
+        "license_tier": str(row.get("license_tier") or "unknown"),
+        "contamination_status": str(row.get("contamination_status") or (row.get("contamination") or {}).get("status") or "unknown"),
+        "source_date": source_date,
+        "source_year": source_year_from_date(source_date),
+        "synthetic_seed_only": bool(row.get("synthetic_seed_only")),
+        "quality_score": score,
+        "quality_score_bucket": quality_score_bucket(score),
+    }
+
+
+def audit_dimension_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    dimensions = {
+        "family": "by_family",
+        "modality": "by_modality",
+        "training_bucket": "by_training_bucket",
+        "license_tier": "by_license_tier",
+        "contamination_status": "by_contamination_status",
+        "source_year": "by_source_year",
+        "source_date": "by_source_date",
+        "quality_score_bucket": "by_quality_score_bucket",
+    }
+    summary: dict[str, Any] = {"total": len(records)}
+    for key, out_key in dimensions.items():
+        summary[out_key] = dict(sorted(Counter(str(record.get(key) or "unknown") for record in records).items()))
+    synthetic_count = sum(1 for record in records if bool(record.get("synthetic_seed_only")))
+    quality_scores: list[float] = []
+    for record in records:
+        try:
+            quality_scores.append(float(record.get("quality_score")))
+        except (TypeError, ValueError):
+            continue
+    summary["synthetic"] = {
+        "synthetic": synthetic_count,
+        "real": len(records) - synthetic_count,
+        "synthetic_ratio": (synthetic_count / len(records)) if records else 0.0,
+    }
+    summary["quality_score"] = {
+        "min": min(quality_scores) if quality_scores else None,
+        "max": max(quality_scores) if quality_scores else None,
+        "avg": (sum(quality_scores) / len(quality_scores)) if quality_scores else None,
+    }
+    return summary
+
+
+def accepted_rejected_dimension_counts(
+    accepted_records: list[dict[str, Any]],
+    rejected_records: list[dict[str, Any]],
+) -> dict[str, dict[str, dict[str, int]]]:
+    dimensions = {
+        "family": "family",
+        "modality": "modality",
+        "training_bucket": "training_bucket",
+        "license_tier": "license_tier",
+        "contamination_status": "contamination_status",
+        "source_year": "source_year",
+        "source_date": "source_date",
+        "quality_score_bucket": "quality_score_bucket",
+    }
+    combined: dict[str, dict[str, dict[str, int]]] = {}
+    for out_key, record_key in dimensions.items():
+        values = sorted(
+            {
+                str(record.get(record_key) or "unknown")
+                for record in accepted_records + rejected_records
+            }
+        )
+        combined[out_key] = {
+            value: {
+                "accepted": sum(1 for record in accepted_records if str(record.get(record_key) or "unknown") == value),
+                "rejected": sum(1 for record in rejected_records if str(record.get(record_key) or "unknown") == value),
+            }
+            for value in values
+        }
+    return combined
+
+
+def build_curation_quality_audit(
+    rows_by_bucket: dict[str, list[dict[str, Any]]],
+    rejected_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    accepted_records = [
+        audit_record_from_row(row)
+        for bucket_rows in rows_by_bucket.values()
+        for row in bucket_rows
+    ]
+    rejected_records = [dict(row) for row in rejected_rows]
+    accepted_summary = audit_dimension_summary(accepted_records)
+    rejected_summary = audit_dimension_summary(rejected_records)
+    return {
+        "schema": "omnicoder.external_dataset_curation_quality_audit_2026.v1",
+        "created_at": now_iso(),
+        "summary": {
+            "accepted": len(accepted_records),
+            "rejected": len(rejected_records),
+            "total_seen": len(accepted_records) + len(rejected_records),
+        },
+        "accepted": accepted_summary,
+        "rejected": rejected_summary,
+        "accepted_rejected_by": accepted_rejected_dimension_counts(accepted_records, rejected_records),
+        "synthetic_ratio": {
+            "accepted": accepted_summary["synthetic"]["synthetic_ratio"],
+            "rejected": rejected_summary["synthetic"]["synthetic_ratio"],
+        },
+    }
+
+
 def registry_cfg(profile: dict[str, Any]) -> dict[str, Any]:
     registry = profile.get("external_dataset_registry_2026")
     return registry if isinstance(registry, dict) else {}
@@ -887,10 +1090,12 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     source_uri = str(entry.get("url") or entry.get("hf_id") or entry.get("name") or family)
     raw_id = field_text(record, field_map.get("id") or ["id", "task_id", "problem_id", "instance_id", "ID", "uid"]) or f"row-{row_index}"
     contamination_status = contamination_status_for_record(entry, record)
+    source_date = source_date_for_record(entry, record)
+    quality_score = quality_score_for_record(entry, record)
     source_payload = {
         "source_id": stable_hash({"dataset": entry.get("name"), "raw_id": raw_id, "row_index": row_index}),
-        "source_date": str(entry.get("source_date") or "2026-05-24"),
-        "quality": {"score": float(entry.get("quality_score") or 0.82), "label": "accepted_external_2026"},
+        "source_date": source_date,
+        "quality": {"score": quality_score, "label": "accepted_external_2026"},
         "contamination": {
             "status": contamination_status,
             "note": "external registry row requires downstream protected benchmark scan"
@@ -1024,7 +1229,7 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
         for index, raw in enumerate(raw_rows, 1):
             row = record_to_training_row(entry, raw, plan, index)
             if row is None:
-                rejected.append({"dataset": entry.get("name"), "family": family, "index": index, "reason": "empty_or_short_target"})
+                rejected.append(rejected_row_audit(entry, raw, index, "empty_or_short_target"))
                 continue
             rows_by_bucket[str(row["training_bucket"])].append(row)
             rows_by_family[family].append(row)
@@ -1042,6 +1247,9 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
     write_jsonl(jsonl_dir / "eval_holdout_all_external.jsonl", eval_rows)
     write_jsonl(jsonl_dir / "blocked_until_review.jsonl", blocked_rows)
     write_jsonl(jsonl_dir / "rejected_external.jsonl", rejected)
+    curation_quality_audit = build_curation_quality_audit(rows_by_bucket, rejected)
+    audit_path = manifests_dir / "curation_quality_audit.json"
+    write_json(audit_path, curation_quality_audit)
     if bool(selection["filtered"]) and not bool(getattr(args, "enforce_requirements", False)):
         requirement_report = {
             "schema": "omnicoder.external_dataset_requirements_2026.v1",
@@ -1087,6 +1295,8 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
         "modalities": {modality: len(rows) for modality, rows in sorted(rows_by_modality.items())},
         "modality_paths": modality_paths,
         "license_tiers": dict(sorted(Counter(str(row.get("license_tier") or "unknown") for rows in rows_by_bucket.values() for row in rows).items())),
+        "curation_quality_audit": curation_quality_audit,
+        "curation_quality_audit_path": str(audit_path),
         "requirement_report": requirement_report,
         "training_paths": {
             "train_all_external": str(jsonl_dir / "train_all_external.jsonl"),

@@ -301,6 +301,37 @@ def test_materializer_materializes_terminalworld_layout_assets(tmp_path: Path) -
     assert rows[0]["oracle"]["solution_files"][0]["relative_path"] == "solve.sh"
 
 
+def test_materializer_terminalworld_parquet_layout_rows_are_scorable() -> None:
+    spec = materializer.KNOWN_BENCHMARKS["agent_terminalworld_2026"]
+    patterns = spec["hf"][0]["files"]
+    assert "verified/**/*.parquet" in patterns
+    assert all("croissant" not in pattern for pattern in patterns)
+
+    task = materializer.normalize_task(
+        "agent_terminalworld_2026",
+        {
+            "task_id": "tw-verified-001",
+            "instruction": "Use the terminal to repair the build and run the verifier.",
+            "artifact_path": "verified/test/artifacts/tw-verified-001.tar.gz",
+            "requires_docker": True,
+            "is_verified": True,
+        },
+        spec,
+        {"adapter_kind": "container_terminal_task"},
+        {},
+        "public-dev",
+        "EuniAI/TerminalWorld:verified/test",
+        0,
+    )
+
+    assert task is not None
+    assert task["task_id"] == "tw-verified-001"
+    assert task["prompt"] == "Use the terminal to repair the build and run the verifier."
+    assert task["artifact_path"].endswith("tw-verified-001.tar.gz")
+    assert task["requires_docker"] is True
+    assert materializer.is_scorable_task(task, spec)
+
+
 def test_materializer_reads_mcpmark_meta_json(tmp_path: Path) -> None:
     meta = tmp_path / "mcp" / "tasks" / "notion" / "easy" / "task_a" / "meta.json"
     _write_json(meta, {"task_id": "task_a", "description": "Move the Notion cards.", "mcp": ["notion"]})

@@ -84,6 +84,107 @@ def test_dataset_expansion_materializes_license_tiered_rows(tmp_path: Path, monk
     assert train_row["contamination_status"] == "clean"
 
 
+def test_dataset_expansion_writes_curation_quality_audit_artifact(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    _write_jsonl(
+        root / "data" / "audit_math.jsonl",
+        [
+            {
+                "problem": "Solve 9+1.",
+                "answer": "10",
+                "uuid": "m1",
+                "quality": {"score": 0.96},
+                "source_date": "2026-02-14T11:00:00Z",
+                "contamination_status": "clean",
+            }
+        ],
+    )
+    _write_jsonl(
+        root / "data" / "audit_rejected.jsonl",
+        [
+            {
+                "prompt": "Patch the failing function.",
+                "answer": "x",
+                "uuid": "c1",
+                "quality_score": 0.41,
+                "source_date": "2025-12-31",
+                "contamination_status": "dirty",
+            }
+        ],
+    )
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "audit_math",
+                    "family": "math_reasoning",
+                    "target_modality": "text",
+                    "local_jsonl": "data/audit_math.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                    "field_map": {"prompt": ["problem"], "target": ["answer"], "id": ["uuid"]},
+                },
+                {
+                    "name": "audit_seed",
+                    "family": "image_generation_editing",
+                    "target_modality": "image",
+                    "license": "internal",
+                    "license_tier": "teacher_distill",
+                    "use_policy": "research_internal",
+                    "quality_score": 0.74,
+                    "source_date": "2026-01-20",
+                    "distillation_prompts": [{"instruction": "Sketch a mask plan.", "target": "Use a clean alpha mask."}],
+                },
+                {
+                    "name": "audit_rejected",
+                    "family": "coding_agentic",
+                    "target_modality": "code",
+                    "local_jsonl": "data/audit_rejected.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "manual_review",
+                    "use_policy": "train",
+                    "min_target_chars": 5,
+                    "field_map": {"prompt": ["prompt"], "target": ["answer"], "id": ["uuid"]},
+                },
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": False, "no_streaming": False, "max_records_per_dataset": 0, "enforce_requirements": False})(),
+    )
+
+    audit_path = Path(manifest["curation_quality_audit_path"])
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert audit_path.name == "curation_quality_audit.json"
+    assert manifest["curation_quality_audit"] == audit
+    assert audit["summary"] == {"accepted": 2, "rejected": 1, "total_seen": 3}
+    assert audit["accepted"]["by_family"] == {"image_generation_editing": 1, "math_reasoning": 1}
+    assert audit["rejected"]["by_family"] == {"coding_agentic": 1}
+    assert audit["accepted"]["by_modality"] == {"image": 1, "text": 1}
+    assert audit["rejected"]["by_modality"] == {"code": 1}
+    assert audit["accepted"]["by_training_bucket"] == {"research_internal": 1, "train": 1}
+    assert audit["rejected"]["by_training_bucket"] == {"research_internal": 1}
+    assert audit["accepted"]["by_license_tier"] == {"permissive": 1, "teacher_distill": 1}
+    assert audit["rejected"]["by_license_tier"] == {"manual_review": 1}
+    assert audit["accepted"]["by_contamination_status"] == {"clean": 1, "unknown": 1}
+    assert audit["rejected"]["by_contamination_status"] == {"dirty": 1}
+    assert audit["accepted"]["by_source_year"] == {"2026": 2}
+    assert audit["rejected"]["by_source_date"] == {"2025-12-31": 1}
+    assert audit["accepted"]["by_quality_score_bucket"] == {"0.70-0.79": 1, "0.95-1.00": 1}
+    assert audit["rejected"]["by_quality_score_bucket"] == {"0.00-0.49": 1}
+    assert audit["synthetic_ratio"] == {"accepted": 0.5, "rejected": 0.0}
+    assert audit["accepted_rejected_by"]["family"]["coding_agentic"] == {"accepted": 0, "rejected": 1}
+    assert audit["accepted_rejected_by"]["family"]["math_reasoning"] == {"accepted": 1, "rejected": 0}
+
+
 def test_dataset_expansion_splits_conversation_prompt_and_target(tmp_path: Path) -> None:
     plan = _training_profile(tmp_path)["training_plan"]
     entry = {
