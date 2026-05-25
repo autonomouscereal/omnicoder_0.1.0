@@ -70,6 +70,16 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/SalesforceAIResearch/MCP-Universe.git",
         "kind": "tool",
     },
+    "agent_mcptoolbenchpp_2026": {
+        "source": "https://huggingface.co/MCPToolBench",
+        "hf": ["MCPToolBench/MCPToolBenchPP"],
+        "kind": "tool",
+        "splits": ["train", "test", "validation"],
+    },
+    "agent_webbench_2026": {
+        "source": "https://webbench.ai/",
+        "kind": "browser",
+    },
     "agent_clawbench_browser_2026": {
         "source": "https://github.com/openclaw/clawbench",
         "git": "https://github.com/openclaw/clawbench.git",
@@ -261,6 +271,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "math",
         "splits": ["train"],
     },
+    "reasoning_maime2025_2026": {
+        "source": "https://huggingface.co/datasets/LumiOpen/mAIME2025",
+        "hf": ["LumiOpen/mAIME2025"],
+        "kind": "math",
+        "splits": ["test", "validation", "train"],
+    },
     "multimodal_mathnet_2026": {
         "source": "https://huggingface.co/datasets/ShadenA/MathNet",
         "hf": [
@@ -318,6 +334,15 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "hf": ["amodaresi/NoLiMa"],
         "kind": "long_context",
         "splits": ["train", "test", "validation"],
+    },
+    "long_context_sagascale_2026": {
+        "source": "https://arxiv.org/abs/2601.09723",
+        "kind": "long_context",
+    },
+    "long_context_academiceval_2026": {
+        "source": "https://github.com/ulab-uiuc/AcademicEval",
+        "git": "https://github.com/ulab-uiuc/AcademicEval.git",
+        "kind": "long_context",
     },
     "multimodal_mmmu_pro_2026": {
         "source": "https://huggingface.co/datasets/MMMU/MMMU_Pro",
@@ -439,6 +464,42 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "source": "https://github.com/ddlBoJack/MMAR",
         "git": "https://github.com/ddlBoJack/MMAR.git",
         "kind": "audio",
+    },
+    "multimodal_mpbench_2026": {
+        "source": "https://mpbench.github.io/",
+        "kind": "multimodal",
+    },
+    "multimodal_cmi_bench_music_2026": {
+        "source": "https://arxiv.org/abs/2506.12285",
+        "kind": "audio",
+    },
+    "multimodal_muse_music_2026": {
+        "source": "https://arxiv.org/abs/2510.19055",
+        "kind": "audio",
+    },
+    "multimodal_rtv_bench_2026": {
+        "source": "https://github.com/LJungang/RTV-Bench",
+        "git": "https://github.com/LJungang/RTV-Bench.git",
+        "hf": ["RTVBench/RTV-Bench"],
+        "kind": "video",
+        "splits": ["train", "test", "validation"],
+    },
+    "multimodal_maverix_av_reasoning_2026": {
+        "source": "https://maverix-benchmark.github.io/",
+        "kind": "video",
+    },
+    "multimodal_river_video_interaction_2026": {
+        "source": "https://github.com/OpenGVLab/RIVER",
+        "git": "https://github.com/OpenGVLab/RIVER.git",
+        "hf": [
+            {
+                "id": "OpenGVLab/RIVER",
+                "splits": ["train", "test", "validation"],
+                "files": ["*.json", "*.jsonl", "*.csv"],
+            }
+        ],
+        "kind": "video",
+        "splits": ["train", "test", "validation"],
     },
     "multimodal_audiomarathon_2026": {
         "source": "https://huggingface.co/datasets/AudioMarathon/AudioMarathon",

@@ -1218,6 +1218,7 @@ def test_repo_dataset_registry_covers_tenth_wave_curated_sources() -> None:
     assert by_name["LEMAS Dataset Train"]["hf_id"] == "LEMAS-Project/LEMAS-Dataset-train"
     assert by_name["MMAU-Pro"]["hf_id"] == "gamma-lab-umd/MMAU-Pro"
     assert by_name["RTV-Bench"]["target_modality"] == "video"
+    assert by_name["RIVER Bench"]["hf_id"] == "OpenGVLab/RIVER"
     assert by_name["RIVER Bench"]["source_year"] == 2026
     assert expansion.source_use_bucket(by_name["FineWeb2"]) == "train"
     assert expansion.source_use_bucket(by_name["Common Pile v0.1"]) == "train"

@@ -655,6 +655,8 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "agent_mcp_bench_2026",
         "agent_mcp_atlas_2026",
         "agent_mcp_universe_2026",
+        "agent_mcptoolbenchpp_2026",
+        "agent_webbench_2026",
         "agent_clawbench_browser_2026",
         "agent_browsecomp_long_context_2026",
         "agent_theagentcompany_enterprise_2026",
@@ -674,6 +676,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "reasoning_hle_rolling_2026",
         "reasoning_imo_bench_2026",
         "reasoning_matharena_2026",
+        "reasoning_maime2025_2026",
         "reasoning_rlvr_linearity_math_2026",
         "coding_nous_rlvr_coding_2026",
         "coding_multi_swe_bench_2026",
@@ -683,6 +686,8 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "long_context_graphwalks_2026",
         "long_context_longproc_2026",
         "long_context_nolima_1m_2026",
+        "long_context_sagascale_2026",
+        "long_context_academiceval_2026",
         "multimodal_audiobench_mmau_2026",
         "multimodal_mmau_pro_2026",
         "multimodal_mmlongbench_2026",
@@ -693,6 +698,12 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "multimodal_longspeech_2026",
         "multimodal_audiomarathon_2026",
         "multimodal_mmar_audio_music_reasoning_2026",
+        "multimodal_mpbench_2026",
+        "multimodal_cmi_bench_music_2026",
+        "multimodal_muse_music_2026",
+        "multimodal_rtv_bench_2026",
+        "multimodal_maverix_av_reasoning_2026",
+        "multimodal_river_video_interaction_2026",
         "multimodal_rewardbench2_2026",
         "generation_audio_speech_2026",
         "generation_ttsds2_2026",
@@ -712,8 +723,14 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert voicebench["id"] == "hlt-lab/voicebench"
     assert voicebench["config"] == "ifeval"
     assert materializer.KNOWN_BENCHMARKS["agent_clawbench_browser_2026"]["hf"][0] == "TIGER-Lab/ClawBench"
+    assert materializer.KNOWN_BENCHMARKS["agent_mcptoolbenchpp_2026"]["hf"] == ["MCPToolBench/MCPToolBenchPP"]
+    assert materializer.KNOWN_BENCHMARKS["reasoning_maime2025_2026"]["hf"] == ["LumiOpen/mAIME2025"]
     assert materializer.KNOWN_BENCHMARKS["long_context_nolima_1m_2026"]["hf"] == ["amodaresi/NoLiMa"]
     assert materializer.KNOWN_BENCHMARKS["multimodal_audiomarathon_2026"]["hf"][0] == "AudioMarathon/AudioMarathon"
+    assert materializer.KNOWN_BENCHMARKS["multimodal_rtv_bench_2026"]["hf"] == ["RTVBench/RTV-Bench"]
+    river = materializer.KNOWN_BENCHMARKS["multimodal_river_video_interaction_2026"]["hf"][0]
+    assert river["id"] == "OpenGVLab/RIVER"
+    assert river["files"] == ["*.json", "*.jsonl", "*.csv"]
     assert materializer.KNOWN_BENCHMARKS["coding_swe_rebench_v2_2026"]["splits"] == ["train"]
     rewardbench = materializer.KNOWN_BENCHMARKS["multimodal_rewardbench2_2026"]["hf"][0]
     assert rewardbench["id"] == "rl-research/multimodal-rewardbench-2"

@@ -23086,6 +23086,7 @@
           ]
         },
         "gated": false,
+        "hf_id": "OpenGVLab/RIVER",
         "last_verified": "2026-05-25",
         "license": "benchmark license review required",
         "license_tier": "benchmark_holdout_review",
