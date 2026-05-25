@@ -217,7 +217,8 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     },
     "agent_omniagentbench_2026": {
         "source": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
-        "hf": [{"id": "omniagentbench/OmniAgentBench", "splits": ["test", "train", "validation"]}],
+        "snapshot_requires_operator_manifest": True,
+        "materialization_note": "The public HF dataset streams tens of thousands of media assets before yielding task rows; use an authorized manifest/source override for reportable snapshots.",
         "kind": "agent_tool_multimodal",
         "splits": ["test", "train", "validation"],
     },

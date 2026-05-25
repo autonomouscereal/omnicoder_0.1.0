@@ -245,7 +245,9 @@ Current high-value registry families:
   AgentIF, OmniAgentBench, BeyondSWE, ContextBench, CCBench, NVIDIA
   ComputeEval, ParseBench, and OfficeQA. The expansion writer now refuses to
   put train-policy rows into the train aggregate unless row or source metadata
-  says the protected-benchmark scan is `clean` or `clear`.
+  says the protected-benchmark scan is `clean` or `clear`. OmniAgentBench is
+  kept behind an authorized descriptor/source override because direct public HF
+  streaming starts with a large media payload instead of bounded task rows.
 - Thirteenth-wave May 25, 2026 additions: Agentic-MME, ABC-Bench,
   LongBench-Pro, MEGA-Bench, StepEval-Audio-360, and IndiMathBench are
   registered as eval/benchmark-holdout sources under

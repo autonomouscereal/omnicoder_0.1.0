@@ -24809,6 +24809,7 @@
         "last_verified": "2026-05-25",
         "license": "license pending source review",
         "license_tier": "unknown_eval_holdout",
+        "materialization_note": "Public HF loading streams a large media payload before task rows; keep this as protected eval and materialize only from an operator-authorized descriptor/source override.",
         "max_records": 1024,
         "name": "OmniAgentBench",
         "registry_wave": "fifteenth_wave_agentic_coding_security_audio_2026_05_25",

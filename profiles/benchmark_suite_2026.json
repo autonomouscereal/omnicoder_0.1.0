@@ -4223,6 +4223,7 @@
         "mobile",
         "tool_schema"
       ],
+      "materialization_note": "Do not stream the public HF media payload during public-dev curation; materialize from an operator-authorized descriptor/source override so task rows are bounded and reportable.",
       "release_gate": "agent_tool_release",
       "source": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",
       "splits": {
@@ -6406,6 +6407,7 @@
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "omniagentbench-authorized-2026-current",
       "min_tasks": 1,
+      "materialization_note": "Requires an operator-supplied manifest/source override; public HF loading is intentionally disabled in the built-in materializer to avoid unbounded media downloads.",
       "snapshot_authorization": "official_or_authorized_current_release",
       "snapshot_id": "omniagentbench-authorized-2026-current",
       "source": "https://huggingface.co/datasets/omniagentbench/OmniAgentBench",

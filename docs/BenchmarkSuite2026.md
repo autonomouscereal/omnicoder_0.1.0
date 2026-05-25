@@ -174,7 +174,10 @@ WebGym Tasks, OmniAgentBench, MCP Security Bench, BeyondSWE, ContextBench,
 CCBench, NVIDIA ComputeEval, OfficeQA, ParseBench, and AudioMCQ StrongAC.
 Every release-gated addition has a reportable-root and snapshot descriptor, but
 the materializer now refuses reportable-mode downloads unless an operator
-supplies an authorized local snapshot via `--source-override`.
+supplies an authorized local snapshot via `--source-override`. OmniAgentBench
+also refuses public-dev HF streaming by default because the dataset begins by
+pulling a large media payload; materialize it from a bounded authorized
+descriptor/source override.
 
 ```bash
 OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1 \

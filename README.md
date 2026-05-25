@@ -227,6 +227,10 @@ mix:
   and OfficeQA. AgentWorldModel/WebGym/AudioMCQ are trainable only with clean
   contamination metadata; Tool-Genesis and all benchmark-answer suites stay
   eval-holdout with authorized snapshot roots for reportable scoring.
+  OmniAgentBench public HF media streaming is intentionally disabled in the
+  built-in benchmark materializer; use an operator-authorized descriptor or
+  `--source-override` snapshot so sidecars do not spend hours pulling media
+  assets before bounded task rows are available.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for

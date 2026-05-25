@@ -1114,7 +1114,10 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert materializer.KNOWN_BENCHMARKS["agent_agentif_2025"]["hf"][0]["id"] == "THU-KEG/AgentIF"
     assert materializer.KNOWN_BENCHMARKS["agent_agentif_2025"]["splits"] == ["test"]
     assert materializer.KNOWN_BENCHMARKS["agent_webgym_tasks_2026"]["hf"][0]["id"] == "microsoft/webgym_tasks"
-    assert materializer.KNOWN_BENCHMARKS["agent_omniagentbench_2026"]["hf"][0]["id"] == "omniagentbench/OmniAgentBench"
+    omniagentbench = materializer.KNOWN_BENCHMARKS["agent_omniagentbench_2026"]
+    assert omniagentbench["source"] == "https://huggingface.co/datasets/omniagentbench/OmniAgentBench"
+    assert omniagentbench["snapshot_requires_operator_manifest"] is True
+    assert "hf" not in omniagentbench
     assert materializer.KNOWN_BENCHMARKS["safety_mcp_security_bench_2026"]["hf"][0]["config"] == "agent_task"
     assert materializer.KNOWN_BENCHMARKS["agent_ui_vision_2026"]["hf"][0]["id"] == "ServiceNow/ui-vision"
     assert materializer.KNOWN_BENCHMARKS["coding_beyondswe_2026"]["hf"][0]["id"] == "AweAI-Team/BeyondSWE"
