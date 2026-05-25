@@ -20,6 +20,7 @@ DEFAULT_STAGES = (
     "export_sft",
     "agentic_tool_training",
     "teacher_jobs",
+    "local_hf_trainer",
     "sft_qlora_bridge",
     "native_train",
     "eval_smoke",
@@ -143,6 +144,7 @@ def execute_stage(
     eval_cfg = profile.get("eval", {}) if isinstance(profile.get("eval"), dict) else {}
     teacher_cfg = profile.get("teacher_jobs", {}) if isinstance(profile.get("teacher_jobs"), dict) else {}
     qlora_cfg = profile.get("sft_qlora", {}) if isinstance(profile.get("sft_qlora"), dict) else {}
+    local_hf_cfg = profile.get("local_hf_trainer", {}) if isinstance(profile.get("local_hf_trainer"), dict) else {}
     tool_cfg = profile.get("agentic_tool_training", {}) if isinstance(profile.get("agentic_tool_training"), dict) else {}
     python = sys.executable
     env = {"PYTHONPATH": str(repo_root / "src")}
@@ -311,6 +313,57 @@ def execute_stage(
         if _as_bool(qlora_cfg.get("dry_run", False)):
             cmd.append("--dry_run")
         current["sft_qlora_manifest"] = manifest
+    elif stage == "local_hf_trainer":
+        if not _as_bool(local_hf_cfg.get("enabled", False)):
+            registry.stage(run_id, stage, "skipped", metadata={"reason": "local_hf_trainer disabled"})
+            return
+        data = (
+            Path(str(local_hf_cfg.get("train_jsonl")))
+            if local_hf_cfg.get("train_jsonl")
+            else current.get("agentic_tool_sft") or current.get("sft")
+        )
+        if not data or not data.exists():
+            registry.stage(run_id, stage, "skipped", metadata={"reason": f"missing local HF trainer data {data}"})
+            return
+        out_dir = Path(str(local_hf_cfg.get("out_dir") or "")) if local_hf_cfg.get("out_dir") else paths["weights"] / "local_hf_trainer"
+        manifest = out_dir / "local_hf_trainer_manifest.json"
+        cmd = [
+            python, "-m", "omnicoder.training.local_hf_trainer_bridge_2026",
+            "sft",
+            "--backend", str(local_hf_cfg.get("backend") or "unsloth"),
+            "--model", str(local_hf_cfg.get("model") or qlora_cfg.get("model") or "Qwen/Qwen3-4B"),
+            "--train-jsonl", str(data),
+            "--out-dir", str(out_dir),
+            "--manifest", str(manifest),
+            "--max-seq-len", str(int(local_hf_cfg.get("max_seq_len") or 4096)),
+            "--max-steps", str(int(local_hf_cfg.get("max_steps") or 1000)),
+            "--learning-rate", str(float(local_hf_cfg.get("learning_rate") or 1e-4)),
+            "--per-device-train-batch-size", str(int(local_hf_cfg.get("per_device_train_batch_size") or 1)),
+            "--gradient-accumulation-steps", str(int(local_hf_cfg.get("gradient_accumulation_steps") or 16)),
+            "--lora-r", str(int(local_hf_cfg.get("lora_r") or 16)),
+            "--lora-alpha", str(int(local_hf_cfg.get("lora_alpha") or 32)),
+            "--target-modules", str(local_hf_cfg.get("target_modules") or "all-linear"),
+            "--protected-gpus", str(local_hf_cfg.get("protected_gpus") or "0,4,6"),
+        ]
+        if local_hf_cfg.get("eval_jsonl"):
+            cmd.extend(["--eval-jsonl", str(local_hf_cfg.get("eval_jsonl"))])
+        if local_hf_cfg.get("host_gpu_ids"):
+            cmd.extend(["--host-gpu-ids", str(local_hf_cfg.get("host_gpu_ids"))])
+        if _as_bool(local_hf_cfg.get("load_in_4bit", True)):
+            cmd.append("--load-in-4bit")
+        if _as_bool(local_hf_cfg.get("packing", True)):
+            cmd.append("--packing")
+        if _as_bool(local_hf_cfg.get("assistant_only_loss", True)):
+            cmd.append("--assistant-only-loss")
+        if _as_bool(local_hf_cfg.get("unsloth_tiled_mlp", False)):
+            cmd.append("--unsloth-tiled-mlp")
+        if _as_bool(local_hf_cfg.get("allow_nontrain_rows", False)):
+            cmd.append("--allow-nontrain-rows")
+        if _as_bool(local_hf_cfg.get("allow_missing_backend", False)):
+            cmd.append("--allow-missing-backend")
+        if _as_bool(local_hf_cfg.get("dry_run", True)):
+            cmd.append("--dry-run")
+        current["local_hf_trainer_manifest"] = manifest
     elif stage == "native_train":
         data = current.get("sft") or Path(str(data_cfg.get("sft_input") or ""))
         if not data.exists():
@@ -401,6 +454,7 @@ def execute_stage(
             "agentic_tool_safety",
         ),
         "teacher_jobs": ("teacher_jobs",),
+        "local_hf_trainer": ("local_hf_trainer_manifest",),
         "sft_qlora_bridge": ("sft_qlora_manifest",),
         "eval_smoke": ("eval",),
         "context_budget": ("context_budget",),

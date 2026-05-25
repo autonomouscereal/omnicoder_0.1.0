@@ -53,6 +53,7 @@ full-harness-2026 = "omnicoder.training.full_harness_2026:main"
 run-registry-2026 = "omnicoder.training.run_registry_2026:main"
 metrics-2026 = "omnicoder.training.metrics_2026:main"
 sft-qlora-2026 = "omnicoder.training.sft_qlora_2026:main"
+local-hf-train-2026 = "omnicoder.training.local_hf_trainer_bridge_2026:main"
 distill-curriculum-2026 = "omnicoder.training.distillation_curriculum_2026:main"
 posttrain-bridge-2026 = "omnicoder.training.posttrain_bridge_2026:main"
 agentic-tool-train-2026 = "omnicoder.training.agentic_tool_training_2026:main"
@@ -72,6 +73,7 @@ agent-memory-pg-export-2026 = "omnicoder.data_factory.export_agent_memory_postgr
 codec-registry-2026 = "omnicoder.codecs.codec_registry_2026:main"
 gguf-bridge-2026 = "omnicoder.export.gguf_bridge_2026:main"
 context-budget-2026 = "omnicoder.inference.context_budget_2026:main"
+local-hf-adapter-runner-2026 = "omnicoder.inference.local_hf_adapter_runner_2026:main"
 
 [project.optional-dependencies]
 onnx = [
@@ -124,4 +126,7 @@ gen = [
   "accelerate",
   "safetensors",
   "optimum[onnxruntime]",
+]
+unsloth = [
+  "unsloth; platform_system=='Linux'",
 ]

@@ -36,6 +36,15 @@ BENCHMARK_MATERIALIZE_PROFILE_ROOTS="${OMNICODER_BENCHMARK_MATERIALIZE_PROFILE_R
 REPORTABLE_ROOT="${OMNICODER_REPORTABLE_ROOT:-}"
 MEDIA_TEACHER_ROLLOUT_MODE="${OMNICODER_MEDIA_TEACHER_ROLLOUT_MODE:-live}"
 MEDIA_TEACHER_LIMIT="${OMNICODER_MEDIA_TEACHER_LIMIT:-$TEACHER_LIMIT}"
+LOCAL_HF_PROFILE="${OMNICODER_LOCAL_HF_PROFILE:-profiles/training_harness_2026.json}"
+LOCAL_HF_BACKEND="${OMNICODER_LOCAL_HF_BACKEND:-unsloth}"
+LOCAL_HF_MODEL="${OMNICODER_LOCAL_HF_MODEL:-Qwen/Qwen3-4B}"
+LOCAL_HF_TRAIN_JSONL="${OMNICODER_LOCAL_HF_TRAIN_JSONL:-}"
+LOCAL_HF_MAX_STEPS="${OMNICODER_LOCAL_HF_MAX_STEPS:-1000}"
+LOCAL_HF_MAX_SEQ_LEN="${OMNICODER_LOCAL_HF_MAX_SEQ_LEN:-4096}"
+LOCAL_HF_HOST_GPU_IDS="${OMNICODER_LOCAL_HF_HOST_GPU_IDS:-}"
+LOCAL_HF_PROTECTED_GPUS="${OMNICODER_LOCAL_HF_PROTECTED_GPUS:-0,4,6}"
+LOCAL_HF_DRY_RUN="${OMNICODER_LOCAL_HF_DRY_RUN:-1}"
 ACTION="${1:-all}"
 
 cd "$ROOT"
@@ -578,6 +587,50 @@ benchmark_materialize() {
   log "benchmark materialization manifest: $manifest"
 }
 
+local_hf_trainer() {
+  local source="$LOCAL_HF_TRAIN_JSONL"
+  if [[ -z "$source" ]]; then
+    if [[ -s "weights/agentic_tool_training_2026/latest_run/tool_sft.jsonl" ]]; then
+      source="weights/agentic_tool_training_2026/latest_run/tool_sft.jsonl"
+    elif [[ -s "weights/external_datasets_2026/latest/jsonl/train_all_external.jsonl" ]]; then
+      source="weights/external_datasets_2026/latest/jsonl/train_all_external.jsonl"
+    elif [[ -s "weights/curated_datasets_2026/latest/jsonl/train_all.jsonl" ]]; then
+      source="weights/curated_datasets_2026/latest/jsonl/train_all.jsonl"
+    fi
+  fi
+  if [[ -z "$source" || ! -s "$source" ]]; then
+    echo "local HF trainer source is missing; set OMNICODER_LOCAL_HF_TRAIN_JSONL" >&2
+    exit 9
+  fi
+  local out_dir="weights/local_hf_trainer_2026/runs/${RUN_ID}"
+  local manifest="$out_dir/local_hf_trainer_manifest.json"
+  local args=(
+    -m omnicoder.training.local_hf_trainer_bridge_2026
+    sft
+    --backend "$LOCAL_HF_BACKEND"
+    --model "$LOCAL_HF_MODEL"
+    --train-jsonl "$source"
+    --out-dir "$out_dir"
+    --manifest "$manifest"
+    --max-seq-len "$LOCAL_HF_MAX_SEQ_LEN"
+    --max-steps "$LOCAL_HF_MAX_STEPS"
+    --load-in-4bit
+    --packing
+    --assistant-only-loss
+    --protected-gpus "$LOCAL_HF_PROTECTED_GPUS"
+  )
+  if [[ -n "$LOCAL_HF_HOST_GPU_IDS" ]]; then
+    args+=(--host-gpu-ids "$LOCAL_HF_HOST_GPU_IDS")
+  fi
+  if truthy "$LOCAL_HF_DRY_RUN"; then
+    args+=(--dry-run)
+  fi
+  mkdir -p "$out_dir/logs"
+  log "validate/run optional local HF trainer backend=${LOCAL_HF_BACKEND}"
+  CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}" "$PYTHON_BIN" "${args[@]}" | tee "$out_dir/logs/local_hf_trainer.stdout.json"
+  log "local HF trainer manifest: $manifest"
+}
+
 status() {
   preflight
   log "latest external manifest"
@@ -650,6 +703,7 @@ case "$ACTION" in
   p40-teacher) p40_teacher_rollouts ;;
   media-teacher-rollouts) media_teacher_rollouts ;;
   benchmark-materialize) benchmark_materialize ;;
+  local-hf-trainer) local_hf_trainer ;;
   coverage-report) coverage_report ;;
   status) status ;;
   all)

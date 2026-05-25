@@ -110,6 +110,20 @@ short watchdog before the first loss point is recorded. Pipeline telemetry
 records per-rank free/total VRAM, CUDA capability, `CUDA_VISIBLE_DEVICES`, and
 `LOCAL_RANK` for run audits.
 
+Unsloth/local-HF training is now supported only as an optional sidecar lane,
+not as the native 20B/1M trainer. The bridge lives in
+`omnicoder.training.local_hf_trainer_bridge_2026` and validates train-only
+JSONL exports, blocks benchmark/holdout/contaminated rows, emits dependency,
+version, GPU-safety, GGUF, and checkpoint-runner metadata, then runs Unsloth
+or TRL SFT only when the backend is installed and the requested GPUs do not
+overlap the protected fast-card set. Current AI-server state makes this
+manifest-only by default: Unsloth is not installed in the host or
+`omnicoder:cuda-posttrain-2026` image, the idle P40s are compute capability
+6.1, and the training volume is already 96% full. Use
+`scripts/ai_server_dataset_training_sidecars_2026.sh local-hf-trainer` with
+`OMNICODER_LOCAL_HF_DRY_RUN=1` for validation/planning, and only flip it live
+inside an isolated Linux CUDA environment once disk and GPU ownership are safe.
+
 Long-context-only recovery is also first-class. Use
 `training-orchestration-2026 run-long-context` or
 `OMNICODER_MODE=run-long-context scripts/ai_server_fast_pipeline_20b.sh` with

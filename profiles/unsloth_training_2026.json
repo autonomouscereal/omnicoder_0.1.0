@@ -1,0 +1,67 @@
+{
+  "profile_name": "unsloth_training_2026",
+  "schema": "omnicoder.unsloth_training_2026.v1",
+  "purpose": "Optional local Unsloth/TRL sidecar training over Omnicoder curated train-only JSONL exports.",
+  "status": "disabled_by_default",
+  "contract": {
+    "native_20b_checkpoint_owner": "training_orchestration_2026",
+    "sidecar_scope": "HF-compatible LoRA/QLoRA adapters, dataset validation, and benchmark runner manifests",
+    "not_a_replacement_for": "native dense 20B / 1M context / fused all-modality optimizer training"
+  },
+  "hardware_policy": {
+    "protected_gpus": "0,4,6",
+    "allow_protected_gpus_default": false,
+    "p40_policy": "manifest-only unless the selected backend explicitly supports compute capability 6.1",
+    "disk_policy": "do not pull/build trainer images while root or Docker storage is above 90 percent"
+  },
+  "sft": {
+    "enabled": false,
+    "backend": "unsloth",
+    "model": "Qwen/Qwen3-4B",
+    "train_jsonl_candidates": [
+      "weights/agentic_tool_training_2026/latest_run/tool_sft.jsonl",
+      "weights/external_datasets_2026/latest/jsonl/train_all_external.jsonl",
+      "weights/curated_datasets_2026/latest/jsonl/train_all.jsonl"
+    ],
+    "out_dir": "weights/local_hf_trainer_2026/runs/${RUN_ID}",
+    "max_seq_len": 4096,
+    "max_steps": 1000,
+    "learning_rate": 0.0001,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 16,
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "target_modules": "all-linear",
+    "load_in_4bit": true,
+    "packing": true,
+    "assistant_only_loss": true,
+    "unsloth_tiled_mlp": false,
+    "dry_run_default": true
+  },
+  "rl": {
+    "enabled": false,
+    "planned_backends": [
+      "Unsloth GRPO/GSPO for compatible HF causal or VL checkpoints",
+      "Existing posttrain_bridge_2026 for native Omnicoder reward replay"
+    ],
+    "datasets": [
+      "weights/agentic_tool_training_2026/latest_run/tool_rlvr.jsonl",
+      "weights/agentic_tool_training_2026/latest_run/math_rlvr.jsonl",
+      "weights/agentic_tool_training_2026/latest_run/code_rlvr.jsonl"
+    ]
+  },
+  "benchmark": {
+    "prediction_backend": "checkpoint-runner",
+    "runner_module": "omnicoder.inference.local_hf_adapter_runner_2026",
+    "output_contract": "manifest emits checkpoint_runner_command for reportable_prediction_harness_2026"
+  },
+  "sources_checked_2026": [
+    "https://unsloth.ai/docs/get-started/fine-tuning-llms-guide",
+    "https://unsloth.ai/docs/get-started/reinforcement-learning-rl-guide",
+    "https://unsloth.ai/docs/basics/multi-gpu-training-with-unsloth",
+    "https://unsloth.ai/docs/blog/500k-context-length-fine-tuning",
+    "https://unsloth.ai/docs/get-started/reinforcement-learning-rl-guide/grpo-long-context",
+    "https://unsloth.ai/docs/basics/inference-and-deployment/saving-to-gguf",
+    "https://github.com/unslothai/unsloth"
+  ]
+}
