@@ -3813,6 +3813,192 @@
         "release": "locked authorized MathArena release suite"
       },
       "task_format": "jsonl_math_competition_task"
+    },
+    {
+      "adapter_kind": "repo_instruction_following_agent_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_octocodingbench_2026",
+      "holdout_policy": [
+        "hide_reference_checklists",
+        "record_repo_scaffold_hash",
+        "quarantine_successful_agent_traces"
+      ],
+      "metrics": [
+        "instruction_adherence",
+        "checklist_pass_rate",
+        "tests_passed_rate",
+        "tool_trace_validity"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "git",
+        "terminal"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/MiniMaxAI/OctoCodingBench",
+      "splits": {
+        "smoke": "one public AGENTS-style coding task",
+        "nightly": "rule/scaffold-balanced OctoCodingBench slice",
+        "release": "locked authorized OctoCodingBench suite"
+      },
+      "task_format": "jsonl_agentic_repo_instruction_task"
+    },
+    {
+      "adapter_kind": "repo_grounded_taskbench_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_gittaskbench_2026",
+      "holdout_policy": [
+        "hide_reference_outputs",
+        "record_repository_bundle_hash",
+        "sandbox_task_workspaces"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "repo_setup_success",
+        "artifact_correctness",
+        "diff_minimality"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "git",
+        "filesystem"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/Nicole-Yi/GitTaskBench",
+      "splits": {
+        "smoke": "one public repo-grounded task",
+        "nightly": "domain-balanced GitTaskBench slice",
+        "release": "locked authorized GitTaskBench suite"
+      },
+      "task_format": "jsonl_repo_grounded_task"
+    },
+    {
+      "adapter_kind": "lean_formal_verification_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_verisoftbench_2026",
+      "holdout_policy": [
+        "hide_reference_proofs",
+        "pin_lean_toolchain",
+        "record_dependency_hash"
+      ],
+      "metrics": [
+        "proof_compiles",
+        "theorem_solved_rate",
+        "dependency_resolution_success",
+        "proof_minimality"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "formal_proof"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/maxRyeery/VeriSoftBench",
+      "splits": {
+        "smoke": "one public Lean verification task",
+        "nightly": "repository-balanced VeriSoftBench slice",
+        "release": "locked authorized VeriSoftBench suite"
+      },
+      "task_format": "jsonl_formal_verification_task"
+    },
+    {
+      "adapter_kind": "olympiad_math_reasoning_eval",
+      "axis": "reasoning",
+      "benchmark_id": "reasoning_imo_bench_2026",
+      "holdout_policy": [
+        "hide_solutions",
+        "record_problem_release",
+        "quarantine_successful_reasoning_traces"
+      ],
+      "metrics": [
+        "exact_answer_rate",
+        "proof_quality",
+        "step_validity",
+        "calibration_brier"
+      ],
+      "modalities": [
+        "text",
+        "math"
+      ],
+      "release_gate": "reasoning_release",
+      "source": "https://imobench.github.io/",
+      "splits": {
+        "smoke": "one public IMO-style problem",
+        "nightly": "difficulty-balanced IMO-Bench slice",
+        "release": "locked authorized IMO-Bench suite"
+      },
+      "task_format": "jsonl_math_competition_task"
+    },
+    {
+      "adapter_kind": "long_context_graph_state_reasoning",
+      "axis": "long_context",
+      "benchmark_id": "long_context_graphwalks_2026",
+      "context_windows": [
+        32768,
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "regenerate_graph_instances",
+        "hide_answer_nodes",
+        "record_context_length"
+      ],
+      "metrics": [
+        "answer_node_accuracy",
+        "multi_hop_state_tracking",
+        "position_robustness",
+        "tokens_per_second"
+      ],
+      "modalities": [
+        "text",
+        "graph",
+        "long_context"
+      ],
+      "release_gate": "long_context_release",
+      "source": "https://huggingface.co/datasets/openai/graphwalks",
+      "splits": {
+        "smoke": "one public graphwalk task",
+        "nightly": "length-balanced graphwalk slice",
+        "release": "locked authorized graphwalk suite"
+      },
+      "task_format": "jsonl_long_context_graph_task"
+    },
+    {
+      "adapter_kind": "multimodal_long_context_doc_vqa",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_mmlongbench_2026",
+      "context_windows": [
+        32768,
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_answer_keys",
+        "hash_image_lists",
+        "record_context_bundle_hash"
+      ],
+      "metrics": [
+        "visual_retrieval_accuracy",
+        "long_document_vqa_accuracy",
+        "needle_image_localization",
+        "answer_grounding"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "document",
+        "long_context"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/ZhaoweiWang/MMLongBench",
+      "splits": {
+        "smoke": "one public visual long-context item",
+        "nightly": "visual-RAG and PDF-summary balanced slice",
+        "release": "locked authorized MMLongBench suite"
+      },
+      "task_format": "jsonl_multimodal_long_context_item"
     }
   ],
   "contamination_controls": [
@@ -3906,7 +4092,10 @@
       "coding_ojbench_2026",
       "coding_swe_lancer_2026",
       "coding_nous_rlvr_coding_2026",
-      "coding_swe_rebench_v2_2026"
+      "coding_swe_rebench_v2_2026",
+      "coding_octocodingbench_2026",
+      "coding_gittaskbench_2026",
+      "coding_verisoftbench_2026"
     ],
     "deployment_performance_release": [
       "deployment_performance_2026",
@@ -3958,7 +4147,8 @@
       "long_context_cl_bench_2026",
       "long_context_loogle_v2_2026",
       "long_context_longmemeval_v2_2026",
-      "long_context_nolima_1m_2026"
+      "long_context_nolima_1m_2026",
+      "long_context_graphwalks_2026"
     ],
     "multimodal_understanding_release": [
       "multimodal_mmmu_pro_2026",
@@ -3985,7 +4175,8 @@
       "multimodal_video_mme_v2_grouped_2026",
       "multimodal_audiobench_mmau_2026",
       "multimodal_unim_any_to_any_2026",
-      "multimodal_audiomarathon_2026"
+      "multimodal_audiomarathon_2026",
+      "multimodal_mmlongbench_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",
@@ -3997,7 +4188,8 @@
       "reasoning_rlvr_linearity_math_2026",
       "reasoning_arc_agi3_interactive_2026",
       "reasoning_livebench_math_2026",
-      "reasoning_matharena_2026"
+      "reasoning_matharena_2026",
+      "reasoning_imo_bench_2026"
     ],
     "safety_security_release": [
       "safety_tool_security_2026",
@@ -4713,7 +4905,10 @@
       "https://multi-swe-bench.github.io/",
       "https://arxiv.org/abs/2512.17419",
       "https://openai.com/index/introducing-evmbench/",
-      "https://huggingface.co/datasets/nebius/SWE-rebench-V2"
+      "https://huggingface.co/datasets/nebius/SWE-rebench-V2",
+      "https://huggingface.co/datasets/MiniMaxAI/OctoCodingBench",
+      "https://huggingface.co/datasets/Nicole-Yi/GitTaskBench",
+      "https://huggingface.co/datasets/maxRyeery/VeriSoftBench"
     ],
     "deployment_quantization_2026": [
       "https://openreview.net/pdf/7d33913c9a4f47c8abb294d6beb85d30124747ca.pdf",
@@ -4745,7 +4940,8 @@
       "https://huggingface.co/papers/2602.03587",
       "https://github.com/princeton-pli/LongProc",
       "https://github.com/adobe-research/NoLiMa",
-      "https://huggingface.co/datasets/amodaresi/NoLiMa"
+      "https://huggingface.co/datasets/amodaresi/NoLiMa",
+      "https://huggingface.co/datasets/openai/graphwalks"
     ],
     "multimodal_understanding": [
       "https://github.com/MMMU-Benchmark/MMMU",
@@ -4759,7 +4955,8 @@
       "https://arxiv.org/abs/2505.16770",
       "https://machinelearning.apple.com/research/towards-better-instruction-following",
       "https://www.microsoft.com/en-us/research/publication/mmar-a-challenging-benchmark-for-deep-reasoning-in-speech-audio-music-and-their-mix/",
-      "https://huggingface.co/datasets/rl-research/multimodal-rewardbench-2"
+      "https://huggingface.co/datasets/rl-research/multimodal-rewardbench-2",
+      "https://huggingface.co/datasets/ZhaoweiWang/MMLongBench"
     ],
     "omni_eval_2026": [
       "https://arxiv.org/abs/2509.17765",
@@ -4787,7 +4984,8 @@
     ],
     "reasoning_2026": [
       "https://matharena.ai/",
-      "https://huggingface.co/MathArena"
+      "https://huggingface.co/MathArena",
+      "https://imobench.github.io/"
     ]
   },
   "storage": {

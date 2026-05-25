@@ -424,6 +424,92 @@ def test_materializer_normalizes_ttsds2_listening_rows() -> None:
     assert task["expected_artifact_kind"] == "audio_generation"
 
 
+def test_materializer_normalizes_next_wave_2026_aliases() -> None:
+    octo = materializer.normalize_task(
+        "coding_octocodingbench_2026",
+        {
+            "instance_id": "octo-1",
+            "user_query": "Update the CLI while following AGENTS.md.",
+            "checklist": ["tests pass"],
+            "system_prompt": "You are in a repo.",
+            "scaffold": {"files": ["AGENTS.md"]},
+            "workspace_abs_path": "/work/repo",
+        },
+        {"kind": "agent_tool", "source": "fixture"},
+        {"adapter_kind": "agent_tool"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    veri = materializer.normalize_task(
+        "coding_verisoftbench_2026",
+        {
+            "id": "veri-1",
+            "thm_stmt": "theorem add_zero (n : Nat) : n + 0 = n := by",
+            "ground_truth_proof": "simp",
+            "lean_root": "Mathlib",
+            "rel_path": "Demo.lean",
+            "imports": ["Mathlib"],
+        },
+        {"kind": "formal_verification", "source": "fixture"},
+        {"adapter_kind": "lean_formal_verification"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    imo = materializer.normalize_task(
+        "reasoning_imo_bench_2026",
+        {"Problem ID": "imo-1", "Problem": "Find all integers n such that n^2 = n.", "Short Answer": "0 and 1"},
+        {"kind": "math", "source": "fixture"},
+        {"adapter_kind": "math_reasoning"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    graph = materializer.normalize_task(
+        "long_context_graphwalks_2026",
+        {"prompt": "Walk the graph from A.", "answer_nodes": ["B", "C"], "problem_type": "walk", "date_added": "2026-05-01"},
+        {"kind": "long_context", "source": "fixture"},
+        {"adapter_kind": "long_context_graph_reasoning"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    mmlong = materializer.normalize_task(
+        "multimodal_mmlongbench_2026",
+        {
+            "id": "mmlong-1",
+            "question": "Which figure contains the answer?",
+            "answer": "figure 7",
+            "image_list": ["page7.png"],
+            "needle_image_list": ["needle.png"],
+            "ctxs": [{"text": "long doc"}],
+        },
+        {"kind": "multimodal_long_context", "source": "fixture"},
+        {"adapter_kind": "multimodal_long_context"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert octo is not None and octo["prompt"].startswith("Update the CLI")
+    assert octo["expected_tool_call"] == ["tests pass"]
+    assert octo["system_prompt"] == "You are in a repo."
+    assert veri is not None and veri["prompt"].startswith("theorem add_zero")
+    assert veri["answer"] == "simp"
+    assert veri["lean_root"] == "Mathlib"
+    assert imo is not None and imo["task_id"] == "imo-1" and imo["answer"] == "0 and 1"
+    assert graph is not None and graph["answer"] == ["B", "C"] and graph["problem_type"] == "walk"
+    assert mmlong is not None and mmlong["images"] == ["page7.png"]
+    assert mmlong["needle_image_list"] == ["needle.png"]
+    assert mmlong["ctxs"] == [{"text": "long doc"}]
+
+
 def test_materializer_tracks_2026_official_source_mirrors() -> None:
     required = {
         "agent_mcp_bench_2026",
@@ -440,7 +526,11 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "coding_swe_rebench_v2_2026",
         "coding_swe_polybench_2026",
         "coding_swe_smith_2026",
+        "coding_octocodingbench_2026",
+        "coding_gittaskbench_2026",
+        "coding_verisoftbench_2026",
         "reasoning_hle_rolling_2026",
+        "reasoning_imo_bench_2026",
         "reasoning_matharena_2026",
         "reasoning_rlvr_linearity_math_2026",
         "coding_nous_rlvr_coding_2026",
@@ -448,10 +538,12 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "coding_swe_bench_plus_2026",
         "long_context_helmet_longproc_2026",
         "long_context_longcodebench_2026",
+        "long_context_graphwalks_2026",
         "long_context_longproc_2026",
         "long_context_nolima_1m_2026",
         "multimodal_audiobench_mmau_2026",
         "multimodal_mmau_pro_2026",
+        "multimodal_mmlongbench_2026",
         "multimodal_audiomarathon_2026",
         "multimodal_mmar_audio_music_reasoning_2026",
         "multimodal_rewardbench2_2026",
@@ -478,6 +570,10 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     ttsds2 = materializer.KNOWN_BENCHMARKS["generation_ttsds2_2026"]["hf"][0]
     assert ttsds2["id"] == "ttsds/listening_test"
     assert ttsds2["splits"] == ["test"]
+    octo = materializer.KNOWN_BENCHMARKS["coding_octocodingbench_2026"]["hf"][0]
+    assert octo["id"] == "MiniMaxAI/OctoCodingBench"
+    graphwalks = materializer.KNOWN_BENCHMARKS["long_context_graphwalks_2026"]["hf"][0]
+    assert graphwalks["id"] == "openai/graphwalks"
 
 
 def test_audit_profile_reports_materializer_and_core25_gaps(tmp_path: Path) -> None:

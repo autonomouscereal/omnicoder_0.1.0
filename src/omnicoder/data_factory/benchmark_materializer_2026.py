@@ -174,6 +174,23 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/SWE-bench/SWE-smith.git",
         "kind": "swe",
     },
+    "coding_octocodingbench_2026": {
+        "source": "https://huggingface.co/datasets/MiniMaxAI/OctoCodingBench",
+        "hf": [{"id": "MiniMaxAI/OctoCodingBench", "splits": ["train"]}],
+        "kind": "agent_tool",
+        "splits": ["train"],
+    },
+    "coding_gittaskbench_2026": {
+        "source": "https://huggingface.co/datasets/Nicole-Yi/GitTaskBench",
+        "git": "https://huggingface.co/datasets/Nicole-Yi/GitTaskBench",
+        "kind": "coding",
+    },
+    "coding_verisoftbench_2026": {
+        "source": "https://huggingface.co/datasets/maxRyeery/VeriSoftBench",
+        "hf": [{"id": "maxRyeery/VeriSoftBench", "splits": ["train"]}],
+        "kind": "formal_verification",
+        "splits": ["train"],
+    },
     "coding_nous_rlvr_coding_2026": {
         "source": "https://huggingface.co/datasets/NousResearch/RLVR_Coding_Problems",
         "hf": ["NousResearch/RLVR_Coding_Problems"],
@@ -217,6 +234,11 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "kind": "math",
         "splits": ["train"],
     },
+    "reasoning_imo_bench_2026": {
+        "source": "https://imobench.github.io/",
+        "git": "https://github.com/google-deepmind/superhuman.git",
+        "kind": "math",
+    },
     "long_context_mrcr_2026": {
         "source": "https://huggingface.co/datasets/openai/mrcr",
         "hf": ["openai/mrcr"],
@@ -234,6 +256,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "hf": ["THUDM/LongBench-v2", "THUDM/LongBench"],
         "kind": "long_context",
         "splits": ["test", "validation", "dev"],
+    },
+    "long_context_graphwalks_2026": {
+        "source": "https://huggingface.co/datasets/openai/graphwalks",
+        "hf": [{"id": "openai/graphwalks", "splits": ["train"]}],
+        "kind": "long_context",
+        "splits": ["train"],
     },
     "long_context_longproc_2026": {
         "source": "https://github.com/princeton-pli/LongProc",
@@ -266,6 +294,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "hf": ["MMMU/MMMU_Pro"],
         "kind": "multimodal_mcq",
         "splits": ["test", "validation", "dev"],
+    },
+    "multimodal_mmlongbench_2026": {
+        "source": "https://huggingface.co/datasets/ZhaoweiWang/MMLongBench",
+        "hf": [{"id": "ZhaoweiWang/MMLongBench", "splits": ["test"]}],
+        "kind": "multimodal_long_context",
+        "splits": ["test"],
     },
     "multimodal_video_understanding_2026": {
         "source": "https://huggingface.co/datasets/MME-Benchmarks/Video-MME-v2",
@@ -1068,6 +1102,8 @@ def normalize_task(
         (
             "task_id",
             "TASK",
+            "Problem ID",
+            "Grading ID",
             "id",
             "question_id",
             "instance_id",
@@ -1090,7 +1126,11 @@ def normalize_task(
             "query",
             "prompt_text",
             "prompt_en",
+            "user_query",
             "problem",
+            "Problem",
+            "thm_stmt",
+            "target_theorem",
             "task",
             "input_prompt",
             "task_description",
@@ -1126,6 +1166,11 @@ def normalize_task(
             "output",
             "gold_answer",
             "gtfa_claims",
+            "ground_truth_proof",
+            "answer_nodes",
+            "Short Answer",
+            "Points",
+            "Reward",
             "value",
             "mos",
             "score",
@@ -1178,16 +1223,18 @@ def normalize_task(
         "video_path",
         "audio",
         "audio_path",
+        "image_list",
+        "needle_image_list",
         "subtitles",
         "subtitle",
     ):
         value = raw.get(media_key)
         if value not in (None, "", [], {}):
-            row[media_key] = make_jsonable(value)
+            row["images" if media_key == "image_list" else media_key] = make_jsonable(value)
 
     if any(token in kind for token in ("tool", "bfcl", "mcp")):
         tools = first_value(raw, ("tools", "enabled_tools", "functions", "tool_schema", "function", "apis", "mcp_servers", "server_name", "servers"))
-        expected = first_value(raw, ("expected_tool_call", "ground_truth", "gtfa_claims", "answer", "target", "output_format", "evaluators"))
+        expected = first_value(raw, ("expected_tool_call", "ground_truth", "gtfa_claims", "checklist", "answer", "target", "output_format", "evaluators"))
         if tools not in (None, "", [], {}):
             row["tools"] = normalize_tool_call(tools)
         if expected not in (None, "", [], {}):
@@ -1210,11 +1257,45 @@ def normalize_task(
             if value not in (None, "", [], {}):
                 row[key] = make_jsonable(value)
 
-    if any(token in kind for token in ("swe", "repo", "patch", "coding")):
-        for key in ("repo", "repo_name", "base_commit", "base_sha", "issue", "problem_statement", "test_commands", "tests", "entry_point"):
+    if any(token in kind for token in ("swe", "repo", "patch", "coding", "formal_verification")):
+        for key in (
+            "repo",
+            "repo_name",
+            "repositories",
+            "base_commit",
+            "base_sha",
+            "issue",
+            "problem_statement",
+            "test_commands",
+            "tests",
+            "entry_point",
+            "file_paths",
+            "prompt_file",
+            "lean_root",
+            "rel_path",
+            "imports",
+            "thm_stmt",
+            "target_theorem",
+            "ground_truth_proof",
+        ):
             value = raw.get(key)
             if value not in (None, "", [], {}):
                 row[key] = make_jsonable(value)
+
+    for key in (
+        "system_prompt",
+        "scaffold",
+        "workspace_abs_path",
+        "checklist",
+        "ctxs",
+        "positive_ctxs",
+        "problem_type",
+        "date_added",
+        "category",
+    ):
+        value = first_value(raw, (key,))
+        if value not in (None, "", [], {}):
+            row[key] = make_jsonable(value)
 
     if any(token in kind for token in ("terminal", "browser", "desktop")):
         for key in ("setup", "command", "commands", "oracle", "environment", "start_url", "sites", "workspace"):
