@@ -195,6 +195,34 @@ def test_profiles_include_ninth_wave_agentic_multimodal_generation_gates() -> No
     assert "generation_long_tts_eval_2026" in suite["release_gates"]["generation_release"]
 
 
+def test_suite_profile_includes_tenth_wave_curated_benchmark_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    expected = {
+        "agent_mcptoolbenchpp_2026": "agent_tool_release",
+        "agent_webbench_2026": "agent_tool_release",
+        "reasoning_maime2025_2026": "reasoning_release",
+        "long_context_sagascale_2026": "long_context_release",
+        "long_context_academiceval_2026": "long_context_release",
+        "multimodal_mpbench_2026": "multimodal_understanding_release",
+        "multimodal_cmi_bench_music_2026": "multimodal_understanding_release",
+        "multimodal_muse_music_2026": "multimodal_understanding_release",
+        "multimodal_rtv_bench_2026": "multimodal_understanding_release",
+        "multimodal_maverix_av_reasoning_2026": "multimodal_understanding_release",
+        "multimodal_river_video_interaction_2026": "multimodal_understanding_release",
+    }
+    for adapter_id, gate in expected.items():
+        assert adapter_id in adapters
+        assert adapter_id in suite["release_gates"][gate]
+
+    assert adapters["agent_mcptoolbenchpp_2026"]["source"] == "https://huggingface.co/MCPToolBench"
+    assert adapters["long_context_sagascale_2026"]["context_windows"][-1] == 1048576
+    assert adapters["multimodal_rtv_bench_2026"]["adapter_kind"] == "real_time_video_multitimestamp_eval"
+    assert adapters["multimodal_river_video_interaction_2026"]["source"] == "https://github.com/OpenGVLab/RIVER"
+    assert adapters["multimodal_cmi_bench_music_2026"]["modalities"] == ["audio", "music", "text"]
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")

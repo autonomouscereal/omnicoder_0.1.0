@@ -175,6 +175,13 @@ mix:
   TheAgentCompany, AudioMarathon, Audio-Alpaca, OpenAudioBench, and
   VideoRewardBench. These are tagged as
   `eighth_wave_agentic_curation_training_2026_05_24`.
+- Tenth-wave May 25, 2026 additions add MCPToolBench++ Preview, WebBench,
+  mAIME2025, MMLongBench, NoLiMa, LongCodeBench, SagaScale, AcademicEval,
+  FineWeb2, Common Pile v0.1, LEMAS, Emilia, AudioBench, MMAU-Pro, MMAR,
+  CMI-Bench, MUSE, MPBench, RTV-Bench, and RIVER Bench. These are tagged as
+  `tenth_wave_curated_benchmarks_2026_05_25`; FineWeb2 and Common Pile are
+  train-eligible, while benchmark and speech-media rows stay eval-only or
+  research-internal until licensing and holdout checks pass.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for

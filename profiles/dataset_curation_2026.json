@@ -22269,10 +22269,840 @@
         "target_modality": "text",
         "url": "https://huggingface.co/datasets/Jackrong/DeepSeek-V4-Distill-8000x",
         "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "mcp",
+          "tool_selection",
+          "schema_grounding",
+          "benchmark_holdout"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "question",
+            "instruction",
+            "tools"
+          ],
+          "target": [
+            "answer",
+            "tool_calls",
+            "trajectory"
+          ]
+        },
+        "gated": false,
+        "hf_id": "MCPToolBench/MCPToolBenchPP",
+        "last_verified": "2026-05-25",
+        "license": "license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "MCPToolBench++ Preview",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train",
+          "test"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/MCPToolBench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "web_browsing_agent",
+          "live_site_navigation",
+          "browser_grounding",
+          "benchmark_holdout"
+        ],
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "task",
+            "instruction",
+            "website"
+          ],
+          "target": [
+            "answer",
+            "rubric",
+            "state"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "benchmark terms review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 512,
+        "name": "WebBench AI Web Browsing Benchmark",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "tool",
+        "url": "https://webbench.ai/",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "math",
+          "aime_2025",
+          "multilingual",
+          "benchmark_holdout"
+        ],
+        "family": "math_reasoning",
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "prompt": [
+            "question",
+            "language",
+            "subset"
+          ],
+          "target": [
+            "solution",
+            "reviewer_notes"
+          ]
+        },
+        "gated": false,
+        "hf_id": "LumiOpen/mAIME2025",
+        "last_verified": "2026-05-25",
+        "license": "MIT dataset metadata; upstream AIME problem terms apply",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 360,
+        "name": "mAIME2025",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "text",
+        "url": "https://huggingface.co/datasets/LumiOpen/mAIME2025",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "long_context",
+          "vision_language",
+          "document_reasoning",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "media": [
+            "image",
+            "images",
+            "document"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "context"
+          ],
+          "target": [
+            "answer",
+            "evidence",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "hf_id": "ZhaoweiWang/MMLongBench",
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "MMLongBench",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "multimodal",
+        "url": "https://huggingface.co/datasets/ZhaoweiWang/MMLongBench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "long_context",
+          "non_literal_retrieval",
+          "needle_reasoning",
+          "benchmark_holdout"
+        ],
+        "family": "long_context",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "prompt": [
+            "question",
+            "haystack",
+            "context"
+          ],
+          "target": [
+            "answer",
+            "needle",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0 code; benchmark data holdout",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "NoLiMa",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "long_context",
+        "url": "https://github.com/adobe-research/NoLiMa",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "long_context",
+          "code_comprehension",
+          "repo_repair",
+          "benchmark_holdout"
+        ],
+        "family": "coding_agentic",
+        "field_map": {
+          "id": [
+            "id",
+            "instance_id"
+          ],
+          "prompt": [
+            "issue",
+            "repo",
+            "context"
+          ],
+          "target": [
+            "answer",
+            "patch",
+            "tests"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 512,
+        "name": "LongCodeBench",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "code",
+        "url": "https://huggingface.co/papers/2505.07897",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "long_context",
+          "novel_reasoning",
+          "bilingual",
+          "benchmark_holdout"
+        ],
+        "family": "long_context",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "prompt": [
+            "question",
+            "context",
+            "novel"
+          ],
+          "target": [
+            "answer",
+            "evidence",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 512,
+        "name": "SagaScale",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "long_context",
+        "url": "https://arxiv.org/abs/2601.09723",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "long_context",
+          "academic_writing",
+          "live_eval",
+          "benchmark_holdout"
+        ],
+        "family": "long_context",
+        "field_map": {
+          "id": [
+            "id",
+            "paper_id"
+          ],
+          "prompt": [
+            "paper",
+            "context",
+            "task"
+          ],
+          "target": [
+            "title",
+            "abstract",
+            "introduction",
+            "related_work"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "TMLR paper/code; live arXiv task terms review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 512,
+        "name": "AcademicEval",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "live"
+        ],
+        "target_modality": "long_context",
+        "url": "https://github.com/ulab-uiuc/AcademicEval",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "multilingual_pretraining",
+          "web_text",
+          "language_balance",
+          "dedupe"
+        ],
+        "family": "text_pretraining",
+        "field_map": {
+          "id": [
+            "id",
+            "doc_id",
+            "url"
+          ],
+          "prompt": [
+            "text",
+            "content"
+          ],
+          "target": [
+            "text",
+            "content"
+          ]
+        },
+        "gated": false,
+        "hf_id": "HuggingFaceFW/fineweb-2",
+        "last_verified": "2026-05-25",
+        "license": "ODC-By 1.0",
+        "license_tier": "attribution",
+        "max_records": 8192,
+        "name": "FineWeb2",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "text",
+        "url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "open_license_pretraining",
+          "public_domain",
+          "dedupe",
+          "domain_balance"
+        ],
+        "family": "text_pretraining",
+        "field_map": {
+          "id": [
+            "id",
+            "doc_id",
+            "source"
+          ],
+          "prompt": [
+            "text",
+            "content"
+          ],
+          "target": [
+            "text",
+            "content"
+          ]
+        },
+        "gated": false,
+        "hf_id": "common-pile",
+        "last_verified": "2026-05-25",
+        "license": "public domain and openly licensed source mixture",
+        "license_tier": "open_license_mixture",
+        "max_records": 8192,
+        "name": "Common Pile v0.1",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "text",
+        "url": "https://huggingface.co/common-pile",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "speech",
+          "tts",
+          "word_timestamps",
+          "multilingual"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "key",
+            "id"
+          ],
+          "media": [
+            "wav",
+            "audio"
+          ],
+          "prompt": [
+            "txt",
+            "text",
+            "align"
+          ],
+          "target": [
+            "wav",
+            "align",
+            "duration"
+          ]
+        },
+        "gated": false,
+        "hf_id": "LEMAS-Project/LEMAS-Dataset-train",
+        "last_verified": "2026-05-25",
+        "license": "license review required",
+        "license_tier": "source_license_review",
+        "max_records": 2048,
+        "name": "LEMAS Dataset Train",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/LEMAS-Project/LEMAS-Dataset-train",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "speech",
+          "tts",
+          "spontaneous_speech",
+          "multilingual"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "audio_id"
+          ],
+          "media": [
+            "audio",
+            "path"
+          ],
+          "prompt": [
+            "text",
+            "transcript"
+          ],
+          "target": [
+            "audio",
+            "duration",
+            "speaker"
+          ]
+        },
+        "gated": false,
+        "hf_id": "amphion/Emilia-Dataset",
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-NC",
+        "license_tier": "non_commercial_review",
+        "max_records": 2048,
+        "name": "Emilia Dataset",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/amphion/Emilia-Dataset",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "audio_reasoning",
+          "speech",
+          "music",
+          "benchmark_holdout"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "media": [
+            "audio",
+            "audio_path"
+          ],
+          "prompt": [
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 2048,
+        "name": "AudioBench",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "audio",
+        "url": "https://github.com/AudioLLMs/AudioBench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "audio_reasoning",
+          "speech",
+          "sound",
+          "music",
+          "benchmark_holdout"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "media": [
+            "audio",
+            "audio_path"
+          ],
+          "prompt": [
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "hf_id": "gamma-lab-umd/MMAU-Pro",
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 2048,
+        "name": "MMAU-Pro",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "audio",
+        "url": "https://huggingface.co/datasets/gamma-lab-umd/MMAU-Pro",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "audio_reasoning",
+          "speech_audio_music_mix",
+          "deep_reasoning",
+          "benchmark_holdout"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "media": [
+            "audio",
+            "audio_path"
+          ],
+          "prompt": [
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "MMAR",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "audio",
+        "url": "https://github.com/ddlBoJack/MMAR",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "music_instruction_following",
+          "mir",
+          "audio_text_llm",
+          "benchmark_holdout"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "media": [
+            "audio",
+            "music"
+          ],
+          "prompt": [
+            "instruction",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "metric",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "CMI-Bench",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "music",
+        "url": "https://arxiv.org/abs/2506.12285",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "music_perception",
+          "auditory_relational_reasoning",
+          "audio_llm",
+          "benchmark_holdout"
+        ],
+        "family": "audio_music_speech",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "media": [
+            "audio",
+            "music"
+          ],
+          "prompt": [
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "choices",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "MUSE Music Benchmark",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "music",
+        "url": "https://arxiv.org/abs/2510.19055",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "multimodal_process_reward",
+          "step_correctness",
+          "reasoning_search",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "media": [
+            "image",
+            "diagram"
+          ],
+          "prompt": [
+            "question",
+            "reasoning_steps",
+            "prompt"
+          ],
+          "target": [
+            "label",
+            "answer",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-SA project page; benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "MPBench",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "multimodal",
+        "url": "https://mpbench.github.io/",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "real_time_video",
+          "multi_timestamp_qa",
+          "continuous_perception",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "video_id"
+          ],
+          "media": [
+            "video",
+            "timestamp"
+          ],
+          "prompt": [
+            "question",
+            "timestamp",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "metadata",
+            "category"
+          ]
+        },
+        "gated": false,
+        "hf_id": "RTVBench/RTV-Bench",
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "RTV-Bench",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "video",
+        "url": "https://github.com/LJungang/RTV-Bench",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "real_time_video",
+          "interactive_video_understanding",
+          "online_perception",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "video_id"
+          ],
+          "media": [
+            "video",
+            "stream",
+            "frames"
+          ],
+          "prompt": [
+            "question",
+            "instruction",
+            "interaction"
+          ],
+          "target": [
+            "answer",
+            "events",
+            "metadata"
+          ]
+        },
+        "gated": false,
+        "last_verified": "2026-05-25",
+        "license": "benchmark license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1024,
+        "name": "RIVER Bench",
+        "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "video",
+        "url": "https://github.com/OpenGVLab/RIVER",
+        "use_policy": "eval_only"
       }
     ],
     "enabled": true,
-    "last_updated": "2026-05-24",
+    "last_updated": "2026-05-25",
     "out_dir": "weights/external_datasets_2026/latest",
     "policy": "download when license and split policy permit; otherwise create internal distillation seeds and keep official eval rows quarantined",
     "required_real_family_min_records": {

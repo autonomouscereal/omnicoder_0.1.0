@@ -201,6 +201,16 @@ Current high-value registry families:
   browser, GUI/computer-use, long-context research, audio, and video-reward
   coverage while keeping benchmark answers and successful eval trajectories out
   of training.
+- Tenth-wave May 25, 2026 additions: MCPToolBench++ Preview, WebBench,
+  mAIME2025, MMLongBench, NoLiMa, LongCodeBench, SagaScale, AcademicEval,
+  FineWeb2, Common Pile v0.1, LEMAS, Emilia, AudioBench, MMAU-Pro, MMAR,
+  CMI-Bench, MUSE, MPBench, RTV-Bench, and RIVER Bench. The wave is tagged
+  `tenth_wave_curated_benchmarks_2026_05_25`. FineWeb2 and Common Pile v0.1
+  are train-eligible text pretraining sources with explicit attribution/open
+  license tiers. LEMAS and Emilia stay research-internal until speech media
+  rights and non-commercial constraints are reviewed. The rest are eval-only
+  or benchmark-holdout rows so answers, rubrics, tool traces, and media assets
+  cannot leak into the 20B training lane.
 
 `mixture_controller_2026` turns curation metadata into scheduler inputs for the
 training profile. It caps synthetic ratios, includes provenance/license/quality
@@ -220,6 +230,7 @@ dataset-expansion-2026 `
   --include-wave sixth_wave_formal_code_media_2026_05_24 `
   --include-wave seventh_wave_agentic_math_code_omni_2026_05_24 `
   --include-wave eighth_wave_agentic_curation_training_2026_05_24 `
+  --include-wave tenth_wave_curated_benchmarks_2026_05_25 `
   build
 ```
 

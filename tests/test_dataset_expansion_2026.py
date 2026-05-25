@@ -1180,6 +1180,51 @@ def test_repo_dataset_registry_covers_ninth_wave_agentic_preference_sources() ->
     assert expansion.source_use_bucket(by_name["Agent Reward Bench"]) != "train"
 
 
+def test_repo_dataset_registry_covers_tenth_wave_curated_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "tenth_wave_curated_benchmarks_2026_05_25"
+
+    expected_policy = {
+        "MCPToolBench++ Preview": "eval_only",
+        "WebBench AI Web Browsing Benchmark": "eval_only",
+        "mAIME2025": "eval_only",
+        "MMLongBench": "eval_only",
+        "NoLiMa": "eval_only",
+        "LongCodeBench": "eval_only",
+        "SagaScale": "eval_only",
+        "AcademicEval": "eval_only",
+        "FineWeb2": "train",
+        "Common Pile v0.1": "train",
+        "LEMAS Dataset Train": "research_internal",
+        "Emilia Dataset": "research_internal",
+        "AudioBench": "eval_only",
+        "MMAU-Pro": "eval_only",
+        "MMAR": "eval_only",
+        "CMI-Bench": "eval_only",
+        "MUSE Music Benchmark": "eval_only",
+        "MPBench": "eval_only",
+        "RTV-Bench": "eval_only",
+        "RIVER Bench": "eval_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["use_policy"] == policy
+        assert by_name[name]["registry_wave"] == wave
+
+    assert by_name["FineWeb2"]["license_tier"] == "attribution"
+    assert by_name["Common Pile v0.1"]["license_tier"] == "open_license_mixture"
+    assert by_name["LEMAS Dataset Train"]["hf_id"] == "LEMAS-Project/LEMAS-Dataset-train"
+    assert by_name["MMAU-Pro"]["hf_id"] == "gamma-lab-umd/MMAU-Pro"
+    assert by_name["RTV-Bench"]["target_modality"] == "video"
+    assert by_name["RIVER Bench"]["source_year"] == 2026
+    assert expansion.source_use_bucket(by_name["FineWeb2"]) == "train"
+    assert expansion.source_use_bucket(by_name["Common Pile v0.1"]) == "train"
+    assert expansion.source_use_bucket(by_name["MCPToolBench++ Preview"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["LEMAS Dataset Train"]) == "research_internal"
+
+
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))

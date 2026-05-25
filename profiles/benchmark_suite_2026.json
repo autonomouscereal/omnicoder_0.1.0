@@ -4396,6 +4396,336 @@
         "release": "locked authorized NV-Bench suite"
       },
       "task_format": "jsonl_nonverbal_tts_prompt"
+    },
+    {
+      "adapter_kind": "mcp_tool_benchmark_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_mcptoolbenchpp_2026",
+      "holdout_policy": [
+        "hide_expected_tool_sequences",
+        "reset_mcp_server_state",
+        "quarantine_successful_tool_traces"
+      ],
+      "metrics": [
+        "tool_selection_accuracy",
+        "argument_f1",
+        "server_state_success",
+        "final_answer_correctness"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "mcp_server_state"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/MCPToolBench",
+      "splits": {
+        "smoke": "one MCPToolBench++ preview fixture",
+        "nightly": "tool-category balanced MCPToolBench++ slice",
+        "release": "locked authorized MCPToolBench++ suite"
+      },
+      "task_format": "jsonl_mcp_tool_task"
+    },
+    {
+      "adapter_kind": "live_web_browsing_agent_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_webbench_2026",
+      "holdout_policy": [
+        "record_live_site_snapshot",
+        "hide_judge_rubrics",
+        "quarantine_successful_browser_traces"
+      ],
+      "metrics": [
+        "task_success",
+        "browser_state_match",
+        "citation_grounding",
+        "tool_step_efficiency"
+      ],
+      "modalities": [
+        "text",
+        "browser",
+        "tool"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://webbench.ai/",
+      "splits": {
+        "smoke": "one authorized WebBench web task",
+        "nightly": "domain-balanced WebBench public/dev slice",
+        "release": "locked authorized WebBench suite"
+      },
+      "task_format": "jsonl_browser_agent_task"
+    },
+    {
+      "adapter_kind": "multilingual_aime_math_eval",
+      "axis": "reasoning",
+      "benchmark_id": "reasoning_maime2025_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "record_language",
+        "block_train_overlap_with_aime_2025"
+      ],
+      "metrics": [
+        "exact_accuracy",
+        "language_average_accuracy",
+        "format_validity",
+        "abstention_quality"
+      ],
+      "modalities": [
+        "text",
+        "math",
+        "multilingual"
+      ],
+      "release_gate": "reasoning_release",
+      "source": "https://huggingface.co/datasets/LumiOpen/mAIME2025",
+      "splits": {
+        "smoke": "one multilingual AIME 2025 item",
+        "nightly": "language-balanced mAIME2025 slice",
+        "release": "locked mAIME2025 suite"
+      },
+      "task_format": "jsonl_math_item"
+    },
+    {
+      "adapter_kind": "long_context_novel_reasoning_eval",
+      "axis": "long_context",
+      "benchmark_id": "long_context_sagascale_2026",
+      "context_windows": [
+        131072,
+        262144,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_answer_keys",
+        "hash_novel_contexts",
+        "record_language_and_context_length"
+      ],
+      "metrics": [
+        "long_context_accuracy",
+        "multi_hop_reasoning_accuracy",
+        "evidence_grounding",
+        "position_robustness"
+      ],
+      "modalities": [
+        "text",
+        "long_context"
+      ],
+      "release_gate": "long_context_release",
+      "source": "https://arxiv.org/abs/2601.09723",
+      "splits": {
+        "smoke": "one public-domain novel context probe",
+        "nightly": "English/Chinese SagaScale slice",
+        "release": "locked authorized SagaScale suite"
+      },
+      "task_format": "jsonl_long_context_reasoning"
+    },
+    {
+      "adapter_kind": "live_academic_long_context_generation_eval",
+      "axis": "long_context",
+      "benchmark_id": "long_context_academiceval_2026",
+      "context_windows": [
+        32768,
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "use_post_cutoff_arxiv_snapshot",
+        "hide_target_sections",
+        "record_live_eval_date"
+      ],
+      "metrics": [
+        "rouge_l",
+        "bert_score",
+        "section_factuality",
+        "fewshot_context_robustness"
+      ],
+      "modalities": [
+        "text",
+        "long_context",
+        "papers"
+      ],
+      "release_gate": "long_context_release",
+      "source": "https://github.com/ulab-uiuc/AcademicEval",
+      "splits": {
+        "smoke": "one live arXiv title/abstract task",
+        "nightly": "fresh arXiv paper slice",
+        "release": "locked live AcademicEval snapshot"
+      },
+      "task_format": "jsonl_academic_generation_task"
+    },
+    {
+      "adapter_kind": "multimodal_process_reward_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_mpbench_2026",
+      "holdout_policy": [
+        "hide_step_labels",
+        "hide_answer_aggregation_keys",
+        "hash_media_assets"
+      ],
+      "metrics": [
+        "step_correctness_accuracy",
+        "answer_aggregation_accuracy",
+        "reasoning_search_success",
+        "process_reward_calibration"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "diagram"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://mpbench.github.io/",
+      "splits": {
+        "smoke": "one multimodal process-error item",
+        "nightly": "paradigm-balanced MPBench slice",
+        "release": "locked authorized MPBench suite"
+      },
+      "task_format": "jsonl_multimodal_process_item"
+    },
+    {
+      "adapter_kind": "music_instruction_following_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_cmi_bench_music_2026",
+      "holdout_policy": [
+        "hide_answers_or_metrics",
+        "hash_audio_assets",
+        "record_mir_task_category"
+      ],
+      "metrics": [
+        "music_instruction_accuracy",
+        "mir_metric_score",
+        "captioning_score",
+        "beat_tracking_score"
+      ],
+      "modalities": [
+        "audio",
+        "music",
+        "text"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://arxiv.org/abs/2506.12285",
+      "splits": {
+        "smoke": "one music instruction-following item",
+        "nightly": "MIR task-balanced CMI-Bench slice",
+        "release": "locked authorized CMI-Bench suite"
+      },
+      "task_format": "jsonl_music_instruction_item"
+    },
+    {
+      "adapter_kind": "music_perception_reasoning_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_muse_music_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_audio_assets",
+        "record_task_family"
+      ],
+      "metrics": [
+        "music_perception_accuracy",
+        "auditory_relation_accuracy",
+        "human_gap",
+        "cot_delta"
+      ],
+      "modalities": [
+        "audio",
+        "music",
+        "text"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://arxiv.org/abs/2510.19055",
+      "splits": {
+        "smoke": "one MUSE music-perception item",
+        "nightly": "task-balanced MUSE slice",
+        "release": "locked authorized MUSE suite"
+      },
+      "task_format": "jsonl_music_reasoning_item"
+    },
+    {
+      "adapter_kind": "real_time_video_multitimestamp_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_rtv_bench_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_video_assets",
+        "record_timestamp_query_groups"
+      ],
+      "metrics": [
+        "mtqa_accuracy",
+        "continuous_perception_score",
+        "temporal_reasoning_score",
+        "frame_latency_ms"
+      ],
+      "modalities": [
+        "video",
+        "audio",
+        "text"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://github.com/LJungang/RTV-Bench",
+      "splits": {
+        "smoke": "one multi-timestamp video QA item",
+        "nightly": "domain-balanced RTV-Bench slice",
+        "release": "locked authorized RTV-Bench suite"
+      },
+      "task_format": "jsonl_realtime_video_qa"
+    },
+    {
+      "adapter_kind": "audio_visual_reasoning_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_maverix_av_reasoning_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_audio_video_assets",
+        "record_subtitle_condition"
+      ],
+      "metrics": [
+        "audio_visual_reasoning_accuracy",
+        "audio_only_delta",
+        "video_only_delta",
+        "subtitle_dependence_delta"
+      ],
+      "modalities": [
+        "video",
+        "audio",
+        "subtitles",
+        "text"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://maverix-benchmark.github.io/",
+      "splits": {
+        "smoke": "one MAVERIX audio-video reasoning item",
+        "nightly": "subtitle/audio/video balanced MAVERIX slice",
+        "release": "locked authorized MAVERIX suite"
+      },
+      "task_format": "jsonl_audio_visual_reasoning_item"
+    },
+    {
+      "adapter_kind": "real_time_video_interaction_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_river_video_interaction_2026",
+      "holdout_policy": [
+        "hide_answers",
+        "hash_video_streams",
+        "record_interaction_timeline"
+      ],
+      "metrics": [
+        "online_video_accuracy",
+        "interaction_success",
+        "event_grounding",
+        "latency_adjusted_score"
+      ],
+      "modalities": [
+        "video",
+        "audio",
+        "text",
+        "interaction"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://github.com/OpenGVLab/RIVER",
+      "splits": {
+        "smoke": "one RIVER real-time interaction item",
+        "nightly": "category-balanced RIVER public/dev slice",
+        "release": "locked authorized RIVER Bench suite"
+      },
+      "task_format": "jsonl_realtime_video_interaction"
     }
   ],
   "contamination_controls": [
@@ -4475,7 +4805,9 @@
       "agent_theagentcompany_enterprise_2026",
       "agent_clawbench_browser_2026",
       "agent_agencybench_2026",
-      "agent_locobench_agent_2026"
+      "agent_locobench_agent_2026",
+      "agent_mcptoolbenchpp_2026",
+      "agent_webbench_2026"
     ],
     "coding_release": [
       "coding_swe_bench_pro_2026",
@@ -4553,7 +4885,9 @@
       "long_context_loogle_v2_2026",
       "long_context_longmemeval_v2_2026",
       "long_context_nolima_1m_2026",
-      "long_context_graphwalks_2026"
+      "long_context_graphwalks_2026",
+      "long_context_sagascale_2026",
+      "long_context_academiceval_2026"
     ],
     "multimodal_understanding_release": [
       "multimodal_mmmu_pro_2026",
@@ -4586,7 +4920,13 @@
       "multimodal_video_morse500_2026",
       "multimodal_sonic_o1_2026",
       "multimodal_mme_unify_2026",
-      "multimodal_longspeech_2026"
+      "multimodal_longspeech_2026",
+      "multimodal_mpbench_2026",
+      "multimodal_cmi_bench_music_2026",
+      "multimodal_muse_music_2026",
+      "multimodal_rtv_bench_2026",
+      "multimodal_maverix_av_reasoning_2026",
+      "multimodal_river_video_interaction_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",
@@ -4599,7 +4939,8 @@
       "reasoning_arc_agi3_interactive_2026",
       "reasoning_livebench_math_2026",
       "reasoning_matharena_2026",
-      "reasoning_imo_bench_2026"
+      "reasoning_imo_bench_2026",
+      "reasoning_maime2025_2026"
     ],
     "safety_security_release": [
       "safety_tool_security_2026",
@@ -5431,5 +5772,5 @@
     "safety_tool_security",
     "deployment_performance"
   ],
-  "version": "2026-05-24"
+  "version": "2026-05-25"
 }
