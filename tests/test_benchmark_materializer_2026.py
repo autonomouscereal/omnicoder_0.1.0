@@ -304,6 +304,143 @@ def test_materializer_reads_agent_company_scenarios_with_task_prompt(tmp_path: P
     assert task["checkpoints"] == "- feedback collected"
 
 
+def test_materializer_reads_state_bench_train_trajectories(tmp_path: Path) -> None:
+    task_file = (
+        tmp_path
+        / "STATE-Bench"
+        / "datasets"
+        / "train_task_trajectories"
+        / "customer_support"
+        / "100-challenge_warranty_maxed_return_option.json"
+    )
+    _write_json(
+        task_file,
+        {
+            "conversation": [
+                {"role": "system", "content": "You are a customer service agent."},
+                {"role": "user", "content": "My headphones are broken again. Can you fix them?"},
+                {
+                    "role": "assistant",
+                    "content": "I checked the order and can offer a return.",
+                    "tool_calls": [
+                        {
+                            "name": "get_order",
+                            "arguments": {"order_id": "ORD-7113"},
+                            "result": {"status": "delivered"},
+                        }
+                    ],
+                },
+                {"role": "user", "content": "Yes, process the return. [TASK_DONE]"},
+                {
+                    "role": "assistant",
+                    "content": "The return and refund are processed.",
+                    "tool_calls": [
+                        {
+                            "name": "process_return",
+                            "arguments": {"item_id": "ITEM-10141", "confirm": True},
+                            "result": {"status": "returned"},
+                        }
+                    ],
+                },
+            ]
+        },
+    )
+
+    rows, errors = materializer.scan_local_source(tmp_path / "STATE-Bench", 8)
+    task = materializer.normalize_task(
+        "agent_state_bench_2026",
+        rows[0],
+        {"kind": "agent_tool", "source": "fixture"},
+        {"adapter_kind": "stateful_enterprise_memory_agent_eval"},
+        {},
+        "public-dev",
+        str(tmp_path / "STATE-Bench"),
+        0,
+    )
+
+    assert errors == []
+    assert task is not None
+    assert task["task_id"] == "100-challenge_warranty_maxed_return_option"
+    assert task["prompt"].startswith("My headphones")
+    assert task["answer"] == "The return and refund are processed."
+    assert task["domain"] == "customer_support"
+    assert task["state_bench_split"] == "train_task_trajectories"
+    assert task["tool_call_count"] == 2
+    assert task["tools"] == [{"name": "get_order"}, {"name": "process_return"}]
+    assert task["expected_tool_call"][1]["name"] == "process_return"
+    assert len(task["conversation"]) == 5
+
+
+def test_materializer_prefers_state_bench_task_definitions_with_reference_trajectory(tmp_path: Path) -> None:
+    task_id = "1-cancel_economy_domestic"
+    root = tmp_path / "STATE-Bench"
+    _write_json(
+        root / "state_bench" / "domains" / "travel" / "splits" / "train_test.json",
+        {"splits": {"train": [task_id], "test": ["5-cancel_airline_cancelled"]}},
+    )
+    _write_json(
+        root / "state_bench" / "domains" / "travel" / "tasks" / f"{task_id}.json",
+        {
+            "task_id": task_id,
+            "user_id": "user_002",
+            "now": "2026-06-15T10:00:00",
+            "opening_message": "Hi, I need to cancel my upcoming flight to Atlanta.",
+            "user_simulator": {"task_rules": ["End with [TASK_DONE]."]},
+            "task_summary": "Cancel a hidden connecting itinerary.",
+            "task_requirements": [{"id": "hidden_connection", "kind": "must"}],
+            "task_type": "cancellation",
+            "task_env_path": "state_bench/domains/travel/task_envs/1-cancel_economy_domestic.json",
+            "state_requirements": [{"entity_type": "bookings", "record_key": "BK-1000", "field": "status", "expected_value": "cancelled"}],
+        },
+    )
+    _write_json(
+        root / "datasets" / "train_task_trajectories" / "travel" / f"{task_id}.json",
+        {
+            "conversation": [
+                {"role": "system", "content": "You are a travel agent."},
+                {"role": "user", "content": "Hi, I need to cancel my upcoming flight to Atlanta."},
+                {
+                    "role": "assistant",
+                    "content": "I found the connected trip and cancelled both legs.",
+                    "tool_calls": [
+                        {
+                            "name": "cancel_booking",
+                            "arguments": {"booking_id": "BK-1000", "confirm": True},
+                            "result": {"status": "cancelled"},
+                        }
+                    ],
+                },
+            ]
+        },
+    )
+
+    rows, errors = materializer.scan_local_source(root, 8)
+    task = materializer.normalize_task(
+        "agent_state_bench_2026",
+        rows[0],
+        {"kind": "agent_tool", "source": "fixture"},
+        {"adapter_kind": "stateful_enterprise_memory_agent_eval"},
+        {},
+        "public-dev",
+        str(root),
+        0,
+    )
+
+    assert errors == []
+    assert len(rows) == 1
+    assert task is not None
+    assert task["task_id"] == task_id
+    assert task["prompt"] == "Hi, I need to cancel my upcoming flight to Atlanta."
+    assert task["domain"] == "travel"
+    assert task["split"] == "train"
+    assert task["task_summary"] == "Cancel a hidden connecting itinerary."
+    assert task["task_requirements"] == [{"id": "hidden_connection", "kind": "must"}]
+    assert task["state_requirements"][0]["expected_value"] == "cancelled"
+    assert task["scoring"]["kind"] == "state_bench"
+    assert task["reference_tool_calls"][0]["name"] == "cancel_booking"
+    assert task["answer"] == "I found the connected trip and cancelled both legs."
+
+
 def test_materializer_normalizes_long_context_prompt_aliases() -> None:
     task = materializer.normalize_task(
         "long_context_longproc_2026",

@@ -148,6 +148,12 @@ source-distributed multimodal memory. HF materialization now disables image,
 audio, and video decoding where the `datasets` feature type supports it, so
 public-dev benchmark rows can be extracted on curation sidecars without
 requiring media codecs just to read task metadata.
+For STATE-Bench specifically, the task contract uses
+`state_bench/domains/*/tasks/*.json` as the canonical source. The materializer
+keeps split labels, opening messages, task summaries, user simulator rules,
+state and task requirements, and the benchmark scoring contract; matching
+`datasets/train_task_trajectories/*/*.json` files are attached as public-dev
+reference trajectories only when they exist.
 For SMMBench specifically, the task contract uses HF raw
 `Samples/cluster_*/QA_sample.json` files pinned to revision
 `d19ef39f8b73cea533ad34532c6ba9a70637ea25`, with the GitHub mirror as

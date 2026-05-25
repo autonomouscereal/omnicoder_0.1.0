@@ -1218,6 +1218,140 @@ def read_agent_company_scenario_rows(path: Path, limit: int) -> list[dict[str, A
     return rows
 
 
+def state_bench_conversation_summary(conversation: Any) -> dict[str, Any]:
+    if not isinstance(conversation, list):
+        return {}
+    messages = [item for item in conversation if isinstance(item, dict)]
+    if not messages:
+        return {}
+
+    system_prompt = ""
+    user_turns: list[str] = []
+    assistant_turns: list[str] = []
+    tool_trace: list[dict[str, Any]] = []
+    tool_names: list[str] = []
+    for turn_index, message in enumerate(messages):
+        role = str(message.get("role") or "").strip()
+        content = message.get("content")
+        if role == "system" and not system_prompt and isinstance(content, str):
+            system_prompt = content.strip()
+        elif role == "user" and isinstance(content, str):
+            user_turns.append(content.strip())
+        elif role == "assistant" and isinstance(content, str):
+            assistant_turns.append(content.strip())
+        calls = message.get("tool_calls")
+        if not isinstance(calls, list):
+            continue
+        for call_index, call in enumerate(calls):
+            if not isinstance(call, dict):
+                continue
+            name = str(call.get("name") or call.get("tool_name") or "").strip()
+            if name and name not in tool_names:
+                tool_names.append(name)
+            tool_trace.append(
+                {
+                    "turn_index": turn_index,
+                    "call_index": call_index,
+                    "name": name,
+                    "arguments": make_jsonable(call.get("arguments")),
+                    "result": make_jsonable(call.get("result")),
+                }
+            )
+
+    user_goal = next((turn for turn in user_turns if "[TASK_DONE]" not in turn), user_turns[0] if user_turns else "")
+    final_answer = assistant_turns[-1] if assistant_turns else ""
+    return {
+        "system_prompt": system_prompt,
+        "user_goal": user_goal,
+        "final_answer": final_answer,
+        "conversation": make_jsonable(messages),
+        "trajectory_turns": len(messages),
+        "tool_trace": tool_trace,
+        "tool_call_count": len(tool_trace),
+        "tools": [{"name": name} for name in tool_names],
+    }
+
+
+def read_state_bench_trajectory_row(path: Path) -> dict[str, Any]:
+    payload = read_json(path)
+    summary = state_bench_conversation_summary(payload.get("conversation"))
+    if not summary:
+        return {}
+    domain = path.parent.name if path.parent.name else ""
+    row: dict[str, Any] = {
+        "task_id": path.stem,
+        "prompt": summary["user_goal"],
+        "question": summary["user_goal"],
+        "answer": summary["final_answer"],
+        "domain": domain,
+        "state_bench_split": "train_task_trajectories",
+        "conversation": summary["conversation"],
+        "trajectory_turns": summary["trajectory_turns"],
+        "tool_trace": summary["tool_trace"],
+        "tool_call_count": summary["tool_call_count"],
+        "tools": summary["tools"],
+        "expected_tool_call": summary["tool_trace"],
+        "_source_file": str(path),
+    }
+    if summary["system_prompt"]:
+        row["system_prompt"] = summary["system_prompt"]
+    return row
+
+
+def read_state_bench_task_row(path: Path) -> dict[str, Any]:
+    raw = read_json(path)
+    task_id = str(raw.get("task_id") or path.stem)
+    domain_dir = path.parent.parent
+    domain = domain_dir.name
+    repo_root = domain_dir.parent.parent.parent
+    split = "unknown"
+    split_file = domain_dir / "splits" / "train_test.json"
+    if split_file.exists():
+        split_payload = read_json(split_file)
+        splits = split_payload.get("splits") if isinstance(split_payload, dict) else None
+        if isinstance(splits, dict):
+            for split_name, task_ids in splits.items():
+                if isinstance(task_ids, list) and task_id in {str(item) for item in task_ids}:
+                    split = str(split_name)
+                    break
+    prompt = first_value(raw, ("opening_message", "task_summary", "task_id")) or task_id
+    row = dict(raw)
+    row.update(
+        {
+            "task_id": task_id,
+            "domain": domain,
+            "split": split,
+            "state_bench_split": split,
+            "prompt": prompt,
+            "question": prompt,
+            "scoring": {
+                "kind": "state_bench",
+                "requires_state_requirements": True,
+                "requires_task_requirements_judge": True,
+                "requires_ux_judge": True,
+            },
+            "_source_file": str(path),
+        }
+    )
+    trajectory = repo_root / "datasets" / "train_task_trajectories" / domain / f"{task_id}.json"
+    if trajectory.exists():
+        summary = state_bench_conversation_summary(read_json(trajectory).get("conversation"))
+        if summary:
+            if summary["system_prompt"]:
+                row.setdefault("system_prompt", summary["system_prompt"])
+            row["reference_trajectory"] = {"conversation": summary["conversation"]}
+            row["conversation"] = summary["conversation"]
+            row["reference_tool_calls"] = summary["tool_trace"]
+            row["tool_trace"] = summary["tool_trace"]
+            row["tool_call_count"] = summary["tool_call_count"]
+            row["tools"] = summary["tools"]
+            row["expected_tool_call"] = summary["tool_trace"]
+            row["final_assistant_response"] = summary["final_answer"]
+            if summary["final_answer"]:
+                row["answer"] = summary["final_answer"]
+    return row
+
+
 def special_descriptor_files(path: Path) -> list[Path]:
     if not path.is_dir():
         return []
@@ -1227,6 +1361,10 @@ def special_descriptor_files(path: Path) -> list[Path]:
     files.extend(sorted(path.glob("mcpuniverse/benchmark/configs/mcpuniverse/**/*.json")))
     files.extend(sorted(path.glob("mcpuniverse/benchmark/configs/mcpmark/configs/**/*.json")))
     files.extend(sorted(path.glob("workspaces/tasks/*/scenarios.json")))
+    state_bench_tasks = sorted(path.glob("state_bench/domains/*/tasks/*.json"))
+    files.extend(state_bench_tasks)
+    if not state_bench_tasks:
+        files.extend(sorted(path.glob("datasets/train_task_trajectories/*/*.json")))
     files.extend(sorted(path.glob("Dataset/Samples/cluster_*/QA_sample.json")))
     files.extend(sorted(item for item in path.rglob("meta.json") if "tasks" in item.parts))
     files.extend(sorted(path.rglob("task.toml")))
@@ -1251,6 +1389,12 @@ def scan_local_source(path: Path, limit: int) -> tuple[list[dict[str, Any]], lis
                 special_rows.append(read_mcp_universe_task_row(descriptor))
             elif descriptor.name == "scenarios.json" and "workspaces" in descriptor.parts:
                 special_rows.extend(read_agent_company_scenario_rows(descriptor, limit - len(special_rows)))
+            elif "state_bench" in descriptor.parts and "domains" in descriptor.parts and "tasks" in descriptor.parts:
+                special_rows.append(read_state_bench_task_row(descriptor))
+            elif "train_task_trajectories" in descriptor.parts:
+                row = read_state_bench_trajectory_row(descriptor)
+                if row:
+                    special_rows.append(row)
             elif descriptor.name == "QA_sample.json":
                 rows = read_json_rows(descriptor, limit - len(special_rows))
                 for row in rows:
@@ -1696,6 +1840,13 @@ def normalize_task(
             "scenario_strategy_hint",
             "checkpoints",
             "dependencies",
+            "state_bench_split",
+            "split",
+            "trajectory_turns",
+            "tool_call_count",
+            "tool_trace",
+            "reference_tool_calls",
+            "final_assistant_response",
         ):
             value = raw.get(key)
             if value not in (None, "", [], {}):
@@ -1778,6 +1929,16 @@ def normalize_task(
         "scoring",
         "time_limit",
         "memory_limit",
+        "conversation",
+        "opening_message",
+        "task_summary",
+        "task_requirements",
+        "state_requirements",
+        "task_env_path",
+        "user_id",
+        "now",
+        "user_simulator",
+        "reference_trajectory",
     ):
         value = first_value(raw, (key,))
         if value not in (None, "", [], {}):

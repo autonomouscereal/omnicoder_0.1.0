@@ -200,6 +200,10 @@ mix:
   `twelfth_wave_agent_memory_state_2026_05_25`, plus STATE-Bench as a
   benchmark-suite gate. These extend long-horizon agent memory, source-
   distributed multimodal memory, and stateful enterprise tool-use evaluation.
+  STATE-Bench materialization now prefers canonical
+  `state_bench/domains/*/tasks/*.json` task definitions, preserves split,
+  sandbox-state assertions, user simulator rules, and scoring requirements, and
+  attaches matching public train trajectories only as reference evidence.
   SMMBench uses pinned raw `Samples/cluster_*/QA_sample.json` task files; its
   HF `default/train` imagefolder split is image-only and is rejected for scored
   benchmark material. HF image/audio/video features are otherwise cast
