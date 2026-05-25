@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+import types
 from pathlib import Path
 
 from omnicoder.data_factory import benchmark_materializer_2026 as materializer
@@ -508,6 +510,54 @@ def test_materializer_normalizes_next_wave_2026_aliases() -> None:
     assert mmlong is not None and mmlong["images"] == ["page7.png"]
     assert mmlong["needle_image_list"] == ["needle.png"]
     assert mmlong["ctxs"] == [{"text": "long doc"}]
+
+
+def test_hf_rows_falls_back_to_raw_hub_files(monkeypatch, tmp_path: Path) -> None:
+    remote_file = tmp_path / "mmlong.jsonl"
+    _write_jsonl(
+        remote_file,
+        [
+            {
+                "id": "mmlb-1",
+                "question": "Find the image needle.",
+                "answer": "page 4",
+                "image_list": ["page4.png"],
+            }
+        ],
+    )
+
+    datasets_module = types.SimpleNamespace(
+        Audio=type("Audio", (), {"__init__": lambda self, decode=False: None}),
+        load_dataset=lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("generator failed")),
+    )
+    hub_module = types.SimpleNamespace(
+        list_repo_files=lambda repo_id, repo_type="dataset": [
+            "README.md",
+            "mmlb_data_example/NIAH/retrieval-image_test_K128_dep6.jsonl",
+        ],
+        hf_hub_download=lambda repo_id, filename, repo_type="dataset", cache_dir=None: str(remote_file),
+    )
+    monkeypatch.setitem(sys.modules, "datasets", datasets_module)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+
+    rows, errors = materializer.hf_rows(
+        {
+            "hf": [
+                {
+                    "id": "ZhaoweiWang/MMLongBench",
+                    "splits": ["test"],
+                    "files": ["mmlb_data_example/**/*.jsonl"],
+                }
+            ]
+        },
+        tmp_path / "cache",
+        8,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["_hf_file"] == "mmlb_data_example/NIAH/retrieval-image_test_K128_dep6.jsonl"
+    assert rows[0]["image_list"] == ["page4.png"]
+    assert any("generator failed" in error for error in errors)
 
 
 def test_materializer_tracks_2026_official_source_mirrors() -> None:

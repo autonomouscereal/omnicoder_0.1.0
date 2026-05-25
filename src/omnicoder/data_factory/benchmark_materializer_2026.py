@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fnmatch
 import hashlib
 import json
 import os
@@ -297,7 +298,13 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     },
     "multimodal_mmlongbench_2026": {
         "source": "https://huggingface.co/datasets/ZhaoweiWang/MMLongBench",
-        "hf": [{"id": "ZhaoweiWang/MMLongBench", "splits": ["test"]}],
+        "hf": [
+            {
+                "id": "ZhaoweiWang/MMLongBench",
+                "splits": ["test"],
+                "files": ["mmlb_data_example/**/*.jsonl"],
+            }
+        ],
         "kind": "multimodal_long_context",
         "splits": ["test"],
     },
@@ -1010,6 +1017,71 @@ def clone_repo(repo: str, cache_root: Path, force: bool) -> tuple[Path | None, s
     return target, ""
 
 
+def hf_file_rows(
+    dataset_id: str,
+    entry: dict[str, Any],
+    cache_root: Path,
+    limit: int,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    errors: list[str] = []
+    rows: list[dict[str, Any]] = []
+    try:
+        from huggingface_hub import hf_hub_download, list_repo_files  # type: ignore
+    except Exception as exc:
+        return [], [f"huggingface_hub package unavailable: {exc}"]
+
+    patterns = [str(item) for item in entry.get("files") or entry.get("file_patterns") or [] if str(item).strip()]
+    if not patterns:
+        patterns = ["*.jsonl", "*.json", "*.csv"]
+    try:
+        files = list_repo_files(dataset_id, repo_type="dataset")
+    except Exception as exc:
+        return [], [f"{dataset_id}: list_repo_files failed: {exc}"]
+    selected = [
+        name
+        for name in files
+        if name.lower().endswith((".jsonl", ".json", ".csv"))
+        and any(fnmatch.fnmatch(name, pattern) for pattern in patterns)
+    ]
+    for name in sorted(selected):
+        if len(rows) >= limit:
+            break
+        try:
+            local = Path(
+                hf_hub_download(
+                    repo_id=dataset_id,
+                    filename=name,
+                    repo_type="dataset",
+                    cache_dir=str(cache_root / "hf_files"),
+                )
+            )
+            suffix = local.suffix.lower()
+            if suffix == ".jsonl":
+                loaded = read_jsonl_rows(local, limit - len(rows))
+            elif suffix == ".json":
+                loaded = read_json_rows(local, limit - len(rows))
+            elif suffix == ".csv":
+                loaded = read_csv_rows(local, limit - len(rows))
+            else:
+                loaded = []
+            for idx, item in enumerate(loaded):
+                if isinstance(item, dict):
+                    item.setdefault("_hf_dataset", dataset_id)
+                    item.setdefault("_hf_file", name)
+                    item.setdefault("_source_file", str(local))
+                    item.setdefault("_source_index", idx)
+                    rows.append(item)
+                if len(rows) >= limit:
+                    break
+        except Exception as exc:
+            errors.append(f"{dataset_id}:{name}: {exc}")
+    if not rows and selected:
+        errors.append(f"{dataset_id}: selected raw files yielded no rows")
+    elif not selected:
+        errors.append(f"{dataset_id}: no raw files matched {patterns}")
+    return rows[:limit], errors
+
+
 def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[dict[str, Any]], list[str]]:
     errors: list[str] = []
     try:
@@ -1026,6 +1098,7 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
             dataset_id = str(entry).strip()
             config = None
             splits = spec.get("splits") or ["test", "validation", "train"]
+            entry = {"id": dataset_id}
         if not dataset_id:
             continue
         for split in splits:
@@ -1054,6 +1127,10 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
             except Exception as exc:
                 label = f"{dataset_id}:{config}:{split}" if config else f"{dataset_id}:{split}"
                 errors.append(f"{label}: {exc}")
+        file_rows, file_errors = hf_file_rows(dataset_id, entry, cache_root, limit)
+        errors.extend(file_errors)
+        if file_rows:
+            return file_rows, errors
     return [], errors
 
 
