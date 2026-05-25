@@ -125,7 +125,7 @@ docker run -d \
     --distributed pipeline_stage \
     --nproc-per-node 3 \
     --rank-device-map 0,1,2 \
-    --placement-layer-counts 16,16,32 \
+    --placement-layer-counts 16,8,40 \
     --pipeline-stage-schedule gpipe \
     --pipeline-microbatches 1 \
     --precision fp16 \
@@ -134,7 +134,7 @@ docker run -d \
     --optimizer-in-backward \
     --optimizer-in-backward-update lowmem_adafactor \
     --activation-checkpointing \
-    --fake-quant-chunk-rows 64 \
+    --fake-quant-chunk-rows 32 \
     --fake-quant-max-full-elements 16777216 \
     --steps-per-stage 64 \
     --posttrain-steps 32 \
@@ -147,8 +147,9 @@ docker run -d \
 
 The repeatable AI-server launcher for this lane is
 `scripts/ai_server_fast_pipeline_20b.sh`. It bakes in the fast-card device
-selection, Docker IPC/ulimit requirements, 16/16/32 layer placement, GPipe
-schedule, low-memory Adafactor, q4 fake-quant hooks, and media-tree mounts:
+selection, Docker IPC/ulimit requirements, 16/8/40 layer placement, GPipe
+schedule, low-memory Adafactor, q4 fake-quant hooks, allocator fragmentation
+mitigation, and media-tree mounts:
 
 ```bash
 cd /home/cereal/omnicoder_2026_work

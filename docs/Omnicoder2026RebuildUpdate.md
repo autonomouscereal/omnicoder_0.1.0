@@ -61,8 +61,8 @@ Current fast-card mapping:
 | Host GPU | Card | Container rank | Layer placement |
 |---:|---|---:|---:|
 | 0 | RTX 3090 | 0 | 16 |
-| 4 | RTX 3090 | 1 | 16 |
-| 6 | RTX 8000 | 2 | 32 plus final norm/head |
+| 4 | RTX 3090 | 1 | 8 |
+| 6 | RTX 8000 | 2 | 40 plus final norm/head |
 
 The target Docker run must include:
 
@@ -106,6 +106,12 @@ GPU6 RTX 8000: about 35.5GB / 46GB
 This confirms the target job is not the earlier 6B-class verifier lane; it is
 using the 20B-class sharded placement profile and putting the largest shard on
 the RTX 8000.
+
+The May 25 posttraining retry proved that `16,16,32` can overfill the middle
+3090 during fake-quant backward while the RTX 8000 still has room. The launcher
+now defaults to `16,8,40`, `OMNICODER_FAKE_QUANT_CHUNK_ROWS=32`, and
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` so resumed reward-replay and
+long-context jobs bias depth and activation pressure toward the 48GB card.
 
 ## P40 Sidecar Lane
 

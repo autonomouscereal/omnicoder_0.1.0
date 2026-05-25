@@ -4,8 +4,8 @@ set -euo pipefail
 # Canonical AI-server launcher for the 20B-class native-1M target lane.
 # Host GPUs 0,4,6 are exposed as container CUDA devices 0,1,2:
 #   rank 0 -> RTX 3090, 16 layers
-#   rank 1 -> RTX 3090, 16 layers
-#   rank 2 -> RTX 8000, 32 layers plus final norm/head
+#   rank 1 -> RTX 3090, 8 layers
+#   rank 2 -> RTX 8000, 40 layers plus final norm/head
 
 REPO="${OMNICODER_REPO:-/home/cereal/omnicoder_2026_work}"
 WEIGHTS_ROOT="${OMNICODER_WEIGHTS_ROOT:-/home/cereal/omnicoder_2026_work/weights}"
@@ -18,7 +18,8 @@ MODE="${OMNICODER_MODE:-run-full}"
 
 FAST_GPU_DEVICES="${OMNICODER_FAST_GPU_DEVICES:-0,4,6}"
 RANK_DEVICE_MAP="${OMNICODER_RANK_DEVICE_MAP:-0,1,2}"
-PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"
+PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,8,40}"
+CUDA_ALLOC_CONF="${OMNICODER_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 START_STAGE="${OMNICODER_START_STAGE:-text}"
 STAGE_ORDER="${OMNICODER_STAGE_ORDER:-text,code,tool,image,video,audio,music,long_context}"
@@ -32,6 +33,8 @@ SEQ_LEN="${OMNICODER_SEQ_LEN:-1024}"
 BATCH_SIZE="${OMNICODER_BATCH_SIZE:-1}"
 LEARNING_RATE="${OMNICODER_LR:-0.00002}"
 SAVE_INTERVAL="${OMNICODER_SAVE_INTERVAL:-32}"
+FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-32}"
+FAKE_QUANT_MAX_FULL_ELEMENTS="${OMNICODER_FAKE_QUANT_MAX_FULL_ELEMENTS:-16777216}"
 POSTTRAIN_STEPS="${OMNICODER_POSTTRAIN_STEPS:-32}"
 FINETUNE_STEPS="${OMNICODER_FINETUNE_STEPS:-64}"
 DETACH="${OMNICODER_DETACH:-1}"
@@ -208,8 +211,8 @@ if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
     --activation-checkpointing
-    --fake-quant-chunk-rows 64
-    --fake-quant-max-full-elements 16777216
+    --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
+    --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_eval_args[@]}"
     --fake-quant
   )
@@ -256,8 +259,8 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
     --activation-checkpointing
-    --fake-quant-chunk-rows 64
-    --fake-quant-max-full-elements 16777216
+    --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
+    --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_posttrain_args[@]}"
     "${shared_eval_args[@]}"
     --fake-quant
@@ -296,8 +299,8 @@ else
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
     --activation-checkpointing
-    --fake-quant-chunk-rows 64
-    --fake-quant-max-full-elements 16777216
+    --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
+    --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_posttrain_args[@]}"
     "${shared_eval_args[@]}"
     --fake-quant
@@ -319,6 +322,7 @@ docker_args=(
   -e PYTHONPATH=/workspace/src
   -e NCCL_P2P_DISABLE="${NCCL_P2P_DISABLE:-1}"
   -e NCCL_SHM_DISABLE="${NCCL_SHM_DISABLE:-0}"
+  -e PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"
   -e TOKENIZERS_PARALLELISM=false
   -e OMNICODER_ADAPTIVE_WEIGHTS="$ADAPTIVE_WEIGHTS"
   -e OMNICODER_MIXTURE_PLAN="$MIXTURE_PLAN"
