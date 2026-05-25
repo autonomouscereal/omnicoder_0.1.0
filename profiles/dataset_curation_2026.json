@@ -28195,6 +28195,7 @@
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "config": "V2",
         "splits": [
           "train"
         ],
@@ -28251,8 +28252,14 @@
         "source_year": 2025,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "configs": [
+          "mini",
+          "search",
+          "execution",
+          "time"
+        ],
         "splits": [
-          "train"
+          "validation"
         ],
         "max_records": 1024,
         "target_modality": "tool",
@@ -28300,8 +28307,9 @@
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_fifth_wave_agentic_math_audio_multimodal_2026_05_25",
+        "config": "default",
         "splits": [
-          "train"
+          "test"
         ],
         "max_records": 1024,
         "target_modality": "tool",
@@ -29020,6 +29028,859 @@
             "success",
             "reward",
             "metadata"
+          ]
+        }
+      },
+      {
+        "name": "WebArena World Model CoT",
+        "family": "terminal_browser_agents",
+        "hf_id": "thuml/webarena-world-model-cot",
+        "url": "https://huggingface.co/datasets/thuml/webarena-world-model-cot",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "tool",
+        "use_policy": "research_internal",
+        "license": "MIT",
+        "license_tier": "research_internal_review",
+        "source_review_status": "public_research_reviewed_2026_05_25_benchmark_contamination_risk",
+        "materialization_note": "WebArena-derived world-model CoT rows are kept research-internal for browser planning and state prediction until benchmark decontamination clears them for train.",
+        "curriculum_axes": [
+          "browser_world_model",
+          "web_agent_planning",
+          "state_prediction",
+          "tool_reasoning"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "example_id"
+          ],
+          "prompt": [
+            "instruction",
+            "question",
+            "prompt",
+            "observation",
+            "state",
+            "input"
+          ],
+          "target": [
+            "cot",
+            "answer",
+            "action",
+            "next_state",
+            "response",
+            "output"
+          ],
+          "trajectory": [
+            "trajectory",
+            "steps",
+            "messages",
+            "actions"
+          ],
+          "verifier_labels": [
+            "metadata",
+            "rubric",
+            "score"
+          ]
+        }
+      },
+      {
+        "name": "WebClick",
+        "family": "terminal_browser_agents",
+        "hf_id": "Hcompany/WebClick",
+        "url": "https://huggingface.co/datasets/Hcompany/WebClick",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "config": "default",
+        "splits": [
+          "test"
+        ],
+        "max_records": 1024,
+        "target_modality": "tool",
+        "use_policy": "eval_only",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Web click and element grounding rows are held out for GUI/browser action localization evaluation.",
+        "curriculum_axes": [
+          "web_click_eval",
+          "gui_grounding",
+          "browser_action_localization",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "uid"
+          ],
+          "prompt": [
+            "instruction",
+            "query",
+            "prompt",
+            "task"
+          ],
+          "target": [
+            "target",
+            "answer",
+            "element",
+            "bbox",
+            "coordinates"
+          ],
+          "media": [
+            "image",
+            "screenshot",
+            "url"
+          ],
+          "verifier_labels": [
+            "bbox",
+            "coordinates",
+            "element",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "ScreenSpot v2",
+        "family": "terminal_browser_agents",
+        "hf_id": "OS-Copilot/ScreenSpot-v2",
+        "url": "https://huggingface.co/datasets/OS-Copilot/ScreenSpot-v2",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "remote_files": [
+          {
+            "url": "https://huggingface.co/datasets/OS-Copilot/ScreenSpot-v2/resolve/main/screenspot_desktop_v2.json",
+            "format": "json"
+          },
+          {
+            "url": "https://huggingface.co/datasets/OS-Copilot/ScreenSpot-v2/resolve/main/screenspot_mobile_v2.json",
+            "format": "json"
+          },
+          {
+            "url": "https://huggingface.co/datasets/OS-Copilot/ScreenSpot-v2/resolve/main/screenspot_web_v2.json",
+            "format": "json"
+          }
+        ],
+        "max_records": 1024,
+        "target_modality": "tool",
+        "use_policy": "eval_only",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Screen grounding benchmark rows are held out for GUI action and visual pointing evaluation.",
+        "curriculum_axes": [
+          "gui_grounding",
+          "screen_pointing",
+          "desktop_mobile_web_eval",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "image"
+          ],
+          "prompt": [
+            "instruction",
+            "prompt",
+            "text",
+            "query"
+          ],
+          "target": [
+            "bbox",
+            "point",
+            "coordinate",
+            "answer"
+          ],
+          "media": [
+            "image",
+            "img_filename",
+            "screenshot"
+          ],
+          "verifier_labels": [
+            "bbox",
+            "point",
+            "data_type",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "SWE-Star",
+        "family": "coding_agentic",
+        "hf_id": "LogicStar/SWE-Star",
+        "url": "https://huggingface.co/datasets/LogicStar/SWE-Star",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "code",
+        "use_policy": "research_internal",
+        "license": "license_missing_card_review",
+        "license_tier": "research_internal_review",
+        "source_review_status": "license_scan_required_2026_05_25",
+        "materialization_note": "Large SWE-style coding trajectories are research-internal until the dataset card and upstream task licenses clear training use.",
+        "curriculum_axes": [
+          "swe_agent_trajectory",
+          "repo_debugging",
+          "code_patch_reasoning",
+          "license_review"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "instance_id",
+            "task_id"
+          ],
+          "prompt": [
+            "problem_statement",
+            "instruction",
+            "prompt",
+            "issue",
+            "query"
+          ],
+          "target": [
+            "patch",
+            "solution",
+            "response",
+            "completion",
+            "trajectory"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "verifier_labels": [
+            "tests",
+            "test_patch",
+            "repo",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "TemplateGSM",
+        "family": "math_reasoning",
+        "hf_id": "math-ai/TemplateGSM",
+        "url": "https://huggingface.co/datasets/math-ai/TemplateGSM",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "configs": [
+          "templategsm-1000-1k",
+          "templategsm-2000-1k",
+          "templategsm-4000-1k"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Template-generated GSM variants provide scalable decontaminated math reasoning and code-solution supervision.",
+        "curriculum_axes": [
+          "math_reasoning",
+          "template_generalization",
+          "code_solution",
+          "verifiable_answer"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "problem_id",
+            "template_id"
+          ],
+          "prompt": [
+            "question",
+            "problem",
+            "prompt"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "code_solution",
+            "response"
+          ],
+          "verifier_labels": [
+            "answer",
+            "template",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "TOMATO-Star",
+        "family": "math_reasoning",
+        "hf_id": "ZonglinY/TOMATO-Star",
+        "url": "https://huggingface.co/datasets/ZonglinY/TOMATO-Star",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Scientific hypothesis and MOOSE-style reasoning rows add long-form scientific reasoning supervision.",
+        "curriculum_axes": [
+          "scientific_reasoning",
+          "hypothesis_generation",
+          "long_form_reasoning"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "task_id"
+          ],
+          "prompt": [
+            "question",
+            "problem",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "response",
+            "reasoning"
+          ],
+          "verifier_labels": [
+            "label",
+            "metadata",
+            "score"
+          ]
+        }
+      },
+      {
+        "name": "TOMATO-Star SFT R1D 32B",
+        "family": "math_reasoning",
+        "hf_id": "ZonglinY/TOMATO-Star-SFT-Data-R1D-32B",
+        "url": "https://huggingface.co/datasets/ZonglinY/TOMATO-Star-SFT-Data-R1D-32B",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "SFT companion rows provide scientific reasoning traces for the TOMATO-Star curriculum.",
+        "curriculum_axes": [
+          "scientific_reasoning_sft",
+          "hypothesis_generation",
+          "long_form_reasoning"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "task_id"
+          ],
+          "prompt": [
+            "question",
+            "problem",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "response",
+            "reasoning"
+          ],
+          "verifier_labels": [
+            "label",
+            "metadata",
+            "score"
+          ]
+        }
+      },
+      {
+        "name": "OpenDiscoveryTrace",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "aayambansall/OpenDiscoveryTrace",
+        "url": "https://huggingface.co/datasets/aayambansall/OpenDiscoveryTrace",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "remote_files": [
+          {
+            "url": "https://huggingface.co/datasets/aayambansall/OpenDiscoveryTrace/resolve/main/data/trajectories/dd_e01_gpt-5.4.json",
+            "format": "json"
+          },
+          {
+            "url": "https://huggingface.co/datasets/aayambansall/OpenDiscoveryTrace/resolve/main/data/trajectories/dd_e03_gemini-3.1-pro.json",
+            "format": "json"
+          },
+          {
+            "url": "https://huggingface.co/datasets/aayambansall/OpenDiscoveryTrace/resolve/main/data/trajectories/dd_h02_claude-opus-4.6.json",
+            "format": "json"
+          },
+          {
+            "url": "https://huggingface.co/datasets/aayambansall/OpenDiscoveryTrace/resolve/main/data/trajectories/dd_m03_gpt-5.4.json",
+            "format": "json"
+          }
+        ],
+        "max_records": 512,
+        "target_modality": "tool",
+        "use_policy": "research_internal",
+        "license": "CC-BY-4.0",
+        "license_tier": "research_internal_review",
+        "source_review_status": "public_research_reviewed_2026_05_25_model_trace_distillation_review",
+        "materialization_note": "Scientific discovery trajectories are research-internal until model-trace provenance and distillation policy are cleared.",
+        "curriculum_axes": [
+          "scientific_agent_trace",
+          "tool_reasoning",
+          "experiment_planning"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "episode_id"
+          ],
+          "prompt": [
+            "task",
+            "question",
+            "goal",
+            "prompt",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "result",
+            "final_answer",
+            "trajectory",
+            "response"
+          ],
+          "trajectory": [
+            "trajectory",
+            "messages",
+            "steps",
+            "actions"
+          ],
+          "tool_results": [
+            "observations",
+            "results",
+            "tool_results"
+          ]
+        }
+      },
+      {
+        "name": "AutoMathText V2 Bounded STEM",
+        "family": "math_reasoning",
+        "hf_id": "OpenSQZ/AutoMathText-V2",
+        "url": "https://huggingface.co/datasets/OpenSQZ/AutoMathText-V2",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "configs": [
+          "math_web",
+          "reasoning_qa",
+          "refinecode"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "text",
+        "use_policy": "research_internal",
+        "license": "custom_automathtext_data_agreement",
+        "license_tier": "research_internal_license_review",
+        "source_review_status": "license_scan_required_2026_05_25",
+        "materialization_note": "Large STEM corpus is bounded and research-internal until the custom data agreement is approved for weight-bearing training.",
+        "curriculum_axes": [
+          "stem_pretraining",
+          "math_web",
+          "reasoning_qa",
+          "code_refinement"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "doc_id",
+            "source_id"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "instruction",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "response",
+            "completion",
+            "text"
+          ],
+          "verifier_labels": [
+            "metadata",
+            "source",
+            "quality"
+          ]
+        }
+      },
+      {
+        "name": "BigCodeBench Hard",
+        "family": "coding_agentic",
+        "hf_id": "bigcode/bigcodebench-hard",
+        "url": "https://huggingface.co/datasets/bigcode/bigcodebench-hard",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "config": "default",
+        "splits": [
+          "v0.1.4"
+        ],
+        "max_records": 256,
+        "target_modality": "code",
+        "use_policy": "eval_only",
+        "license": "license_missing_card_review",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25_license_card_missing",
+        "materialization_note": "Hard coding benchmark rows are eval-only and protected from training prompt leakage.",
+        "curriculum_axes": [
+          "coding_eval",
+          "function_synthesis",
+          "hidden_tests",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "task_id",
+            "id",
+            "complete_prompt_id"
+          ],
+          "prompt": [
+            "complete_prompt",
+            "prompt",
+            "instruction",
+            "problem"
+          ],
+          "target": [
+            "canonical_solution",
+            "solution",
+            "answer"
+          ],
+          "verifier_labels": [
+            "test",
+            "tests",
+            "entry_point",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "BigCodeReward",
+        "family": "coding_agentic",
+        "hf_id": "bigcode/bigcodereward",
+        "url": "https://huggingface.co/datasets/bigcode/bigcodereward",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "config": "default",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "code",
+        "use_policy": "research_internal",
+        "license": "BigCode-OpenRAIL-M",
+        "license_tier": "research_internal_license_review",
+        "source_review_status": "license_scan_required_2026_05_25",
+        "materialization_note": "Code reward and preference rows are research-internal until OpenRAIL usage restrictions clear release training.",
+        "curriculum_axes": [
+          "code_reward_modeling",
+          "preference_learning",
+          "verifier_training"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "prompt_id"
+          ],
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question"
+          ],
+          "target": [
+            "chosen",
+            "accepted",
+            "completion",
+            "response",
+            "answer"
+          ],
+          "verifier_labels": [
+            "score",
+            "label",
+            "rejected",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "MolmoAct Pretraining Mixture Bounded",
+        "family": "omnimodal_understanding",
+        "hf_id": "allenai/MolmoAct-Pretraining-Mixture",
+        "url": "https://huggingface.co/datasets/allenai/MolmoAct-Pretraining-Mixture",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "configs": [
+          "auxiliary_trace",
+          "lvis"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "image",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive_storage_review",
+        "contamination_status": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25_media_storage_bounded",
+        "materialization_note": "Bounded embodied action/image rows add action-grounded multimodal supervision; raw media stays referenced for storage review.",
+        "curriculum_axes": [
+          "embodied_action",
+          "image_action_trace",
+          "robotics_grounding",
+          "omnimodal_world_model"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "episode_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "instruction",
+            "question",
+            "caption",
+            "task",
+            "observation"
+          ],
+          "target": [
+            "answer",
+            "action",
+            "trace",
+            "response",
+            "label"
+          ],
+          "media": [
+            "image",
+            "images",
+            "video",
+            "frames"
+          ],
+          "trajectory": [
+            "actions",
+            "trajectory",
+            "trace"
+          ]
+        }
+      },
+      {
+        "name": "Voice Code Bench",
+        "family": "audio_music_speech",
+        "hf_id": "besimple-ai/voice-code-bench",
+        "url": "https://huggingface.co/datasets/besimple-ai/voice-code-bench",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "config": "default",
+        "splits": [
+          "test"
+        ],
+        "max_records": 300,
+        "target_modality": "audio",
+        "use_policy": "eval_only",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "public_eval_reviewed_2026_05_25",
+        "materialization_note": "Speech-to-code benchmark rows are held out for voice coding and audio-agent evaluation.",
+        "curriculum_axes": [
+          "speech_to_code_eval",
+          "voice_agent",
+          "coding_eval",
+          "holdout"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "transcript",
+            "instruction",
+            "prompt",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "code",
+            "expected_output"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "file"
+          ],
+          "verifier_labels": [
+            "tests",
+            "metadata",
+            "score"
+          ]
+        }
+      },
+      {
+        "name": "Multilingual Audio Alignments",
+        "family": "audio_music_speech",
+        "hf_id": "AAdonis/multilingual_audio_alignments",
+        "url": "https://huggingface.co/datasets/AAdonis/multilingual_audio_alignments",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "configs": [
+          "english",
+          "french",
+          "german",
+          "japanese",
+          "mandarin",
+          "spanish"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "audio",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25_speaker_rights_bounded",
+        "materialization_note": "Bounded multilingual audio-text alignments strengthen ASR/TTS token grounding across languages.",
+        "curriculum_axes": [
+          "multilingual_audio_alignment",
+          "asr_grounding",
+          "tts_alignment",
+          "speech_tokens"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "utt_id"
+          ],
+          "prompt": [
+            "text",
+            "transcript",
+            "sentence",
+            "prompt"
+          ],
+          "target": [
+            "text",
+            "transcript",
+            "normalized_text",
+            "answer"
+          ],
+          "media": [
+            "audio",
+            "audio_path",
+            "file"
+          ],
+          "verifier_labels": [
+            "language",
+            "speaker",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "name": "OmniAction Review Holdout",
+        "family": "omnimodal_understanding",
+        "hf_id": "OpenMOSS-Team/OmniAction",
+        "url": "https://huggingface.co/datasets/OpenMOSS-Team/OmniAction",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25",
+        "max_records": 256,
+        "target_modality": "video",
+        "use_policy": "blocked_until_review",
+        "license": "CC-BY-NC-4.0",
+        "license_tier": "noncommercial_blocked_until_review",
+        "source_review_status": "blocked_noncommercial_2026_05_25_dataset_server_pending",
+        "materialization_note": "High-signal any-to-any action data is registered for review only; noncommercial terms block release-weight training.",
+        "curriculum_axes": [
+          "any_to_any_action",
+          "robotics_audio_video",
+          "license_blocked"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "instruction",
+            "prompt",
+            "task",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "action",
+            "response",
+            "trajectory"
+          ],
+          "media": [
+            "image",
+            "video",
+            "audio",
+            "frames"
+          ],
+          "trajectory": [
+            "actions",
+            "steps",
+            "trajectory"
           ]
         }
       }

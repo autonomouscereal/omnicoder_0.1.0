@@ -1080,3 +1080,16 @@ def test_suite_profile_includes_nineteenth_wave_factuality_doc_agent_gates() -> 
     )
     assert adapters["agent_mc_search_mmrag_2026"]["source"] == "https://mc-search-project.github.io/"
     assert "document_vqa_accuracy" in adapters["multimodal_ocrbench_v2_2026"]["metrics"]
+
+
+def test_suite_profile_includes_terminalworld_agent_gate() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    benchmark_id = "agent_terminalworld_2026"
+    assert benchmark_id in adapters
+    assert benchmark_id in suite["release_gates"]["agent_tool_release"]
+    assert benchmark_id in suite["reportable_snapshots"]
+    assert benchmark_id in suite["reportable_task_roots"]
+    assert adapters[benchmark_id]["source"] == "https://github.com/EuniAI/TerminalWorld"
+    assert "terminal" in adapters[benchmark_id]["modalities"]

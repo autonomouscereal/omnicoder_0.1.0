@@ -423,6 +423,16 @@ GooseReason uses `default` with `math`, `code`, and `stem`, SoulX uses `test`,
 and WaxalNLP/VLABench use bounded config allowlists so curation does not fail
 open into empty rows.
 
+The twenty-sixth-wave registry slice adds current web/GUI grounding, scientific
+reasoning, coding reward, embodied-action, and multilingual speech sources.
+Trainable permissive rows include TemplateGSM, TOMATO-Star, the TOMATO-Star SFT
+companion, bounded MolmoAct action data, and multilingual audio alignments.
+WebClick, ScreenSpot v2, BigCodeBench Hard, and Voice Code Bench stay eval
+holdout. WebArena world-model CoT, SWE-Star, OpenDiscoveryTrace, AutoMathText
+V2, and BigCodeReward stay research-internal until contamination, model-trace,
+or license review clears them. OmniAction is registered as blocked review-only
+because its noncommercial license cannot feed release-weight training.
+
 ## Quality And Safety
 
 The curation layer stores scores instead of only dropping rows. It tracks

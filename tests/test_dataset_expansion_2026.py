@@ -2129,6 +2129,11 @@ def test_repo_dataset_registry_covers_twenty_fifth_wave_agentic_math_audio_multi
         assert by_name[name]["registry_wave"] == wave
         assert by_name[name]["use_policy"] == policy
 
+    assert by_name["AgencyBench"]["config"] == "V2"
+    assert by_name["GAIA 2"]["configs"] == ["mini", "search", "execution", "time"]
+    assert by_name["GAIA 2"]["splits"] == ["validation"]
+    assert by_name["Claw-Eval Live"]["config"] == "default"
+    assert by_name["Claw-Eval Live"]["splits"] == ["test"]
     assert by_name["AgentFly Train"]["license"] == "Apache-2.0"
     assert expansion.source_use_bucket(by_name["AgentFly Train"]) == "train"
     assert by_name["ProjDevBench"]["config"] == "tasks"
@@ -2171,6 +2176,58 @@ def test_repo_dataset_registry_covers_twenty_fifth_wave_agentic_math_audio_multi
     assert expansion.source_use_bucket(by_name["VLABench Lerobot Video"]) == "research_internal"
     assert by_name["MMAU HF Dataset"]["license_tier"] == "permissive_eval_holdout"
     assert expansion.source_use_bucket(by_name["MMAU HF Dataset"]) == "eval_holdout"
+
+
+def test_repo_dataset_registry_covers_twenty_sixth_wave_web_gui_science_audio_code_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "twenty_sixth_wave_web_gui_science_audio_code_2026_05_25"
+
+    expected_policy = {
+        "WebArena World Model CoT": "research_internal",
+        "WebClick": "eval_only",
+        "ScreenSpot v2": "eval_only",
+        "SWE-Star": "research_internal",
+        "TemplateGSM": "train",
+        "TOMATO-Star": "train",
+        "TOMATO-Star SFT R1D 32B": "train",
+        "OpenDiscoveryTrace": "research_internal",
+        "AutoMathText V2 Bounded STEM": "research_internal",
+        "BigCodeBench Hard": "eval_only",
+        "BigCodeReward": "research_internal",
+        "MolmoAct Pretraining Mixture Bounded": "train",
+        "Voice Code Bench": "eval_only",
+        "Multilingual Audio Alignments": "train",
+        "OmniAction Review Holdout": "blocked_until_review",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    assert by_name["TemplateGSM"]["configs"] == [
+        "templategsm-1000-1k",
+        "templategsm-2000-1k",
+        "templategsm-4000-1k",
+    ]
+    assert expansion.source_use_bucket(by_name["TemplateGSM"]) == "train"
+    assert by_name["ScreenSpot v2"]["remote_files"][0]["format"] == "json"
+    assert expansion.source_use_bucket(by_name["ScreenSpot v2"]) == "eval_holdout"
+    assert "license_scan_required" in by_name["SWE-Star"]["source_review_status"]
+    assert expansion.source_use_bucket(by_name["SWE-Star"]) == "research_internal"
+    assert by_name["MolmoAct Pretraining Mixture Bounded"]["configs"] == ["auxiliary_trace", "lvis"]
+    assert expansion.source_use_bucket(by_name["MolmoAct Pretraining Mixture Bounded"]) == "research_internal"
+    assert by_name["Multilingual Audio Alignments"]["configs"] == [
+        "english",
+        "french",
+        "german",
+        "japanese",
+        "mandarin",
+        "spanish",
+    ]
+    assert expansion.source_use_bucket(by_name["Multilingual Audio Alignments"]) == "train"
+    assert expansion.source_use_bucket(by_name["OmniAction Review Holdout"]) == "blocked_until_review"
 
 
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:

@@ -1801,6 +1801,37 @@
       "task_format": "jsonl_terminal_task"
     },
     {
+      "adapter_kind": "terminalworld_container_task_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_terminalworld_2026",
+      "holdout_policy": [
+        "hide_solutions",
+        "hide_artifact_oracles",
+        "pin_container_digest",
+        "canary_filter_required"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "oracle_pass_rate",
+        "shell_steps",
+        "wall_seconds"
+      ],
+      "modalities": [
+        "text",
+        "terminal",
+        "filesystem",
+        "tools"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://github.com/EuniAI/TerminalWorld",
+      "splits": {
+        "nightly": "verified terminal-domain balanced public-dev slice",
+        "release": "operator-authorized TerminalWorld snapshot with hidden artifacts",
+        "smoke": "sample TerminalWorld public-dev tasks"
+      },
+      "task_format": "jsonl_terminal_task"
+    },
+    {
       "adapter_kind": "agent_complex_env_tool_eval",
       "axis": "agent_tool",
       "benchmark_id": "agent_acebench_2026",
@@ -6477,6 +6508,7 @@
       "agent_mle_bench_lite_2026",
       "agent_osworld_screenspot_pro_2026",
       "agent_terminal_bench_core_2026",
+      "agent_terminalworld_2026",
       "agent_acebench_2026",
       "agent_browsecomp_zh_2026",
       "agent_xbench_deepsearch_2026",
@@ -6905,6 +6937,15 @@
       "snapshot_id": "terminal-bench-authorized-2026-current",
       "source": "https://www.tbench.ai/leaderboard/terminal-bench/2.1",
       "task_root": "data/eval/reportable_2026/terminal_bench_authorized.jsonl"
+    },
+    "agent_terminalworld_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "terminalworld-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "terminalworld-authorized-2026-current",
+      "source": "https://github.com/EuniAI/TerminalWorld",
+      "task_root": "data/eval/reportable_2026/terminalworld_authorized.jsonl"
     },
     "agent_theagentcompany_enterprise_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -7546,6 +7587,9 @@
     ],
     "agent_terminal_bench_2026": [
       "data/eval/reportable_2026/terminal_bench_authorized.jsonl"
+    ],
+    "agent_terminalworld_2026": [
+      "data/eval/reportable_2026/terminalworld_authorized.jsonl"
     ],
     "agent_theagentcompany_enterprise_2026": [
       "data/eval/reportable_2026/theagentcompany_authorized.jsonl"
