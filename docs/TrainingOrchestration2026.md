@@ -457,7 +457,11 @@ Live posttraining on pipeline checkpoints also stays distributed. When
 uses `omnicoder.training.pipeline_pretrain_2026_dense` for reward-replay/SFT
 continuations and writes the next sharded checkpoint under
 `checkpoints/posttrain/*_pipeline`; it does not silently downgrade to native
-single-file reward replay.
+single-file reward replay. The bridge manifest must explicitly defer to
+`distributed_pipeline_reward_replay` before the sharded optimizer is launched,
+and the pipeline loader preserves the same reward/preference/RLVR sample
+weights used by native `reward_replay_2026` instead of treating posttraining
+JSONL as plain next-token text.
 
 Use the weighted-placement validator only when exercising the older
 single-process placement scheduler:

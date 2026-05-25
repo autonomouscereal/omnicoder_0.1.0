@@ -3,10 +3,12 @@ from __future__ import annotations
 import pytest
 
 torch = pytest.importorskip("torch")
+import torch.nn.functional as F
 
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
 from omnicoder.training.pipeline_pretrain_2026_dense import (
     OmniCoder2026PipelineShard,
+    WeightedTextJsonlDataset,
     load_full_checkpoint_shard,
     parse_stage_ranges,
     shard_spec,
@@ -84,3 +86,40 @@ def test_final_stage_chunked_lm_loss_backward() -> None:
     assert torch.isfinite(loss)
     loss.backward()
     assert hidden.grad is not None
+
+
+def test_final_stage_weighted_lm_loss_matches_reward_replay_shape() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(2, 5, cfg.d_model, requires_grad=True)
+    labels = torch.randint(1, cfg.vocab_size, (2, 5), dtype=torch.long)
+    weights = torch.tensor([0.5, 2.0], dtype=torch.float32)
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(processed, labels, chunk_tokens=2, sample_weights=weights)
+    logits = final.lm_head(processed[:, :-1, :])
+    token_losses = F.cross_entropy(logits.transpose(1, 2), labels[:, 1:], reduction="none")
+    expected = (token_losses.mean(dim=1) * weights).mean()
+
+    assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+    loss.backward()
+    assert hidden.grad is not None
+
+
+def test_weighted_pipeline_dataset_uses_tool_reward_rows(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 31 + 1 for ch in text[:24]]
+
+    source = tmp_path / "tool_reward.jsonl"
+    source.write_text(
+        '{"training_kind":"tool_reward","prompt":"run tests","reward":1.0,"tool_calls":[{"tool":"pytest"}],"tool_results":[{"ok":true}]}\n',
+        encoding="utf-8",
+    )
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=8, vocab_size=32)
+    ids, weight = dataset[0]
+
+    assert ids.shape == (8,)
+    assert float(weight) == pytest.approx(2.0)

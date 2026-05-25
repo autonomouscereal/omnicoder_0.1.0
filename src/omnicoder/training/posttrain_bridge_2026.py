@@ -438,6 +438,7 @@ def execute_live_bridge(args: argparse.Namespace, manifest: dict[str, Any]) -> d
         return manifest
     if bool(getattr(args, "defer_optimizer", False)):
         manifest["status"] = "live_optimizer_deferred"
+        manifest["optimization_status"] = "deferred_to_distributed_pipeline_reward_replay"
         manifest["execution"] = {
             "status": "deferred",
             "executor": "distributed_pipeline_reward_replay",

@@ -72,7 +72,10 @@ or incomplete sharded optimizer stage stops the remaining replay stack instead
 of silently continuing from an older checkpoint. The profile also enables
 posttraining checkpoint retention, keeping the active and most recent complete
 pipeline shards while pruning older stage shards so long RL stacks do not fill
-the AI-server training volume mid-run.
+the AI-server training volume mid-run. For sharded checkpoints, the bridge now
+must explicitly authorize `distributed_pipeline_reward_replay`, and the pipeline
+trainer carries reward/preference/RLVR sample weights through the loss instead
+of flattening those rows into unweighted text.
 
 Posttraining-only recovery is a first-class path. Use
 `training-orchestration-2026 run-posttraining` or

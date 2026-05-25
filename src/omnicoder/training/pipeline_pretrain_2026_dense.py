@@ -19,10 +19,11 @@ from omnicoder.config_2026 import get_omnicoder2026_preset, preset_to_model_kwar
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Block, OmniCoder2026Config, QuantAwareLinear, RMSNorm
 from omnicoder.training.pretrain_2026_dense import (
     TARGET_PRESET,
-    TextJsonlDataset,
+    _ids_from_record,
     _atomic_torch_save,
     _dtype_from_name,
     _is_probe_name,
+    _text_from_record,
     _restore_rng_state,
     _rng_state,
     _sha256_file,
@@ -145,13 +146,34 @@ class OmniCoder2026PipelineShard(nn.Module):
             x = self.norm(x)
         return x
 
-    def chunked_lm_loss(self, hidden: torch.Tensor, labels: torch.Tensor, chunk_tokens: int = 128) -> torch.Tensor:
+    def chunked_lm_loss(
+        self,
+        hidden: torch.Tensor,
+        labels: torch.Tensor,
+        chunk_tokens: int = 128,
+        sample_weights: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         if not self.spec.has_head:
             raise RuntimeError("LM loss can only be computed on the final pipeline stage")
         if labels.device != hidden.device:
             labels = labels.to(hidden.device, non_blocking=True)
         shifted_hidden = hidden[:, :-1, :]
         shifted_labels = labels[:, 1:]
+        if sample_weights is not None:
+            weights = sample_weights.to(hidden.device, non_blocking=True).to(dtype=torch.float32).reshape(-1)
+            if weights.numel() != shifted_hidden.shape[0]:
+                raise ValueError(f"sample_weights batch mismatch: weights={weights.numel()} batch={shifted_hidden.shape[0]}")
+            per_sample_sum = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
+            per_sample_tokens = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
+            for start in range(0, shifted_hidden.shape[1], max(1, int(chunk_tokens))):
+                end = min(shifted_hidden.shape[1], start + int(chunk_tokens))
+                logits = self.lm_head(shifted_hidden[:, start:end, :])
+                token_losses = F.cross_entropy(logits.transpose(1, 2), shifted_labels[:, start:end], reduction="none").float()
+                mask = shifted_labels[:, start:end].ne(0).float()
+                per_sample_sum = per_sample_sum + (token_losses * mask).sum(dim=1)
+                per_sample_tokens = per_sample_tokens + mask.sum(dim=1)
+            per_sample = per_sample_sum / per_sample_tokens.clamp_min(1.0)
+            return (per_sample * weights).mean().to(dtype=hidden.dtype)
         total_tokens = max(1, int(shifted_labels.numel()))
         loss_sum = hidden.new_zeros(())
         for start in range(0, shifted_hidden.shape[1], max(1, int(chunk_tokens))):
@@ -166,6 +188,145 @@ class OmniCoder2026PipelineShard(nn.Module):
 
 def load_full_checkpoint_shard(path: str | Path, shard: OmniCoder2026PipelineShard) -> tuple[int, float | None]:
     return load_checkpoint_shard(path, shard)
+
+
+def _compact_json(value: Any, limit: int = 12000) -> str:
+    return json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)[:limit]
+
+
+def _reward_value(record: dict[str, Any]) -> float:
+    for key in ("reward", "score"):
+        value = record.get(key)
+        if value is not None:
+            try:
+                return max(-1.0, min(1.0, float(value)))
+            except Exception:
+                pass
+    verifier = record.get("verifier")
+    if isinstance(verifier, dict) and verifier.get("reward") is not None:
+        try:
+            return max(-1.0, min(1.0, float(verifier["reward"])))
+        except Exception:
+            pass
+    try:
+        return max(-1.0, min(1.0, float(record.get("quality_score"))))
+    except Exception:
+        return 0.5
+
+
+def _pipeline_record_to_text_and_weight(record: dict[str, Any]) -> tuple[str, float]:
+    kind = str(record.get("training_kind") or "").lower()
+    prompt = str(record.get("prompt") or "")
+    reward = _reward_value(record)
+    if kind.endswith("_rlvr"):
+        target = {
+            "verifier": record.get("verifier", {}),
+            "environment": record.get("environment", {}),
+            "reward": record.get("reward", reward),
+            "reward_components": record.get("reward_components", {}),
+            "tool_calls": record.get("tool_calls", []),
+            "tool_results": record.get("tool_results", []),
+        }
+        text = f"user: {prompt}\nassistant: {_compact_json(target)}"
+        weight = 0.75 + max(0.0, reward) * 1.25
+    elif kind == "tool_preference" or {"prompt", "chosen", "rejected"} <= set(record):
+        text = f"user: {prompt}\nassistant: {record.get('chosen', '')}"
+        weight = 1.25 + max(0.0, reward) * 0.5
+    elif kind == "tool_reward":
+        target = {
+            "tool_calls": record.get("tool_calls", []),
+            "tool_results": record.get("tool_results", []),
+            "reward": reward,
+            "reward_components": record.get("reward_components", {}),
+        }
+        text = f"user: {prompt}\nassistant: {_compact_json(target)}"
+        weight = 0.5 + max(0.0, reward) * 1.5
+    elif kind == "tool_safety_negative":
+        text = f"user: {prompt}\nassistant: {record.get('chosen', 'Refuse unsafe tool use and protect credentials.')}"
+        weight = 1.5
+    else:
+        text = _text_from_record(record)
+        weight = 1.0 + max(0.0, reward) * 0.25
+    return text.strip(), max(0.05, min(2.5, float(weight)))
+
+
+class WeightedTextJsonlDataset(torch.utils.data.Dataset):
+    def __init__(self, path: str, tokenizer: Any, seq_len: int, max_records: int = 0, vocab_size: int = 0):
+        self.tokenizer = tokenizer
+        self.seq_len = int(seq_len)
+        self.vocab_size = int(vocab_size)
+        self.samples: list[tuple[list[int], float]] = []
+        limit = int(max_records) if int(max_records) > 0 else None
+        p = Path(path)
+        paths = sorted(p.rglob("*.jsonl")) + sorted(p.rglob("*.txt")) if p.is_dir() else [p]
+        for src in paths:
+            if limit is not None and len(self.samples) >= limit:
+                break
+            self._load_path(src, limit)
+        if not self.samples:
+            self.samples.append(([1] * self.seq_len, 0.05))
+
+    def _sanitize_id(self, value: int) -> int:
+        token = int(value)
+        if token < 0:
+            return 0
+        if self.vocab_size > 0 and token >= self.vocab_size:
+            return 1
+        return token
+
+    def _load_path(self, path: Path, limit: int | None) -> None:
+        if not path.exists():
+            return
+        if path.suffix.lower() == ".txt":
+            self._append_text(path.read_text(encoding="utf-8", errors="ignore"), 1.0, limit)
+            return
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if limit is not None and len(self.samples) >= limit:
+                break
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                obj = {"text": line}
+            if not isinstance(obj, dict):
+                obj = {"text": str(obj)}
+            _, weight = _pipeline_record_to_text_and_weight(obj)
+            ids = _ids_from_record(obj)
+            if ids:
+                self._append_ids(ids, weight, limit)
+            else:
+                text, weight = _pipeline_record_to_text_and_weight(obj)
+                self._append_text(text, weight, limit)
+
+    def _append_text(self, text: str, weight: float, limit: int | None) -> None:
+        if limit is not None and len(self.samples) >= limit:
+            return
+        ids = [int(x) for x in self.tokenizer.encode(text)]
+        self._append_ids(ids, weight, limit)
+
+    def _append_ids(self, ids: list[int], weight: float, limit: int | None) -> None:
+        if limit is not None and len(self.samples) >= limit:
+            return
+        cleaned = [self._sanitize_id(x) for x in ids]
+        if len(cleaned) < 2:
+            return
+        for start in range(0, len(cleaned), max(1, self.seq_len)):
+            chunk = cleaned[start:start + self.seq_len]
+            if len(chunk) < 2:
+                continue
+            self.samples.append((chunk, float(weight)))
+            if limit is not None and len(self.samples) >= limit:
+                break
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        ids, weight = self.samples[idx]
+        if len(ids) < self.seq_len:
+            ids = ids + [0] * (self.seq_len - len(ids))
+        return torch.tensor(ids[: self.seq_len], dtype=torch.long), torch.tensor(float(weight), dtype=torch.float32)
 
 
 def _validate_resume_payload(
@@ -697,8 +858,14 @@ def main(argv: list[str] | None = None) -> int:
 
         return output.sum() * 0.0
 
+    current_sample_weights: dict[str, torch.Tensor] = {}
     loss_fn = (
-        lambda hidden, labels: shard.chunked_lm_loss(hidden, labels, int(args.lm_loss_chunk_tokens))
+        lambda hidden, labels: shard.chunked_lm_loss(
+            hidden,
+            labels,
+            int(args.lm_loss_chunk_tokens),
+            current_sample_weights.get("weights"),
+        )
     ) if spec.has_head else _unused_nonfinal_loss
     if args.pipeline_schedule == "1f1b" and pipeline_microbatches == 1:
         if rank == 0:
@@ -711,7 +878,7 @@ def main(argv: list[str] | None = None) -> int:
         schedule = Schedule1F1B(stage, n_microbatches=pipeline_microbatches, loss_fn=loss_fn)
 
     tokenizer = get_text_tokenizer(prefer_hf=True) if rank == 0 else None
-    data = TextJsonlDataset(args.data, tokenizer, seq_len=seq_len, max_records=args.max_records, vocab_size=int(getattr(preset, "vocab_size", 0) or 0)) if rank == 0 else None
+    data = WeightedTextJsonlDataset(args.data, tokenizer, seq_len=seq_len, max_records=args.max_records, vocab_size=int(getattr(preset, "vocab_size", 0) or 0)) if rank == 0 else None
     loader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True) if rank == 0 else None
     it = iter(loader) if loader is not None else None
     def debug_event(message: str) -> None:
@@ -724,16 +891,21 @@ def main(argv: list[str] | None = None) -> int:
         if rank == 0:
             debug_event("rank0_fetch_batch_start")
             try:
-                batch = next(it)  # type: ignore[arg-type]
+                batch_item = next(it)  # type: ignore[arg-type]
             except StopIteration:
                 it = iter(loader)  # type: ignore[arg-type]
-                batch = next(it)
+                batch_item = next(it)
+            batch, batch_weights = batch_item
             batch = batch.to(device, non_blocking=True)
+            batch_weights = batch_weights.to(device, non_blocking=True).float()
             debug_event("rank0_fetch_batch_done")
         else:
             batch = torch.empty((batch_size, seq_len), dtype=torch.long, device=device)
+            batch_weights = torch.empty((batch_size,), dtype=torch.float32, device=device)
         debug_event("broadcast_start")
         dist.broadcast(batch, src=0)
+        dist.broadcast(batch_weights, src=0)
+        current_sample_weights["weights"] = batch_weights
         debug_event("broadcast_done")
         with autocast_context(device, str(args.precision)):
             if rank == 0:
@@ -753,7 +925,7 @@ def main(argv: list[str] | None = None) -> int:
         dist.broadcast(loss_tensor, src=world_size - 1)
         if rank == 0:
             global_step = start_step + local_step + 1
-            _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": float(loss_tensor.cpu()), "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update)})
+            _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": float(loss_tensor.cpu()), "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": float(batch_weights.detach().mean().cpu()), "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update)})
         if int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0:
             save_sharded_checkpoint(Path(args.out).with_name(f"{Path(args.out).stem}.step{start_step + local_step + 1}"), shard, preset=preset, args=args, optimizer=optimizer, global_step=start_step + local_step + 1, last_loss=float(loss_tensor.cpu()))
 

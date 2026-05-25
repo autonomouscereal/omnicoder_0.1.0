@@ -3676,6 +3676,19 @@ def run_posttraining_stages(
                             "checkpoint": str(replay_final_checkpoint),
                         }
                     )
+                elif not (
+                    code == 0
+                    and bridge_manifest.get("status") in {"live_optimizer_deferred", "optimizer_deferred_to_distributed_pipeline_replay"}
+                    and bridge_execution.get("status") == "deferred"
+                    and bridge_execution.get("executor") == "distributed_pipeline_reward_replay"
+                ):
+                    report.update(
+                        {
+                            "status": "failed",
+                            "reason": "posttrain_bridge_did_not_authorize_distributed_pipeline_reward_replay",
+                            "bridge_execution": bridge_execution,
+                        }
+                    )
                 else:
                     replay_out = out_dir / "checkpoints" / "posttrain" / f"{index:02d}_{safe_name}_pipeline"
                     replay_log = out_dir / "logs" / f"posttrain_{index:02d}_{safe_name}_pipeline_reward_replay.jsonl"

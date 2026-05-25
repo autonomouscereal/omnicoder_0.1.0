@@ -815,6 +815,76 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
     assert not any("omnicoder.training.reward_replay_2026" in cmd for cmd in commands)
 
 
+def test_live_posttraining_requires_bridge_defer_manifest_before_pipeline_replay(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+        "pipeline_stage_schedule": "gpipe",
+        "pipeline_microbatches": 1,
+    }
+    profile["reinforcement_learning"] = {
+        "enabled": True,
+        "offline_reward_replay": {
+            "inputs": [str(tmp_path / "out" / "agentic_tool_training_2026" / "tool_sft.jsonl")],
+            "algorithms_represented": ["reward_weighted_sft_replay"],
+        },
+    }
+    monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
+    orch.build_real_corpus(profile, tmp_path / "out")
+    checkpoint = tmp_path / "pipeline_checkpoint"
+    _write_complete_sharded_checkpoint(checkpoint)
+    commands: list[list[str]] = []
+
+    def fake_run_command(cmd: list[str], log_path: Path) -> int:
+        commands.append(cmd)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        if "omnicoder.training.posttrain_bridge_2026" in cmd:
+            manifest_path = Path(cmd[cmd.index("--manifest") + 1])
+            orch.write_json(manifest_path, {"status": "configured"})
+        return 0
+
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    args = argparse.Namespace(
+        live_posttraining=True,
+        preset="omnicoder2026_20b_1m",
+        device="cpu",
+        seq_len=16,
+        batch_size=1,
+        posttrain_steps=2,
+        posttrain_lr=1e-6,
+        posttrain_max_records=0,
+        nproc_per_node=3,
+        distributed="pipeline_stage",
+        rank_device_map="0,1,2",
+        placement_layer_counts="16,16,32",
+        pipeline_stage_schedule="gpipe",
+        pipeline_microbatches=1,
+        precision="fp16",
+        init_dtype="fp16",
+        optimizer="adafactor",
+        optimizer_in_backward=False,
+        optimizer_in_backward_update="",
+        optimizer_in_backward_grad_clip=0.0,
+        optimizer_in_backward_clip_mode="",
+        optimizer_in_backward_adafactor_chunk_rows=0,
+        optimizer_in_backward_adafactor_clip_threshold=0.0,
+        optimizer_in_backward_adafactor_decay_rate=0.0,
+        optimizer_in_backward_adafactor_eps1=0.0,
+        activation_checkpointing=False,
+        fake_quant=False,
+        fake_quant_chunk_rows=0,
+        fake_quant_max_full_elements=0,
+    )
+    result = orch.run_posttraining_stages(profile, tmp_path / "out", {"status": "passed", "final_checkpoint": str(checkpoint)}, args)
+
+    assert result["status"] == "failed"
+    assert result["stages"][0]["reason"] == "posttrain_bridge_did_not_authorize_distributed_pipeline_reward_replay"
+    assert not any("omnicoder.training.pipeline_pretrain_2026_dense" in cmd for cmd in commands)
+
+
 def test_live_posttraining_stops_after_failed_pipeline_replay(tmp_path, monkeypatch):
     profile = _profile(tmp_path)
     profile["training_plan"]["distributed_training"] = {
