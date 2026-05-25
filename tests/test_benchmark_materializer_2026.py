@@ -372,6 +372,57 @@ def test_materializer_normalizes_countdown_rewardbench_and_oneig_aliases() -> No
     assert oneig["prompt"].startswith("A crisp studio")
 
 
+def test_materializer_normalizes_mcp_atlas_uppercase_fields() -> None:
+    task = materializer.normalize_task(
+        "agent_mcp_atlas_2026",
+        {
+            "TASK": "689f4d693e212e8ef3390731",
+            "PROMPT": "Use GitHub and WHOIS tools to compare repository and domain dates.",
+            "ENABLED_TOOLS": '["github_search_repositories","whois_whois_domain"]',
+            "GTFA_CLAIMS": '["The repository was created in 2013.","The domain was registered in 2006."]',
+        },
+        {"kind": "mcp_real_server_tool_eval", "source": "fixture"},
+        {"adapter_kind": "mcp_real_server_tool_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert task is not None
+    assert task["task_id"] == "689f4d693e212e8ef3390731"
+    assert task["prompt"].startswith("Use GitHub")
+    assert task["tools"] == ["github_search_repositories", "whois_whois_domain"]
+    assert "repository was created" in task["answer"]
+    assert "domain was registered" in task["expected_tool_call"][1]
+
+
+def test_materializer_normalizes_ttsds2_listening_rows() -> None:
+    task = materializer.normalize_task(
+        "generation_ttsds2_2026",
+        {
+            "id": "valle_v2_1",
+            "audio": "noisy/valle_v2/example.wav",
+            "dataset": "Noisy",
+            "system": "valle_v2",
+            "rating_type": "mos",
+            "value": 4,
+        },
+        {"kind": "audio_generation", "source": "fixture"},
+        {"adapter_kind": "tts_generation_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert task is not None
+    assert task["task_id"] == "valle_v2_1"
+    assert task["audio"] == "noisy/valle_v2/example.wav"
+    assert task["answer"] == 4
+    assert task["expected_artifact_kind"] == "audio_generation"
+
+
 def test_materializer_tracks_2026_official_source_mirrors() -> None:
     required = {
         "agent_mcp_bench_2026",
@@ -423,6 +474,9 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert rewardbench["config"] == "edit"
     oneig = materializer.KNOWN_BENCHMARKS["generation_oneig_bench_2026"]["hf"][0]
     assert oneig["config"] == "OneIG-Bench"
+    ttsds2 = materializer.KNOWN_BENCHMARKS["generation_ttsds2_2026"]["hf"][0]
+    assert ttsds2["id"] == "ttsds/listening_test"
+    assert ttsds2["splits"] == ["test"]
 
 
 def test_audit_profile_reports_materializer_and_core25_gaps(tmp_path: Path) -> None:

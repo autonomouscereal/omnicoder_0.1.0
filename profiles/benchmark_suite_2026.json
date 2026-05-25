@@ -975,7 +975,7 @@
         "speech"
       ],
       "release_gate": "generation_release",
-      "source": "https://arxiv.org/abs/2506.19441",
+      "source": "https://huggingface.co/datasets/ttsds/listening_test",
       "splits": {
         "nightly": "language and speaker-style balanced TTSDS2 slice",
         "release": "locked authorized TTSDS2 suite",
@@ -4395,7 +4395,7 @@
       "min_tasks": 1,
       "snapshot_authorization": "official_or_authorized_current_release",
       "snapshot_id": "ttsds2-authorized-2026-current",
-      "source": "https://arxiv.org/abs/2506.19441",
+      "source": "https://huggingface.co/datasets/ttsds/listening_test",
       "task_root": "data/eval/reportable_2026/ttsds2_authorized.jsonl"
     },
     "generation_image_edit_2026": {

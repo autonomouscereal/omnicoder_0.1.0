@@ -408,8 +408,10 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "splits": ["test"],
     },
     "generation_ttsds2_2026": {
-        "source": "https://arxiv.org/abs/2506.19441",
+        "source": "https://huggingface.co/datasets/ttsds/listening_test",
+        "hf": [{"id": "ttsds/listening_test", "splits": ["test"]}],
         "kind": "audio_generation",
+        "splits": ["test"],
     },
     "generation_avgen_bench_2026": {
         "source": "https://microsoft.github.io/AVGen-Bench/",
@@ -561,8 +563,10 @@ def make_jsonable(value: Any) -> Any:
 
 
 def first_value(raw: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    casefold_keys = {str(key).casefold(): key for key in raw}
     for key in keys:
-        value = raw.get(key)
+        lookup = key if key in raw else casefold_keys.get(str(key).casefold(), key)
+        value = raw.get(lookup)
         if value not in (None, "", [], {}):
             return value
     return None
@@ -1063,6 +1067,7 @@ def normalize_task(
         raw,
         (
             "task_id",
+            "TASK",
             "id",
             "question_id",
             "instance_id",
@@ -1118,6 +1123,11 @@ def normalize_task(
             "reference_output",
             "output",
             "gold_answer",
+            "gtfa_claims",
+            "value",
+            "mos",
+            "score",
+            "rating",
             "strategy_hint",
             "chosen",
             "preference",
@@ -1174,10 +1184,10 @@ def normalize_task(
             row[media_key] = make_jsonable(value)
 
     if any(token in kind for token in ("tool", "bfcl", "mcp")):
-        tools = first_value(raw, ("tools", "functions", "tool_schema", "function", "apis", "mcp_servers", "server_name", "servers"))
-        expected = first_value(raw, ("expected_tool_call", "ground_truth", "answer", "target", "output_format", "evaluators"))
+        tools = first_value(raw, ("tools", "enabled_tools", "functions", "tool_schema", "function", "apis", "mcp_servers", "server_name", "servers"))
+        expected = first_value(raw, ("expected_tool_call", "ground_truth", "gtfa_claims", "answer", "target", "output_format", "evaluators"))
         if tools not in (None, "", [], {}):
-            row["tools"] = make_jsonable(tools)
+            row["tools"] = normalize_tool_call(tools)
         if expected not in (None, "", [], {}):
             row["expected_tool_call"] = normalize_tool_call(expected)
         for key in (
