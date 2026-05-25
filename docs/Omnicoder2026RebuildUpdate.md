@@ -108,13 +108,13 @@ using the 20B-class sharded placement profile and putting the largest shard on
 the RTX 8000.
 
 The May 25 posttraining retries mapped the live memory boundary: `16,16,32`
-with 2048-token replay and 64-row fake quant can overfill the middle 3090, while
-`16,8,40` with 32-row fake quant can overfill the RTX 8000 during backward
-recompute. The launcher now defaults to `16,14,34`,
+with 2048-token replay and 64-row fake quant can overfill the middle 3090,
+while `16,8,40` and `16,14,34` can overfill the RTX 8000 during backward
+recompute. The launcher now defaults back to `16,16,32`,
 `OMNICODER_FAKE_QUANT_CHUNK_ROWS=16`, and
 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` so resumed reward-replay and
 long-context jobs keep the RTX 8000 as the largest shard without giving it a
-40-layer FFN recompute spike.
+34- or 40-layer FFN recompute spike.
 
 ## P40 Sidecar Lane
 

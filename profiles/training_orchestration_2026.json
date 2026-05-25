@@ -1027,8 +1027,8 @@
       "placement_head_device": 2,
       "placement_layer_counts": [
         16,
-        14,
-        34
+        16,
+        32
       ],
       "precision": "fp16",
       "rank_device_map": [

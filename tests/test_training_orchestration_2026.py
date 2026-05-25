@@ -1298,7 +1298,7 @@ def test_run_long_context_cli_requires_existing_curation_manifest(tmp_path, monk
 def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args():
     script = (Path(__file__).resolve().parents[1] / "scripts" / "ai_server_fast_pipeline_20b.sh").read_text(encoding="utf-8")
     assert 'OMNICODER_CURATION_MANIFEST' in script
-    assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,14,34}"' in script
+    assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"' in script
     assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-16}"' in script
     assert '-e PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"' in script
     branch = script.split('if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then', 1)[1].split(
