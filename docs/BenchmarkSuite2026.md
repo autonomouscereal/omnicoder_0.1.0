@@ -122,6 +122,14 @@ TheAgentCompany workspace `scenarios.json` plus sibling `task.md`,
 schemas, enterprise actor context, oracle hints, and task prompts without
 falling back to generic JSON descriptor noise.
 
+The May 25 hardening pass added real public-dev coverage for FACTS Grounding
+and MC-Search raw/HF rows, including raw CSV/JSON/JSONL/Parquet fallback when
+the `datasets` package is unavailable. OmniDocBench rows now promote nested
+`page_info.image_path` and layout annotations into scorable document tasks, and
+Real5 rows no longer pass as reportable-quality tasks unless they carry paired
+OmniDocBench ground-truth references or native annotations. Public-dev rows are
+still not reportable scores; release runs must use authorized snapshot roots.
+
 The next registered source wave adds materializer hooks and reportable-root
 contracts for ClawBench browser-agent tasks, SWE-rebench V2 coding repair,
 LongProc long-output procedures, NoLiMa 1M retrieval/reasoning, AudioMarathon

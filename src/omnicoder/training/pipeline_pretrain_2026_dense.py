@@ -498,14 +498,15 @@ def _validate_resume_payload(
     preset: object | None,
     args: argparse.Namespace | None,
     sharded: bool,
-) -> None:
+) -> bool:
+    placement_changed = False
     saved_preset = checkpoint.get("preset") if isinstance(checkpoint.get("preset"), dict) else {}
     saved_name = str(saved_preset.get("name") or "")
     current_name = str(getattr(preset, "name", "")) if preset is not None else ""
     if saved_name and current_name and saved_name != current_name:
         raise ValueError(f"resume checkpoint preset mismatch: checkpoint={saved_name!r} current={current_name!r}")
     if args is None:
-        return
+        return False
     if bool(getattr(args, "require_target_contract", False)) and saved_name and saved_name != TARGET_PRESET:
         raise ValueError(f"target contract resume requires {TARGET_PRESET!r}, got checkpoint preset {saved_name!r}")
     train_args = checkpoint.get("train_args") if isinstance(checkpoint.get("train_args"), dict) else {}
@@ -517,11 +518,62 @@ def _validate_resume_payload(
         if key == "pipeline_stage_ranges" and str(getattr(args, "placement_layer_counts", "") or "").strip():
             continue
         if str(saved) != str(current):
+            if sharded and key in {"pipeline_stage_ranges", "placement_layer_counts"}:
+                placement_changed = True
+                continue
             raise ValueError(f"resume checkpoint {key} mismatch: checkpoint={saved!r} current={current!r}")
     if sharded:
         saved_world = checkpoint.get("world_size")
         if saved_world is not None and int(saved_world) != int(dist.get_world_size()):
             raise ValueError(f"resume world_size mismatch: checkpoint={saved_world} current={dist.get_world_size()}")
+    return placement_changed
+
+
+def _fill_missing_from_checkpoint_state(
+    filtered: dict[str, torch.Tensor],
+    missing: list[str],
+    checkpoint_state: dict[str, Any],
+    current: dict[str, torch.Tensor],
+) -> list[str]:
+    remaining: list[str] = []
+    for key in missing:
+        candidate = checkpoint_state.get(key)
+        if isinstance(candidate, torch.Tensor) and tuple(candidate.shape) == tuple(current[key].shape):
+            filtered[key] = candidate
+        elif key == "lm_head.weight":
+            embed = checkpoint_state.get("embed.weight")
+            if isinstance(embed, torch.Tensor) and tuple(embed.shape) == tuple(current[key].shape):
+                filtered[key] = embed
+            else:
+                remaining.append(key)
+        else:
+            remaining.append(key)
+    return remaining
+
+
+def _fill_missing_from_other_shards(
+    source: Path,
+    filtered: dict[str, torch.Tensor],
+    missing: list[str],
+    current: dict[str, torch.Tensor],
+    *,
+    local_rank: int,
+) -> list[str]:
+    remaining = list(missing)
+    world_size = int(dist.get_world_size())
+    for rank_index in range(world_size):
+        if rank_index == local_rank or not remaining:
+            continue
+        checkpoint_path = source / f"rank{rank_index:05d}.pt"
+        if not checkpoint_path.exists():
+            continue
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        state = checkpoint.get("model_state_dict") if isinstance(checkpoint, dict) else None
+        if not isinstance(state, dict):
+            continue
+        remaining = _fill_missing_from_checkpoint_state(filtered, remaining, state, current)
+        del checkpoint, state
+    return remaining
 
 
 def load_checkpoint_shard(
@@ -550,7 +602,7 @@ def load_checkpoint_shard(
     state = checkpoint.get("model_state_dict") if isinstance(checkpoint, dict) else None
     if not isinstance(state, dict):
         raise ValueError(f"checkpoint {checkpoint_path} has no model_state_dict")
-    _validate_resume_payload(checkpoint, preset=preset, args=args, sharded=sharded)
+    placement_changed = _validate_resume_payload(checkpoint, preset=preset, args=args, sharded=sharded)
     current = shard.state_dict()
     filtered: dict[str, torch.Tensor] = {}
     missing: list[str] = []
@@ -561,10 +613,12 @@ def load_checkpoint_shard(
             filtered[key] = state["embed.weight"]
         else:
             missing.append(key)
+    if missing and sharded and placement_changed:
+        missing = _fill_missing_from_other_shards(source, filtered, missing, current, local_rank=int(dist.get_rank()))
     if missing:
         raise ValueError(f"checkpoint {checkpoint_path} is missing local shard tensors: {missing[:8]}")
     shard.load_state_dict(filtered, strict=False)
-    if optimizer is not None and checkpoint.get("optimizer_state_dict"):
+    if optimizer is not None and not placement_changed and checkpoint.get("optimizer_state_dict"):
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     _restore_rng_state(checkpoint.get("rng_state") or {})
     return int(checkpoint.get("global_step") or 0), checkpoint.get("last_loss")

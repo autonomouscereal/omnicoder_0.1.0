@@ -199,6 +199,13 @@ posttraining stage such as a disk-full `safety_negative_replay` checkpoint
 flush: restart from the last complete checkpoint before the failure and slice
 the posttraining algorithm order at the failed algorithm.
 
+When a complete checkpoint was saved with an older fast-card layer placement,
+the pipeline loader can repartition tensors into the current placement. This is
+used to move older `16,16,32` shards into the RTX8000-biased `16,8,40` layout:
+each rank loads its own shard first, then streams only missing layer tensors
+from the other rank files. Optimizer state is not restored across that
+placement change because parameter ordering and ownership changed.
+
 ```bash
 cd /home/cereal/omnicoder_2026_work
 OMNICODER_MODE=run-posttraining \

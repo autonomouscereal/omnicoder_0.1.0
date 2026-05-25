@@ -26686,6 +26686,480 @@
             "tool_calls"
           ]
         }
+      },
+      {
+        "name": "AllenAI olmOCR SynthMix 1025",
+        "family": "omnimodal_understanding",
+        "hf_id": "allenai/olmOCR-synthmix-1025",
+        "url": "https://huggingface.co/datasets/allenai/olmOCR-synthmix-1025",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
+        "splits": [
+          "arxiv_math",
+          "arxiv_cs",
+          "arxiv_physics",
+          "tables",
+          "general"
+        ],
+        "max_records": 4096,
+        "target_modality": "long_context",
+        "use_policy": "train",
+        "license": "ODC-BY",
+        "license_tier": "attribution_train_ok",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Verifiable OCR/layout synthetic rows for tables, math, headers, reading order, and document markdown RLVR.",
+        "curriculum_axes": [
+          "document_ocr_train",
+          "layout_rlvr",
+          "table_ocr",
+          "math_ocr",
+          "long_context_document"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "doc_id",
+            "page_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "pdf",
+            "image",
+            "document"
+          ],
+          "target": [
+            "answer",
+            "gt_markdown",
+            "markdown",
+            "text",
+            "expected_markdown"
+          ],
+          "media": [
+            "image",
+            "image_path",
+            "pdf",
+            "document"
+          ]
+        }
+      },
+      {
+        "name": "AllenAI olmOCR Mix 1025",
+        "family": "omnimodal_understanding",
+        "hf_id": "allenai/olmOCR-mix-1025",
+        "url": "https://huggingface.co/datasets/allenai/olmOCR-mix-1025",
+        "source_year": 2025,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
+        "splits": [
+          "00_documents",
+          "01_books",
+          "02_loc_transcripts",
+          "03_national_archives"
+        ],
+        "max_records": 4096,
+        "target_modality": "long_context",
+        "use_policy": "train",
+        "license": "ODC-BY",
+        "license_tier": "attribution_train_ok",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Weight-bearing document transcription and long-form OCR data to complement held-out olmOCR Bench rows.",
+        "curriculum_axes": [
+          "document_ocr_train",
+          "books_ocr",
+          "archives_ocr",
+          "long_document_transcription",
+          "markdown_structure"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "doc_id",
+            "page_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "document",
+            "pdf",
+            "image"
+          ],
+          "target": [
+            "answer",
+            "text",
+            "markdown",
+            "gt_markdown",
+            "expected_markdown"
+          ],
+          "media": [
+            "image",
+            "image_path",
+            "pdf",
+            "document"
+          ]
+        }
+      },
+      {
+        "name": "Tongyi-Zhiwen DocQA-RL 1.6K",
+        "family": "long_context",
+        "hf_id": "Tongyi-Zhiwen/DocQA-RL-1.6K",
+        "url": "https://huggingface.co/datasets/Tongyi-Zhiwen/DocQA-RL-1.6K",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "long_context",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Verifiable long-document QA/RL rows for math, logic, multihop retrieval, and million-context retention.",
+        "curriculum_axes": [
+          "long_context_rlvr",
+          "document_qa",
+          "multihop_reasoning",
+          "doc_math",
+          "retrieval_grounding"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "qid",
+            "task_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "document",
+            "context"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "ground_truth",
+            "reference"
+          ]
+        }
+      },
+      {
+        "name": "DAMO VideoRefer 700K",
+        "family": "omnimodal_understanding",
+        "hf_id": "DAMO-NLP-SG/VideoRefer-700K",
+        "url": "https://huggingface.co/datasets/DAMO-NLP-SG/VideoRefer-700K",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "video",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_with_video_provenance_audit",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Object-level spatiotemporal video grounding, short/detailed captions, and video QA rows.",
+        "curriculum_axes": [
+          "video_grounding",
+          "spatiotemporal_reference",
+          "object_tracking",
+          "video_qa",
+          "caption_alignment"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "video_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "caption",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "detailed_caption",
+            "short_caption"
+          ],
+          "media": [
+            "video",
+            "video_path",
+            "video_url"
+          ]
+        }
+      },
+      {
+        "name": "TIGER-Lab VisCode Multi 679K",
+        "family": "coding_agentic",
+        "hf_id": "TIGER-Lab/VisCode-Multi-679K",
+        "url": "https://huggingface.co/datasets/TIGER-Lab/VisCode-Multi-679K",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "code",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Multilingual visual-code generation and artifact reasoning rows across SVG, HTML, LaTeX, Python, and chart-like outputs.",
+        "curriculum_axes": [
+          "visual_code_generation",
+          "artifact_coding",
+          "multilingual_code",
+          "svg_html_latex",
+          "chart_program_synthesis"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id",
+            "task_id"
+          ],
+          "prompt": [
+            "prompt",
+            "instruction",
+            "question",
+            "input"
+          ],
+          "target": [
+            "answer",
+            "code",
+            "solution",
+            "output",
+            "target"
+          ]
+        }
+      },
+      {
+        "name": "Nanbeige ToolMind Full",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "Nanbeige/ToolMind",
+        "url": "https://huggingface.co/datasets/Nanbeige/ToolMind",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
+        "configs": [
+          "graph_syn_datasets",
+          "open_datasets"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_with_synthetic_provenance_audit",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Large direct function/tool-calling rows that broaden the smaller cleaned ToolMind subset already present.",
+        "curriculum_axes": [
+          "function_calling",
+          "tool_graph_planning",
+          "api_schema_grounding",
+          "multi_step_tool_use",
+          "agentic_sft"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "instruction",
+            "messages",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "tool_calls",
+            "output"
+          ],
+          "tool_calls": [
+            "tool_calls",
+            "function_call",
+            "actions"
+          ]
+        }
+      },
+      {
+        "name": "NVIDIA HelpSteer3",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "nvidia/HelpSteer3",
+        "url": "https://huggingface.co/datasets/nvidia/HelpSteer3",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
+        "configs": [
+          "preference",
+          "edit",
+          "edit_quality",
+          "feedback",
+          "principle"
+        ],
+        "splits": [
+          "train",
+          "validation"
+        ],
+        "max_records": 4096,
+        "target_modality": "tool",
+        "use_policy": "reward_only",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_reward_model",
+        "source_review_status": "public_reward_reviewed_2026_05_25",
+        "materialization_note": "High-quality multilingual preference, edit, feedback, and principle rows for reward-model/DPO replay.",
+        "curriculum_axes": [
+          "reward_modeling",
+          "preference_alignment",
+          "edit_quality",
+          "multilingual_alignment",
+          "principle_feedback"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "instruction",
+            "conversation",
+            "question"
+          ],
+          "target": [
+            "chosen",
+            "response",
+            "answer",
+            "feedback",
+            "principle"
+          ]
+        }
+      },
+      {
+        "name": "CommonForms",
+        "family": "omnimodal_understanding",
+        "hf_id": "jbarrow/CommonForms",
+        "url": "https://huggingface.co/datasets/jbarrow/CommonForms",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "image",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Form-field detection and structured document extraction rows for OCR, layout, and key-value grounding.",
+        "curriculum_axes": [
+          "form_ocr",
+          "key_value_extraction",
+          "document_layout",
+          "structured_vision",
+          "robust_ocr"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "doc_id",
+            "image_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "form",
+            "image"
+          ],
+          "target": [
+            "answer",
+            "labels",
+            "fields",
+            "annotations",
+            "target"
+          ],
+          "media": [
+            "image",
+            "image_path",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "HuggingFace FinePDFs English",
+        "family": "text_pretraining",
+        "hf_id": "HuggingFaceFW/finepdfs",
+        "url": "https://huggingface.co/datasets/HuggingFaceFW/finepdfs",
+        "source_year": 2026,
+        "last_verified": "2026-05-25",
+        "registry_wave": "twenty_first_wave_ocr_video_tool_reward_2026_05_25",
+        "config": "eng_Latn",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "long_context",
+        "use_policy": "train",
+        "license": "ODC-BY",
+        "license_tier": "attribution_train_ok",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "source_review_status": "public_train_reviewed_2026_05_25",
+        "materialization_note": "Large PDF-derived English long-form text for document pretraining and million-context packing.",
+        "curriculum_axes": [
+          "pdf_text_pretraining",
+          "long_context",
+          "document_language_modeling",
+          "retrieval_anchors",
+          "ocr_postprocess"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "doc_id",
+            "url"
+          ],
+          "prompt": [
+            "text",
+            "markdown",
+            "content",
+            "document"
+          ],
+          "target": [
+            "text",
+            "markdown",
+            "content",
+            "document"
+          ]
+        }
       }
     ],
     "enabled": true,

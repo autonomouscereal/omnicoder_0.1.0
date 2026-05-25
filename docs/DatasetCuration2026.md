@@ -392,6 +392,15 @@ in internal distillation/reward buckets until teacher completions or reward
 labels are promoted, while olmOCR Bench and Limbic MCP rows are held out for
 evaluation.
 
+The twenty-first-wave registry slice adds the highest-signal permissive sources
+from the May 25 scout pass: olmOCR SynthMix/Mix for document OCR and layout
+training, DocQA-RL for verifiable long-document reasoning, VideoRefer for
+spatiotemporal video grounding, VisCode-Multi for visual-code/artifact
+generation, full ToolMind for function-calling, CommonForms for structured
+form OCR, FinePDFs English for PDF-derived long-context text, and HelpSteer3 as
+reward-only attribution data. The train bucket remains fail-closed on unsafe
+license markers, synthetic-only rows, and contamination status.
+
 ## Quality And Safety
 
 The curation layer stores scores instead of only dropping rows. It tracks

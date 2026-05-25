@@ -141,9 +141,10 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     "agent_mc_search_mmrag_2026": {
         "source": "https://mc-search-project.github.io/",
         "git": "https://github.com/YennNing/MC-Search.git",
-        "hf": [{"id": "YennNing/MC-Search", "splits": ["train", "test", "validation"]}],
+        "hf": [{"id": "YennNing/MC-Search", "splits": ["train"], "files": ["*.parquet", "**/*.parquet", "*.json", "**/*.json"]}],
         "kind": "agent_tool_multimodal",
-        "splits": ["train", "test", "validation"],
+        "splits": ["train"],
+        "required_assets": ["data/KB/all_docs.json", "data/KB/all_image_infos.json", "data/KB/knowledge_base_emb.tar.gz"],
     },
     "agent_metr_time_horizon_hcast_2026": {
         "source": "https://metr.org/time-horizons/",
@@ -665,9 +666,11 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "splits": ["test", "validation", "train"],
     },
     "multimodal_omnidocbench_2026": {
-        "source": "https://github.com/opendatalab/OmniDocBench",
+        "source": "https://huggingface.co/datasets/opendatalab/OmniDocBench",
         "git": "https://github.com/opendatalab/OmniDocBench.git",
+        "hf": [{"id": "opendatalab/OmniDocBench", "splits": ["train"], "files": ["OmniDocBench.json", "**/OmniDocBench.json", "*.json"]}],
         "kind": "document_ai",
+        "splits": ["train"],
     },
     "multimodal_cc_ocr_v2_2026": {
         "source": "https://github.com/Eioss/CC-OCR-V2",
@@ -676,9 +679,10 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
     },
     "multimodal_real5_omnidocbench_2026": {
         "source": "https://huggingface.co/datasets/PaddlePaddle/Real5-OmniDocBench",
-        "hf": [{"id": "PaddlePaddle/Real5-OmniDocBench", "splits": ["train", "test", "validation"]}],
+        "hf": [{"id": "PaddlePaddle/Real5-OmniDocBench", "splits": ["train"]}],
         "kind": "document_ai",
-        "splits": ["train", "test", "validation"],
+        "splits": ["train"],
+        "requires_paired_ground_truth": True,
     },
     "multimodal_mme_unify_2026": {
         "source": "https://huggingface.co/datasets/wulin222/MME-Unify",
@@ -1279,6 +1283,42 @@ def normalized_media(raw: dict[str, Any], row: dict[str, Any]) -> list[dict[str,
     return out
 
 
+def promote_document_benchmark_fields(benchmark_id: str, raw: dict[str, Any]) -> dict[str, Any]:
+    promoted = dict(raw)
+    page_info = promoted.get("page_info")
+    if isinstance(page_info, dict):
+        for source_key, target_key in (
+            ("image_path", "img_path"),
+            ("image", "image"),
+            ("page_id", "page_id"),
+            ("page_num", "page_num"),
+            ("page_no", "page_no"),
+            ("doc_id", "doc_id"),
+            ("document_id", "document_id"),
+        ):
+            if has_value(page_info.get(source_key)) and not has_value(promoted.get(target_key)):
+                promoted[target_key] = page_info[source_key]
+    if "omnidocbench" in benchmark_id:
+        if not has_value(promoted.get("prompt")) and any(
+            has_value(promoted.get(key))
+            for key in ("layout_dets", "gt_parse", "gt_markdown", "annotations", "page_info", "img_path", "image")
+        ):
+            promoted["prompt"] = "Parse this document page into the official OmniDocBench layout/text representation."
+        if not any(has_value(promoted.get(key)) for key in ("gt_markdown", "gt_parse", "annotation", "annotations", "layout_dets", "expected_markdown", "gt_text")):
+            extra = promoted.get("extra")
+            if isinstance(extra, dict):
+                for key in ("gt_markdown", "gt_parse", "annotation", "annotations", "layout_dets", "expected_markdown", "gt_text"):
+                    if has_value(extra.get(key)):
+                        promoted[key] = extra[key]
+                        break
+        if benchmark_id == "multimodal_real5_omnidocbench_2026" and not has_value(promoted.get("omnidocbench_gt_ref")):
+            for key in ("gt_path", "gt_file", "gt_json", "annotation_path", "layout_dets_path", "source_gt_ref"):
+                if has_value(promoted.get(key)):
+                    promoted["omnidocbench_gt_ref"] = promoted[key]
+                    break
+    return promoted
+
+
 def normalized_metadata(raw: dict[str, Any], kind: str, profile_record: dict[str, Any]) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "kind": kind,
@@ -1315,6 +1355,10 @@ def normalized_metadata(raw: dict[str, Any], kind: str, profile_record: dict[str
         "document_type",
         "metric_info",
         "evaluator_reference",
+        "omnidocbench_gt_ref",
+        "page_info",
+        "layout_dets",
+        "extra",
     ):
         value = raw.get(key)
         if has_value(value):
@@ -1455,6 +1499,20 @@ def read_json_rows(path: Path, limit: int) -> list[dict[str, Any]]:
     except Exception:
         return []
 
+    row_like_keys = (
+        "question",
+        "prompt",
+        "task_description",
+        "instruction",
+        "problem_statement",
+        "page_info",
+        "layout_dets",
+        "gt_markdown",
+        "gt_parse",
+        "img_path",
+        "image_path",
+    )
+
     def flatten(value: Any) -> list[dict[str, Any]]:
         if isinstance(value, list):
             out: list[dict[str, Any]] = []
@@ -1464,7 +1522,7 @@ def read_json_rows(path: Path, limit: int) -> list[dict[str, Any]]:
                     break
             return out[:limit]
         if isinstance(value, dict):
-            if any(value.get(key) not in (None, "", [], {}) for key in ("question", "prompt", "task_description", "instruction", "problem_statement")):
+            if any(value.get(key) not in (None, "", [], {}) for key in row_like_keys):
                 return [value]
             for key in ("data", "examples", "questions", "items", "tasks", "records", "validation", "test", "train"):
                 child = value.get(key)
@@ -1487,7 +1545,7 @@ def read_json_rows(path: Path, limit: int) -> list[dict[str, Any]]:
 
     candidates: Any = payload
     if isinstance(payload, dict):
-        if any(payload.get(key) not in (None, "", [], {}) for key in ("question", "prompt", "task_description", "instruction", "problem_statement")):
+        if any(payload.get(key) not in (None, "", [], {}) for key in row_like_keys):
             candidates = [payload]
         else:
             for key in ("data", "examples", "questions", "items", "tasks", "records", "validation", "test", "train"):
@@ -1510,6 +1568,23 @@ def read_csv_rows(path: Path, limit: int) -> list[dict[str, Any]]:
             if len(rows) >= limit:
                 break
     return rows
+
+
+def read_parquet_rows(path: Path, limit: int) -> list[dict[str, Any]]:
+    try:
+        import pandas as pd  # type: ignore
+    except Exception:
+        pd = None  # type: ignore[assignment]
+    if pd is not None:
+        frame = pd.read_parquet(path)
+        return [dict(item) for item in frame.head(limit).to_dict(orient="records")]
+    try:
+        import pyarrow.parquet as pq  # type: ignore
+    except Exception:
+        return []
+    table = pq.read_table(path)
+    rows = table.to_pylist()
+    return [dict(item) for item in rows[:limit] if isinstance(item, dict)]
 
 
 def parse_lightweight_yaml(text: str) -> dict[str, Any]:
@@ -1893,6 +1968,8 @@ def scan_local_source(path: Path, limit: int) -> tuple[list[dict[str, Any]], lis
                 loaded = read_json_rows(file_path, limit - len(rows))
             elif suffix == ".csv":
                 loaded = read_csv_rows(file_path, limit - len(rows))
+            elif suffix == ".parquet":
+                loaded = read_parquet_rows(file_path, limit - len(rows))
             elif suffix in {".yaml", ".yml"}:
                 loaded = read_yaml_rows(file_path)
             elif suffix == ".toml":
@@ -1937,7 +2014,7 @@ def hf_file_rows(
 
     patterns = [str(item) for item in entry.get("files") or entry.get("file_patterns") or [] if str(item).strip()]
     if not patterns:
-        patterns = ["*.jsonl", "*.json", "*.csv"]
+        patterns = ["*.jsonl", "*.json", "*.csv", "*.parquet"]
     revision = str(entry.get("revision") or "").strip() or None
     try:
         list_kwargs: dict[str, Any] = {"repo_type": "dataset"}
@@ -1949,7 +2026,7 @@ def hf_file_rows(
     selected = [
         name
         for name in files
-        if name.lower().endswith((".jsonl", ".json", ".csv"))
+        if name.lower().endswith((".jsonl", ".json", ".csv", ".parquet"))
         and any(fnmatch.fnmatch(name, pattern) for pattern in patterns)
     ]
     for name in sorted(selected):
@@ -1972,6 +2049,8 @@ def hf_file_rows(
                 loaded = read_json_rows(local, limit - len(rows))
             elif suffix == ".csv":
                 loaded = read_csv_rows(local, limit - len(rows))
+            elif suffix == ".parquet":
+                loaded = read_parquet_rows(local, limit - len(rows))
             else:
                 loaded = []
             for idx, item in enumerate(loaded):
@@ -1997,7 +2076,18 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
     try:
         from datasets import Audio, load_dataset  # type: ignore
     except Exception as exc:
-        return [], [f"datasets package unavailable: {exc}"]
+        errors.append(f"datasets package unavailable: {exc}")
+        for entry in spec.get("hf") or []:
+            if not isinstance(entry, dict):
+                entry = {"id": str(entry).strip()}
+            dataset_id = str(entry.get("id") or entry.get("dataset") or "").strip()
+            if not dataset_id:
+                continue
+            file_rows, file_errors = hf_file_rows(dataset_id, entry, cache_root, limit)
+            errors.extend(file_errors)
+            if file_rows:
+                return file_rows, errors
+        return [], errors
     try:
         from datasets import Video  # type: ignore
     except Exception:
@@ -2103,6 +2193,8 @@ def normalize_task(
     index: int,
 ) -> dict[str, Any] | None:
     kind = str(spec.get("kind") or profile_record.get("adapter_kind") or "").lower()
+    if "document_ai" in kind:
+        raw = promote_document_benchmark_fields(benchmark_id, raw)
     task_id = first_value(
         raw,
         (
@@ -2231,6 +2323,7 @@ def normalize_task(
             "gt_parse",
             "gt_text",
             "gt_markdown",
+            "layout_dets",
             "text_sequence",
             "transcription",
             "ocr",
@@ -2560,7 +2653,15 @@ def normalize_task(
         "layout_type",
         "document_type",
         "gt_path",
+        "gt_file",
+        "gt_json",
+        "annotation_path",
+        "layout_dets_path",
+        "omnidocbench_gt_ref",
         "annotations",
+        "layout_dets",
+        "page_info",
+        "extra",
     ):
         value = first_value(raw, (key,))
         if value not in (None, "", [], {}):
@@ -2605,6 +2706,15 @@ def is_scorable_task(row: dict[str, Any], spec: dict[str, Any]) -> bool:
     if "factuality_grounding" in kind:
         return bool(row.get("prompt") and row.get("target") and row.get("context_document"))
     if "document_ai" in kind:
+        if spec.get("requires_paired_ground_truth"):
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            has_gt_ref = has_value(row.get("omnidocbench_gt_ref")) or has_value(metadata.get("omnidocbench_gt_ref"))
+            has_native_gt = any(
+                has_value(row.get(key))
+                for key in ("answer", "gt_markdown", "gt_parse", "annotations", "layout_dets", "gt_text")
+            )
+            if not (has_gt_ref or has_native_gt):
+                return False
         return bool(row.get("prompt") and row.get("target") and row.get("media"))
     if "agent_tool_multimodal" in kind:
         return bool(row.get("prompt") and row.get("target"))

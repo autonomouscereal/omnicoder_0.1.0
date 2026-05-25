@@ -1104,6 +1104,7 @@ def test_materializer_hardens_2026_factuality_search_and_document_rows() -> None
             {
                 "image": {"path": "Real5-OmniDocBench-Warping/page_208.png", "bytes": b"12345"},
                 "scenario": "Warping",
+                "omnidocbench_gt_ref": "OmniDocBench/annotations/page_208.json",
             },
             True,
         ),
@@ -1203,6 +1204,71 @@ def test_hf_rows_falls_back_to_raw_hub_files(monkeypatch, tmp_path: Path) -> Non
     assert rows[0]["_hf_file"] == "mmlb_data_example/NIAH/retrieval-image_test_K128_dep6.jsonl"
     assert rows[0]["image_list"] == ["page4.png"]
     assert not errors
+
+
+def test_hf_rows_uses_raw_files_when_datasets_package_is_unavailable(monkeypatch, tmp_path: Path) -> None:
+    remote_file = tmp_path / "examples.csv"
+    remote_file.write_text(
+        "system_instruction,user_request,context_document\n"
+        '"Use context","What is named?","The document names PageRank."\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(sys.modules, "datasets", None)
+    hub_module = types.SimpleNamespace(
+        list_repo_files=lambda repo_id, repo_type="dataset", revision=None: ["examples.csv"],
+        hf_hub_download=lambda repo_id, filename, repo_type="dataset", cache_dir=None, revision=None: str(remote_file),
+    )
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+
+    rows, errors = materializer.hf_rows(
+        {"hf": [{"id": "google/FACTS-grounding-public", "files": ["*.csv"]}]},
+        tmp_path / "cache",
+        8,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["_hf_file"] == "examples.csv"
+    assert rows[0]["context_document"] == "The document names PageRank."
+    assert any("datasets package unavailable" in error for error in errors)
+
+
+def test_omnidocbench_page_info_promotes_media_and_ground_truth() -> None:
+    task = materializer.normalize_task(
+        "multimodal_omnidocbench_2026",
+        {
+            "page_info": {"image_path": "images/doc_001.png", "page_id": "doc-1"},
+            "layout_dets": [{"category_type": "paragraph", "text": "Hello"}],
+            "extra": {"document_type": "paper"},
+        },
+        materializer.KNOWN_BENCHMARKS["multimodal_omnidocbench_2026"],
+        {"adapter_kind": "omnidocbench_document_parse_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert task is not None
+    assert task["prompt"].startswith("Parse this document page")
+    assert task["img_path"] == "images/doc_001.png"
+    assert task["media"][0]["path"] == "images/doc_001.png"
+    assert materializer.is_scorable_task(task, materializer.KNOWN_BENCHMARKS["multimodal_omnidocbench_2026"])
+
+
+def test_real5_image_only_rows_require_paired_omnidocbench_ground_truth() -> None:
+    task = materializer.normalize_task(
+        "multimodal_real5_omnidocbench_2026",
+        {"image": {"path": "Real5-OmniDocBench-Warping/page_208.png"}, "scenario": "Warping"},
+        materializer.KNOWN_BENCHMARKS["multimodal_real5_omnidocbench_2026"],
+        {"adapter_kind": "real5_omnidocbench_robust_parse_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert task is not None
+    assert not materializer.is_scorable_task(task, materializer.KNOWN_BENCHMARKS["multimodal_real5_omnidocbench_2026"])
 
 
 def test_materializer_tracks_2026_official_source_mirrors() -> None:

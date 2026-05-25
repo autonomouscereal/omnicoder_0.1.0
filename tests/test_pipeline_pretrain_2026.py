@@ -16,6 +16,7 @@ from omnicoder.training.pipeline_pretrain_2026_dense import (
     OmniCoder2026PipelineShard,
     WeightedTextJsonlDataset,
     _rank_complete_file,
+    load_checkpoint_shard,
     _wait_for_rank_checkpoint_markers,
     load_full_checkpoint_shard,
     parse_stage_ranges,
@@ -140,6 +141,64 @@ def test_full_checkpoint_loads_rank_local_shard_from_cpu(tmp_path) -> None:
     for key, value in source.state_dict().items():
         if key.startswith("blocks."):
             assert torch.equal(value, target.state_dict()[key])
+
+
+def test_sharded_checkpoint_resume_can_reshard_changed_layer_placement(tmp_path, monkeypatch) -> None:
+    cfg = tiny_cfg(n_layers=6)
+    old_ranges = stage_ranges(6, "2,2,2")
+    checkpoint = tmp_path / "old_placement_checkpoint"
+    checkpoint.mkdir()
+    saved_args = checkpoint_args(tmp_path)
+    saved_args.placement_layer_counts = "2,2,2"
+    train_args = {
+        "pipeline_stage_ranges": saved_args.pipeline_stage_ranges,
+        "placement_layer_counts": saved_args.placement_layer_counts,
+        "pipeline_microbatches": saved_args.pipeline_microbatches,
+        "pipeline_schedule": saved_args.pipeline_schedule,
+        "fake_quant": saved_args.fake_quant,
+    }
+    for rank in range(3):
+        source = OmniCoder2026PipelineShard(cfg, shard_spec(rank, old_ranges))
+        state: dict[str, torch.Tensor] = {}
+        for key, tensor in source.state_dict().items():
+            if key.startswith("blocks."):
+                layer = int(key.split(".", 2)[1])
+                state[key] = torch.full_like(tensor.detach().cpu(), float(layer + 1))
+            elif key == "lm_head.weight":
+                state[key] = torch.full_like(tensor.detach().cpu(), 99.0)
+            else:
+                state[key] = torch.full_like(tensor.detach().cpu(), float(rank + 1))
+        torch.save(
+            {
+                "model_state_dict": state,
+                "optimizer_state_dict": {"must_not_load_after_reshard": True},
+                "global_step": 13,
+                "last_loss": 0.75,
+                "preset": {"name": "tiny"},
+                "world_size": 3,
+                "train_args": train_args,
+            },
+            checkpoint / f"rank{rank:05d}.pt",
+        )
+        pipeline._atomic_write_json(
+            _rank_complete_file(checkpoint, rank),
+            {"status": "complete", "rank": rank, "world_size": 3, "global_step": 13},
+        )
+    pipeline._atomic_write_json(checkpoint / "manifest.json", {"status": "complete", "world_size": 3})
+    pipeline._atomic_write_json(checkpoint / ".complete.json", {"status": "complete", "world_size": 3})
+
+    monkeypatch.setattr(pipeline, "dist", FakeDist(rank=2, world_size=3))
+    target = OmniCoder2026PipelineShard(cfg, shard_spec(2, stage_ranges(6, "1,1,4")))
+    current_args = checkpoint_args(tmp_path)
+    current_args.placement_layer_counts = "1,1,4"
+    step, loss = load_checkpoint_shard(checkpoint, target, preset=SimpleNamespace(name="tiny"), args=current_args)
+
+    assert step == 13
+    assert loss == 0.75
+    loaded = target.state_dict()
+    assert torch.equal(loaded["blocks.2.attn_norm.weight"], torch.full_like(loaded["blocks.2.attn_norm.weight"], 3.0))
+    assert torch.equal(loaded["blocks.5.attn_norm.weight"], torch.full_like(loaded["blocks.5.attn_norm.weight"], 6.0))
+    assert torch.equal(loaded["lm_head.weight"], torch.full_like(loaded["lm_head.weight"], 99.0))
 
 
 def test_final_stage_chunked_lm_loss_backward() -> None:

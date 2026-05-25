@@ -1749,6 +1749,47 @@ def test_repo_dataset_registry_covers_twentieth_wave_multimodal_agentic_reasonin
     assert by_name["Limbic Eval Tool Use MCP"]["splits"] == ["test"]
 
 
+def test_repo_dataset_registry_covers_twenty_first_wave_ocr_video_tool_reward_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "twenty_first_wave_ocr_video_tool_reward_2026_05_25"
+
+    expected_policy = {
+        "AllenAI olmOCR SynthMix 1025": "train",
+        "AllenAI olmOCR Mix 1025": "train",
+        "Tongyi-Zhiwen DocQA-RL 1.6K": "train",
+        "DAMO VideoRefer 700K": "train",
+        "TIGER-Lab VisCode Multi 679K": "train",
+        "Nanbeige ToolMind Full": "train",
+        "NVIDIA HelpSteer3": "reward_only",
+        "CommonForms": "train",
+        "HuggingFace FinePDFs English": "train",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    train_names = {name for name, policy in expected_policy.items() if policy == "train"}
+    for name in train_names:
+        assert by_name[name]["contamination_status"] == "clean"
+        assert by_name[name]["protected_benchmark_scan"] == "clean"
+        assert expansion.source_use_bucket(by_name[name]) == "train"
+
+    assert by_name["AllenAI olmOCR SynthMix 1025"]["license_tier"] == "attribution_train_ok"
+    assert by_name["AllenAI olmOCR Mix 1025"]["splits"] == [
+        "00_documents",
+        "01_books",
+        "02_loc_transcripts",
+        "03_national_archives",
+    ]
+    assert by_name["Nanbeige ToolMind Full"]["configs"] == ["graph_syn_datasets", "open_datasets"]
+    assert by_name["NVIDIA HelpSteer3"]["configs"] == ["preference", "edit", "edit_quality", "feedback", "principle"]
+    assert expansion.source_use_bucket(by_name["NVIDIA HelpSteer3"]) == "research_internal"
+    assert by_name["HuggingFace FinePDFs English"]["config"] == "eng_Latn"
+
+
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
