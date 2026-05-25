@@ -260,6 +260,12 @@ def test_repo_agentic_profile_includes_environment_rl_and_eighth_wave_sources() 
         "mcpmark_trajectory_log",
         "browsecomp_plus_corpus",
         "computer_use_psai",
+        "swe_chat_real_agent_sessions",
+        "spreadsheet_rl_tool_environments",
+        "when2tool_tool_selection_rlvr",
+        "agent_reward_bench_web_trajectory_preferences",
+        "tasktrove_agentic_tasks",
+        "orak_game_agent_trajectories",
     ]:
         assert family in cfg["source_families"]
     env = cfg["environment_rl_2026"]

@@ -1405,6 +1405,79 @@ def row_target(row: dict[str, Any]) -> str:
     return extract_text(target_json if isinstance(target_json, dict) else row)[:3000]
 
 
+def payload_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        text = extract_text(value).strip()
+        return text or json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+    if isinstance(value, list):
+        parts = [payload_text(item) for item in value[:64]]
+        return "\n".join(part for part in parts if part).strip()
+    if value not in (None, "", [], {}):
+        return str(value).strip()
+    return ""
+
+
+def first_payload_text(payload: dict[str, Any], keys: tuple[str, ...]) -> str:
+    casefold_keys = {str(key).casefold(): key for key in payload}
+    for key in keys:
+        lookup = key if key in payload else casefold_keys.get(str(key).casefold(), key)
+        value = payload.get(lookup)
+        text = payload_text(value)
+        if text:
+            return text
+    return ""
+
+
+def preference_pair_from_payload(payload: dict[str, Any], fallback_chosen: str) -> tuple[str, str]:
+    chosen = first_payload_text(
+        payload,
+        (
+            "chosen",
+            "chosen_response",
+            "preferred",
+            "preferred_response",
+            "winner_response",
+            "positive",
+            "accepted",
+            "selected",
+        ),
+    )
+    rejected = first_payload_text(
+        payload,
+        (
+            "rejected",
+            "rejected_response",
+            "negative",
+            "loser",
+            "loser_response",
+            "unpreferred",
+            "unpreferred_response",
+            "dispreferred",
+            "bad_response",
+        ),
+    )
+    response_a = first_payload_text(payload, ("response_a", "response_a_text", "answer_a", "candidate_a", "output_a", "audio_a", "video_a"))
+    response_b = first_payload_text(payload, ("response_b", "response_b_text", "answer_b", "candidate_b", "output_b", "audio_b", "video_b"))
+    preference = str(
+        payload.get("winner")
+        or payload.get("preference")
+        or payload.get("preferred_label")
+        or payload.get("chosen_label")
+        or payload.get("label")
+        or ""
+    ).strip().casefold()
+    if response_a and response_b:
+        if preference in {"a", "0", "left", "response_a", "answer_a", "candidate_a", "model_a", "audio_a", "video_a"}:
+            chosen = chosen or response_a
+            rejected = rejected or response_b
+        elif preference in {"b", "1", "right", "response_b", "answer_b", "candidate_b", "model_b", "audio_b", "video_b"}:
+            chosen = chosen or response_b
+            rejected = rejected or response_a
+    return (chosen or fallback_chosen).strip(), rejected.strip()
+
+
 def iter_artifact_manifest_rows(rows: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
     seen: set[str] = set()
     for row in rows:
@@ -1625,16 +1698,16 @@ def build_posttraining_curation_exports(
             }
         )
         source_payload = row.get("source_payload") if isinstance(row.get("source_payload"), dict) else {}
-        rejected = source_payload.get("rejected") or source_payload.get("rejected_response") or source_payload.get("negative")
-        if isinstance(rejected, str) and rejected.strip():
+        chosen, rejected = preference_pair_from_payload(source_payload, target)
+        if rejected:
             preference_rows.append(
                 {
                     "schema": "omnicoder.posttraining_preference_2026.v1",
                     "training_kind": "tool_preference",
                     "record_id": stable_hash({"kind": "preference", "source_record_id": row.get("record_id")}),
                     "prompt": prompt,
-                    "chosen": target,
-                    "rejected": rejected.strip(),
+                    "chosen": chosen,
+                    "rejected": rejected,
                     **base,
                 }
             )

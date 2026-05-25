@@ -164,6 +164,37 @@ def test_profiles_include_seventh_wave_agentic_omni_release_gates() -> None:
     assert "generation_music_arena_2026" in suite["release_gates"]["generation_release"]
 
 
+def test_profiles_include_ninth_wave_agentic_multimodal_generation_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    for adapter_id in [
+        "agent_agencybench_2026",
+        "agent_locobench_agent_2026",
+        "coding_swe_mera_2026",
+        "coding_ale_bench_2026",
+        "multimodal_mathnet_2026",
+        "multimodal_video_morse500_2026",
+        "multimodal_sonic_o1_2026",
+        "multimodal_mme_unify_2026",
+        "multimodal_longspeech_2026",
+        "generation_emergent_tts_eval_2026",
+        "generation_long_tts_eval_2026",
+        "generation_tta_bench_2026",
+        "generation_nv_bench_2026",
+    ]:
+        assert adapter_id in adapters
+
+    assert "agent_agencybench_2026" in suite["release_gates"]["agent_tool_release"]
+    assert "agent_locobench_agent_2026" in suite["release_gates"]["agent_tool_release"]
+    assert "coding_swe_mera_2026" in suite["release_gates"]["coding_release"]
+    assert "coding_ale_bench_2026" in suite["release_gates"]["coding_release"]
+    assert "multimodal_mme_unify_2026" in suite["release_gates"]["multimodal_understanding_release"]
+    assert "multimodal_sonic_o1_2026" in suite["release_gates"]["multimodal_understanding_release"]
+    assert "generation_emergent_tts_eval_2026" in suite["release_gates"]["generation_release"]
+    assert "generation_long_tts_eval_2026" in suite["release_gates"]["generation_release"]
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")

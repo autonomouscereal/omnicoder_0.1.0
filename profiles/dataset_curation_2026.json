@@ -20223,6 +20223,7 @@
         "max_records": 512,
         "name": "MME-Unify",
         "registry_wave": "seventh_wave_agentic_math_code_omni_2026_05_24",
+        "hf_id": "wulin222/MME-Unify",
         "splits": [
           "train"
         ],
@@ -21944,6 +21945,329 @@
         ],
         "target_modality": "audio",
         "url": "https://huggingface.co/datasets/declare-lab/audio-alpaca",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "swe",
+          "coding_agent_trajectory",
+          "tool_calls",
+          "preference_pushback",
+          "real_world_repo_repair"
+        ],
+        "family": "coding_agentic",
+        "field_map": {
+          "id": [
+            "session_id",
+            "conversation_id",
+            "id",
+            "trajectory_id"
+          ],
+          "prompt": [
+            "messages",
+            "issue",
+            "task",
+            "repo",
+            "tool_calls"
+          ],
+          "target": [
+            "assistant_response",
+            "commit",
+            "patch",
+            "trajectory",
+            "chosen"
+          ],
+          "rejected": [
+            "rejected",
+            "pushback",
+            "bad_response",
+            "negative"
+          ]
+        },
+        "gated": true,
+        "hf_id": "SALT-NLP/SWE-chat",
+        "last_verified": "2026-05-25",
+        "license": "ODC-BY with gated contact-share access",
+        "license_tier": "research_internal_privacy_review",
+        "max_records": 8192,
+        "name": "SWE-chat",
+        "registry_wave": "ninth_wave_agentic_preference_benchmark_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "code",
+        "url": "https://huggingface.co/datasets/SALT-NLP/SWE-chat",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "spreadsheet_agent",
+          "tool_rlvr",
+          "formula_reasoning",
+          "environment_reward"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "episode_id"
+          ],
+          "prompt": [
+            "instruction",
+            "spreadsheet_state",
+            "question",
+            "tools"
+          ],
+          "target": [
+            "answer",
+            "actions",
+            "trajectory",
+            "reward"
+          ]
+        },
+        "gated": false,
+        "hf_id": "Spreadsheet-RL/Spreadsheet-RL",
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-SA-4.0",
+        "license_tier": "share_alike_review",
+        "max_records": 4096,
+        "name": "Spreadsheet-RL",
+        "registry_wave": "ninth_wave_agentic_preference_benchmark_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train",
+          "test"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/Spreadsheet-RL/Spreadsheet-RL",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "tool_selection",
+          "when_to_call_tools",
+          "verifiable_steps",
+          "rlvr"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "question_id"
+          ],
+          "prompt": [
+            "question",
+            "prompt",
+            "tools",
+            "parameters"
+          ],
+          "target": [
+            "answer",
+            "steps",
+            "tool_calls",
+            "chosen"
+          ],
+          "rejected": [
+            "rejected",
+            "negative",
+            "no_tool_error"
+          ]
+        },
+        "gated": false,
+        "hf_id": "cesun/When2Tool",
+        "last_verified": "2026-05-25",
+        "license": "MIT",
+        "license_tier": "permissive",
+        "max_records": 4096,
+        "name": "When2Tool",
+        "registry_wave": "ninth_wave_agentic_preference_benchmark_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train",
+          "test"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/cesun/When2Tool",
+        "use_policy": "train"
+      },
+      {
+        "curriculum_axes": [
+          "game_agent",
+          "behavior_cloning",
+          "long_horizon_rl",
+          "environment_reward"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "episode_id",
+            "trajectory_id"
+          ],
+          "prompt": [
+            "observation",
+            "state",
+            "task",
+            "instruction"
+          ],
+          "target": [
+            "action",
+            "trajectory",
+            "reward",
+            "answer"
+          ]
+        },
+        "gated": false,
+        "hf_id": "KRAFTON/Orak",
+        "last_verified": "2026-05-25",
+        "license": "non-commercial license review required",
+        "license_tier": "research_internal_noncommercial",
+        "max_records": 2048,
+        "name": "Orak Game-Agent Trajectories",
+        "registry_wave": "ninth_wave_agentic_preference_benchmark_2026_05_25",
+        "source_year": 2025,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/KRAFTON/Orak",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "web_agent_reward",
+          "browser_rlvr",
+          "trajectory_preference",
+          "screen_grounding"
+        ],
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "trajectory_id",
+            "task_id"
+          ],
+          "prompt": [
+            "task",
+            "instruction",
+            "screenshots",
+            "observation",
+            "messages"
+          ],
+          "target": [
+            "chosen",
+            "trajectory",
+            "answer",
+            "reward"
+          ],
+          "rejected": [
+            "rejected",
+            "loser",
+            "bad_trajectory",
+            "negative"
+          ]
+        },
+        "gated": false,
+        "hf_id": "McGill-NLP/agent-reward-bench",
+        "last_verified": "2026-05-25",
+        "license": "license review required",
+        "license_tier": "benchmark_holdout_review",
+        "max_records": 1408,
+        "name": "Agent Reward Bench",
+        "registry_wave": "ninth_wave_agentic_preference_benchmark_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/McGill-NLP/agent-reward-bench",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "tasktrove_agentic",
+          "terminal_tasks",
+          "tool_environment",
+          "sft_seed"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "path",
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "task",
+            "instruction",
+            "path"
+          ],
+          "target": [
+            "solution",
+            "task_binary",
+            "answer"
+          ]
+        },
+        "gated": false,
+        "hf_id": "open-thoughts/TaskTrove",
+        "last_verified": "2026-05-25",
+        "license": "license review required",
+        "license_tier": "source_license_review",
+        "max_records": 4096,
+        "name": "TaskTrove",
+        "registry_wave": "ninth_wave_agentic_preference_benchmark_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "test"
+        ],
+        "target_modality": "tool",
+        "url": "https://huggingface.co/datasets/open-thoughts/TaskTrove",
+        "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "deepseek_v4_distill",
+          "reasoning",
+          "math_code",
+          "decontamination_required"
+        ],
+        "family": "math_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "task_id"
+          ],
+          "prompt": [
+            "prompt",
+            "question",
+            "instruction",
+            "messages"
+          ],
+          "target": [
+            "answer",
+            "response",
+            "completion",
+            "reasoning"
+          ]
+        },
+        "gated": false,
+        "hf_id": "Jackrong/DeepSeek-V4-Distill-8000x",
+        "last_verified": "2026-05-25",
+        "license": "MIT, third-party provenance review required",
+        "license_tier": "research_internal_decontam_required",
+        "max_records": 4096,
+        "name": "DeepSeek-V4-Distill-8000x",
+        "registry_wave": "ninth_wave_agentic_preference_benchmark_2026_05_25",
+        "source_year": 2026,
+        "splits": [
+          "train"
+        ],
+        "target_modality": "text",
+        "url": "https://huggingface.co/datasets/Jackrong/DeepSeek-V4-Distill-8000x",
         "use_policy": "research_internal"
       }
     ],

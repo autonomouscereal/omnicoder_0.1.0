@@ -1154,6 +1154,32 @@ def test_repo_dataset_registry_covers_eighth_wave_training_curation_sources() ->
     assert profile["mixture_controller_2026"]["synthetic_ratio_caps"]["synthetic_only_train_minimum_credit"] == 0.0
 
 
+def test_repo_dataset_registry_covers_ninth_wave_agentic_preference_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "ninth_wave_agentic_preference_benchmark_2026_05_25"
+    expected_policy = {
+        "SWE-chat": "research_internal",
+        "Spreadsheet-RL": "research_internal",
+        "When2Tool": "train",
+        "Orak Game-Agent Trajectories": "research_internal",
+        "Agent Reward Bench": "research_internal",
+        "TaskTrove": "research_internal",
+        "DeepSeek-V4-Distill-8000x": "research_internal",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["use_policy"] == policy
+        assert by_name[name]["registry_wave"] == wave
+    assert by_name["MME-Unify"]["hf_id"] == "wulin222/MME-Unify"
+    assert by_name["When2Tool"]["license_tier"] == "permissive"
+    assert "rejected" in by_name["SWE-chat"]["field_map"]
+    assert expansion.source_use_bucket(by_name["When2Tool"]) == "train"
+    assert expansion.source_use_bucket(by_name["SWE-chat"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["Agent Reward Bench"]) != "train"
+
+
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))

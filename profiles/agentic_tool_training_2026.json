@@ -208,7 +208,13 @@
       "browsecomp_long_context_holdout",
       "browsecomp_plus_corpus",
       "computer_use_psai",
-      "theagentcompany_eval_holdout"
+      "theagentcompany_eval_holdout",
+      "swe_chat_real_agent_sessions",
+      "spreadsheet_rl_tool_environments",
+      "when2tool_tool_selection_rlvr",
+      "agent_reward_bench_web_trajectory_preferences",
+      "tasktrove_agentic_tasks",
+      "orak_game_agent_trajectories"
     ],
     "stages": [
       "tool_sft",

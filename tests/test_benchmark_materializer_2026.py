@@ -512,6 +512,96 @@ def test_materializer_normalizes_next_wave_2026_aliases() -> None:
     assert mmlong["ctxs"] == [{"text": "long doc"}]
 
 
+def test_materializer_normalizes_agentic_omni_benchmark_wave_aliases() -> None:
+    swe_mera = materializer.normalize_task(
+        "coding_swe_mera_2026",
+        {
+            "instance_id": "mera-1",
+            "problem_statement": "Fix the failing parser.",
+            "repo": "demo/repo",
+            "base_commit": "abc123",
+            "test_patch": "diff --git a/test_parser.py b/test_parser.py",
+            "FAIL_TO_PASS": ["tests/test_parser.py::test_cli"],
+            "command_test": "pytest tests/test_parser.py",
+        },
+        {"kind": "swe", "source": "fixture"},
+        {"adapter_kind": "dynamic_swe_repo_patch_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    mathnet = materializer.normalize_task(
+        "multimodal_mathnet_2026",
+        {
+            "uid": "mathnet-1",
+            "problem_markdown": "Use the diagram to prove the angle claim.",
+            "final_answer": "42 degrees",
+            "images": ["diagram.png"],
+            "competition": "Olympiad",
+            "country": "US",
+            "topics_flat": ["geometry"],
+        },
+        {"kind": "multimodal_math", "source": "fixture"},
+        {"adapter_kind": "multimodal_olympiad_math_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    sonic = materializer.normalize_task(
+        "multimodal_sonic_o1_2026",
+        {
+            "annotation_id": "sonic-1",
+            "question_text": "When does the speaker laugh?",
+            "ground_truth": "00:03-00:05",
+            "video_url": "clip.mp4",
+            "audio_url": "clip.wav",
+            "start_time": 3.0,
+            "end_time": 5.0,
+            "duration": 10.0,
+            "rationale": "The laugh begins after the door closes.",
+        },
+        {"kind": "video_audio", "source": "fixture"},
+        {"adapter_kind": "audio_video_o1_reasoning_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+    emergent_tts = materializer.normalize_task(
+        "generation_emergent_tts_eval_2026",
+        {
+            "item_id": "tts-1",
+            "text_to_synthesize": "Whisper the line with relief.",
+            "reference_audio": "voice.wav",
+            "language": "en",
+            "evolution_depth": 3,
+            "rubric": {"prosody": "relieved whisper"},
+        },
+        {"kind": "audio_generation", "source": "fixture"},
+        {"adapter_kind": "expressive_tts_instruction_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert swe_mera is not None and swe_mera["repo"] == "demo/repo"
+    assert swe_mera["FAIL_TO_PASS"] == ["tests/test_parser.py::test_cli"]
+    assert swe_mera["command_test"] == "pytest tests/test_parser.py"
+    assert mathnet is not None and mathnet["prompt"].startswith("Use the diagram")
+    assert mathnet["answer"] == "42 degrees"
+    assert mathnet["country"] == "US"
+    assert sonic is not None and sonic["prompt"].startswith("When does")
+    assert sonic["video_url"] == "clip.mp4"
+    assert sonic["audio_url"] == "clip.wav"
+    assert sonic["start_time"] == 3.0 and sonic["end_time"] == 5.0
+    assert emergent_tts is not None and emergent_tts["expected_artifact_kind"] == "audio_generation"
+    assert emergent_tts["reference_audio"] == "voice.wav"
+    assert emergent_tts["rubric"] == {"prosody": "relieved whisper"}
+
+
 def test_hf_rows_falls_back_to_raw_hub_files(monkeypatch, tmp_path: Path) -> None:
     remote_file = tmp_path / "mmlong.jsonl"
     _write_jsonl(
@@ -579,6 +669,8 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "coding_octocodingbench_2026",
         "coding_gittaskbench_2026",
         "coding_verisoftbench_2026",
+        "coding_swe_mera_2026",
+        "coding_ale_bench_2026",
         "reasoning_hle_rolling_2026",
         "reasoning_imo_bench_2026",
         "reasoning_matharena_2026",
@@ -594,12 +686,23 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "multimodal_audiobench_mmau_2026",
         "multimodal_mmau_pro_2026",
         "multimodal_mmlongbench_2026",
+        "multimodal_mathnet_2026",
+        "multimodal_video_morse500_2026",
+        "multimodal_sonic_o1_2026",
+        "multimodal_mme_unify_2026",
+        "multimodal_longspeech_2026",
         "multimodal_audiomarathon_2026",
         "multimodal_mmar_audio_music_reasoning_2026",
         "multimodal_rewardbench2_2026",
         "generation_audio_speech_2026",
         "generation_ttsds2_2026",
+        "generation_emergent_tts_eval_2026",
+        "generation_long_tts_eval_2026",
+        "generation_tta_bench_2026",
+        "generation_nv_bench_2026",
         "generation_oneig_bench_2026",
+        "agent_agencybench_2026",
+        "agent_locobench_agent_2026",
         "safety_tool_security_2026",
         "deployment_turboquant_kv_1m_2026",
         "deployment_performance_2026",
@@ -624,6 +727,10 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert octo["id"] == "MiniMaxAI/OctoCodingBench"
     graphwalks = materializer.KNOWN_BENCHMARKS["long_context_graphwalks_2026"]["hf"][0]
     assert graphwalks["id"] == "openai/graphwalks"
+    assert materializer.KNOWN_BENCHMARKS["agent_terminal_bench_2026"]["hf"] == ["harborframework/terminal-bench-2.0"]
+    assert materializer.KNOWN_BENCHMARKS["coding_swe_mera_2026"]["hf"][0]["id"] == "MERA-evaluation/SWE-MERA"
+    assert materializer.KNOWN_BENCHMARKS["multimodal_mme_unify_2026"]["hf"][0]["id"] == "wulin222/MME-Unify"
+    assert materializer.KNOWN_BENCHMARKS["generation_long_tts_eval_2026"]["hf"][0]["id"] == "wcy1122/Long-TTS-Eval"
 
 
 def test_audit_profile_reports_materializer_and_core25_gaps(tmp_path: Path) -> None:

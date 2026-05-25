@@ -3999,6 +3999,403 @@
         "release": "locked authorized MMLongBench suite"
       },
       "task_format": "jsonl_multimodal_long_context_item"
+    },
+    {
+      "adapter_kind": "hours_long_autonomous_tool_agent_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_agencybench_2026",
+      "context_windows": [
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_successful_trajectories",
+        "reset_tool_sandboxes",
+        "record_long_horizon_state_hash"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "tool_call_efficiency",
+        "state_progress_score",
+        "autonomy_hours_completed",
+        "safety_violation_rate"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "browser",
+        "filesystem",
+        "long_context"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/GAIR/AgencyBench",
+      "splits": {
+        "smoke": "one public long-horizon agency task",
+        "nightly": "domain-balanced AgencyBench slice",
+        "release": "locked authorized AgencyBench suite"
+      },
+      "task_format": "jsonl_long_horizon_agent_task"
+    },
+    {
+      "adapter_kind": "long_context_coding_agent_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_locobench_agent_2026",
+      "context_windows": [
+        32768,
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_reference_actions",
+        "hash_repository_context",
+        "quarantine_successful_agent_traces"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "context_retrieval_accuracy",
+        "tool_plan_validity",
+        "patch_or_answer_correctness",
+        "latency_per_100k_tokens"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "tool_schema",
+        "long_context"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://github.com/SalesforceAIResearch/LoCoBench-Agent",
+      "splits": {
+        "smoke": "one public 10K-token coding-agent task",
+        "nightly": "10K/100K/1M LoCoBench-Agent slice",
+        "release": "locked authorized LoCoBench-Agent suite"
+      },
+      "task_format": "jsonl_long_context_agent_task"
+    },
+    {
+      "adapter_kind": "dynamic_swe_repo_patch_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_swe_mera_2026",
+      "holdout_policy": [
+        "hide_gold_patches",
+        "hide_hidden_tests",
+        "record_container_image_digest",
+        "quarantine_successful_eval_trajectories"
+      ],
+      "metrics": [
+        "patch_applies",
+        "test_pass_rate",
+        "multilingual_issue_resolution",
+        "repo_setup_success",
+        "tool_steps"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "git",
+        "tests"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://huggingface.co/datasets/MERA-evaluation/SWE-MERA",
+      "splits": {
+        "smoke": "one public dev SWE-MERA task",
+        "nightly": "dev/lite/multilang balanced SWE-MERA slice",
+        "release": "locked authorized SWE-MERA suite"
+      },
+      "task_format": "jsonl_patch_task"
+    },
+    {
+      "adapter_kind": "algorithm_engineering_agent_eval",
+      "axis": "coding",
+      "benchmark_id": "coding_ale_bench_2026",
+      "holdout_policy": [
+        "hide_private_scores",
+        "pin_seeded_evaluator",
+        "record_time_and_memory_limits"
+      ],
+      "metrics": [
+        "score_improvement",
+        "compile_success",
+        "runtime_within_limit",
+        "search_efficiency",
+        "regression_rate"
+      ],
+      "modalities": [
+        "text",
+        "code",
+        "tests"
+      ],
+      "release_gate": "coding_release",
+      "source": "https://github.com/SakanaAI/ALE-Bench",
+      "splits": {
+        "smoke": "one public algorithm-engineering task",
+        "nightly": "heuristic-problem balanced ALE-Bench slice",
+        "release": "locked authorized ALE-Bench suite"
+      },
+      "task_format": "jsonl_algorithm_engineering_task"
+    },
+    {
+      "adapter_kind": "multimodal_olympiad_math_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_mathnet_2026",
+      "holdout_policy": [
+        "hide_solutions",
+        "hash_image_assets",
+        "record_competition_provenance"
+      ],
+      "metrics": [
+        "exact_answer_rate",
+        "proof_quality",
+        "diagram_grounding",
+        "retrieval_accuracy"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "math"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/ShadenA/MathNet",
+      "splits": {
+        "smoke": "one public multimodal math problem",
+        "nightly": "country/topic/diagram balanced MathNet slice",
+        "release": "locked authorized MathNet suite"
+      },
+      "task_format": "jsonl_multimodal_math_task"
+    },
+    {
+      "adapter_kind": "scripted_video_reasoning_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_video_morse500_2026",
+      "holdout_policy": [
+        "hide_ground_truth_rationales",
+        "hash_video_assets",
+        "record_reasoning_category"
+      ],
+      "metrics": [
+        "answer_accuracy",
+        "temporal_reasoning",
+        "spatial_reasoning",
+        "planning_reasoning"
+      ],
+      "modalities": [
+        "text",
+        "video"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/video-reasoning/morse-500",
+      "splits": {
+        "smoke": "one public MORSE-500 video task",
+        "nightly": "category-balanced MORSE-500 slice",
+        "release": "locked authorized MORSE-500 suite"
+      },
+      "task_format": "jsonl_video_reasoning_task"
+    },
+    {
+      "adapter_kind": "audio_video_o1_reasoning_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_sonic_o1_2026",
+      "holdout_policy": [
+        "hide_rationales",
+        "hash_audio_video_assets",
+        "respect_gated_hf_license"
+      ],
+      "metrics": [
+        "summarization_quality",
+        "mcq_accuracy",
+        "temporal_localization_iou",
+        "audio_visual_grounding"
+      ],
+      "modalities": [
+        "text",
+        "audio",
+        "video"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/vector-institute/sonic-o1",
+      "splits": {
+        "smoke": "one gated-access SONIC-O1 public item when authorized",
+        "nightly": "task1/task2/task3 balanced SONIC-O1 slice",
+        "release": "locked authorized SONIC-O1 suite"
+      },
+      "task_format": "jsonl_audio_video_reasoning_task"
+    },
+    {
+      "adapter_kind": "unified_multimodal_understanding_generation_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_mme_unify_2026",
+      "holdout_policy": [
+        "hide_answer_labels",
+        "hash_media_assets",
+        "separate_understanding_and_generation_subtasks"
+      ],
+      "metrics": [
+        "mcq_accuracy",
+        "cross_modal_instruction_success",
+        "generation_instruction_alignment",
+        "category_breakdown"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/wulin222/MME-Unify",
+      "splits": {
+        "smoke": "one public unified multimodal item",
+        "nightly": "category-balanced MME-Unify slice",
+        "release": "locked authorized MME-Unify suite"
+      },
+      "task_format": "jsonl_unified_multimodal_task"
+    },
+    {
+      "adapter_kind": "long_form_speech_understanding_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_longspeech_2026",
+      "holdout_policy": [
+        "hide_transcript_answers",
+        "hash_audio_assets",
+        "record_duration_bucket"
+      ],
+      "metrics": [
+        "long_speech_qa_accuracy",
+        "timestamp_grounding",
+        "speaker_consistency",
+        "audio_tokens_per_second"
+      ],
+      "modalities": [
+        "text",
+        "audio",
+        "long_context"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/ICTNLP/LongSpeech-Eval",
+      "splits": {
+        "smoke": "one public long-speech QA item",
+        "nightly": "duration/language balanced long-speech slice",
+        "release": "locked authorized long-speech suite"
+      },
+      "task_format": "jsonl_long_speech_qa"
+    },
+    {
+      "adapter_kind": "expressive_tts_instruction_eval",
+      "axis": "audio_generation",
+      "benchmark_id": "generation_emergent_tts_eval_2026",
+      "holdout_policy": [
+        "hide_judge_labels",
+        "hash_reference_audio",
+        "record_prompt_evolution_depth"
+      ],
+      "metrics": [
+        "prosody_adherence",
+        "expressiveness_score",
+        "pronunciation_error_rate",
+        "naturalness_mos",
+        "artifact_rate"
+      ],
+      "modalities": [
+        "text",
+        "audio",
+        "speech"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://huggingface.co/datasets/bosonai/EmergentTTS-Eval",
+      "splits": {
+        "smoke": "one public expressive TTS prompt",
+        "nightly": "category/evolution-depth balanced EmergentTTS-Eval slice",
+        "release": "locked authorized EmergentTTS-Eval suite"
+      },
+      "task_format": "jsonl_tts_generation_prompt"
+    },
+    {
+      "adapter_kind": "long_form_tts_eval",
+      "axis": "audio_generation",
+      "benchmark_id": "generation_long_tts_eval_2026",
+      "holdout_policy": [
+        "hide_judge_labels",
+        "record_word_count_bucket",
+        "hash_generated_audio"
+      ],
+      "metrics": [
+        "long_form_intelligibility",
+        "prosody_consistency",
+        "pronunciation_error_rate",
+        "artifact_rate",
+        "duration_alignment"
+      ],
+      "modalities": [
+        "text",
+        "audio",
+        "speech",
+        "long_context"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://huggingface.co/datasets/wcy1122/Long-TTS-Eval",
+      "splits": {
+        "smoke": "one long English and one long Chinese TTS prompt",
+        "nightly": "long/hard and en/zh balanced Long-TTS-Eval slice",
+        "release": "locked authorized Long-TTS-Eval suite"
+      },
+      "task_format": "jsonl_long_tts_generation_prompt"
+    },
+    {
+      "adapter_kind": "text_to_audio_generation_eval",
+      "axis": "audio_generation",
+      "benchmark_id": "generation_tta_bench_2026",
+      "holdout_policy": [
+        "hide_preference_labels",
+        "hash_audio_outputs",
+        "record_prompt_domain"
+      ],
+      "metrics": [
+        "prompt_adherence",
+        "semantic_audio_alignment",
+        "audio_artifact_rate",
+        "judge_preference_accuracy"
+      ],
+      "modalities": [
+        "text",
+        "audio"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://huggingface.co/datasets/Hui519/TTA-Bench",
+      "splits": {
+        "smoke": "one public text-to-audio item",
+        "nightly": "domain-balanced TTA-Bench slice",
+        "release": "locked authorized TTA-Bench suite"
+      },
+      "task_format": "jsonl_text_to_audio_generation_prompt"
+    },
+    {
+      "adapter_kind": "nonverbal_vocalization_tts_eval",
+      "axis": "audio_generation",
+      "benchmark_id": "generation_nv_bench_2026",
+      "holdout_policy": [
+        "respect_gated_hf_license",
+        "hide_judge_labels",
+        "record_language_and_speaker_count"
+      ],
+      "metrics": [
+        "nonverbal_expression_accuracy",
+        "speaker_consistency",
+        "naturalness_mos",
+        "artifact_rate"
+      ],
+      "modalities": [
+        "text",
+        "audio",
+        "speech"
+      ],
+      "release_gate": "generation_release",
+      "source": "https://huggingface.co/datasets/AnonyData/NV-Bench",
+      "splits": {
+        "smoke": "one authorized nonverbal vocalization item",
+        "nightly": "language/speaker balanced NV-Bench slice",
+        "release": "locked authorized NV-Bench suite"
+      },
+      "task_format": "jsonl_nonverbal_tts_prompt"
     }
   ],
   "contamination_controls": [
@@ -4076,7 +4473,9 @@
       "agent_mcpmark_universe_2026",
       "agent_browsecomp_long_context_2026",
       "agent_theagentcompany_enterprise_2026",
-      "agent_clawbench_browser_2026"
+      "agent_clawbench_browser_2026",
+      "agent_agencybench_2026",
+      "agent_locobench_agent_2026"
     ],
     "coding_release": [
       "coding_swe_bench_pro_2026",
@@ -4095,7 +4494,9 @@
       "coding_swe_rebench_v2_2026",
       "coding_octocodingbench_2026",
       "coding_gittaskbench_2026",
-      "coding_verisoftbench_2026"
+      "coding_verisoftbench_2026",
+      "coding_swe_mera_2026",
+      "coding_ale_bench_2026"
     ],
     "deployment_performance_release": [
       "deployment_performance_2026",
@@ -4125,7 +4526,11 @@
       "generation_vbench2_intrinsic_faithfulness_2026",
       "generation_vbenchpp_trustworthiness_2026",
       "generation_music_arena_2026",
-      "generation_oneig_bench_2026"
+      "generation_oneig_bench_2026",
+      "generation_emergent_tts_eval_2026",
+      "generation_long_tts_eval_2026",
+      "generation_tta_bench_2026",
+      "generation_nv_bench_2026"
     ],
     "global_must_pass": [
       "raw_postgresql_schema_applies",
@@ -4176,7 +4581,12 @@
       "multimodal_audiobench_mmau_2026",
       "multimodal_unim_any_to_any_2026",
       "multimodal_audiomarathon_2026",
-      "multimodal_mmlongbench_2026"
+      "multimodal_mmlongbench_2026",
+      "multimodal_mathnet_2026",
+      "multimodal_video_morse500_2026",
+      "multimodal_sonic_o1_2026",
+      "multimodal_mme_unify_2026",
+      "multimodal_longspeech_2026"
     ],
     "reasoning_release": [
       "reasoning_arc_agi3_2026",
@@ -4888,7 +5298,10 @@
       "https://os-world.github.io/",
       "https://www.minimax.io/news/minimax-m27-en",
       "https://github.com/openclaw/clawbench",
-      "https://huggingface.co/datasets/TIGER-Lab/ClawBench"
+      "https://huggingface.co/datasets/TIGER-Lab/ClawBench",
+      "https://huggingface.co/datasets/GAIR/AgencyBench",
+      "https://github.com/SalesforceAIResearch/LoCoBench-Agent",
+      "https://huggingface.co/datasets/jasonqiu/LoCoBench"
     ],
     "agent_search_research_2026": [
       "https://openai.com/index/browsecomp/",
@@ -4908,7 +5321,9 @@
       "https://huggingface.co/datasets/nebius/SWE-rebench-V2",
       "https://huggingface.co/datasets/MiniMaxAI/OctoCodingBench",
       "https://huggingface.co/datasets/Nicole-Yi/GitTaskBench",
-      "https://huggingface.co/datasets/maxRyeery/VeriSoftBench"
+      "https://huggingface.co/datasets/maxRyeery/VeriSoftBench",
+      "https://huggingface.co/datasets/MERA-evaluation/SWE-MERA",
+      "https://github.com/SakanaAI/ALE-Bench"
     ],
     "deployment_quantization_2026": [
       "https://openreview.net/pdf/7d33913c9a4f47c8abb294d6beb85d30124747ca.pdf",
@@ -4922,13 +5337,19 @@
       "https://vchitect.github.io/VBench-2.0-project/",
       "https://www.musicarena.ai/",
       "https://arxiv.org/abs/2512.00336",
-      "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench"
+      "https://huggingface.co/datasets/OneIG-Bench/OneIG-Bench",
+      "https://huggingface.co/datasets/bosonai/EmergentTTS-Eval",
+      "https://huggingface.co/datasets/wcy1122/Long-TTS-Eval",
+      "https://huggingface.co/datasets/Hui519/TTA-Bench",
+      "https://huggingface.co/datasets/AnonyData/NV-Bench"
     ],
     "long_audio_visual_2026": [
       "https://huggingface.co/papers/2605.07593",
       "https://machinelearning.apple.com/research/amuse",
       "https://research.nvidia.com/labs/nemotron/files/NVIDIA-Nemotron-3-Omni-report.pdf",
-      "https://huggingface.co/datasets/AudioMarathon/AudioMarathon"
+      "https://huggingface.co/datasets/AudioMarathon/AudioMarathon",
+      "https://huggingface.co/datasets/ICTNLP/LongSpeech-Eval",
+      "https://huggingface.co/datasets/AIDC-AI/Marco_Longspeech"
     ],
     "long_context": [
       "https://github.com/THUDM/LongBench",
@@ -4956,7 +5377,11 @@
       "https://machinelearning.apple.com/research/towards-better-instruction-following",
       "https://www.microsoft.com/en-us/research/publication/mmar-a-challenging-benchmark-for-deep-reasoning-in-speech-audio-music-and-their-mix/",
       "https://huggingface.co/datasets/rl-research/multimodal-rewardbench-2",
-      "https://huggingface.co/datasets/ZhaoweiWang/MMLongBench"
+      "https://huggingface.co/datasets/ZhaoweiWang/MMLongBench",
+      "https://huggingface.co/datasets/ShadenA/MathNet",
+      "https://huggingface.co/datasets/video-reasoning/morse-500",
+      "https://huggingface.co/datasets/vector-institute/sonic-o1",
+      "https://huggingface.co/datasets/wulin222/MME-Unify"
     ],
     "omni_eval_2026": [
       "https://arxiv.org/abs/2509.17765",

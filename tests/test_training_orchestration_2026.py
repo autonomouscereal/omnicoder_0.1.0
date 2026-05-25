@@ -154,6 +154,42 @@ def test_curation_manifests_and_posttraining_exports_are_written(tmp_path, monke
     assert posttraining["counts"]["rlvr"] == manifest["records"]
 
 
+def test_posttraining_exports_preference_pairs_from_common_aliases(tmp_path):
+    train_rows = [
+        {
+            "record_id": "pref-a",
+            "source_id": "paired-preference-fixture",
+            "modality": "tool",
+            "input_json": {"messages": [{"role": "user", "content": "Pick the safer tool plan."}]},
+            "target_json": {"content": "Use read-only inspection first."},
+            "quality_score": 0.9,
+            "source_payload": {
+                "response_a_text": "Use read-only inspection first.",
+                "response_b_text": "Delete the directory and retry.",
+                "winner": "A",
+            },
+        },
+        {
+            "record_id": "pref-b",
+            "source_id": "chosen-rejected-fixture",
+            "modality": "audio",
+            "input_json": {"messages": [{"role": "user", "content": "Generate a clean TTS take."}]},
+            "target_json": {"content": "Clear calm speech."},
+            "quality_score": 0.8,
+            "source_payload": {"chosen_response": "Clear calm speech.", "rejected_response": "Clipped noisy speech."},
+        },
+    ]
+
+    manifest = orch.build_posttraining_curation_exports({}, tmp_path / "out", train_rows, [], [])
+    preferences = list(orch.iter_jsonl(Path(manifest["exports"]["preference"])))
+
+    assert manifest["counts"]["preference"] == 2
+    assert preferences[0]["chosen"] == "Use read-only inspection first."
+    assert preferences[0]["rejected"] == "Delete the directory and retry."
+    assert preferences[1]["chosen"] == "Clear calm speech."
+    assert preferences[1]["rejected"] == "Clipped noisy speech."
+
+
 def test_deterministic_splits_are_repeatable():
     rows = [{"record_id": f"row-{index}", "modality": "text", "payload_sha256": f"sha-{index}"} for index in range(20)]
     plan = {"eval_holdout_ratio": 0.10, "test_holdout_ratio": 0.10}
