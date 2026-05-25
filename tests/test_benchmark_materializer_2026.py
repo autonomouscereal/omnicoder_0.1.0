@@ -793,6 +793,22 @@ def test_materializer_normalizes_thirteenth_wave_2026_aliases() -> None:
         "fixture",
         0,
     )
+    indimath = materializer.normalize_task(
+        "reasoning_indimathbench_2026",
+        {
+            "problem_id": "rmo_2000_1",
+            "informal_statement": "Show that PQR is an equilateral triangle.",
+            "informal_solutions": ["Use angle chasing."],
+            "formal_statement": "theorem rmo_2000_1 : True := by trivial",
+            "problem_category": "geometry",
+        },
+        materializer.KNOWN_BENCHMARKS["reasoning_indimathbench_2026"],
+        {"adapter_kind": "formal_verification"},
+        {},
+        "public-dev",
+        "fixture",
+        3,
+    )
 
     assert longbench is not None
     assert longbench["prompt"] == "Give the answer directly."
@@ -808,6 +824,10 @@ def test_materializer_normalizes_thirteenth_wave_2026_aliases() -> None:
     assert mega["query_media"] == ["traffic_12_0.0832.jpg"]
     assert mega["example_media"] == ["traffic_0_0.0148.jpg"]
     assert mega["metric_info"]["response_parse_function"] == "answer_string"
+    assert indimath is not None
+    assert indimath["prompt"] == "Show that PQR is an equilateral triangle."
+    assert indimath["answer"] == "theorem rmo_2000_1 : True := by trivial"
+    assert indimath["formal_statement"] == "theorem rmo_2000_1 : True := by trivial"
 
 
 def test_smmbench_cluster_qa_rows_are_scorable_and_imagefolder_rows_are_rejected(tmp_path: Path) -> None:
@@ -981,11 +1001,14 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "agent_agencybench_2026",
         "agent_locobench_agent_2026",
         "agent_state_bench_2026",
+        "agent_mcpverse_2026",
+        "agent_ui_vision_2026",
         "safety_tool_security_2026",
         "deployment_turboquant_kv_1m_2026",
         "deployment_performance_2026",
         "long_context_ama_bench_2026",
         "multimodal_smmbench_2026",
+        "multimodal_vimul_bench_2026",
     }
     assert required.issubset(materializer.KNOWN_BENCHMARKS)
     voicebench = materializer.KNOWN_BENCHMARKS["generation_audio_speech_2026"]["hf"][0]
@@ -1035,6 +1058,9 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert "vstat_qa_clean.json" in vstat["files"]
     assert materializer.KNOWN_BENCHMARKS["generation_tricky_tts_2026"]["hf"] == ["Trelis/tricky-tts-public"]
     assert materializer.KNOWN_BENCHMARKS["agent_state_bench_2026"]["git"] == "https://github.com/microsoft/STATE-Bench.git"
+    assert materializer.KNOWN_BENCHMARKS["agent_mcpverse_2026"]["git"] == "https://github.com/hailsham/mcpverse.git"
+    assert materializer.KNOWN_BENCHMARKS["agent_ui_vision_2026"]["hf"][0]["id"] == "ServiceNow/ui-vision"
+    assert materializer.KNOWN_BENCHMARKS["long_context_longcodebench_2026"]["hf"][0]["id"] == "Steefano/LCB"
     assert materializer.KNOWN_BENCHMARKS["long_context_ama_bench_2026"]["hf"][0]["id"] == "AMA-bench/AMA-bench"
     smmbench = materializer.KNOWN_BENCHMARKS["multimodal_smmbench_2026"]["hf"][0]
     assert smmbench["id"] == "HuacanChai/SMMBench"
@@ -1044,6 +1070,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     rtv = materializer.KNOWN_BENCHMARKS["multimodal_rtv_bench_2026"]["hf"][0]
     assert rtv["id"] == "RTVBench/RTV-Bench"
     assert rtv["files"] == ["*.json", "*.jsonl", "*.csv"]
+    assert materializer.KNOWN_BENCHMARKS["multimodal_vimul_bench_2026"]["hf"][0]["id"] == "MBZUAI/ViMUL-Bench"
 
 
 def test_audit_profile_reports_materializer_and_core25_gaps(tmp_path: Path) -> None:

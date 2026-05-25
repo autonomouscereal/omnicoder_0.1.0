@@ -532,6 +532,15 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
     if not isinstance(splits, list) or not splits:
         splits = ["train"]
     config = entry.get("config")
+    configs_raw = entry.get("configs")
+    if config not in (None, "", [], {}):
+        configs: list[Any] = [config]
+    elif isinstance(configs_raw, str):
+        configs = [item.strip() for item in configs_raw.split(",") if item.strip()]
+    elif isinstance(configs_raw, list) and configs_raw:
+        configs = [item for item in configs_raw if item not in (None, "", [], {})]
+    else:
+        configs = [None]
     revision = entry.get("revision")
     data_files = entry.get("data_files")
     verification_mode = entry.get("verification_mode")
@@ -553,50 +562,57 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
     errors: list[str] = []
     per_split: dict[str, int] = {}
     remaining = limit
-    for split in splits:
+    for cfg in configs:
         if limit > 0 and remaining <= 0:
             break
-        try:
-            if config:
-                dataset = load_dataset(str(hf_id), str(config), split=str(split), **load_kwargs)
-            else:
-                dataset = load_dataset(str(hf_id), split=str(split), **load_kwargs)
-        except Exception as exc:
-            errors.append(f"{split}: {repr(exc)}")
-            continue
-        features = getattr(dataset, "features", None) or {}
-        for column, feature in features.items():
-            feature_name = feature.__class__.__name__
+        for split in splits:
+            if limit > 0 and remaining <= 0:
+                break
+            split_label = f"{cfg}:{split}" if cfg else str(split)
             try:
-                if feature_name == "Audio" and audio_cls is not None:
-                    dataset = dataset.cast_column(column, audio_cls(decode=False))
-                elif feature_name == "Video" and video_cls is not None:
-                    dataset = dataset.cast_column(column, video_cls(decode=False))
-                elif feature_name == "Image" and image_cls is not None:
-                    dataset = dataset.cast_column(column, image_cls(decode=False))
+                if cfg:
+                    dataset = load_dataset(str(hf_id), str(cfg), split=str(split), **load_kwargs)
+                else:
+                    dataset = load_dataset(str(hf_id), split=str(split), **load_kwargs)
             except Exception as exc:
-                errors.append(f"{split}:{column}: media decode disable failed: {repr(exc)}")
-        take = remaining if limit > 0 else 0
-        count = 0
-        try:
-            iterator = dataset if take <= 0 else islice(dataset, take)
-            for raw in iterator:
-                if isinstance(raw, dict):
-                    item = dict(raw)
-                    item.setdefault("_hf_split", str(split))
-                    rows.append(item)
-                    count += 1
-        except Exception as exc:
-            errors.append(f"{split}: iteration failed: {repr(exc)}")
-        per_split[str(split)] = count
-        if limit > 0:
-            remaining -= count
+                errors.append(f"{split_label}: {repr(exc)}")
+                continue
+            features = getattr(dataset, "features", None) or {}
+            for column, feature in features.items():
+                feature_name = feature.__class__.__name__
+                try:
+                    if feature_name == "Audio" and audio_cls is not None:
+                        dataset = dataset.cast_column(column, audio_cls(decode=False))
+                    elif feature_name == "Video" and video_cls is not None:
+                        dataset = dataset.cast_column(column, video_cls(decode=False))
+                    elif feature_name == "Image" and image_cls is not None:
+                        dataset = dataset.cast_column(column, image_cls(decode=False))
+                except Exception as exc:
+                    errors.append(f"{split_label}:{column}: media decode disable failed: {repr(exc)}")
+            take = remaining if limit > 0 else 0
+            count = 0
+            try:
+                iterator = dataset if take <= 0 else islice(dataset, take)
+                for raw in iterator:
+                    if isinstance(raw, dict):
+                        item = dict(raw)
+                        if cfg:
+                            item.setdefault("_hf_config", str(cfg))
+                        item.setdefault("_hf_split", str(split))
+                        rows.append(item)
+                        count += 1
+            except Exception as exc:
+                errors.append(f"{split_label}: iteration failed: {repr(exc)}")
+            per_split[split_label] = count
+            if limit > 0:
+                remaining -= count
     status = "ok" if rows else "failed" if errors else "empty"
     return rows, {
         "status": status,
         "source": "huggingface",
         "hf_id": str(hf_id),
         "config": config,
+        "configs": [str(item) for item in configs if item],
         "revision": revision,
         "data_files": data_files,
         "verification_mode": verification_mode,

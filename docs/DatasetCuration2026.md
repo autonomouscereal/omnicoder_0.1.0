@@ -228,6 +228,14 @@ Current high-value registry families:
   originated image/table/screenshot/document-style artifacts. SMMBench curation
   uses pinned raw `Samples/cluster_*/QA_sample.json` task files; the HF
   imagefolder split is image-only and remains unsuitable for scored rows.
+- Thirteenth- and fourteenth-wave May 25, 2026 additions add Agentic-MME,
+  ABC-Bench, LongBench-Pro, MEGA-Bench, StepEval-Audio-360, IndiMathBench,
+  DeepResearch-9K, MMFineReason, Lean Math Formal Corpus, MCPVerse, UI-Vision,
+  and ViMUL-Bench. MEGA-Bench uses explicit `core`/`open` HF configs,
+  MMFineReason uses the public `sft` split, and IndiMathBench is acquired from
+  the official JSON source. The fourteenth wave is eval-holdout for MCP,
+  desktop GUI, and multilingual audio-video tasks unless a future
+  non-answer-key derivative is created.
   STATE-Bench is wired in the benchmark suite as a stateful tool/memory
   evaluation rather than as train data, because its value is the locked
   enterprise task loop and state-mutating scoring contract.

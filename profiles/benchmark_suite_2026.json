@@ -4037,6 +4037,77 @@
       "task_format": "jsonl_long_horizon_agent_task"
     },
     {
+      "adapter_kind": "mcpverse_realworld_mcp_tool_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_mcpverse_2026",
+      "context_windows": [
+        32768,
+        131072,
+        1048576
+      ],
+      "holdout_policy": [
+        "hide_reference_answers",
+        "snapshot_mcp_server_versions",
+        "separate_tool_schema_from_solver_trace",
+        "quarantine_successful_tool_trajectories"
+      ],
+      "metrics": [
+        "task_success_rate",
+        "tool_plan_validity",
+        "tool_error_recovery_rate",
+        "context_efficiency"
+      ],
+      "modalities": [
+        "text",
+        "tool_schema",
+        "filesystem",
+        "long_context"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://github.com/hailsham/mcpverse",
+      "splits": {
+        "smoke": "one public MCPVerse tool task",
+        "nightly": "tool-family balanced MCPVerse slice",
+        "release": "locked authorized MCPVerse server snapshot"
+      },
+      "task_format": "jsonl_mcpverse_tool_task"
+    },
+    {
+      "adapter_kind": "desktop_gui_vision_action_eval",
+      "axis": "agent_tool",
+      "benchmark_id": "agent_ui_vision_2026",
+      "context_windows": [
+        32768,
+        131072
+      ],
+      "holdout_policy": [
+        "hide_action_labels_until_scoring",
+        "hash_gui_screenshots",
+        "record_application_and_platform",
+        "quarantine_successful_desktop_traces"
+      ],
+      "metrics": [
+        "element_grounding_accuracy",
+        "action_prediction_accuracy",
+        "layout_understanding_score",
+        "desktop_task_success_rate"
+      ],
+      "modalities": [
+        "text",
+        "image",
+        "desktop",
+        "tool_schema"
+      ],
+      "release_gate": "agent_tool_release",
+      "source": "https://huggingface.co/datasets/ServiceNow/ui-vision",
+      "splits": {
+        "smoke": "one UI-Vision desktop grounding item",
+        "nightly": "application-balanced UI-Vision slice",
+        "release": "locked authorized UI-Vision screenshot/action snapshot"
+      },
+      "task_format": "jsonl_desktop_gui_vision_task"
+    },
+    {
       "adapter_kind": "long_context_coding_agent_eval",
       "axis": "agent_tool",
       "benchmark_id": "agent_locobench_agent_2026",
@@ -4219,6 +4290,36 @@
         "release": "locked authorized SONIC-O1 suite"
       },
       "task_format": "jsonl_audio_video_reasoning_task"
+    },
+    {
+      "adapter_kind": "multilingual_cultural_video_audio_reasoning_eval",
+      "axis": "multimodal_understanding",
+      "benchmark_id": "multimodal_vimul_bench_2026",
+      "holdout_policy": [
+        "hide_answer_labels",
+        "hash_video_assets",
+        "record_language_and_culture_tags",
+        "separate_translation_metadata_from_solver"
+      ],
+      "metrics": [
+        "multilingual_video_qa_accuracy",
+        "audio_visual_grounding",
+        "low_resource_language_accuracy",
+        "cultural_reasoning_score"
+      ],
+      "modalities": [
+        "text",
+        "audio",
+        "video"
+      ],
+      "release_gate": "multimodal_understanding_release",
+      "source": "https://huggingface.co/datasets/MBZUAI/ViMUL-Bench",
+      "splits": {
+        "smoke": "one multilingual audio-video QA item",
+        "nightly": "language-balanced ViMUL-Bench slice",
+        "release": "locked authorized ViMUL-Bench media snapshot"
+      },
+      "task_format": "jsonl_multilingual_audio_video_qa_task"
     },
     {
       "adapter_kind": "unified_multimodal_understanding_generation_eval",
@@ -5376,6 +5477,8 @@
       "agent_sra_bench_2026",
       "agent_skillret_2026",
       "agent_state_bench_2026",
+      "agent_mcpverse_2026",
+      "agent_ui_vision_2026",
       "agent_tobench_mm_toolbench_2026"
     ],
     "coding_release": [
@@ -5493,6 +5596,7 @@
       "multimodal_mathnet_2026",
       "multimodal_video_morse500_2026",
       "multimodal_sonic_o1_2026",
+      "multimodal_vimul_bench_2026",
       "multimodal_mme_unify_2026",
       "multimodal_longspeech_2026",
       "multimodal_mpbench_2026",

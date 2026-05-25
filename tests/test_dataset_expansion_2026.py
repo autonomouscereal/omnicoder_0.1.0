@@ -1379,13 +1379,42 @@ def test_repo_dataset_registry_covers_thirteenth_wave_agentic_math_multimodal_so
     assert by_name["Agentic-MME"]["hf_id"] == "Agentic-MME/Agentic-MME"
     assert by_name["ABC-Bench Backend Agent Tasks"]["license"] == "ODC-BY"
     assert by_name["LongBench-Pro"]["target_modality"] == "long_context"
+    assert by_name["MEGA-Bench"]["configs"] == ["core", "open"]
+    assert by_name["MEGA-Bench"]["splits"] == ["test", "train"]
     assert by_name["StepEval-Audio-360"]["target_modality"] == "audio"
     assert by_name["IndiMathBench"]["repo"] == "https://github.com/prmbiy/IndiMathBench.git"
+    assert by_name["IndiMathBench"]["remote_files"][0]["format"] == "json"
     assert by_name["MMFineReason-1.8M Qwen3-VL Thinking"]["hf_id"].endswith("Qwen3-VL-235B-Thinking")
+    assert by_name["MMFineReason-1.8M Qwen3-VL Thinking"]["splits"] == ["sft"]
     assert expansion.source_use_bucket(by_name["LongBench-Pro"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["StepEval-Audio-360"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["DeepResearch-9K"]) == "research_internal"
     assert expansion.source_use_bucket(by_name["Lean Math Formal Corpus v4.27.0"]) == "research_internal"
+
+
+def test_repo_dataset_registry_covers_fourteenth_wave_agentic_gui_video_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "fourteenth_wave_agentic_gui_video_eval_2026_05_25"
+
+    expected_policy = {
+        "MCPVerse": "eval_only",
+        "UI-Vision": "eval_only",
+        "ViMUL-Bench": "eval_only",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["use_policy"] == policy
+        assert by_name[name]["registry_wave"] == wave
+
+    assert by_name["MCPVerse"]["repo"] == "https://github.com/hailsham/mcpverse.git"
+    assert by_name["UI-Vision"]["hf_id"] == "ServiceNow/ui-vision"
+    assert by_name["ViMUL-Bench"]["hf_id"] == "MBZUAI/ViMUL-Bench"
+    assert by_name["ViMUL-Bench"]["license_tier"] == "sharealike_eval_holdout"
+    assert expansion.source_use_bucket(by_name["MCPVerse"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["UI-Vision"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["ViMUL-Bench"]) == "eval_holdout"
 
 
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:

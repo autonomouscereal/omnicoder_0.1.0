@@ -23838,9 +23838,13 @@
         "name": "MEGA-Bench",
         "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
         "source_year": 2026,
-        "splits": [
+        "configs": [
           "core",
           "open"
+        ],
+        "splits": [
+          "test",
+          "train"
         ],
         "target_modality": "image",
         "url": "https://huggingface.co/datasets/TIGER-Lab/MEGA-Bench",
@@ -23917,6 +23921,12 @@
         "max_records": 312,
         "name": "IndiMathBench",
         "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
+        "remote_files": [
+          {
+            "format": "json",
+            "url": "https://raw.githubusercontent.com/prmbiy/IndiMathBench/main/indimathbench.json"
+          }
+        ],
         "repo": "https://github.com/prmbiy/IndiMathBench.git",
         "source_year": 2025,
         "splits": [
@@ -23984,9 +23994,11 @@
           ],
           "prompt": [
             "question",
+            "ori_question",
             "original_question"
           ],
           "target": [
+            "qwen3vl_235b_thinking_response",
             "answer",
             "original_answer",
             "source"
@@ -24001,7 +24013,7 @@
         "registry_wave": "thirteenth_wave_agentic_math_multimodal_2026_05_25",
         "source_year": 2026,
         "splits": [
-          "train"
+          "sft"
         ],
         "target_modality": "image",
         "url": "https://huggingface.co/datasets/OpenDataArena/MMFineReason-1.8M-Qwen3-VL-235B-Thinking",
@@ -24046,6 +24058,156 @@
         "target_modality": "text",
         "url": "https://huggingface.co/datasets/iiis-lean/lean-math-formal-corpus",
         "use_policy": "research_internal"
+      },
+      {
+        "curriculum_axes": [
+          "mcp_tool_use",
+          "realworld_tool_server_planning",
+          "long_context_tool_schema",
+          "benchmark_holdout"
+        ],
+        "family": "agentic_tool_reasoning",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "case_id"
+          ],
+          "prompt": [
+            "task",
+            "instruction",
+            "question",
+            "query",
+            "description"
+          ],
+          "target": [
+            "answer",
+            "expected",
+            "ground_truth",
+            "reference"
+          ],
+          "tool_calls": [
+            "tools",
+            "tool_calls",
+            "mcp_servers"
+          ]
+        },
+        "last_verified": "2026-05-25",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 512,
+        "name": "MCPVerse",
+        "registry_wave": "fourteenth_wave_agentic_gui_video_eval_2026_05_25",
+        "repo": "https://github.com/hailsham/mcpverse.git",
+        "source_year": 2025,
+        "splits": [
+          "public"
+        ],
+        "target_modality": "tool",
+        "url": "https://github.com/hailsham/mcpverse",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "desktop_gui_grounding",
+          "layout_understanding",
+          "action_prediction",
+          "benchmark_holdout"
+        ],
+        "family": "terminal_browser_agents",
+        "field_map": {
+          "id": [
+            "id",
+            "task_id",
+            "sample_id"
+          ],
+          "media": [
+            "image",
+            "screenshot",
+            "image_path"
+          ],
+          "prompt": [
+            "instruction",
+            "question",
+            "task",
+            "query",
+            "text"
+          ],
+          "target": [
+            "answer",
+            "label",
+            "action",
+            "bbox",
+            "target"
+          ]
+        },
+        "hf_id": "ServiceNow/ui-vision",
+        "last_verified": "2026-05-25",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "max_records": 512,
+        "name": "UI-Vision",
+        "registry_wave": "fourteenth_wave_agentic_gui_video_eval_2026_05_25",
+        "repo": "https://github.com/uivision/UI-Vision.git",
+        "source_year": 2025,
+        "splits": [
+          "train",
+          "test",
+          "validation"
+        ],
+        "target_modality": "image",
+        "url": "https://huggingface.co/datasets/ServiceNow/ui-vision",
+        "use_policy": "eval_only"
+      },
+      {
+        "curriculum_axes": [
+          "multilingual_video_qa",
+          "cultural_reasoning",
+          "audio_visual_grounding",
+          "low_resource_language_eval",
+          "benchmark_holdout"
+        ],
+        "family": "omnimodal_understanding",
+        "field_map": {
+          "id": [
+            "id",
+            "question_id",
+            "sample_id",
+            "video_id"
+          ],
+          "media": [
+            "video",
+            "video_path",
+            "audio"
+          ],
+          "prompt": [
+            "question",
+            "query",
+            "instruction"
+          ],
+          "target": [
+            "answer",
+            "label",
+            "correct_answer"
+          ]
+        },
+        "hf_id": "MBZUAI/ViMUL-Bench",
+        "last_verified": "2026-05-25",
+        "license": "CC-BY-SA-4.0",
+        "license_tier": "sharealike_eval_holdout",
+        "max_records": 512,
+        "name": "ViMUL-Bench",
+        "registry_wave": "fourteenth_wave_agentic_gui_video_eval_2026_05_25",
+        "repo": "https://github.com/mbzuai-oryx/ViMUL.git",
+        "source_year": 2025,
+        "splits": [
+          "train",
+          "test",
+          "validation"
+        ],
+        "target_modality": "video",
+        "url": "https://huggingface.co/datasets/MBZUAI/ViMUL-Bench",
+        "use_policy": "eval_only"
       }
     ],
     "enabled": true,

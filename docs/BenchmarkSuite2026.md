@@ -276,6 +276,8 @@ AudioBench/MMAU/MMAU-Pro, MMAR, IFEval-Audio through VoiceBench, VBench 2.0
 faithfulness, VBench trustworthiness, Music Arena, BFCL v4, SWE-Lancer, HLE,
 GDPVal, PaperBench, TheAgentCompany, MCP-Bench, MCP-Atlas, MCPMark/MCP-Universe,
 ARC-AGI-2, SWE-PolyBench, SWE-smith, TTSDS2,
+Agentic-MME, ABC-Bench, LongBench-Pro, MEGA-Bench, StepEval-Audio-360,
+IndiMathBench, MCPVerse, UI-Vision, ViMUL-Bench,
 contracts. These are eval/release gates only;
 their hidden labels, media assets, private states, answer keys, and successful
 trajectories do not enter training exports. The broad suite profile includes

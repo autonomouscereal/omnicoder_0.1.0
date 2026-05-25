@@ -215,6 +215,12 @@ mix:
   DeepResearch-9K, MMFineReason-1.8M Qwen3-VL Thinking, and Lean Math Formal
   Corpus v4.27.0 as research-internal sources until license/decontamination
   review clears them for weight-bearing training.
+- Fourteenth-wave May 25, 2026 additions add MCPVerse, UI-Vision, and
+  ViMUL-Bench under `fourteenth_wave_agentic_gui_video_eval_2026_05_25`.
+  These cover real MCP tool-server tasks, desktop GUI grounding/action
+  prediction, and multilingual audio-video reasoning while remaining
+  eval-holdout by default. LongCodeBench materialization now points at the
+  concrete `Steefano/LCB` HF source instead of paper-only metadata.
 
 Each source is tagged as `train`, `research_internal`, `eval_only`,
 `benchmark_holdout`, or `blocked_until_review` before any row is eligible for

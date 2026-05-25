@@ -290,6 +290,24 @@ def test_suite_profile_includes_thirteenth_wave_agentic_math_multimodal_gates() 
     assert adapters["reasoning_indimathbench_2026"]["task_format"] == "jsonl_lean4_formal_math_task"
 
 
+def test_suite_profile_includes_fourteenth_wave_agentic_gui_video_gates() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    expected = {
+        "agent_mcpverse_2026": "agent_tool_release",
+        "agent_ui_vision_2026": "agent_tool_release",
+        "multimodal_vimul_bench_2026": "multimodal_understanding_release",
+    }
+    for adapter_id, gate in expected.items():
+        assert adapter_id in adapters
+        assert adapter_id in suite["release_gates"][gate]
+
+    assert adapters["agent_mcpverse_2026"]["source"] == "https://github.com/hailsham/mcpverse"
+    assert "desktop" in adapters["agent_ui_vision_2026"]["modalities"]
+    assert "video" in adapters["multimodal_vimul_bench_2026"]["modalities"]
+
+
 def test_profile_validation_fails_when_release_gate_references_missing_adapter() -> None:
     profile = _minimal_profile()
     profile["release_gates"]["local_release"].append("missing_adapter")
