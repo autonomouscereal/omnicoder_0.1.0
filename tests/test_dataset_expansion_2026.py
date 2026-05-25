@@ -1727,6 +1727,25 @@ def test_repo_dataset_registry_covers_twentieth_wave_multimodal_agentic_reasonin
     assert expansion.source_use_bucket(by_name["Limbic Eval Tool Use MCP"]) == "eval_holdout"
     assert "audio_path" in by_name["Marco Longspeech"]["field_map"]["media"]
     assert by_name["Veri-Code ReForm Python2Dafny"]["hf_id"] == "Veri-Code/ReForm-Python2Dafny-Dataset"
+    assert by_name["Voices in the Wild 2M"]["splits"] == [
+        "noise",
+        "far_field",
+        "distortion",
+        "dropout",
+        "recording",
+        "echo",
+        "obstructed",
+        "recording_noise",
+    ]
+    assert by_name["AllenAI olmOCR Bench"]["splits"] == [
+        "arxiv_math",
+        "headers_footers",
+        "long_tiny_text",
+        "multi_column",
+        "old_scans",
+        "old_scans_math",
+        "table_tests",
+    ]
     assert by_name["Limbic Eval Tool Use MCP"]["splits"] == ["test"]
 
 

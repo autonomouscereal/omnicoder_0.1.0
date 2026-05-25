@@ -26528,7 +26528,14 @@
         "last_verified": "2026-05-25",
         "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
         "splits": [
-          "train"
+          "noise",
+          "far_field",
+          "distortion",
+          "dropout",
+          "recording",
+          "echo",
+          "obstructed",
+          "recording_noise"
         ],
         "max_records": 8192,
         "target_modality": "audio",
@@ -26581,7 +26588,13 @@
         "last_verified": "2026-05-25",
         "registry_wave": "twentieth_wave_multimodal_agentic_reasoning_2026_05_25",
         "splits": [
-          "train"
+          "arxiv_math",
+          "headers_footers",
+          "long_tiny_text",
+          "multi_column",
+          "old_scans",
+          "old_scans_math",
+          "table_tests"
         ],
         "max_records": 2048,
         "target_modality": "long_context",
