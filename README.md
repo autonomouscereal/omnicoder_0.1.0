@@ -25,7 +25,7 @@ It uses a dense KDA/CSA/HCA/mHC-inspired trunk, shared ledger-token training
 records, strict sharded checkpoints, pipeline sample-loss evaluation, and live
 posttraining through `posttrain_bridge_2026` plus pipeline reward replay for
 sharded checkpoints. The fast-card AI-server profile maps host GPUs `0,4,6` to
-container ranks `0,1,2` with `16,8,40` layer placement, putting the largest
+container ranks `0,1,2` with `16,14,34` layer placement, putting the largest
 shard and final head on the RTX 8000. P40s are sidecars for teacher rollout,
 probe jobs, and curation, not synchronous 20B target shards. Reportable
 benchmark gates now require authorized snapshot metadata and separate model
@@ -88,10 +88,12 @@ without accepting incomplete sharded checkpoints.
 
 The pipeline resume loader can now repartition a complete sharded checkpoint
 when the fast-card placement changes. This is required for posttraining
-recovery from older `16,16,32` checkpoints into the RTX8000-biased `16,8,40`
-layout; missing layer tensors are filled from the old rank shards one file at a
-time and optimizer state is intentionally not reused across the placement
-change.
+recovery from older `16,16,32` or `16,8,40` checkpoints into the current
+RTX8000-biased `16,14,34` layout; missing layer tensors are filled from the old
+rank shards one file at a time and optimizer state is intentionally not reused
+across the placement change. The May 25 2048-token retry showed that `16,8,40`
+can fill the RTX 8000 during fake-quant backward, so the default now keeps the
+48GB card largest without giving it a 40-layer recompute spike.
 
 Long-context-only recovery is also first-class. Use
 `training-orchestration-2026 run-long-context` or

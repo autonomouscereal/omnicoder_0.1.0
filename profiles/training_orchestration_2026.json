@@ -984,7 +984,7 @@
       "activation_checkpointing": true,
       "checkpoint_format": "pipeline_stage_sharded_checkpoint_v2",
       "cpu_offload": false,
-      "fake_quant_chunk_rows": 64,
+      "fake_quant_chunk_rows": 16,
       "fake_quant_max_full_elements": 16777216,
       "init_dtype": "fp16",
       "main_gpu_devices": [
@@ -992,7 +992,7 @@
         "4",
         "6"
       ],
-      "main_gpu_policy": "PipelineStage torchrun inside a container exposing host GPUs 0,4,6 only: container rank 0 maps to RTX 3090 with 16 layers, rank 1 maps to RTX 3090 with 16 layers, and rank 2 maps to RTX 8000 with 32 layers plus norm/output head. P40s stay out of the synchronous target path and run asynchronous sidecar jobs after the target path is stable.",
+      "main_gpu_policy": "PipelineStage torchrun inside a container exposing host GPUs 0,4,6 only: container rank 0 maps to RTX 3090 with 16 layers, rank 1 maps to RTX 3090 with 14 layers, and rank 2 maps to RTX 8000 with 34 layers plus norm/output head. P40s stay out of the synchronous target path and run asynchronous sidecar jobs after the target path is stable.",
       "mode": "pipeline_stage",
       "nproc_per_node": 3,
       "optimizer": "adafactor",
@@ -1027,8 +1027,8 @@
       "placement_head_device": 2,
       "placement_layer_counts": [
         16,
-        16,
-        32
+        14,
+        34
       ],
       "precision": "fp16",
       "rank_device_map": [
@@ -1038,7 +1038,7 @@
       ]
     },
     "fake_quant": true,
-    "fake_quant_chunk_rows": 64,
+    "fake_quant_chunk_rows": 16,
     "fake_quant_max_full_elements": 16777216,
     "fallback_token_count": 32,
     "finetune_learning_rate": 5e-06,

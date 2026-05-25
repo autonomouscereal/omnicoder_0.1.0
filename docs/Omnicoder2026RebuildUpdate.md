@@ -107,11 +107,14 @@ This confirms the target job is not the earlier 6B-class verifier lane; it is
 using the 20B-class sharded placement profile and putting the largest shard on
 the RTX 8000.
 
-The May 25 posttraining retry proved that `16,16,32` can overfill the middle
-3090 during fake-quant backward while the RTX 8000 still has room. The launcher
-now defaults to `16,8,40`, `OMNICODER_FAKE_QUANT_CHUNK_ROWS=32`, and
+The May 25 posttraining retries mapped the live memory boundary: `16,16,32`
+with 2048-token replay and 64-row fake quant can overfill the middle 3090, while
+`16,8,40` with 32-row fake quant can overfill the RTX 8000 during backward
+recompute. The launcher now defaults to `16,14,34`,
+`OMNICODER_FAKE_QUANT_CHUNK_ROWS=16`, and
 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` so resumed reward-replay and
-long-context jobs bias depth and activation pressure toward the 48GB card.
+long-context jobs keep the RTX 8000 as the largest shard without giving it a
+40-layer FFN recompute spike.
 
 ## P40 Sidecar Lane
 

@@ -125,7 +125,7 @@ docker run -d \
     --distributed pipeline_stage \
     --nproc-per-node 3 \
     --rank-device-map 0,1,2 \
-    --placement-layer-counts 16,8,40 \
+    --placement-layer-counts 16,14,34 \
     --pipeline-stage-schedule gpipe \
     --pipeline-microbatches 1 \
     --precision fp16 \
@@ -134,7 +134,7 @@ docker run -d \
     --optimizer-in-backward \
     --optimizer-in-backward-update lowmem_adafactor \
     --activation-checkpointing \
-    --fake-quant-chunk-rows 32 \
+    --fake-quant-chunk-rows 16 \
     --fake-quant-max-full-elements 16777216 \
     --steps-per-stage 64 \
     --posttrain-steps 32 \
@@ -147,7 +147,7 @@ docker run -d \
 
 The repeatable AI-server launcher for this lane is
 `scripts/ai_server_fast_pipeline_20b.sh`. It bakes in the fast-card device
-selection, Docker IPC/ulimit requirements, 16/8/40 layer placement, GPipe
+selection, Docker IPC/ulimit requirements, 16/14/34 layer placement, GPipe
 schedule, low-memory Adafactor, q4 fake-quant hooks, allocator fragmentation
 mitigation, and media-tree mounts:
 
@@ -201,10 +201,14 @@ the posttraining algorithm order at the failed algorithm.
 
 When a complete checkpoint was saved with an older fast-card layer placement,
 the pipeline loader can repartition tensors into the current placement. This is
-used to move older `16,16,32` shards into the RTX8000-biased `16,8,40` layout:
-each rank loads its own shard first, then streams only missing layer tensors
-from the other rank files. Optimizer state is not restored across that
-placement change because parameter ordering and ownership changed.
+used to move older `16,16,32` or `16,8,40` shards into the current
+RTX8000-biased `16,14,34` layout: each rank loads its own shard first, then
+streams only missing layer tensors from the other rank files. Optimizer state is
+not restored across that placement change because parameter ordering and
+ownership changed. The 2048-token May 25 retry showed that `16,8,40` overfilled
+the RTX 8000 during fake-quant FFN backward, so the fast lane now keeps the
+RTX 8000 largest while cutting its recompute shard and using smaller
+fake-quant row chunks.
 
 ```bash
 cd /home/cereal/omnicoder_2026_work
@@ -438,8 +442,9 @@ The AI-server target lane is intentionally disjoint from the P40 sidecar lane.
 The target container exposes host GPUs `0,4,6` only, which become container
 devices `0,1,2`: RTX 3090, RTX 3090, RTX 8000. The production sharded path uses
 `torch.distributed.pipelining.PipelineStage`; rank 0 owns 16 layers, rank 1 owns
-16 layers, and rank 2 owns 32 layers plus the final norm/output head. This uses
-the RTX 8000 headroom first and keeps P40s out of the synchronous target path.
+14 layers, and rank 2 owns 34 layers plus the final norm/output head. This uses
+the RTX 8000 headroom first while preserving enough backward-memory slack for
+2048-token posttraining, and keeps P40s out of the synchronous target path.
 Launch target pipeline containers with `--ipc=host` or an equivalently large
 Docker shared-memory configuration. NCCL uses shared-memory segments during
 rank placement checks and early collectives; the default small Docker IPC
