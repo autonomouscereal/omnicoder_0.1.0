@@ -100,8 +100,7 @@ specific JSONL to a specific algorithm, for example
 AI-server helper `scripts/ai_server_launch_balanced_allmodal_posttrain_20b.sh`
 launches one disk-safe 20B posttraining chunk at a time from the latest complete
 checkpoint, so a 44GB shard save cannot fill the training volume before evals
-and retention run. `OMNICODER_SAVE_INTERVAL=0` disables periodic interval
-checkpoints while keeping the final stage save.
+and retention run.
 
 The pipeline resume loader can now repartition a complete sharded checkpoint
 when the fast-card placement changes. This is required for posttraining
@@ -154,6 +153,31 @@ Current rebuild docs:
 - `docs/DistillationAndRL2026.md`
 - `docs/BenchmarkSuite2026.md`
 - `docs/AgenticToolTraining2026.md`
+
+### Capability Curation And Release-Gate Hardening
+
+The May 26 data lane adds a reusable capability curation policy:
+`omnicoder.data_factory.curation_policy_2026`. It is the first pass every
+training-source blend should use before SFT, reward replay, RLVR/GRPO, teacher
+distillation, or trace replay. It extracts prompt/target pairs from chat,
+ledger-token, `input_json`/`target_json`, raw text, code, tool, and media
+schemas; removes refusal/exclusion boilerplate from training exports; rejects
+protected benchmark/eval-holdout markers; redacts/quarantines secret-bearing
+rows; dedupes by prompt/target/modality; scores quality; and can require real
+media references for image, video, audio, music, and OCR rows. The AI-server
+launcher is `scripts/ai_server_run_capability_curation_2026.sh`, which writes
+family manifests plus a combined clean JSONL under
+`weights/data_curation_agent_2026/runs/capability_policy_<run>/`.
+
+Benchmark generation now fails closed on the one-token decode bug. Batch,
+single-request, and reportable prediction runners reject
+`max_output_tokens <= 1` unless an explicit non-reportable canary flag is set.
+`omnicoder.eval.omnimodal_release_gate_2026` validates real generated outputs
+before scoring: empty decode sentinels, repeated placeholders, and missing
+media artifacts fail the gate instead of becoming local-only benchmark noise.
+This means a checkpoint can be training correctly and still fail release gates
+until it produces usable tool calls, code patches, text answers, and media
+artifacts.
 
 ### 2026 Data And Training Sidecars
 
@@ -573,9 +597,6 @@ This is an active research codebase. Some modules are runnable, some are smoke
 tested scaffolds, and some are architectural experiments waiting for larger
 training runs or unpublished weights. Treat the repo as a map of the model
 system and a set of reproducible experiments, not as a packaged consumer model.
-The 20B pipeline posttraining path is live optimizer training when launched
-through the target scripts; smoke/scaffold caveats apply to legacy fixtures and
-unexercised research modules, not to the active fast-card replay lane.
 
 ## Design Principles
 

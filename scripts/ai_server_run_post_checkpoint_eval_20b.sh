@@ -36,6 +36,9 @@ PUBLIC_DEV_MIN_TASKS="${OMNICODER_EVAL_PUBLIC_DEV_MIN_TASKS:-1}"
 PREDICT_TIMEOUT_SECONDS="${OMNICODER_EVAL_PREDICT_TIMEOUT_SECONDS:-1800}"
 PREDICT_MAX_OUTPUT_TOKENS="${OMNICODER_EVAL_PREDICT_MAX_OUTPUT_TOKENS:-256}"
 PREDICT_MAX_PROMPT_TOKENS="${OMNICODER_EVAL_PREDICT_MAX_PROMPT_TOKENS:-4096}"
+ALLOW_ONE_TOKEN_CANARY="${OMNICODER_EVAL_ALLOW_ONE_TOKEN_CANARY:-0}"
+RELEASE_GATE_MIN_OUTPUT_TOKENS="${OMNICODER_EVAL_RELEASE_GATE_MIN_OUTPUT_TOKENS:-16}"
+RELEASE_GATE_REQUIRED_MODALITIES="${OMNICODER_EVAL_RELEASE_GATE_MODALITIES:-}"
 LM_LOSS_CHUNK_TOKENS="${OMNICODER_EVAL_LM_LOSS_CHUNK_TOKENS:-64}"
 FAKE_QUANT_CHUNK_ROWS="${OMNICODER_EVAL_FAKE_QUANT_CHUNK_ROWS:-16}"
 FAKE_QUANT_MAX_FULL_ELEMENTS="${OMNICODER_EVAL_FAKE_QUANT_MAX_FULL_ELEMENTS:-16777216}"
@@ -45,6 +48,20 @@ PYTHON_BIN="${OMNICODER_EVAL_PYTHON:-python}"
 EVIDENCE_LABEL="local-regression evidence only; not official/reportable scores"
 
 mkdir -p "$HOST_OUT_DIR" "$LOG_DIR"
+
+if [[ ! "$PREDICT_MAX_OUTPUT_TOKENS" =~ ^[0-9]+$ ]]; then
+  echo "OMNICODER_EVAL_PREDICT_MAX_OUTPUT_TOKENS must be an integer, got: $PREDICT_MAX_OUTPUT_TOKENS" >&2
+  exit 2
+fi
+if (( PREDICT_MAX_OUTPUT_TOKENS <= 1 )); then
+  case "${ALLOW_ONE_TOKEN_CANARY,,}" in
+    1|true|yes|y|on) ;;
+    *)
+      echo "Refusing one-token checkpoint eval. Set OMNICODER_EVAL_ALLOW_ONE_TOKEN_CANARY=1 only for explicit non-reportable canaries." >&2
+      exit 2
+      ;;
+  esac
+fi
 
 truthy() {
   case "${1,,}" in
@@ -375,14 +392,28 @@ if [[ "${#public_dev_roots_present[@]}" -gt 0 ]]; then
     "${public_task_args[@]}" \
     --out "/workspace/$OUT_DIR/public_dev_predictions.local_regression.jsonl" \
     --summary "/workspace/$OUT_DIR/public_dev_prediction_summary.local_regression.json" \
-    --backend checkpoint-runner \
-    --model "$CHECKPOINT_CONTAINER" \
+	    --backend checkpoint-runner \
+	    --allow-local-dev-tasks \
+	    --model "$CHECKPOINT_CONTAINER" \
     --checkpoint-path "$CHECKPOINT_CONTAINER" \
     --checkpoint-runner "$checkpoint_runner_quoted" \
     --max-output-tokens "$PREDICT_MAX_OUTPUT_TOKENS" \
     --temperature 0 \
     --timeout-seconds "$PREDICT_TIMEOUT_SECONDS" \
     --force
+  release_gate_args=(
+    --predictions "/workspace/$OUT_DIR/public_dev_predictions.local_regression.jsonl"
+    --out "/workspace/$OUT_DIR/public_dev_release_gate.local_regression.json"
+    --min-output-tokens "$RELEASE_GATE_MIN_OUTPUT_TOKENS"
+  )
+  if [[ -n "$RELEASE_GATE_REQUIRED_MODALITIES" ]]; then
+    release_gate_args+=(--require-modalities "$RELEASE_GATE_REQUIRED_MODALITIES")
+  else
+    release_gate_args+=(--require-modalities "")
+  fi
+  docker_eval public_dev_release_gate "$LOG_DIR/public_dev_release_gate.log" \
+    "$PYTHON_BIN" -m omnicoder.eval.omnimodal_release_gate_2026 \
+    "${release_gate_args[@]}"
   docker_eval public_dev_scoring "$LOG_DIR/public_dev_scoring.log" \
     "$PYTHON_BIN" -m omnicoder.eval.benchmark_suite_2026 \
     --profile "$BENCHMARK_PROFILE" \

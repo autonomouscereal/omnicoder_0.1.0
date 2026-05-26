@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -39,6 +40,15 @@ MODEL_OUTPUT_KEYS = (
     "output",
     "output_path",
     "generated_artifact",
+)
+JUNK_OUTPUT_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"__OMNICODER_EMPTY_DECODE__",
+        r"(?:_ph){3,}",
+        r"^\W*$",
+        r"^(.)\1{15,}$",
+    )
 )
 SENSITIVE_TASK_KEYS = {
     "answer",
@@ -115,6 +125,28 @@ def stable_hash(value: Any) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def output_quality_reason(value: Any) -> str:
+    if value in (None, "", [], {}):
+        return "missing_output"
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return "empty_text"
+        for pattern in JUNK_OUTPUT_PATTERNS:
+            if pattern.search(text):
+                return f"junk_text:{pattern.pattern}"
+        return ""
+    if isinstance(value, (dict, list)):
+        if not value:
+            return "empty_structured_output"
+        text = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
+        for pattern in JUNK_OUTPUT_PATTERNS:
+            if pattern.search(text):
+                return f"junk_structured_output:{pattern.pattern}"
+        return ""
+    return ""
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -186,9 +218,17 @@ def require_text(row: dict[str, Any], keys: tuple[str, ...], label: str, source:
     raise HarnessError(f"{source}:{line}: missing required {label}: one of {', '.join(keys)}")
 
 
-def validate_authorized_task(row: dict[str, Any], source: Path, line: int) -> TaskRecord:
+def validate_authorized_task(
+    row: dict[str, Any],
+    source: Path,
+    line: int,
+    *,
+    allow_local_dev: bool = False,
+) -> TaskRecord:
     benchmark_id = require_text(row, ("benchmark_id", "adapter_id"), "benchmark id", source, line)
     task_id = require_text(row, ("task_id", "id"), "task id", source, line)
+    if allow_local_dev:
+        return TaskRecord(benchmark_id=benchmark_id, task_id=task_id, row=row, source_path=source, source_line=line)
     if row.get("reportable") is False:
         raise HarnessError(f"{source}:{line}: reportable task row is explicitly marked reportable=false")
 
@@ -219,19 +259,20 @@ def validate_authorized_task(row: dict[str, Any], source: Path, line: int) -> Ta
     return TaskRecord(benchmark_id=benchmark_id, task_id=task_id, row=row, source_path=source, source_line=line)
 
 
-def load_tasks(paths: list[Path]) -> list[TaskRecord]:
+def load_tasks(paths: list[Path], *, allow_local_dev: bool = False) -> list[TaskRecord]:
     tasks: list[TaskRecord] = []
     seen: set[str] = set()
     for path in paths:
         for line_number, row in iter_jsonl(path):
-            task = validate_authorized_task(row, path, line_number)
+            task = validate_authorized_task(row, path, line_number, allow_local_dev=allow_local_dev)
             key = f"{task.benchmark_id}:{task.task_id}"
             if key in seen:
                 raise HarnessError(f"{path}:{line_number}: duplicate benchmark/task id: {key}")
             seen.add(key)
             tasks.append(task)
     if not tasks:
-        raise HarnessError("no authorized task rows found")
+        noun = "task" if allow_local_dev else "authorized task"
+        raise HarnessError(f"no {noun} rows found")
     return tasks
 
 
@@ -456,7 +497,19 @@ def validate_prediction_row(row: dict[str, Any]) -> None:
     for key in ("schema", "schema_version", "benchmark_id", "task_id", "model", "backend"):
         if row.get(key) in (None, "", [], {}):
             raise HarnessError(f"prediction row is missing {key}: {row!r}")
-    outputs = [key for key in MODEL_OUTPUT_KEYS if row.get(key) not in (None, "", [], {})]
+    outputs: list[str] = []
+    rejected_outputs: list[str] = []
+    for key in MODEL_OUTPUT_KEYS:
+        value = row.get(key)
+        if value in (None, "", [], {}):
+            continue
+        reason = output_quality_reason(value)
+        if reason:
+            rejected_outputs.append(f"{key}:{reason}")
+        else:
+            outputs.append(key)
+    if rejected_outputs:
+        raise HarnessError(f"prediction row has rejected model output {rejected_outputs}: {row!r}")
     if not outputs:
         raise HarnessError(f"prediction row has no model output field: {row!r}")
 
@@ -497,19 +550,29 @@ def prediction_row(task: TaskRecord, cfg: GenerateConfig) -> dict[str, Any]:
     return row
 
 
-def run_generation(task_inputs: list[str], out_path: str, cfg: GenerateConfig, *, force: bool) -> dict[str, Any]:
+def run_generation(
+    task_inputs: list[str],
+    out_path: str,
+    cfg: GenerateConfig,
+    *,
+    force: bool,
+    allow_local_dev: bool = False,
+) -> dict[str, Any]:
     paths = task_paths(task_inputs)
-    tasks = load_tasks(paths)
+    tasks = load_tasks(paths, allow_local_dev=allow_local_dev)
     rows = [prediction_row(task, cfg) for task in tasks]
     out = resolve_path(out_path)
     write_jsonl(out, rows, force=force)
     by_backend = {cfg.backend: len(rows)}
+    task_mode = "local_public_dev" if allow_local_dev else "authorized_reportable"
     return {
         "status": "ok",
         "schema_version": SCHEMA_VERSION,
         "predictions": str(out),
         "records": len(rows),
         "tasks": [str(path) for path in paths],
+        "task_mode": task_mode,
+        "official_score": False,
         "model": cfg.model,
         "backend_counts": by_backend,
         "prediction_sha256": file_sha256(out),
@@ -532,16 +595,34 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-runner", default="", help="Local command that reads one JSON request on stdin and writes JSON/text prediction")
     parser.add_argument("--checkpoint-path", default="", help="Optional local checkpoint path passed through to checkpoint runners")
     parser.add_argument("--max-output-tokens", type=int, default=1024)
+    parser.add_argument(
+        "--allow-one-token-canary",
+        action="store_true",
+        help="Permit --max-output-tokens <= 1 only for explicit non-reportable canary probes.",
+    )
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--timeout-seconds", type=int, default=120)
     parser.add_argument("--summary", default="", help="Optional summary JSON path")
     parser.add_argument("--force", action="store_true", help="Overwrite existing --out")
+    parser.add_argument(
+        "--allow-local-dev-tasks",
+        action="store_true",
+        help=(
+            "Accept public-dev/local-regression task rows such as reportable=false. "
+            "Predictions produced with this flag are never official/reportable scores."
+        ),
+    )
     return parser
 
 
 def config_from_args(args: argparse.Namespace) -> GenerateConfig:
     if args.max_output_tokens <= 0:
         raise HarnessError("--max-output-tokens must be positive")
+    if args.max_output_tokens <= 1 and not bool(args.allow_one_token_canary):
+        raise HarnessError(
+            "--max-output-tokens <= 1 is canary-only; pass --allow-one-token-canary "
+            "only for explicit non-reportable smoke runs"
+        )
     if args.timeout_seconds <= 0:
         raise HarnessError("--timeout-seconds must be positive")
     if args.backend == "openai-compatible":
@@ -565,7 +646,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        summary = run_generation(args.tasks, args.out, config_from_args(args), force=bool(args.force))
+        summary = run_generation(
+            args.tasks,
+            args.out,
+            config_from_args(args),
+            force=bool(args.force),
+            allow_local_dev=bool(args.allow_local_dev_tasks),
+        )
         if args.summary:
             write_json(resolve_path(args.summary), summary)
         print(json.dumps(summary, ensure_ascii=True, sort_keys=True))

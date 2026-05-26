@@ -84,6 +84,32 @@ gold fields are present. The training checkpoint gate writes
 passes it to `run-reportable`; missing authorized snapshots still fail closed
 under the default `missing_reportable_policy`.
 
+### Decode And Artifact Release Gate
+
+Prediction generation is no longer allowed to masquerade one-token canaries as
+real benchmark output. The batch checkpoint runner, single-request checkpoint
+runner, P40 public-dev wrapper, and reportable prediction harness reject
+`max_output_tokens <= 1` unless an explicit non-reportable canary flag is set.
+Rows containing `__OMNICODER_EMPTY_DECODE__`, repeated placeholder fragments
+such as `_ph_ph_ph`, empty structured outputs, or whitespace-only text are
+rejected before scoring.
+
+Use the omnimodal release gate before any benchmark result is treated as useful:
+
+```powershell
+python -m omnicoder.eval.omnimodal_release_gate_2026 `
+  --predictions weights/benchmarks_2026/<run>/public_dev_predictions.jsonl `
+  --out weights/benchmarks_2026/<run>/omnimodal_release_gate.json `
+  --require-modalities text,code,tool,image,video,audio,music `
+  --min-output-tokens 16
+```
+
+For media modalities the gate requires a generated artifact path that exists
+and is nonempty; video/audio/music paths are also probed with `ffprobe` when it
+is available. A failing release gate is actionable evidence, not a reportable
+score: fix decoding, artifact materialization, or the checkpoint before using
+the downstream benchmark numbers.
+
 The `reportable_core_25` gate intentionally keeps a live math reasoning slot
 through `reasoning_matharena_2026` rather than using deployment-only checks to
 fill the suite. Deployment latency, q4, GGUF, and native-1M context checks stay

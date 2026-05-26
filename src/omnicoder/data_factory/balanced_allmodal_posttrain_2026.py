@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -21,10 +22,16 @@ from omnicoder.training.training_orchestration_2026 import (
     write_json,
     write_jsonl,
 )
+from omnicoder.data_factory.curation_policy_2026 import (
+    CurationPolicyConfig,
+    artifact_refs as policy_artifact_refs,
+    audit_training_record,
+    message_prompt_target as policy_message_prompt_target,
+)
 
 
-KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", "long_context"}
-MODALITY_PRIORITY = ("image", "video", "audio", "music", "code", "tool", "long_context", "text")
+KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", "long_context", "math", "ocr"}
+MODALITY_PRIORITY = ("image", "video", "audio", "music", "ocr", "code", "math", "tool", "long_context", "text")
 PROFILE_JSONL_KEYS: tuple[tuple[str, str], ...] = (
     ("text_jsonl", "text"),
     ("code_jsonl", "code"),
@@ -35,6 +42,36 @@ PROFILE_JSONL_KEYS: tuple[tuple[str, str], ...] = (
     ("music_jsonl", "music"),
 )
 BAD_CONTAMINATION_MARKERS = ("contaminated", "benchmark_leak", "quarantine", "rejected")
+REFUSAL_BOILERPLATE_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bas an ai(?: language)? model\b",
+        r"\bi (?:can(?:not|'t|[’`]t)|am not able to|am unable to|(?:'m|[’`]m) unable to)\b",
+        r"\bi (?:won(?:'t|[’`]t)|will not|must refuse|have to refuse|refuse to)\b",
+        r"\b(?:cannot|can(?:'t|[’`]t)|can not|unable to) assist\b",
+        r"\bnot able to (?:assist|help|comply|provide)\b",
+        r"\b(?:against|violates?) (?:the )?(?:policy|safety policy|guidelines)\b",
+        r"\b(?:policy|guidelines?) (?:prevents?|prohibits?|disallows?)\b",
+        r"\b(?:refusal|refuse|refused|refusing)\b",
+        r"\bsafety[_ -]?negative\b",
+        r"\btool[_ -]?safety[_ -]?negative\b",
+        r"\bkto[_ -]?or[_ -]?safety\b",
+        r"\btrain[_ -]?refusal\b",
+        r"\bunapproved[_ -]?destructive[_ -]?tool[_ -]?use\b",
+        r"\bcredential[_ -]?and[_ -]?hidden[_ -]?eval[_ -]?safety\b",
+    )
+)
+REFUSAL_SOURCE_MARKERS = (
+    "tool_safety_negative",
+    "safety_negative",
+    "safety_negative_alignment",
+    "kto_or_safety",
+    "train_refusal",
+    "unapproved_destructive_tool_use",
+    "credential_and_hidden_eval_safety",
+    "refusal_alignment",
+    "refusal_policy",
+)
 
 
 def clamp_text(value: str, limit: int) -> str:
@@ -62,6 +99,10 @@ def normalize_modality(value: Any) -> str:
         return text
     if any(marker in text for marker in ("long_context", "longctx", "million_context", "1m_context")):
         return "long_context"
+    if "ocr" in text or "document_vision" in text:
+        return "ocr"
+    if any(marker in text for marker in ("math", "gsm", "aime", "olympiad", "proof")):
+        return "math"
     if any(marker in text for marker in ("vision", "image", "picture", "imgedit", "qwen_image")):
         return "image"
     if any(marker in text for marker in ("video", "movie", "ltx", "image_to_video", "text_to_video")):
@@ -74,7 +115,7 @@ def normalize_modality(value: Any) -> str:
         return "code"
     if any(marker in text for marker in ("tool", "agent", "trace", "sft", "browser", "shell", "terminal", "codex", "claude", "hermes")):
         return "tool"
-    if any(marker in text for marker in ("math", "reasoning", "text", "instruction")):
+    if any(marker in text for marker in ("reasoning", "text", "instruction")):
         return "text"
     return ""
 
@@ -108,55 +149,14 @@ def infer_modality(row: dict[str, Any], source_path: Path, source_hint: str = ""
 
 
 def message_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
-    messages = row.get("messages")
-    if not isinstance(messages, list):
-        input_json = row.get("input_json") if isinstance(row.get("input_json"), dict) else {}
-        messages = input_json.get("messages") if isinstance(input_json.get("messages"), list) else []
-    if messages:
-        last_assistant = ""
-        prompt_parts: list[str] = []
-        for message in messages:
-            if not isinstance(message, dict):
-                continue
-            role = str(message.get("role") or "message").lower()
-            content = text_value(message.get("content"))
-            if not content:
-                continue
-            if role == "assistant":
-                last_assistant = content
-            else:
-                prompt_parts.append(f"{role}: {content}")
-        if prompt_parts and last_assistant:
-            return "\n".join(prompt_parts), last_assistant
+    prompt, target = policy_message_prompt_target(row)
+    if prompt or target:
+        return prompt, target
     return row_prompt(row), row_target(row)
 
 
 def artifact_refs(row: dict[str, Any]) -> list[str]:
-    refs: list[str] = []
-    for key in ("artifact_refs", "artifacts", "artifact_paths", "media_paths"):
-        value = row.get(key)
-        if isinstance(value, list):
-            for item in value:
-                if isinstance(item, dict):
-                    ref = text_value(
-                        item.get("path")
-                        or item.get("source_path")
-                        or item.get("artifact_path")
-                        or item.get("uri")
-                        or item.get("url")
-                        or item.get("sha256")
-                    )
-                else:
-                    ref = text_value(item)
-                if ref:
-                    refs.append(clamp_text(ref, 2048))
-        elif isinstance(value, str) and value.strip():
-            refs.append(clamp_text(value, 2048))
-    for key in ("artifact_path", "image_path", "video_path", "audio_path", "music_path"):
-        value = text_value(row.get(key))
-        if value:
-            refs.append(clamp_text(value, 2048))
-    return sorted(set(refs))[:32]
+    return policy_artifact_refs(row)
 
 
 def quality_value(row: dict[str, Any]) -> float:
@@ -168,12 +168,47 @@ def quality_value(row: dict[str, Any]) -> float:
             return max(0.0, min(1.0, float(value)))
         except Exception:
             continue
+    if isinstance(row.get("quality"), dict):
+        for key in ("score", "quality_score", "value"):
+            value = row["quality"].get(key)
+            if value is None:
+                continue
+            try:
+                return max(0.0, min(1.0, float(value)))
+            except Exception:
+                continue
     return 1.0
 
 
 def contamination_rejected(row: dict[str, Any]) -> bool:
     status = text_value(row.get("contamination_status") or row.get("decontamination_status")).lower()
     return any(marker in status for marker in BAD_CONTAMINATION_MARKERS)
+
+
+def refusal_boilerplate_rejected(row: dict[str, Any], prompt: str, target: str, source_path: Path) -> bool:
+    metadata_keys = (
+        "source_id",
+        "dataset_name",
+        "task_type",
+        "domain",
+        "training_kind",
+        "curriculum_axes",
+        "risk_labels",
+        "safety_labels",
+        "alignment_labels",
+        "tags",
+        "labels",
+        "categories",
+        "reward_axes",
+        "verifier",
+        "policy",
+        "use_policy",
+    )
+    source_text = " ".join([source_path.name] + [clamp_text(text_value(row.get(key)), 4096) for key in metadata_keys]).lower()
+    if any(marker in source_text for marker in REFUSAL_SOURCE_MARKERS):
+        return True
+    text = f"{source_text}\n{prompt}\n{target}"
+    return any(pattern.search(text) for pattern in REFUSAL_BOILERPLATE_PATTERNS)
 
 
 def profile_sources(profile: dict[str, Any], root: Path) -> list[tuple[Path, str]]:
@@ -361,6 +396,12 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
     plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
     required = required_modalities(profile, args.require_modalities)
     caps = parse_caps(args.cap, profile, args.max_records_per_modality)
+    policy_config = CurationPolicyConfig(
+        reject_refusal_boilerplate=bool(args.reject_refusal_boilerplate),
+        reject_eval_holdout=bool(args.reject_eval_holdout),
+        min_quality_score=float(args.min_quality_score or 0.0),
+        require_media_artifacts=bool(args.require_media_artifacts),
+    )
     sources: list[tuple[Path, str]] = []
     if not args.no_profile_sources:
         sources.extend(profile_sources(profile, root))
@@ -397,6 +438,23 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
             if not prompt or not target:
                 skipped["missing_prompt_or_target"] += 1
                 continue
+            refs = artifact_refs(row)
+            existing_quality = quality_value(row)
+            audit = audit_training_record(
+                row,
+                prompt=prompt,
+                target=target,
+                modality=modality,
+                source_path=source_path,
+                refs=refs,
+                existing_quality=existing_quality,
+                config=policy_config,
+            )
+            if not audit["accepted"]:
+                reasons = audit.get("reasons") or ["policy_reject"]
+                for reason in reasons:
+                    skipped[f"policy_{str(reason).split(':', 1)[0]}"] += 1
+                continue
             dedupe_key = stable_hash({"modality": modality, "prompt": prompt[:2048], "target": target[:2048]})
             if dedupe_key in seen_records:
                 skipped["duplicate"] += 1
@@ -408,8 +466,9 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
                 "source_id": row.get("source_id") or source_path.name,
                 "modality": modality,
                 "modalities": sorted(set([modality] + row_modalities(row))),
-                "artifact_refs": artifact_refs(row),
-                "quality_score": quality_value(row),
+                "artifact_refs": refs,
+                "quality_score": max(existing_quality, float((audit.get("quality") or {}).get("score") or 0.0)),
+                "curation_policy_2026": audit,
                 "contamination_status": row.get("contamination_status", "unknown"),
             }
             buckets[modality].append(
@@ -472,6 +531,12 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
         "skipped": dict(sorted(skipped.items())),
         "schema_mode": args.schema,
         "strip_token_ids": bool(args.strip_token_ids),
+        "reject_refusal_boilerplate": bool(args.reject_refusal_boilerplate),
+        "reject_eval_holdout": bool(args.reject_eval_holdout),
+        "min_quality_score": float(args.min_quality_score or 0.0),
+        "require_media_artifacts": bool(args.require_media_artifacts),
+        "refusal_boilerplate_policy": "reject explicit refusal/alignment-negative boilerplate when requested; capability and benign security/tool competence rows remain eligible",
+        "quality_policy": "rows can be rejected by curation_policy_2026 for low quality, placeholders, secrets, eval holdout markers, or missing media artifacts when requested",
         "token_id_policy": "source token ids are never copied; the pipeline trainer tokenizes generated message rows with the active tokenizer",
         "posttrain_input_overrides": {
             "reward_weighted_sft_replay": str(paths["sft"]),
@@ -511,6 +576,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-records-per-required-modality", type=int, default=1)
     parser.add_argument("--allow-missing-required", action="store_true")
     parser.add_argument("--strip-token-ids", action="store_true", help="Compatibility flag; generated rows never copy source token_ids.")
+    parser.add_argument("--reject-refusal-boilerplate", action="store_true", help="Reject rows that contain explicit refusal/alignment-negative boilerplate.")
+    parser.add_argument("--reject-eval-holdout", action="store_true", help="Reject rows tagged as eval/public-dev/protected benchmark material.")
+    parser.add_argument("--min-quality-score", type=float, default=0.0, help="Reject rows below the curation_policy_2026 score floor.")
+    parser.add_argument("--require-media-artifacts", action="store_true", help="Require existing artifact refs for image/video/audio/music rows.")
     parser.add_argument("--schema", default="messages", choices=["messages"], help="Output schema for optimizer replay rows.")
     parser.add_argument("--max-prompt-chars", type=int, default=24000)
     parser.add_argument("--max-target-chars", type=int, default=24000)

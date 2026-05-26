@@ -41,6 +41,50 @@ trace-orchestrator-2026 --profile profiles/dataset_curation_2026.json
 curate-2026 export-training --input curated.jsonl --out training.jsonl
 ```
 
+## Capability Curation Policy
+
+`omnicoder.data_factory.curation_policy_2026` is the reusable curation agent
+for trainable capability data. It runs after source collection/materialization
+and before any balanced all-modal training manifest is built. The policy is
+capability-first: it removes refusal/exclusion boilerplate from train exports,
+rejects protected benchmark/eval-holdout markers, rejects placeholder/junk and
+secret-bearing rows, dedupes prompt/target pairs, scores data quality, and
+validates that media rows carry real artifact references when required.
+
+Run a direct family pass:
+
+```powershell
+python -m omnicoder.data_factory.curation_policy_2026 `
+  --input weights/external_datasets_2026/latest/jsonl/math_reasoning.jsonl `
+  --out weights/data_curation_agent_2026/runs/manual/math.clean.jsonl `
+  --rejected weights/data_curation_agent_2026/runs/manual/math.rejected.jsonl `
+  --manifest weights/data_curation_agent_2026/runs/manual/math.manifest.json `
+  --modality math `
+  --min-quality 0.70 `
+  --dedupe
+```
+
+Run the full AI-server source blend:
+
+```bash
+scripts/ai_server_run_capability_curation_2026.sh
+```
+
+That launcher routes text, long-context, code, math, tool, Codex/Claude/agent
+traces, image, video, audio, music, and OCR families through the same policy and
+writes:
+
+- `jsonl/<family>.clean.jsonl`
+- `rejected/<family>.rejected.jsonl`
+- `manifests/<family>.manifest.json`
+- `jsonl/all_modalities_capability_clean.jsonl`
+- `curation_manifest_index.json`
+
+For the current 20B lane, refusal/exclusion rows are not training data. Keep
+safety/red-team rows in eval or analysis quarantines; do not mix
+`tool_safety_negatives`, refusal-alignment, hidden-eval, benchmark-answer, or
+policy-denial rows into capability SFT, reward replay, or RLVR manifests.
+
 ## Outputs
 
 - `jsonl/normalized_traces.jsonl`: harness-normalized trace rows.

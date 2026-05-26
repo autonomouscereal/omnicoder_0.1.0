@@ -363,7 +363,7 @@ def _decode_rank0(
             break
     text = tokenizer.decode(new_tokens).strip()
     if not text:
-        raise BatchPredictError("greedy decode produced empty text")
+        text = "__OMNICODER_EMPTY_DECODE__"
     return text, len(new_tokens)
 
 
@@ -454,6 +454,56 @@ def _prediction_row(
     return row
 
 
+def _skipped_prediction_row(
+    task: harness.TaskRecord,
+    cfg: harness.GenerateConfig,
+    output_field: str,
+    *,
+    reason: str,
+    prompt_tokens: int,
+    max_prompt_tokens: int,
+    checkpoint: Path,
+) -> dict[str, Any]:
+    row = {
+        "schema": harness.PREDICTION_SCHEMA,
+        "schema_version": harness.SCHEMA_VERSION,
+        "created_at": harness.utc_now(),
+        "benchmark_id": task.benchmark_id,
+        "task_id": task.task_id,
+        "task_revision": str(task.row.get("task_revision") or task.row.get("dataset_revision") or "unknown"),
+        "dataset_revision": str(task.row.get("dataset_revision") or task.row.get("task_revision") or "unknown"),
+        "snapshot_id": str(
+            task.row.get("snapshot_id")
+            or task.row.get("official_snapshot_id")
+            or task.row.get("authorized_snapshot_id")
+            or task.row.get("snapshot_sha256")
+            or ""
+        ),
+        "model": cfg.model,
+        "backend": BACKEND_NAME,
+        "source_task_path": str(task.source_path),
+        "source_line": task.source_line,
+        "task_row_sha256": harness.stable_hash(task.row),
+        "task_file_sha256": harness.file_sha256(task.source_path),
+        "request_sha256": harness.stable_hash(harness.model_request(task, cfg)),
+        "latency_seconds": 0.0,
+        "generation_metadata": {
+            "checkpoint_path": str(checkpoint),
+            "generated_tokens": 0,
+            "decode": "skipped",
+            "temperature": 0.0,
+            "skipped": True,
+            "skip_reason": reason,
+            "prompt_tokens": int(prompt_tokens),
+            "max_prompt_tokens": int(max_prompt_tokens),
+        },
+    }
+    row[output_field] = f"__OMNICODER_SKIPPED__:{reason}:prompt_tokens={int(prompt_tokens)}"
+    row["prediction_id"] = harness.stable_hash({key: value for key, value in row.items() if key != "prediction_id"})
+    harness.validate_prediction_row(row)
+    return row
+
+
 def _task_counts(tasks: list[harness.TaskRecord]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for task in tasks:
@@ -473,10 +523,16 @@ def _summary(
     prediction_sha256: str,
 ) -> dict[str, Any]:
     total_generated = 0
+    skipped = 0
+    skipped_by_reason: dict[str, int] = {}
     for row in rows:
         metadata = row.get("generation_metadata")
         if isinstance(metadata, dict):
             total_generated += int(metadata.get("generated_tokens") or 0)
+            if bool(metadata.get("skipped")):
+                skipped += 1
+                reason = str(metadata.get("skip_reason") or "unknown")
+                skipped_by_reason[reason] = skipped_by_reason.get(reason, 0) + 1
     return {
         "status": "ok",
         "schema": SUMMARY_SCHEMA,
@@ -491,8 +547,14 @@ def _summary(
         "predictions": str(harness.resolve_path(args.out)),
         "records": len(rows),
         "authorized_tasks": len(tasks),
+        "task_mode": "local_public_dev" if bool(args.allow_local_dev_tasks) else "authorized_reportable",
+        "official_score": False,
         "backend_counts": {BACKEND_NAME: len(rows)},
         "by_benchmark": _task_counts(tasks),
+        "skipped": {
+            "records": skipped,
+            "by_reason": skipped_by_reason,
+        },
         "prediction_sha256": prediction_sha256,
         "distributed": {
             "world_size": int(dist.get_world_size()) if dist.is_initialized() else EXPECTED_SHARDS,
@@ -528,7 +590,7 @@ def _run_rank0_batch(
 ) -> dict[str, Any]:
     checkpoint = _checkpoint_dir(args.checkpoint)
     task_paths = harness.task_paths(list(args.tasks or []))
-    tasks = harness.load_tasks(task_paths)
+    tasks = harness.load_tasks(task_paths, allow_local_dev=bool(args.allow_local_dev_tasks))
     tokenizer = get_text_tokenizer(prefer_hf=True)
     eos_id = getattr(tokenizer, "eos_token_id", None)
     eos = int(eos_id) if isinstance(eos_id, int) else None
@@ -536,57 +598,86 @@ def _run_rank0_batch(
     hidden_dtype_name = str(args.init_dtype if str(args.init_dtype or "auto").lower() != "auto" else args.precision)
     hidden_dtype = _dtype_from_name(hidden_dtype_name)
     rows: list[dict[str, Any]] = []
+    out_path = harness.resolve_path(args.out)
+    if out_path.exists() and not bool(args.force):
+        raise BatchPredictError(f"output already exists; pass --force to overwrite: {out_path}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     progress_tasks = int(args.progress_tasks or 0)
-    for index, task in enumerate(tasks, 1):
-        output_field = harness.output_field_for_task(task)
-        _broadcast_task_header(device, True, int(args.max_output_tokens))
-        task_started = time.perf_counter()
-        prompt = harness.prompt_from_task(task.row)
-        text, generated_tokens = _decode_rank0(
-            shard,
-            prompt,
-            tokenizer=tokenizer,
-            eos_id=eos,
-            max_new_tokens=int(args.max_output_tokens),
-            max_prompt_tokens=int(args.max_prompt_tokens),
-            device=device,
-            hidden_dtype=hidden_dtype,
-            d_model=d_model,
-            vocab_size=vocab_size,
-            precision=str(args.precision),
-        )
-        rows.append(
-            _prediction_row(
-                task,
-                cfg,
-                output_field,
-                text,
-                latency_seconds=time.perf_counter() - task_started,
-                generated_tokens=generated_tokens,
-                checkpoint=checkpoint,
-            )
-        )
-        if progress_tasks and (index % progress_tasks) == 0:
-            elapsed = max(1.0e-6, time.perf_counter() - started)
-            print(
-                json.dumps(
-                    {
-                        "event": "pipeline_checkpoint_batch_predict_progress",
-                        "records": index,
-                        "total": len(tasks),
-                        "elapsed_sec": round(elapsed, 3),
-                        "records_per_sec": round(index / elapsed, 6),
-                        "benchmark_id": task.benchmark_id,
-                        "task_id": task.task_id,
-                    },
-                    sort_keys=True,
-                ),
-                flush=True,
-            )
+    with out_path.open("w", encoding="utf-8", newline="\n") as handle:
+        for index, task in enumerate(tasks, 1):
+            output_field = harness.output_field_for_task(task)
+            task_started = time.perf_counter()
+            prompt = harness.prompt_from_task(task.row)
+            prompt_tokens = len(tokenizer.encode(prompt))
+            skipped_reason = ""
+            if prompt_tokens > int(args.max_prompt_tokens):
+                _broadcast_task_header(device, True, 0)
+                row = _skipped_prediction_row(
+                    task,
+                    cfg,
+                    output_field,
+                    reason="prompt_over_max_prompt_tokens",
+                    prompt_tokens=prompt_tokens,
+                    max_prompt_tokens=int(args.max_prompt_tokens),
+                    checkpoint=checkpoint,
+                )
+                skipped_reason = "prompt_over_max_prompt_tokens"
+            else:
+                _broadcast_task_header(device, True, int(args.max_output_tokens))
+                text, generated_tokens = _decode_rank0(
+                    shard,
+                    prompt,
+                    tokenizer=tokenizer,
+                    eos_id=eos,
+                    max_new_tokens=int(args.max_output_tokens),
+                    max_prompt_tokens=int(args.max_prompt_tokens),
+                    device=device,
+                    hidden_dtype=hidden_dtype,
+                    d_model=d_model,
+                    vocab_size=vocab_size,
+                    precision=str(args.precision),
+                )
+                row = _prediction_row(
+                    task,
+                    cfg,
+                    output_field,
+                    text,
+                    latency_seconds=time.perf_counter() - task_started,
+                    generated_tokens=generated_tokens,
+                    checkpoint=checkpoint,
+                )
+            rows.append(row)
+            handle.write(json.dumps(row, ensure_ascii=True, sort_keys=True, default=str, separators=(",", ":")) + "\n")
+            handle.flush()
+            if progress_tasks and (index % progress_tasks) == 0:
+                elapsed = max(1.0e-6, time.perf_counter() - started)
+                event = {
+                    "event": "pipeline_checkpoint_batch_predict_progress",
+                    "records": index,
+                    "total": len(tasks),
+                    "elapsed_sec": round(elapsed, 3),
+                    "records_per_sec": round(index / elapsed, 6),
+                    "benchmark_id": task.benchmark_id,
+                    "task_id": task.task_id,
+                }
+                if skipped_reason:
+                    event.update(
+                        {
+                            "skipped": True,
+                            "skip_reason": skipped_reason,
+                            "prompt_tokens": int(prompt_tokens),
+                            "max_prompt_tokens": int(args.max_prompt_tokens),
+                        }
+                    )
+                print(
+                    json.dumps(
+                        event,
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
     _broadcast_task_header(device, False, 0)
-    out_path = harness.resolve_path(args.out)
-    harness.write_jsonl(out_path, rows, force=bool(args.force))
     prediction_sha256 = harness.file_sha256(out_path)
     summary = _summary(
         args,
@@ -716,6 +807,8 @@ def _parent_main(args: argparse.Namespace) -> int:
         cmd.append("--require-target-contract")
     if bool(args.allow_p40_target_contract_eval):
         cmd.append("--allow-p40-target-contract-eval")
+    if bool(args.allow_local_dev_tasks):
+        cmd.append("--allow-local-dev-tasks")
     if bool(args.force):
         cmd.append("--force")
     proc = subprocess.run(cmd, cwd=str(repo_root()), check=False)
@@ -740,6 +833,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--init-dtype", "--init_dtype", dest="init_dtype", choices=["auto", "fp32", "fp16", "bf16"], default=os.getenv("OMNICODER2026_PIPELINE_BATCH_INIT_DTYPE", "auto"))
     parser.add_argument("--max-prompt-tokens", "--max_prompt_tokens", dest="max_prompt_tokens", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_MAX_PROMPT_TOKENS", "4096") or 4096))
     parser.add_argument("--max-output-tokens", "--max_output_tokens", "--max-new-tokens", "--max_new_tokens", dest="max_output_tokens", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_MAX_OUTPUT_TOKENS", "256") or 256))
+    parser.add_argument("--allow-one-token-canary", "--allow_one_token_canary", dest="allow_one_token_canary", action="store_true", help="Explicitly allow <=1 output token canary runs. Real benchmark/eval runs should not use this.")
     parser.add_argument("--fake-quant", "--fake_quant", dest="fake_quant", action="store_true")
     parser.add_argument("--fake-quant-chunk-rows", "--fake_quant_chunk_rows", dest="fake_quant_chunk_rows", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_FAKE_QUANT_CHUNK_ROWS", "0") or 0))
     parser.add_argument("--fake-quant-max-full-elements", "--fake_quant_max_full_elements", dest="fake_quant_max_full_elements", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_FAKE_QUANT_MAX_FULL_ELEMENTS", "0") or 0))
@@ -748,6 +842,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--progress-tasks", "--progress_tasks", dest="progress_tasks", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_PROGRESS_TASKS", "1") or 1))
     parser.add_argument("--require-target-contract", "--require_target_contract", dest="require_target_contract", action="store_true")
     parser.add_argument("--allow-p40-target-contract-eval", "--allow_p40_target_contract_eval", dest="allow_p40_target_contract_eval", action="store_true")
+    parser.add_argument(
+        "--allow-local-dev-tasks",
+        "--allow_local_dev_tasks",
+        dest="allow_local_dev_tasks",
+        action="store_true",
+        help="Accept reportable=false public-dev/local-regression task rows; outputs remain non-reportable.",
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite existing --out/--summary")
     return parser
 
@@ -761,6 +862,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise BatchPredictError("--max-prompt-tokens must be positive")
     if int(args.max_output_tokens) <= 0:
         raise BatchPredictError("--max-output-tokens must be positive")
+    if int(args.max_output_tokens) <= 1 and not bool(args.allow_one_token_canary):
+        raise BatchPredictError("--max-output-tokens <= 1 is a canary-only setting; pass --allow-one-token-canary only for explicit non-reportable smoke runs")
     if int(args.dist_timeout_seconds) <= 0:
         raise BatchPredictError("--dist-timeout-seconds must be positive")
 

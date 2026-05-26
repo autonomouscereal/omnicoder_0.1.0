@@ -13,6 +13,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+from omnicoder.data_factory.curation_policy_2026 import (
+    CurationPolicyConfig,
+    artifact_refs as policy_artifact_refs,
+    audit_training_record,
+    normalize_modality as policy_normalize_modality,
+)
 from omnicoder.data_factory.postgres import transaction
 
 
@@ -479,6 +485,34 @@ def curate_record(record: dict[str, Any], args: argparse.Namespace, protected_ha
     media = classify_media(record, secret["redacted_text"])
     signatures = dedupe_signatures(normalized["text"], secret["redacted_text"])
     quality = quality_dimensions(secret["redacted_text"], secret, language, code, provenance)
+    policy_config = CurationPolicyConfig(
+        reject_refusal_boilerplate=not bool(getattr(args, "allow_refusal_boilerplate", False)),
+        reject_eval_holdout=not bool(getattr(args, "allow_eval_holdout", False)),
+        min_quality_score=float(getattr(args, "min_policy_quality", 0.0) or 0.0),
+        require_media_artifacts=bool(getattr(args, "require_media_artifacts", False)),
+    )
+    inferred_modality = "code" if code.get("is_code") else "tool" if tools.get("tool_families") else ""
+    if not inferred_modality:
+        families = media.get("media_families") if isinstance(media.get("media_families"), list) else []
+        inferred_modality = policy_normalize_modality(families[0]) if families else "text"
+    policy_audit = audit_training_record(
+        record,
+        prompt=secret["redacted_text"],
+        target=secret["redacted_text"],
+        modality=inferred_modality or "text",
+        source_path=provenance.get("path"),
+        refs=policy_artifact_refs(record),
+        existing_quality=float(quality.get("overall") or 0.0),
+        config=policy_config,
+    )
+    if not policy_audit["accepted"]:
+        policy_reasons = sorted(set(str(item) for item in policy_audit.get("reasons") or []))
+        quality = {
+            **quality,
+            "overall": min(float(quality.get("overall") or 0.0), float((policy_audit.get("quality") or {}).get("score") or 0.0)),
+            "label": "reject",
+            "policy_reasons": policy_reasons,
+        }
     contamination = contamination_label(secret["redacted_text"], signatures, protected_hashes)
     split = assign_split(signatures, quality, contamination, args)
     curated_id = stable_hash(signatures["canonical_sha256"] + "|" + str(provenance.get("raw_record_hash")))
@@ -494,6 +528,7 @@ def curate_record(record: dict[str, Any], args: argparse.Namespace, protected_ha
         "quality": quality,
         "dedupe": signatures,
         "contamination": contamination,
+        "curation_policy_2026": policy_audit,
         "provenance": provenance,
         "split_assignment": split,
         "source": {
@@ -648,6 +683,10 @@ def _profile_args(profile: dict[str, Any]) -> argparse.Namespace:
         holdout_ratio=float(curation_cfg.get("holdout_ratio", 0.02)),
         lowercase=bool(curation_cfg.get("lowercase", False)),
         redact=not bool(curation_cfg.get("no_redact", False)),
+        allow_refusal_boilerplate=bool(curation_cfg.get("allow_refusal_boilerplate", False)),
+        allow_eval_holdout=bool(curation_cfg.get("allow_eval_holdout", False)),
+        min_policy_quality=float(curation_cfg.get("min_policy_quality", 0.0)),
+        require_media_artifacts=bool(curation_cfg.get("require_media_artifacts", False)),
     )
 
 
@@ -700,6 +739,10 @@ def manifest_payload(out_path: Path, stats: dict[str, Any], args: argparse.Names
         "source_name": args.source_name,
         "source_date": args.source_date,
         "redacted": bool(args.redact),
+        "allow_refusal_boilerplate": bool(getattr(args, "allow_refusal_boilerplate", False)),
+        "allow_eval_holdout": bool(getattr(args, "allow_eval_holdout", False)),
+        "min_policy_quality": float(getattr(args, "min_policy_quality", 0.0) or 0.0),
+        "require_media_artifacts": bool(getattr(args, "require_media_artifacts", False)),
         "validation_ratio": float(args.validation_ratio),
         "holdout_ratio": float(args.holdout_ratio),
         "stats": stats,
@@ -911,6 +954,10 @@ def main() -> None:
     curate.add_argument("--lowercase", action="store_true", help="Lowercase during normalization; off by default to preserve code")
     curate.add_argument("--no-redact", dest="redact", action="store_false", help="Keep original text while still flagging secret findings")
     curate.set_defaults(redact=True)
+    curate.add_argument("--allow-refusal-boilerplate", action="store_true", help="Permit refusal/alignment-negative rows; off by default for capability-first curation")
+    curate.add_argument("--allow-eval-holdout", action="store_true", help="Permit eval/public-dev/protected benchmark rows into curated train candidates")
+    curate.add_argument("--min-policy-quality", type=float, default=0.0, help="Additional curation_policy_2026 quality floor during canonical curation")
+    curate.add_argument("--require-media-artifacts", action="store_true", help="Reject media rows without usable artifact refs")
     curate.add_argument("--manifest", action="store_true", help="Write sidecar manifest JSON")
     curate.add_argument("--postgres", action="store_true", help="Upsert curated records and detail rows using raw psycopg2")
     curate.add_argument("--export-name", default="curation_layers_2026")

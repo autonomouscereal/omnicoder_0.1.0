@@ -25,6 +25,7 @@ INIT_DTYPE="${OMNICODER_BATCH_PRED_INIT_DTYPE:-fp16}"
 PRESET="${OMNICODER_BATCH_PRED_PRESET:-omnicoder2026_20b_1m}"
 PUBLIC_DEV_TASK_ROOTS="${OMNICODER_BATCH_PRED_TASK_ROOTS:-$WEIGHTS_ROOT/official_benchmarks_2026/runs/bench_reportable_fix_eaa2463_20260525T181734Z/local_2026}"
 MAX_OUTPUT_TOKENS="${OMNICODER_BATCH_PRED_MAX_OUTPUT_TOKENS:-256}"
+ALLOW_ONE_TOKEN_CANARY="${OMNICODER_BATCH_PRED_ALLOW_ONE_TOKEN_CANARY:-0}"
 MAX_PROMPT_TOKENS="${OMNICODER_BATCH_PRED_MAX_PROMPT_TOKENS:-4096}"
 PROGRESS_TASKS="${OMNICODER_BATCH_PRED_PROGRESS_TASKS:-1}"
 FAKE_QUANT="${OMNICODER_BATCH_PRED_FAKE_QUANT:-1}"
@@ -42,6 +43,12 @@ truthy() {
     *) return 1 ;;
   esac
 }
+
+if [[ "$MAX_OUTPUT_TOKENS" -le 1 ]] && ! truthy "$ALLOW_ONE_TOKEN_CANARY"; then
+  echo "Refusing max output token cap ${MAX_OUTPUT_TOKENS}: <=1 token is canary-only and not a real benchmark." >&2
+  echo "Set OMNICODER_BATCH_PRED_ALLOW_ONE_TOKEN_CANARY=1 only for an explicit non-reportable smoke." >&2
+  exit 7
+fi
 
 host_path() {
   local value="$1"
@@ -166,16 +173,20 @@ cmd=(
   --max-output-tokens "$MAX_OUTPUT_TOKENS"
   --max-prompt-tokens "$MAX_PROMPT_TOKENS"
   --dist-timeout-seconds "$DIST_TIMEOUT_SECONDS"
-  --progress-tasks "$PROGRESS_TASKS"
-  --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
-  --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
-  --require-target-contract
-  --allow-p40-target-contract-eval
-  --force
-)
+	  --progress-tasks "$PROGRESS_TASKS"
+	  --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
+	  --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
+	  --require-target-contract
+	  --allow-p40-target-contract-eval
+	  --allow-local-dev-tasks
+	  --force
+	)
 
 if truthy "$FAKE_QUANT"; then
   cmd+=(--fake-quant)
+fi
+if truthy "$ALLOW_ONE_TOKEN_CANARY"; then
+  cmd+=(--allow-one-token-canary)
 fi
 
 printf -v quoted '%q ' "${cmd[@]}"

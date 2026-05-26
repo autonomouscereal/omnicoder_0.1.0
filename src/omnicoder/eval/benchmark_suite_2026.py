@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -17,6 +18,15 @@ DEFAULT_PROFILE = "profiles/benchmark_suite_2026.json"
 DEFAULT_OUT_DIR = "weights/benchmarks_2026"
 DEFAULT_TIMEOUT_SECONDS = 30
 FSDP_LOCAL_FORMAT = "omnicoder2026_native_train_checkpoint_v3_fsdp_local"
+JUNK_OUTPUT_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"__OMNICODER_EMPTY_DECODE__",
+        r"(?:_ph){3,}",
+        r"^\W*$",
+        r"^(.)\1{15,}$",
+    )
+)
 
 INLINE_PROFILE: dict[str, Any] = {
     "profile_name": "benchmark_suite_2026_inline",
@@ -61,6 +71,28 @@ def repo_root() -> Path:
 def stable_hash(value: Any) -> str:
     blob = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def model_output_quality_reason(value: Any) -> str:
+    if value in (None, "", [], {}):
+        return "missing_output"
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return "empty_text"
+        for pattern in JUNK_OUTPUT_PATTERNS:
+            if pattern.search(text):
+                return f"junk_text:{pattern.pattern}"
+        return ""
+    if isinstance(value, (dict, list)):
+        if not value:
+            return "empty_structured_output"
+        text = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
+        for pattern in JUNK_OUTPUT_PATTERNS:
+            if pattern.search(text):
+                return f"junk_structured_output:{pattern.pattern}"
+        return ""
+    return ""
 
 
 def is_fsdp_rank_local_checkpoint_dir(path: Path) -> bool:
@@ -715,7 +747,7 @@ def task_prediction(task: dict[str, Any], predictions: dict[str, dict[str, Any]]
     task_id = str(task.get("task_id") or task.get("id") or "")
     row = predictions.get(f"{benchmark}:{task_id}") or predictions.get(task_id)
     if row:
-        for key in ("prediction", "answer", "output", "patch", "tool_call", "artifact_path"):
+        for key in ("prediction", "output", "patch", "tool_call", "artifact_path"):
             if key in row:
                 return row[key]
         for key in ("model_answer", "model_output", "model_patch", "model_actions", "output_path", "generated_artifact"):
@@ -791,12 +823,10 @@ def task_has_model_output(task: dict[str, Any], prediction: Any) -> bool:
             "generated_artifact",
         ):
             value = task.get(key)
-            if value not in (None, "", [], {}):
+            if value not in (None, "", [], {}) and not model_output_quality_reason(value):
                 return True
         return False
-    if isinstance(prediction, str):
-        return bool(prediction.strip())
-    return True
+    return not model_output_quality_reason(prediction)
 
 
 def score_mcq_task(task: dict[str, Any], prediction: Any) -> dict[str, Any]:
@@ -885,8 +915,17 @@ def score_media_task(task: dict[str, Any], prediction: Any) -> dict[str, Any]:
 
 def score_reportable_task(record: dict[str, Any], task: dict[str, Any], predictions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     prediction = task_prediction(task, predictions)
+    has_output = task_has_model_output(task, prediction)
     text = f"{record['benchmark_id']} {record['adapter_kind']} {record['axis']} {record.get('task_format')}".lower()
-    if "arc_agi3" in text or "interactive" in text:
+    if not has_output:
+        scored = {
+            "score": 0.0,
+            "metrics": {
+                "missing_or_junk_model_output": True,
+                "output_quality_reason": model_output_quality_reason(prediction),
+            },
+        }
+    elif "arc_agi3" in text or "interactive" in text:
         scored = score_arc_agi3_task(task, prediction)
     elif "swe" in text or "patch" in text or "git" in text:
         scored = score_swe_task(task, prediction)
@@ -898,7 +937,6 @@ def score_reportable_task(record: dict[str, Any], task: dict[str, Any], predicti
         scored = score_mcq_task(task, prediction)
     else:
         scored = score_qa_task(task, prediction)
-    has_output = task_has_model_output(task, prediction)
     return {
         "task_id": str(task.get("task_id")),
         "task_revision": str(task.get("task_revision") or task.get("dataset_revision") or "unknown"),

@@ -249,7 +249,16 @@ def _validate_request(request: dict[str, Any], args: argparse.Namespace) -> tupl
         raise RunnerError("request max_output_tokens must be an integer") from exc
     if max_new <= 0:
         raise RunnerError("request max_output_tokens must be positive")
+    if max_new <= 1 and not bool(getattr(args, "allow_one_token_canary", False)):
+        raise RunnerError(
+            "request max_output_tokens <= 1 is a canary-only setting; pass "
+            "--allow-one-token-canary only for explicit non-reportable smoke runs"
+        )
     max_new = min(max_new, int(args.max_new_tokens_limit))
+    if max_new <= 1 and not bool(getattr(args, "allow_one_token_canary", False)):
+        raise RunnerError(
+            "--max-new-tokens-limit <= 1 would force non-reportable one-token decode"
+        )
     temperature = float(request.get("temperature") or 0.0)
     if abs(temperature) > 1.0e-8:
         raise RunnerError("pipeline checkpoint runner supports only greedy decode with temperature=0")
@@ -482,12 +491,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fake-quant", "--fake_quant", dest="fake_quant", action="store_true")
     parser.add_argument("--require-target-contract", "--require_target_contract", dest="require_target_contract", action="store_true")
     parser.add_argument("--allow-p40-target-contract-eval", "--allow_p40_target_contract_eval", dest="allow_p40_target_contract_eval", action="store_true")
+    parser.add_argument(
+        "--allow-one-token-canary",
+        "--allow_one_token_canary",
+        dest="allow_one_token_canary",
+        action="store_true",
+        help="Permit max_new_tokens <= 1 only for explicit non-reportable canary probes.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if int(args.max_new_tokens_limit) <= 1 and not bool(args.allow_one_token_canary):
+            raise RunnerError(
+                "--max-new-tokens-limit <= 1 is canary-only; pass --allow-one-token-canary "
+                "only for explicit non-reportable smoke runs"
+            )
         if args.worker:
             if not args.request or not args.checkpoint:
                 raise RunnerError("--worker requires --request and --checkpoint")

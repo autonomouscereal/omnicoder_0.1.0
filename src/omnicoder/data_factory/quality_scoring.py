@@ -7,6 +7,13 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
+from omnicoder.data_factory.curation_policy_2026 import (
+    CurationPolicyConfig,
+    artifact_refs,
+    audit_training_record,
+    message_prompt_target,
+    normalize_modality,
+)
 from omnicoder.data_factory.postgres import transaction
 
 
@@ -44,6 +51,8 @@ def extract_text(record: dict[str, Any]) -> str:
 
 def score_record(record: dict[str, Any]) -> dict[str, Any]:
     text = extract_text(record)
+    prompt, target = message_prompt_target(record)
+    modality = normalize_modality(record.get("modality") or record.get("task_type") or record.get("source_id"))
     length = len(text.strip())
     tokens = re.findall(r"\w+", text.lower())
     unique_ratio = len(set(tokens)) / max(1, len(tokens))
@@ -58,12 +67,26 @@ def score_record(record: dict[str, Any]) -> dict[str, Any]:
     duplicate_penalty = 0.2 if unique_ratio < 0.28 and len(tokens) > 80 else 0.0
     secret_penalty = 0.45 if SECRET_RE.search(text) else 0.0
     media_bonus = 0.12 if isinstance(record.get("target_json"), dict) and record["target_json"].get("artifact_path") else 0.0
-    score = max(0.0, min(1.0, 0.2 + (0.42 * length_score) + structure_score + media_bonus - duplicate_penalty - secret_penalty))
-    label = "reject" if score < 0.35 or secret_penalty else "candidate" if score < 0.72 else "high"
+    heuristic_score = max(0.0, min(1.0, 0.2 + (0.42 * length_score) + structure_score + media_bonus - duplicate_penalty - secret_penalty))
+    policy = audit_training_record(
+        record,
+        prompt=prompt or text,
+        target=target or text,
+        modality=modality or "text",
+        source_path=record.get("path") or record.get("source_file"),
+        refs=artifact_refs(record),
+        existing_quality=heuristic_score,
+        config=CurationPolicyConfig(reject_refusal_boilerplate=True, reject_eval_holdout=True),
+    )
+    policy_score = float((policy.get("quality") or {}).get("score") or 0.0)
+    score = min(heuristic_score, policy_score) if not policy.get("accepted") else max(heuristic_score, policy_score)
+    label = "reject" if score < 0.35 or secret_penalty or not policy.get("accepted") else "candidate" if score < 0.72 else "high"
     return {
         "score": round(score, 6),
         "label": label,
         "details": {
+            "policy": policy,
+            "heuristic_score": round(heuristic_score, 6),
             "length": length,
             "token_count": len(tokens),
             "unique_ratio": round(unique_ratio, 6),
