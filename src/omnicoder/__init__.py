@@ -59,29 +59,35 @@ except Exception:
 
 __all__ = ["config"]
 
-# Enable CUDA Graphs by default; let backends manage safety. No global disables.
+# Enable CUDA Graphs by default on modern CUDA paths, but honor explicit safety
+# switches used by P40 sidecars and debug/eval jobs.
 try:
-    _os.environ.setdefault('TORCHINDUCTOR_USE_CUDA_GRAPHS', '1')
+    _cg_env = str(_os.getenv('TORCHINDUCTOR_USE_CUDA_GRAPHS', _os.getenv('OMNICODER_ENABLE_CUDA_GRAPHS', '1'))).strip().lower()
+    _cg_enabled = _cg_env not in {'0', 'false', 'no', 'off'}
+    _os.environ.setdefault('TORCHINDUCTOR_USE_CUDA_GRAPHS', '1' if _cg_enabled else '0')
     try:
         import torch._inductor as _ind  # type: ignore[attr-defined]
         _cfg = getattr(_ind, 'config', None)
         if _cfg is not None:
             for _a in ('cuda_graphs', 'use_cuda_graphs'):
                 if hasattr(_cfg, _a):
-                    setattr(_cfg, _a, True)
+                    setattr(_cfg, _a, bool(_cg_enabled))
             tr = getattr(_cfg, 'triton', None)
             if tr is not None and hasattr(tr, 'cudagraphs'):
-                setattr(tr, 'cudagraphs', True)
+                setattr(tr, 'cudagraphs', bool(_cg_enabled))
     except Exception:
         pass
     try:
         import torch._dynamo as _dyn  # type: ignore[attr-defined]
         if hasattr(_dyn, 'config') and hasattr(_dyn.config, 'use_cuda_graphs'):
-            _dyn.config.use_cuda_graphs = True  # type: ignore[attr-defined]
+            _dyn.config.use_cuda_graphs = bool(_cg_enabled)  # type: ignore[attr-defined]
     except Exception:
         pass
     try:
-        _logging.getLogger('omnicoder.boot').info('cudagraphs enabled globally at import')
+        _logging.getLogger('omnicoder.boot').info(
+            'cudagraphs %s globally at import',
+            'enabled' if _cg_enabled else 'disabled',
+        )
     except Exception:
         pass
 except Exception:

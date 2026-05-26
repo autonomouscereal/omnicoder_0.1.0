@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import hashlib
@@ -2243,6 +2243,13 @@ def arg_value(args: argparse.Namespace | None, name: str, default: Any = None) -
     return getattr(args, name, default)
 
 
+def resolve_save_interval(args: argparse.Namespace | None, configured: Any = None) -> int:
+    raw = arg_value(args, "save_interval", None)
+    if raw is not None:
+        return max(int(raw), 0)
+    return max(int(configured or 0), 0)
+
+
 def truthy_value(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -2767,6 +2774,18 @@ def append_pretrain_runtime_args(cmd: list[str], cfg: dict[str, Any], args: argp
         cmd.extend(["--pipeline_schedule", schedule])
         pipeline_microbatches = int(distributed.get("pipeline_microbatches") or 1)
         cmd.extend(["--pipeline_microbatches", str(pipeline_microbatches)])
+        checkpoint_sync_backend = str(os.getenv("OMNICODER2026_CHECKPOINT_SYNC_BACKEND", "") or "").strip()
+        checkpoint_marker_timeout = str(os.getenv("OMNICODER2026_CHECKPOINT_MARKER_TIMEOUT_SECONDS", "") or "").strip()
+        checkpoint_marker_poll = str(os.getenv("OMNICODER2026_CHECKPOINT_MARKER_POLL_SECONDS", "") or "").strip()
+        dist_timeout = str(os.getenv("OMNICODER2026_DIST_TIMEOUT_SECONDS", "") or "").strip()
+        if checkpoint_sync_backend:
+            cmd.extend(["--checkpoint_sync_backend", checkpoint_sync_backend])
+        if checkpoint_marker_timeout:
+            cmd.extend(["--checkpoint_marker_timeout_seconds", checkpoint_marker_timeout])
+        if checkpoint_marker_poll:
+            cmd.extend(["--checkpoint_marker_poll_seconds", checkpoint_marker_poll])
+        if dist_timeout:
+            cmd.extend(["--dist_timeout_seconds", dist_timeout])
         cmd.append("--require_target_contract")
         if bool(arg_value(args, "allow_verifier_preset", False)):
             cmd.append("--allow_probe")
@@ -2960,7 +2979,7 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
     seq_len = int(args.seq_len or plan.get("seq_len") or 256)
     batch_size = int(args.batch_size or plan.get("batch_size") or 1)
     lr = float(args.lr or plan.get("learning_rate") or 0.001)
-    save_interval = int(arg_value(args, "save_interval", 0) or plan.get("save_interval") or 0)
+    save_interval = resolve_save_interval(args, plan.get("save_interval"))
     resume_between = bool(plan.get("resume_between_stages", True))
     fake_quant = bool(args.fake_quant or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled"))
     initial_checkpoint = str(args.resume_checkpoint or plan.get("initial_checkpoint") or "")
@@ -3266,7 +3285,7 @@ def run_long_context_curriculum_stage(
     preset = resolve_training_preset(cfg, args)
     guard_target_training_preset(cfg, preset, args)
     device = str(arg_value(args, "device", "") or plan.get("device") or ("cuda" if torch_available() else "cpu"))
-    save_interval = int(arg_value(args, "save_interval", 0) or plan.get("save_interval") or 0)
+    save_interval = resolve_save_interval(args, plan.get("save_interval"))
     pipeline_stage_trainer = uses_pipeline_stage_trainer(cfg, args)
     expected_world_size = expected_pipeline_world_size(cfg, args)
     resume_completed = resume_completed_stages_enabled(plan, args)
@@ -3460,8 +3479,6 @@ def resolve_posttrain_algorithms(rl: dict[str, Any], args: argparse.Namespace | 
 
 def discover_posttrain_inputs(configured_inputs: Any, root: Path) -> list[Path]:
     inputs = existing_paths(configured_inputs, root)
-    if inputs:
-        return inputs
     candidates: list[Path] = []
     configured = list(configured_inputs) if isinstance(configured_inputs, list) else [configured_inputs]
     search_roots: set[Path] = set()
@@ -3479,11 +3496,53 @@ def discover_posttrain_inputs(configured_inputs: Any, root: Path) -> list[Path]:
         for path in search_root.rglob("tool_*.jsonl"):
             if path.is_file() and path.stat().st_size > 0:
                 candidates.append(path)
-    return sorted(set(candidates), key=lambda path: path.stat().st_mtime, reverse=True)
+    seen = {str(path.resolve()) for path in inputs}
+    discovered = sorted(
+        (path for path in set(candidates) if str(path.resolve()) not in seen),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return inputs + discovered
 
 
-def posttrain_dataset_for_algorithm(requested: str, paths: list[Path]) -> Path | None:
+def resolve_posttrain_input_overrides(args: argparse.Namespace | None, root: Path) -> tuple[list[Path], dict[str, Path]]:
+    values = list_from_config_value(arg_value(args, "posttrain_input_jsonl", []))
+    ordered: list[Path] = []
+    routed: dict[str, Path] = {}
+    seen: set[str] = set()
+    for raw in values:
+        route = ""
+        value = str(raw).strip()
+        if not value:
+            continue
+        if "=" in value:
+            route, value = value.split("=", 1)
+        elif "::" in value:
+            route, value = value.split("::", 1)
+        route = route.strip().lower()
+        value = value.strip()
+        if not value:
+            raise ValueError(f"empty posttraining input path in override {raw!r}")
+        path = resolve_path(value, root)
+        if not path.exists() or not path.is_file() or path.stat().st_size <= 0:
+            raise FileNotFoundError(f"posttraining input override does not exist or is empty: {path}")
+        key = str(path.resolve())
+        if key not in seen:
+            ordered.append(path)
+            seen.add(key)
+        if route:
+            routed[route] = path
+    return ordered, routed
+
+
+def posttrain_dataset_for_algorithm(requested: str, paths: list[Path], routed: dict[str, Path] | None = None) -> Path | None:
     name = requested.lower()
+    if routed:
+        if name in routed:
+            return routed[name]
+        for route, path in routed.items():
+            if route and (route in name or name in route):
+                return path
     if any(marker in name for marker in ("dpo", "orpo", "simpo", "preference")):
         hints = ("preference",)
     elif any(marker in name for marker in ("safety", "kto", "negative")):
@@ -3585,12 +3644,17 @@ def run_posttraining_stages(
     if not algorithms:
         return {"status": "skipped", "reason": "no_declared_posttraining_algorithms", "stages": []}
     replay = rl.get("offline_reward_replay") if isinstance(rl.get("offline_reward_replay"), dict) else {}
-    inputs = discover_posttrain_inputs(replay.get("inputs"), repo_root())
+    root = repo_root()
+    explicit_inputs, routed_inputs = resolve_posttrain_input_overrides(args, root)
+    inputs = discover_posttrain_inputs(replay.get("inputs"), root)
     local_export_dir = out_dir / "agentic_tool_training_2026"
     if local_export_dir.exists():
         local_inputs = sorted(path for path in local_export_dir.rglob("tool_*.jsonl") if path.is_file() and path.stat().st_size > 0)
         local_seen = {str(path.resolve()) for path in local_inputs}
         inputs = local_inputs + [path for path in inputs if str(path.resolve()) not in local_seen]
+    if explicit_inputs:
+        explicit_seen = {str(path.resolve()) for path in explicit_inputs}
+        inputs = explicit_inputs + [path for path in inputs if str(path.resolve()) not in explicit_seen]
     reports: list[dict[str, Any]] = []
     current_checkpoint = Path(str(training.get("final_checkpoint") or "")) if training.get("final_checkpoint") else None
     model = str(current_checkpoint) if current_checkpoint is not None else str(cfg.get("distillation", {}).get("base_model") or "Qwen/Qwen3-4B")
@@ -3603,12 +3667,13 @@ def run_posttraining_stages(
     steps = int(arg_value(args, "posttrain_steps", 0) or rl.get("posttrain_steps_per_algorithm") or 32)
     lr = float(arg_value(args, "posttrain_lr", 0.0) or rl.get("posttrain_learning_rate") or 1e-6)
     max_records = int(arg_value(args, "posttrain_max_records", 0) or rl.get("posttrain_max_records") or 0)
-    save_interval = int(arg_value(args, "save_interval", 0) or cfg.get("training_plan", {}).get("save_interval") or 0)
+    save_interval = resolve_save_interval(args, cfg.get("training_plan", {}).get("save_interval"))
     stop_on_failure = bool(rl.get("stop_on_posttrain_failure", True))
     retention = posttrain_retention_cfg(rl)
     replay_final_checkpoint: Path | None = current_checkpoint
+    eval_manifest = load_posttraining_eval_manifest(profile, out_dir, args)
     for index, requested in enumerate(algorithms, 1):
-        train_jsonl = posttrain_dataset_for_algorithm(requested, inputs)
+        train_jsonl = posttrain_dataset_for_algorithm(requested, inputs, routed_inputs)
         if train_jsonl is None:
             reports.append({"requested_algorithm": requested, "status": "failed", "reason": "no_declared_input_jsonl_found"})
             if stop_on_failure:
@@ -3757,6 +3822,14 @@ def run_posttraining_stages(
                     if replay_code == 0 and complete:
                         replay_final_checkpoint = replay_out
                         report["status"] = "passed"
+                        report["heldout_benchmark_gate"] = run_checkpoint_benchmark_gate(
+                            profile,
+                            eval_manifest,
+                            out_dir,
+                            replay_out,
+                            f"posttrain_{index:02d}_{safe_name}",
+                            args,
+                        )
                         if retention.get("enabled"):
                             report["checkpoint_retention"] = prune_posttrain_checkpoints(
                                 out_dir,
@@ -3786,6 +3859,14 @@ def run_posttraining_stages(
                 if code == 0 and bridge_execution.get("status") == "passed" and replay_out.exists():
                     replay_final_checkpoint = replay_out
                     report["status"] = "passed"
+                    report["heldout_benchmark_gate"] = run_checkpoint_benchmark_gate(
+                        profile,
+                        eval_manifest,
+                        out_dir,
+                        replay_out,
+                        f"posttrain_{index:02d}_{safe_name}",
+                        args,
+                    )
                 else:
                     report["status"] = "failed"
                     report["reason"] = "posttrain_bridge_live_optimizer_failed"
@@ -3805,6 +3886,8 @@ def run_posttraining_stages(
     return {
         "status": status,
         "input_count": len(inputs),
+        "explicit_input_count": len(explicit_inputs),
+        "posttrain_input_route_map": {key: str(value) for key, value in sorted(routed_inputs.items())},
         "mode": "posttrain_bridge_live_optimizer" if live_replay else "bridge_dry_run",
         "stages": reports,
         "initial_checkpoint": str(current_checkpoint) if current_checkpoint is not None else None,
@@ -3816,9 +3899,42 @@ def checkpoint_eval_paths(manifest: dict[str, Any]) -> list[Path]:
     paths: list[Path] = []
     for key in ("eval_all_jsonl", "test_all_jsonl"):
         value = manifest.get(key)
-        if value and Path(str(value)).exists():
-            paths.append(Path(str(value)))
+        if value:
+            path = Path(str(value))
+            if not path.exists() and not path.is_absolute():
+                path = resolve_path(path, repo_root())
+            if path.exists():
+                paths.append(path)
     return paths
+
+
+def load_posttraining_eval_manifest(profile: dict[str, Any], out_dir: Path, args: argparse.Namespace | None = None) -> dict[str, Any]:
+    cfg = profile_cfg(profile)
+    candidates: list[Path] = []
+    explicit = str(arg_value(args, "curation_manifest", "") or "").strip()
+    if explicit:
+        candidates.append(resolve_path(explicit, repo_root()))
+    configured = str(cfg.get("posttraining_curation_manifest") or "").strip()
+    if configured:
+        candidates.append(resolve_path(configured, repo_root()))
+    candidates.extend(
+        [
+            out_dir / "manifests" / "posttraining_curation_manifest.json",
+            out_dir / "manifests" / "real_training_curation_manifest.json",
+            out_dir / "manifests" / "cleaned_dataset_manifest.json",
+        ]
+    )
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key in seen or not path.exists():
+            continue
+        seen.add(key)
+        manifest = read_json(path)
+        if checkpoint_eval_paths(manifest):
+            manifest["eval_manifest_path"] = str(path)
+            return manifest
+    return {"status": "missing_eval_manifest", "checked": [str(path) for path in candidates]}
 
 
 def run_checkpoint_benchmark_gate(
@@ -4264,7 +4380,7 @@ def run_distillation_curriculum_stage(
     preset = resolve_training_preset(cfg, args)
     guard_target_training_preset(cfg, preset, args)
     device = str(arg_value(args, "device", "") or training_plan.get("device") or ("cuda" if torch_available() else "cpu"))
-    save_interval = int(arg_value(args, "save_interval", 0) or training_plan.get("save_interval") or 0)
+    save_interval = resolve_save_interval(args, training_plan.get("save_interval"))
     pipeline_stage_trainer = uses_pipeline_stage_trainer(cfg, args)
     train_cmd = pretrain_launcher(cfg, args) + [
         "--preset",
@@ -4340,7 +4456,7 @@ def run_final_finetune_stage(
     preset = resolve_training_preset(cfg, args)
     guard_target_training_preset(cfg, preset, args)
     device = str(arg_value(args, "device", "") or plan.get("device") or ("cuda" if torch_available() else "cpu"))
-    save_interval = int(arg_value(args, "save_interval", 0) or plan.get("save_interval") or 0)
+    save_interval = resolve_save_interval(args, plan.get("save_interval"))
     pipeline_stage_trainer = uses_pipeline_stage_trainer(cfg, args)
     cmd = pretrain_launcher(cfg, args) + [
         "--preset",
@@ -4375,13 +4491,15 @@ def run_final_finetune_stage(
         cmd.extend(["--save_interval", str(save_interval)])
     code = run_command(cmd, out_dir / "logs" / "99_final_all_modality_finetune_command.log")
     losses = parse_losses(train_log)
+    checkpoint_complete = checkpoint_is_complete(checkpoint_out, expected_world_size=expected_world_size)
     report = {
         "schema": "omnicoder.final_finetune_stage_2026.v1",
-        "status": "passed" if code == 0 and checkpoint_out.exists() else "failed",
+        "status": "passed" if code == 0 and checkpoint_complete else "failed",
         "returncode": code,
         "initial_checkpoint": str(checkpoint),
         "checkpoint": str(checkpoint_out),
-        "final_checkpoint": str(checkpoint_out) if checkpoint_out.exists() else str(checkpoint),
+        "final_checkpoint": str(checkpoint_out) if checkpoint_complete else str(checkpoint),
+        "checkpoint_complete": checkpoint_complete,
         "train_jsonl": str(data_path),
         "loss_log": str(train_log),
         "loss_points": len(losses),
@@ -4474,6 +4592,17 @@ def run_posttrain(args: argparse.Namespace) -> dict[str, Any]:
             "final_checkpoint": posttraining.get("final_checkpoint") or str(resume_checkpoint),
         },
     }
+    final_checkpoint = posttraining.get("final_checkpoint") or str(resume_checkpoint)
+    if posttraining.get("status") == "passed" and final_checkpoint:
+        eval_manifest = load_posttraining_eval_manifest(profile, out_dir, args)
+        summary["heldout_benchmark_gate"] = run_checkpoint_benchmark_gate(
+            profile,
+            eval_manifest,
+            out_dir,
+            final_checkpoint,
+            "posttraining_resume_final",
+            args,
+        )
     write_json(out_dir / "posttraining_resume_summary.json", summary)
     return summary
 
@@ -4743,7 +4872,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--long-context-steps-per-rung", dest="long_context_steps_per_rung", type=int, default=0)
     run.add_argument("--resume-completed-stages", dest="resume_completed_stages", action="store_true", default=None, help="Skip stages whose expected checkpoint already exists")
     run.add_argument("--rerun-completed-stages", dest="resume_completed_stages", action="store_false", help="Retrain stages even when their expected checkpoint exists")
-    run.add_argument("--save-interval", type=int, default=0)
+    run.add_argument("--save-interval", type=int, default=None)
     run.add_argument("--distributed", default="")
     run.add_argument("--nproc-per-node", type=int, default=0)
     run.add_argument("--precision", default="")
@@ -4776,6 +4905,13 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--posttrain-steps", type=int, default=0)
     run.add_argument("--posttrain-lr", type=float, default=0.0)
     run.add_argument("--posttrain-max-records", type=int, default=0)
+    run.add_argument(
+        "--posttrain-input-jsonl",
+        dest="posttrain_input_jsonl",
+        action="append",
+        default=[],
+        help="Explicit posttraining JSONL input, optionally algorithm=path. Takes priority over profile discovery.",
+    )
     run.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=None)
     run.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=None)
     run.add_argument("--heldout-sample-loss-timeout-seconds", dest="heldout_sample_loss_timeout_seconds", type=int, default=0)
@@ -4812,7 +4948,7 @@ def main(argv: list[str] | None = None) -> int:
     long.add_argument("--long-context-steps-per-rung", dest="long_context_steps_per_rung", type=int, default=0)
     long.add_argument("--resume-completed-stages", dest="resume_completed_stages", action="store_true", default=None, help="Skip rungs whose expected checkpoint already exists")
     long.add_argument("--rerun-completed-stages", dest="resume_completed_stages", action="store_false", help="Retrain rungs even when their expected checkpoint exists")
-    long.add_argument("--save-interval", type=int, default=0)
+    long.add_argument("--save-interval", type=int, default=None)
     long.add_argument("--distributed", default="")
     long.add_argument("--nproc-per-node", type=int, default=0)
     long.add_argument("--precision", default="")
@@ -4867,6 +5003,7 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--resume-checkpoint", required=True)
     post.add_argument("--posttrain-start-algorithm", "--start-posttrain-algorithm", dest="start_posttrain_algorithm", default="")
     post.add_argument("--posttrain-algorithm-order", dest="posttrain_algorithm_order", default="")
+    post.add_argument("--curation-manifest", default="")
     post.add_argument("--seq-len", type=int, default=0)
     post.add_argument("--batch-size", type=int, default=0)
     post.add_argument("--preset", default="")
@@ -4903,7 +5040,14 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--posttrain-steps", type=int, default=0)
     post.add_argument("--posttrain-lr", type=float, default=0.0)
     post.add_argument("--posttrain-max-records", type=int, default=0)
-    post.add_argument("--save-interval", type=int, default=0)
+    post.add_argument(
+        "--posttrain-input-jsonl",
+        dest="posttrain_input_jsonl",
+        action="append",
+        default=[],
+        help="Explicit posttraining JSONL input, optionally algorithm=path. Takes priority over profile discovery.",
+    )
+    post.add_argument("--save-interval", type=int, default=None)
     post.add_argument("--heldout-max-records-per-file", dest="heldout_max_records_per_file", type=int, default=None)
     post.add_argument("--benchmark-max-records-per-file", dest="benchmark_max_records_per_file", type=int, default=None)
     post.add_argument("--heldout-sample-loss-timeout-seconds", dest="heldout_sample_loss_timeout_seconds", type=int, default=0)
@@ -4937,7 +5081,7 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--long-context-steps-per-rung", dest="long_context_steps_per_rung", type=int, default=0)
     full.add_argument("--resume-completed-stages", dest="resume_completed_stages", action="store_true", default=None, help="Skip stages whose expected checkpoint already exists")
     full.add_argument("--rerun-completed-stages", dest="resume_completed_stages", action="store_false", help="Retrain stages even when their expected checkpoint exists")
-    full.add_argument("--save-interval", type=int, default=0)
+    full.add_argument("--save-interval", type=int, default=None)
     full.add_argument("--distributed", default="")
     full.add_argument("--nproc-per-node", type=int, default=0)
     full.add_argument("--precision", default="")
@@ -4973,6 +5117,13 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--posttrain-steps", type=int, default=0)
     full.add_argument("--posttrain-lr", type=float, default=0.0)
     full.add_argument("--posttrain-max-records", type=int, default=0)
+    full.add_argument(
+        "--posttrain-input-jsonl",
+        dest="posttrain_input_jsonl",
+        action="append",
+        default=[],
+        help="Explicit posttraining JSONL input, optionally algorithm=path. Takes priority over profile discovery.",
+    )
     full.add_argument("--finetune-steps", type=int, default=0)
     full.add_argument("--finetune-lr", type=float, default=0.0)
     full.add_argument("--benchmark-seq-len", type=int, default=0)

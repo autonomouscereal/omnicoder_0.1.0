@@ -90,6 +90,19 @@ complete existing `omnicoder2026_20b_1m` checkpoint and, when needed,
 distributed reward/preference/RL replay without rerunning dense pretraining and
 without accepting incomplete sharded checkpoints.
 
+Balanced all-modal posttraining is now explicit rather than implicit profile
+discovery. `omnicoder.data_factory.balanced_allmodal_posttrain_2026` builds
+SFT, reward, and RLVR JSONL files with required text, code, tool, image, video,
+audio, music, and long-context coverage while stripping stale source token IDs.
+`--posttrain-input-jsonl` and `OMNICODER_POSTTRAIN_INPUT_JSONL` can route a
+specific JSONL to a specific algorithm, for example
+`reward_weighted_sft_replay=weights/.../balanced_allmodal_sft.jsonl`. The
+AI-server helper `scripts/ai_server_launch_balanced_allmodal_posttrain_20b.sh`
+launches one disk-safe 20B posttraining chunk at a time from the latest complete
+checkpoint, so a 44GB shard save cannot fill the training volume before evals
+and retention run. `OMNICODER_SAVE_INTERVAL=0` disables periodic interval
+checkpoints while keeping the final stage save.
+
 The pipeline resume loader can now repartition a complete sharded checkpoint
 when the fast-card placement changes. This is required for posttraining
 recovery from failed `16,8,40` or `16,14,34` retries back into the current
@@ -560,6 +573,9 @@ This is an active research codebase. Some modules are runnable, some are smoke
 tested scaffolds, and some are architectural experiments waiting for larger
 training runs or unpublished weights. Treat the repo as a map of the model
 system and a set of reproducible experiments, not as a packaged consumer model.
+The 20B pipeline posttraining path is live optimizer training when launched
+through the target scripts; smoke/scaffold caveats apply to legacy fixtures and
+unexercised research modules, not to the active fast-card replay lane.
 
 ## Design Principles
 

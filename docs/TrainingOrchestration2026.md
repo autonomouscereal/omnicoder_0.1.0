@@ -212,6 +212,29 @@ posttraining stage such as a disk-full `safety_negative_replay` checkpoint
 flush: restart from the last complete checkpoint before the failure and slice
 the posttraining algorithm order at the failed algorithm.
 
+Posttraining data selection is explicit for balanced all-modal recovery. Use
+`python -m omnicoder.data_factory.balanced_allmodal_posttrain_2026` to build
+run-scoped SFT, reward, and RLVR JSONL files from curated 2025-2026 sources.
+The builder requires nonzero text, code, tool, image, video, audio, music, and
+long-context coverage, emits top-level `messages` or prompt/target rows, and
+never copies source `token_ids` into the optimizer replay files. Route those
+files into live posttraining with `--posttrain-input-jsonl` or
+`OMNICODER_POSTTRAIN_INPUT_JSONL`, for example:
+
+```bash
+OMNICODER_POSTTRAIN_INPUT_JSONL="reward_weighted_sft_replay=weights/training_orchestration_2026/balanced_allmodal_posttrain_20260526T082100Z/balanced_allmodal_sft.jsonl,grpo_rlvr_replay=weights/training_orchestration_2026/balanced_allmodal_posttrain_20260526T082100Z/balanced_allmodal_rlvr.jsonl"
+```
+
+On the AI server, `scripts/ai_server_launch_balanced_allmodal_posttrain_20b.sh`
+wraps that path. It finds the latest complete recovery checkpoint, refuses to
+start while another fast-card 20B container is active, checks free disk, and
+defaults to one 32-step balanced SFT chunk with no periodic 44GB mid-checkpoint
+save. Launch additional chunks or GRPO/RLVR chunks by overriding
+`OMNICODER_POSTTRAIN_ALGORITHM_ORDER`, `OMNICODER_POSTTRAIN_STEPS`, and
+`OMNICODER_SAVE_INTERVAL` after heldout/sample-loss and prediction gates pass.
+Set `OMNICODER_SAVE_INTERVAL=0` to disable periodic interval checkpoints while
+preserving the final stage save; omit it to use the profile default.
+
 When a complete checkpoint was saved with an older fast-card layer placement,
 the pipeline loader can repartition tensors into the current placement. This is
 used to move failed `16,8,40` or `16,14,34` shards back into the current
@@ -240,6 +263,17 @@ When launching from a staged clean checkout rather than the mutable
 and keep `OMNICODER_WEIGHTS_ROOT=/home/cereal/omnicoder_2026_work/weights`.
 The launcher mounts staged code at `/workspace` and the shared training volume
 at `/workspace/weights`, matching the active 20B container layout.
+
+After a posttraining checkpoint completes, run
+`scripts/ai_server_run_post_checkpoint_eval_20b.sh` from the AI server for
+local-regression evidence. It defaults to the staged all-modal checkout and
+shared weights root above, validates a complete three-rank
+`omnicoder2026_20b_1m` checkpoint, writes under
+`weights/benchmarks_2026/post_checkpoint_eval_<tag>`, and labels all outputs as
+engineering regression evidence rather than official/reportable scores. Override
+`OMNICODER_EVAL_CHECKPOINT`, `OMNICODER_EVAL_RUN_TAG`,
+`OMNICODER_EVAL_GPU_DEVICES`, and `OMNICODER_EVAL_MAX_RECORDS_PER_FILE` to point
+at a specific checkpoint, tag, fast-card set, or record cap.
 
 ## Dataset And Teacher Sidecars
 
@@ -504,6 +538,11 @@ single-file reward replay. The bridge manifest must explicitly defer to
 and the pipeline loader preserves the same reward/preference/RLVR sample
 weights used by native `reward_replay_2026` instead of treating posttraining
 JSONL as plain next-token text.
+
+P40s may validate a complete target checkpoint through the explicit
+`--allow-p40-target-contract-eval` flag in the sample-loss and prediction
+runners. That opt-in is for eval sidecars only; target-contract optimizer
+training still refuses P40 placement and stays on host GPUs `0,4,6`.
 
 Use the weighted-placement validator only when exercising the older
 single-process placement scheduler:

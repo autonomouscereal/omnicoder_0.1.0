@@ -405,6 +405,7 @@ def _new_bucket(path: str | None = None) -> dict[str, Any]:
         "tokens": 0,
         "loss_sum": 0.0,
         "avg_loss": None,
+        "loss": None,
     }
     if path is not None:
         bucket["path"] = path
@@ -418,9 +419,36 @@ def _add_loss(bucket: dict[str, Any], loss_sum: float, tokens: int) -> None:
     bucket["loss_sum"] += float(loss_sum)
 
 
+def _bucket_avg_loss(bucket: dict[str, Any] | None) -> float | None:
+    if not isinstance(bucket, dict):
+        return None
+    for key in ("avg_loss", "loss"):
+        value = bucket.get(key)
+        if value not in (None, ""):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+    tokens = int(bucket.get("tokens") or 0)
+    if tokens > 0 and bucket.get("loss_sum") not in (None, ""):
+        return float(bucket.get("loss_sum") or 0.0) / tokens
+    return None
+
+
+def _bucket_loss_sum(bucket: dict[str, Any]) -> float:
+    value = bucket.get("loss_sum")
+    if value not in (None, ""):
+        return float(value)
+    avg_loss = _bucket_avg_loss(bucket)
+    tokens = int(bucket.get("tokens") or 0)
+    return float(avg_loss) * tokens if avg_loss is not None and tokens > 0 else 0.0
+
+
 def _finalize(bucket: dict[str, Any]) -> None:
     tokens = int(bucket.get("tokens") or 0)
-    bucket["avg_loss"] = (float(bucket["loss_sum"]) / tokens) if tokens else None
+    avg_loss = (float(bucket["loss_sum"]) / tokens) if tokens else None
+    bucket["avg_loss"] = avg_loss
+    bucket["loss"] = avg_loss
     if "modalities" in bucket:
         for child in bucket["modalities"].values():
             _finalize(child)
@@ -430,7 +458,7 @@ def _merge_bucket(target: dict[str, Any], source: dict[str, Any]) -> None:
     target["records"] += int(source.get("records") or 0)
     target["samples"] += int(source.get("samples") or 0)
     target["tokens"] += int(source.get("tokens") or 0)
-    target["loss_sum"] += float(source.get("loss_sum") or 0.0)
+    target["loss_sum"] += _bucket_loss_sum(source)
 
 
 def _merge_eval_results(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -473,8 +501,8 @@ def _gather_eval_results(result: dict[str, Any], rank: int, world_size: int) -> 
 
 
 def _loss_delta(current: dict[str, Any] | None, baseline: dict[str, Any] | None) -> dict[str, Any]:
-    current_loss = current.get("avg_loss") if isinstance(current, dict) else None
-    baseline_loss = baseline.get("avg_loss") if isinstance(baseline, dict) else None
+    current_loss = _bucket_avg_loss(current)
+    baseline_loss = _bucket_avg_loss(baseline)
     delta = None
     if current_loss is not None and baseline_loss is not None:
         delta = float(current_loss) - float(baseline_loss)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime as _dt
 import json
 import os
 import time
@@ -60,7 +61,8 @@ def _checkpoint_train_args(path: str | Path) -> dict[str, Any]:
 def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, torch.device, int, int]:
     if not dist.is_initialized():
         backend = "nccl" if torch.cuda.is_available() else "gloo"
-        dist.init_process_group(backend=backend)
+        timeout_seconds = int(getattr(args, "dist_timeout_seconds", 0) or os.getenv("OMNICODER2026_DIST_TIMEOUT_SECONDS", "7200"))
+        dist.init_process_group(backend=backend, timeout=_dt.timedelta(seconds=max(1, timeout_seconds)))
     rank = int(dist.get_rank())
     world_size = int(dist.get_world_size())
     device = rank_device(rank, args.rank_device_map)
@@ -265,6 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--preset", default="omnicoder2026_20b_1m")
     parser.add_argument("--rank_device_map", default="")
     parser.add_argument("--placement_layer_counts", default="")
+    parser.add_argument("--dist-timeout-seconds", "--dist_timeout_seconds", dest="dist_timeout_seconds", type=int, default=int(os.getenv("OMNICODER2026_DIST_TIMEOUT_SECONDS", "7200")))
     parser.add_argument("--seq-len", "--seq_len", dest="seq_len", type=int, default=1024)
     parser.add_argument("--max-records-per-file", "--max_records_per_file", dest="max_records_per_file", type=int, default=32)
     parser.add_argument("--precision", default="fp16", choices=["fp32", "fp16", "bf16"])
@@ -275,6 +278,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lm-loss-chunk-tokens", "--lm_loss_chunk_tokens", dest="lm_loss_chunk_tokens", type=int, default=int(os.getenv("OMNICODER2026_LM_LOSS_CHUNK_TOKENS", "128") or 128))
     parser.add_argument("--progress-records", "--progress_records", dest="progress_records", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_EVAL_PROGRESS_RECORDS", "4") or 4))
     parser.add_argument("--require_target_contract", action="store_true")
+    parser.add_argument("--allow-p40-target-contract-eval", "--allow_p40_target_contract_eval", dest="allow_p40_target_contract_eval", action="store_true")
     parser.add_argument("--out", required=True)
     return parser
 

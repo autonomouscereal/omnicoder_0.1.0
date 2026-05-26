@@ -994,6 +994,29 @@ def reportable_result(
     return result
 
 
+def row_score_json(row: dict[str, Any]) -> dict[str, Any]:
+    score_json = row.get("score_json")
+    return score_json if isinstance(score_json, dict) else {}
+
+
+def row_reportable_score(row: dict[str, Any]) -> bool:
+    return boolish(row_score_json(row).get("reportable_score", False))
+
+
+def row_contract_only(row: dict[str, Any]) -> bool:
+    return boolish(row_score_json(row).get("contract_only", False))
+
+
+def row_canonical_score(row: dict[str, Any]) -> float | None:
+    for value in (row.get("score"), row_score_json(row).get("canonical_score"), row.get("canonical_score")):
+        if value not in (None, ""):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
 def release_gate_report(profile: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
     gates = profile.get("release_gates", {})
     if not isinstance(gates, dict):
@@ -1011,7 +1034,7 @@ def release_gate_report(profile: dict[str, Any], rows: list[dict[str, Any]]) -> 
         unscored = [
             item
             for item in required_ids
-            if item in latest and not latest[item].get("score_json", {}).get("reportable_score")
+            if item in latest and not row_reportable_score(latest[item])
         ]
         if missing:
             status = "missing"
@@ -1162,7 +1185,7 @@ def cmd_run_reportable(args: argparse.Namespace) -> int:
     failed = sum(1 for row in results if row["status"] == "failed")
     skipped = sum(1 for row in results if row["status"] == "skipped")
     local_only = sum(1 for row in results if row["status"] == "local_only")
-    reportable = sum(1 for row in results if row.get("score_json", {}).get("reportable_score"))
+    reportable = sum(1 for row in results if row_reportable_score(row))
     status = "ok" if failed == 0 and skipped == 0 and local_only == 0 and reportable > 0 else "needs_data"
     policy = missing_reportable_policy(profile, args.missing_reportable_policy)
     gate_policy, gate_decision, blocked = reportability_decision(status, policy)
@@ -1204,12 +1227,11 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     for row in rows:
         status = str(row.get("status", "unknown"))
         benchmark = str(row.get("benchmark_id") or row.get("adapter_id") or "unknown")
-        score_json = row.get("score_json", {}) if isinstance(row.get("score_json"), dict) else {}
         reportable = (
             row.get("mode") == "reportable"
             and row.get("phase") == "reportable_scoring"
-            and bool(score_json.get("reportable_score", False))
-            and not bool(score_json.get("contract_only", False))
+            and row_reportable_score(row)
+            and not row_contract_only(row)
         )
         if reportable:
             reportable_results += 1
@@ -1218,7 +1240,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
             "latest_status": status,
             "latest_mode": row.get("mode"),
             "latest_run_id": row.get("run_id"),
-            "latest_score": row.get("score"),
+            "latest_score": row_canonical_score(row),
             "reportable_score": reportable,
         }
     summary = {
@@ -1227,7 +1249,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
         "results": str(results_path),
         "total_results": len(rows),
         "reportable_results": reportable_results,
-        "contract_only_results": sum(1 for row in rows if row.get("score_json", {}).get("contract_only", False)),
+        "contract_only_results": sum(1 for row in rows if row_contract_only(row)),
         "by_status": by_status,
         "by_benchmark": by_benchmark,
         "by_adapter": by_benchmark,

@@ -27,16 +27,24 @@ RESUME_CHECKPOINT="${OMNICODER_RESUME_CHECKPOINT:-}"
 CURATION_MANIFEST="${OMNICODER_CURATION_MANIFEST:-}"
 POSTTRAIN_START_ALGORITHM="${OMNICODER_POSTTRAIN_START_ALGORITHM:-}"
 POSTTRAIN_ALGORITHM_ORDER="${OMNICODER_POSTTRAIN_ALGORITHM_ORDER:-}"
+POSTTRAIN_INPUT_JSONL="${OMNICODER_POSTTRAIN_INPUT_JSONL:-}"
 
 STEPS_PER_STAGE="${OMNICODER_STEPS_PER_STAGE:-64}"
 SEQ_LEN="${OMNICODER_SEQ_LEN:-1024}"
 BATCH_SIZE="${OMNICODER_BATCH_SIZE:-1}"
 LEARNING_RATE="${OMNICODER_LR:-0.00002}"
+# Set OMNICODER_SAVE_INTERVAL=0 for no interval checkpoints; final stage saves
+# still run through the trainer.
 SAVE_INTERVAL="${OMNICODER_SAVE_INTERVAL:-32}"
-FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-16}"
+FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-64}"
 FAKE_QUANT_MAX_FULL_ELEMENTS="${OMNICODER_FAKE_QUANT_MAX_FULL_ELEMENTS:-16777216}"
 LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"
 FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-256}"
+OPTIMIZER_ADAFACTOR_CHUNK_ROWS="${OMNICODER_OPTIMIZER_IN_BACKWARD_ADAFACTOR_CHUNK_ROWS:-256}"
+DIST_TIMEOUT_SECONDS="${OMNICODER2026_DIST_TIMEOUT_SECONDS:-7200}"
+CHECKPOINT_SYNC_BACKEND="${OMNICODER2026_CHECKPOINT_SYNC_BACKEND:-filesystem}"
+CHECKPOINT_MARKER_TIMEOUT_SECONDS="${OMNICODER2026_CHECKPOINT_MARKER_TIMEOUT_SECONDS:-14400}"
+CHECKPOINT_MARKER_POLL_SECONDS="${OMNICODER2026_CHECKPOINT_MARKER_POLL_SECONDS:-2}"
 POSTTRAIN_STEPS="${OMNICODER_POSTTRAIN_STEPS:-32}"
 FINETUNE_STEPS="${OMNICODER_FINETUNE_STEPS:-64}"
 DETACH="${OMNICODER_DETACH:-1}"
@@ -163,6 +171,14 @@ fi
 shared_posttrain_args=()
 append_nonzero_arg shared_posttrain_args --posttrain-lr "$POSTTRAIN_LR"
 append_nonzero_arg shared_posttrain_args --posttrain-max-records "$POSTTRAIN_MAX_RECORDS"
+if [[ -n "$POSTTRAIN_INPUT_JSONL" ]]; then
+  IFS=',' read -r -a posttrain_input_jsonls <<< "$POSTTRAIN_INPUT_JSONL"
+  for posttrain_input_jsonl in "${posttrain_input_jsonls[@]}"; do
+    if [[ -n "$posttrain_input_jsonl" ]]; then
+      shared_posttrain_args+=(--posttrain-input-jsonl "$posttrain_input_jsonl")
+    fi
+  done
+fi
 
 full_only_args=()
 append_nonempty_arg full_only_args --distill-profile "$DISTILL_PROFILE"
@@ -208,7 +224,7 @@ if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then
     --optimizer-in-backward-update lowmem_adafactor
     --optimizer-in-backward-grad-clip 1.0
     --optimizer-in-backward-clip-mode rms
-    --optimizer-in-backward-adafactor-chunk-rows 256
+    --optimizer-in-backward-adafactor-chunk-rows "$OPTIMIZER_ADAFACTOR_CHUNK_ROWS"
     --optimizer-in-backward-adafactor-clip-threshold 1.0
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
@@ -231,6 +247,8 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
   if [[ -n "$POSTTRAIN_ALGORITHM_ORDER" ]]; then
     posttrain_order_args+=(--posttrain-algorithm-order "$POSTTRAIN_ALGORITHM_ORDER")
   fi
+  curation_manifest_args=()
+  append_nonempty_arg curation_manifest_args --curation-manifest "$CURATION_MANIFEST"
   common_args=(
     --profile "$PROFILE"
     --out-dir "$OUT_DIR"
@@ -239,6 +257,7 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --resume-checkpoint "$RESUME_CHECKPOINT"
     "${posttrain_start_args[@]}"
     "${posttrain_order_args[@]}"
+    "${curation_manifest_args[@]}"
     --seq-len "$SEQ_LEN"
     --batch-size "$BATCH_SIZE"
     --posttrain-steps "$POSTTRAIN_STEPS"
@@ -256,7 +275,7 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --optimizer-in-backward-update lowmem_adafactor
     --optimizer-in-backward-grad-clip 1.0
     --optimizer-in-backward-clip-mode rms
-    --optimizer-in-backward-adafactor-chunk-rows 256
+    --optimizer-in-backward-adafactor-chunk-rows "$OPTIMIZER_ADAFACTOR_CHUNK_ROWS"
     --optimizer-in-backward-adafactor-clip-threshold 1.0
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
@@ -296,7 +315,7 @@ else
     --optimizer-in-backward-update lowmem_adafactor
     --optimizer-in-backward-grad-clip 1.0
     --optimizer-in-backward-clip-mode rms
-    --optimizer-in-backward-adafactor-chunk-rows 256
+    --optimizer-in-backward-adafactor-chunk-rows "$OPTIMIZER_ADAFACTOR_CHUNK_ROWS"
     --optimizer-in-backward-adafactor-clip-threshold 1.0
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
@@ -324,7 +343,10 @@ docker_args=(
   -e PYTHONPATH=/workspace/src
   -e NCCL_P2P_DISABLE="${NCCL_P2P_DISABLE:-1}"
   -e NCCL_SHM_DISABLE="${NCCL_SHM_DISABLE:-0}"
-  -e OMNICODER2026_DIST_TIMEOUT_SECONDS="${OMNICODER2026_DIST_TIMEOUT_SECONDS:-3600}"
+  -e OMNICODER2026_DIST_TIMEOUT_SECONDS="$DIST_TIMEOUT_SECONDS"
+  -e OMNICODER2026_CHECKPOINT_SYNC_BACKEND="$CHECKPOINT_SYNC_BACKEND"
+  -e OMNICODER2026_CHECKPOINT_MARKER_TIMEOUT_SECONDS="$CHECKPOINT_MARKER_TIMEOUT_SECONDS"
+  -e OMNICODER2026_CHECKPOINT_MARKER_POLL_SECONDS="$CHECKPOINT_MARKER_POLL_SECONDS"
   -e PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"
   -e OMNICODER2026_LM_LOSS_CHUNK_TOKENS="$LM_LOSS_CHUNK_TOKENS"
   -e OMNICODER2026_FFN_CHUNK_TOKENS="$FFN_CHUNK_TOKENS"

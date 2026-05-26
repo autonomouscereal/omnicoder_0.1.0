@@ -4,7 +4,7 @@ import math
 import os
 import contextlib
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 import torch.nn as nn
@@ -201,23 +201,36 @@ class OmniCoder2026Config:
         )
 
 
+class _FakeQuantWeightSTE(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx: Any, w: torch.Tensor, group_size: int) -> torch.Tensor:
+        group_size = int(group_size)
+        if group_size <= 0 or w.numel() == 0:
+            return w
+        orig_shape = w.shape
+        flat = w.reshape(w.shape[0], -1)
+        groups = math.ceil(flat.shape[1] / group_size)
+        pad = groups * group_size - flat.shape[1]
+        if pad:
+            flat = F.pad(flat, (0, pad))
+        grouped = flat.reshape(flat.shape[0], groups, group_size)
+        scale = grouped.abs().amax(dim=-1, keepdim=True).clamp_min(1e-8) / 7.0
+        dq = grouped.div(scale)
+        dq.round_()
+        dq.clamp_(-7, 7)
+        dq.mul_(scale)
+        dq = dq.reshape(flat.shape[0], groups * group_size)
+        if pad:
+            dq = dq[:, :-pad]
+        return dq.reshape(orig_shape)
+
+    @staticmethod
+    def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[torch.Tensor, None]:
+        return grad_output, None
+
+
 def _fake_quant_weight(w: torch.Tensor, group_size: int) -> torch.Tensor:
-    if group_size <= 0 or w.numel() == 0:
-        return w
-    orig_shape = w.shape
-    flat = w.reshape(w.shape[0], -1)
-    groups = math.ceil(flat.shape[1] / group_size)
-    pad = groups * group_size - flat.shape[1]
-    if pad:
-        flat = F.pad(flat, (0, pad))
-    grouped = flat.reshape(flat.shape[0], groups, group_size)
-    scale = grouped.abs().amax(dim=-1, keepdim=True).clamp_min(1e-8) / 7.0
-    q = torch.round(grouped / scale).clamp(-7, 7)
-    dq = q * scale
-    dq = dq.reshape(flat.shape[0], groups * group_size)
-    if pad:
-        dq = dq[:, :-pad]
-    return w + (dq.reshape(orig_shape) - w).detach()
+    return _FakeQuantWeightSTE.apply(w, int(group_size))
 
 
 def _env_int(name: str, default: int) -> int:
@@ -245,14 +258,19 @@ class QuantAwareLinear(nn.Linear):
 
     def _chunked_fake_quant_linear(self, x: torch.Tensor) -> torch.Tensor:
         rows = max(1, int(self.fake_quant_chunk_rows))
-        pieces: list[torch.Tensor] = []
         out_features = int(self.weight.shape[0])
+        output: torch.Tensor | None = None
         for start in range(0, out_features, rows):
             end = min(out_features, start + rows)
             weight = _fake_quant_weight(self.weight[start:end], self.group_size)
             bias = self.bias[start:end] if self.bias is not None else None
-            pieces.append(F.linear(x, weight, bias))
-        return torch.cat(pieces, dim=-1)
+            piece = F.linear(x, weight, bias)
+            if output is None:
+                output = piece.new_empty((*piece.shape[:-1], out_features))
+            output[..., start:end] = piece
+        if output is None:
+            return x.new_empty((*x.shape[:-1], 0))
+        return output
 
 
 class RMSNorm(nn.Module):
@@ -315,12 +333,16 @@ class SwiGLU(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.chunk_tokens > 0 and x.shape[-2] > self.chunk_tokens:
-            chunks: list[torch.Tensor] = []
+            output: torch.Tensor | None = None
             for start in range(0, x.shape[-2], self.chunk_tokens):
                 end = min(x.shape[-2], start + self.chunk_tokens)
                 x_chunk = x[..., start:end, :]
-                chunks.append(self.down(F.silu(self.gate(x_chunk)) * self.up(x_chunk)))
-            return torch.cat(chunks, dim=-2)
+                piece = self.down(F.silu(self.gate(x_chunk)) * self.up(x_chunk))
+                if output is None:
+                    output = piece.new_empty((*piece.shape[:-2], x.shape[-2], piece.shape[-1]))
+                output[..., start:end, :] = piece
+            if output is not None:
+                return output
         return self.down(F.silu(self.gate(x)) * self.up(x))
 
 

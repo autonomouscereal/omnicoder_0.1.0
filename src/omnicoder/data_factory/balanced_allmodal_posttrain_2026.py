@@ -1,0 +1,524 @@
+from __future__ import annotations
+
+import argparse
+import json
+from collections import Counter
+from pathlib import Path
+from typing import Any
+
+from omnicoder.training.training_orchestration_2026 import (
+    DEFAULT_PROFILE,
+    DEFAULT_STAGE_ORDER,
+    iter_jsonl,
+    load_profile,
+    now_iso,
+    profile_cfg,
+    repo_root,
+    resolve_path,
+    row_prompt,
+    row_target,
+    stable_hash,
+    write_json,
+    write_jsonl,
+)
+
+
+KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", "long_context"}
+MODALITY_PRIORITY = ("image", "video", "audio", "music", "code", "tool", "long_context", "text")
+PROFILE_JSONL_KEYS: tuple[tuple[str, str], ...] = (
+    ("text_jsonl", "text"),
+    ("code_jsonl", "code"),
+    ("trace_jsonl", "tool"),
+    ("image_jsonl", "image"),
+    ("video_jsonl", "video"),
+    ("audio_jsonl", "audio"),
+    ("music_jsonl", "music"),
+)
+BAD_CONTAMINATION_MARKERS = ("contaminated", "benchmark_leak", "quarantine", "rejected")
+
+
+def clamp_text(value: str, limit: int) -> str:
+    text = value.strip()
+    if limit <= 0 or len(text) <= limit:
+        return text
+    return text[:limit].rstrip()
+
+
+def text_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def normalize_modality(value: Any) -> str:
+    text = text_value(value).lower().replace("-", "_").replace(" ", "_")
+    if not text:
+        return ""
+    if text in KNOWN_MODALITIES:
+        return text
+    if any(marker in text for marker in ("long_context", "longctx", "million_context", "1m_context")):
+        return "long_context"
+    if any(marker in text for marker in ("vision", "image", "picture", "imgedit", "qwen_image")):
+        return "image"
+    if any(marker in text for marker in ("video", "movie", "ltx", "image_to_video", "text_to_video")):
+        return "video"
+    if any(marker in text for marker in ("music", "song", "melody", "ace_step", "acestep", "midi")):
+        return "music"
+    if any(marker in text for marker in ("audio", "speech", "tts", "asr", "voice", "sound")):
+        return "audio"
+    if any(marker in text for marker in ("code", "coding", "swe", "terminal_bench", "livecodebench", "program")):
+        return "code"
+    if any(marker in text for marker in ("tool", "agent", "trace", "sft", "browser", "shell", "terminal", "codex", "claude", "hermes")):
+        return "tool"
+    if any(marker in text for marker in ("math", "reasoning", "text", "instruction")):
+        return "text"
+    return ""
+
+
+def row_modalities(row: dict[str, Any]) -> list[str]:
+    values: list[Any] = []
+    for key in ("modality", "media_family", "task_type", "domain", "source_id"):
+        if row.get(key) is not None:
+            values.append(row.get(key))
+    modalities = row.get("modalities")
+    if isinstance(modalities, list):
+        values.extend(modalities)
+    elif modalities is not None:
+        values.append(modalities)
+    normalized = [normalize_modality(value) for value in values]
+    return [value for value in normalized if value]
+
+
+def infer_modality(row: dict[str, Any], source_path: Path, source_hint: str = "") -> str:
+    source_modality = normalize_modality(source_hint)
+    if source_modality:
+        return source_modality
+    file_hint = normalize_modality(" ".join([source_path.name, source_path.parent.name]))
+    candidates = row_modalities(row)
+    for preferred in MODALITY_PRIORITY:
+        if preferred in candidates:
+            return preferred
+    if file_hint:
+        return file_hint
+    return "text"
+
+
+def message_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
+    messages = row.get("messages")
+    if not isinstance(messages, list):
+        input_json = row.get("input_json") if isinstance(row.get("input_json"), dict) else {}
+        messages = input_json.get("messages") if isinstance(input_json.get("messages"), list) else []
+    if messages:
+        last_assistant = ""
+        prompt_parts: list[str] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            role = str(message.get("role") or "message").lower()
+            content = text_value(message.get("content"))
+            if not content:
+                continue
+            if role == "assistant":
+                last_assistant = content
+            else:
+                prompt_parts.append(f"{role}: {content}")
+        if prompt_parts and last_assistant:
+            return "\n".join(prompt_parts), last_assistant
+    return row_prompt(row), row_target(row)
+
+
+def artifact_refs(row: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    for key in ("artifact_refs", "artifacts", "artifact_paths", "media_paths"):
+        value = row.get(key)
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    ref = text_value(
+                        item.get("path")
+                        or item.get("source_path")
+                        or item.get("artifact_path")
+                        or item.get("uri")
+                        or item.get("url")
+                        or item.get("sha256")
+                    )
+                else:
+                    ref = text_value(item)
+                if ref:
+                    refs.append(clamp_text(ref, 2048))
+        elif isinstance(value, str) and value.strip():
+            refs.append(clamp_text(value, 2048))
+    for key in ("artifact_path", "image_path", "video_path", "audio_path", "music_path"):
+        value = text_value(row.get(key))
+        if value:
+            refs.append(clamp_text(value, 2048))
+    return sorted(set(refs))[:32]
+
+
+def quality_value(row: dict[str, Any]) -> float:
+    for key in ("quality_score", "score", "reward"):
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except Exception:
+            continue
+    return 1.0
+
+
+def contamination_rejected(row: dict[str, Any]) -> bool:
+    status = text_value(row.get("contamination_status") or row.get("decontamination_status")).lower()
+    return any(marker in status for marker in BAD_CONTAMINATION_MARKERS)
+
+
+def profile_sources(profile: dict[str, Any], root: Path) -> list[tuple[Path, str]]:
+    cfg = profile_cfg(profile)
+    sources = cfg.get("real_sources") if isinstance(cfg.get("real_sources"), dict) else {}
+    result: list[tuple[Path, str]] = []
+    for key, modality in PROFILE_JSONL_KEYS:
+        values = sources.get(key)
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            if not isinstance(value, str) or not value.strip():
+                continue
+            result.append((resolve_path(value, root), modality))
+    return result
+
+
+def parse_sources(values: list[str], root: Path) -> list[tuple[Path, str]]:
+    result: list[tuple[Path, str]] = []
+    for raw in values:
+        value = raw.strip()
+        if not value:
+            continue
+        modality = ""
+        if "=" in value:
+            modality, value = value.split("=", 1)
+        elif "::" in value:
+            modality, value = value.split("::", 1)
+        result.append((resolve_path(value.strip(), root), normalize_modality(modality)))
+    return result
+
+
+def parse_caps(values: list[str], profile: dict[str, Any], default_cap: int) -> dict[str, int]:
+    cfg = profile_cfg(profile)
+    plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
+    configured = plan.get("max_records_per_modality_by_modality")
+    caps: dict[str, int] = {}
+    if isinstance(configured, dict):
+        for modality, value in configured.items():
+            normalized = normalize_modality(modality)
+            if normalized:
+                try:
+                    caps[normalized] = max(0, int(value))
+                except Exception:
+                    pass
+    for modality in KNOWN_MODALITIES:
+        caps.setdefault(modality, max(0, int(default_cap)))
+    for item in values:
+        if "=" not in item:
+            raise ValueError(f"--cap must be modality=count: {item!r}")
+        modality, count = item.split("=", 1)
+        normalized = normalize_modality(modality)
+        if not normalized:
+            raise ValueError(f"unknown modality in --cap: {item!r}")
+        caps[normalized] = max(0, int(count))
+    return caps
+
+
+def required_modalities(profile: dict[str, Any], override: str) -> list[str]:
+    if override.strip():
+        return [value for value in (normalize_modality(part) for part in override.split(",")) if value]
+    cfg = profile_cfg(profile)
+    plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
+    values = plan.get("required_modalities") if isinstance(plan.get("required_modalities"), list) else list(DEFAULT_STAGE_ORDER)
+    return [value for value in (normalize_modality(item) for item in values) if value]
+
+
+def build_base_row(
+    row: dict[str, Any],
+    *,
+    prompt: str,
+    target: str,
+    modality: str,
+    source_path: Path,
+    line_number: int,
+    kind: str,
+) -> dict[str, Any]:
+    return {
+        "training_kind": kind,
+        "record_id": stable_hash(
+            {
+                "kind": kind,
+                "source": str(source_path),
+                "line_number": line_number,
+                "source_record_id": row.get("record_id"),
+                "prompt": prompt[:512],
+                "target": target[:512],
+            }
+        ),
+        "source_record_id": row.get("record_id") or row.get("id"),
+        "source_id": row.get("source_id") or source_path.name,
+        "source_file": str(source_path),
+        "source_line_number": int(line_number),
+        "modality": modality,
+        "modalities": sorted(set([modality] + row_modalities(row))),
+        "artifact_refs": artifact_refs(row),
+        "quality_score": quality_value(row),
+        "contamination_status": row.get("contamination_status", "unknown"),
+        "curriculum_stage": "balanced_allmodal_posttraining_2026",
+    }
+
+
+def sft_row(row: dict[str, Any], prompt: str, target: str, modality: str, source_path: Path, line_number: int) -> dict[str, Any]:
+    base = build_base_row(row, prompt=prompt, target=target, modality=modality, source_path=source_path, line_number=line_number, kind="balanced_allmodal_sft")
+    return {
+        "schema": "omnicoder.posttraining_sft_2026.v1",
+        "messages": [{"role": "user", "content": prompt}, {"role": "assistant", "content": target}],
+        **base,
+    }
+
+
+def reward_row(row: dict[str, Any], prompt: str, target: str, modality: str, source_path: Path, line_number: int) -> dict[str, Any]:
+    base = build_base_row(row, prompt=prompt, target=target, modality=modality, source_path=source_path, line_number=line_number, kind="balanced_allmodal_reward")
+    return {
+        "schema": "omnicoder.posttraining_reward_2026.v1",
+        "prompt": prompt,
+        "response": target,
+        "reward": quality_value(row),
+        "reward_source": "balanced_allmodal_curation_quality_score",
+        **base,
+    }
+
+
+def rlvr_row(row: dict[str, Any], prompt: str, target: str, modality: str, source_path: Path, line_number: int) -> dict[str, Any]:
+    base = build_base_row(row, prompt=prompt, target=target, modality=modality, source_path=source_path, line_number=line_number, kind="balanced_allmodal_rlvr")
+    return {
+        "schema": "omnicoder.posttraining_rlvr_2026.v1",
+        "prompt": prompt,
+        "expected_answer": target,
+        "verifier": "modality_grounded_exact_or_artifact_quality_judge",
+        "reward_axes": [
+            "answer_consistency",
+            "artifact_reference_integrity",
+            "modality_grounding",
+            "tool_or_reasoning_correctness",
+            "contamination_free",
+        ],
+        **base,
+    }
+
+
+def output_paths(out_dir: Path, out_jsonl: str, manifest: str) -> dict[str, Path]:
+    if out_jsonl:
+        sft = Path(out_jsonl)
+        if not sft.is_absolute():
+            sft = resolve_path(sft, repo_root())
+        stem = sft.name[:-6] if sft.name.endswith(".jsonl") else sft.name
+        reward = sft.with_name(stem.replace("_sft", "") + "_reward.jsonl")
+        rlvr = sft.with_name(stem.replace("_sft", "") + "_rlvr.jsonl")
+        manifest_path = Path(manifest) if manifest else sft.with_name(stem.replace("_sft", "") + "_manifest.json")
+    else:
+        sft = out_dir / "balanced_allmodal_sft.jsonl"
+        reward = out_dir / "balanced_allmodal_reward.jsonl"
+        rlvr = out_dir / "balanced_allmodal_rlvr.jsonl"
+        manifest_path = Path(manifest) if manifest else out_dir / "balanced_allmodal_manifest.json"
+    if not manifest_path.is_absolute():
+        manifest_path = resolve_path(manifest_path, repo_root())
+    return {"sft": sft, "reward": reward, "rlvr": rlvr, "manifest": manifest_path}
+
+
+def round_robin_rows(buckets: dict[str, list[dict[str, Any]]], order: list[str]) -> list[dict[str, Any]]:
+    indexes = {modality: 0 for modality in order}
+    result: list[dict[str, Any]] = []
+    while True:
+        progressed = False
+        for modality in order:
+            index = indexes[modality]
+            bucket = buckets.get(modality, [])
+            if index >= len(bucket):
+                continue
+            result.append(bucket[index])
+            indexes[modality] = index + 1
+            progressed = True
+        if not progressed:
+            break
+    return result
+
+
+def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
+    root = repo_root()
+    if args.schema != "messages":
+        raise ValueError("--schema currently supports only 'messages' for native pipeline reward replay")
+    profile = load_profile(args.profile)
+    cfg = profile_cfg(profile)
+    plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
+    required = required_modalities(profile, args.require_modalities)
+    caps = parse_caps(args.cap, profile, args.max_records_per_modality)
+    sources: list[tuple[Path, str]] = []
+    if not args.no_profile_sources:
+        sources.extend(profile_sources(profile, root))
+    sources.extend(parse_sources(args.source, root))
+
+    buckets: dict[str, list[dict[str, Any]]] = {modality: [] for modality in KNOWN_MODALITIES}
+    seen_records: set[str] = set()
+    source_reports: list[dict[str, Any]] = []
+    skipped = Counter()
+    for source_path, source_hint in sources:
+        if not source_path.exists() or not source_path.is_file() or source_path.stat().st_size <= 0:
+            source_reports.append({"path": str(source_path), "hint": source_hint, "status": "missing_or_empty"})
+            continue
+        before = sum(len(values) for values in buckets.values())
+        read_count = 0
+        kept_count = 0
+        for row in iter_jsonl(source_path):
+            read_count += 1
+            if args.max_source_records and read_count > args.max_source_records:
+                break
+            if contamination_rejected(row):
+                skipped["contamination"] += 1
+                continue
+            modality = infer_modality(row, source_path, source_hint)
+            if modality not in KNOWN_MODALITIES:
+                skipped["unknown_modality"] += 1
+                continue
+            if len(buckets[modality]) >= caps.get(modality, 0):
+                skipped[f"{modality}_cap"] += 1
+                continue
+            prompt, target = message_prompt_target(row)
+            prompt = clamp_text(text_value(prompt), int(args.max_prompt_chars))
+            target = clamp_text(text_value(target), int(args.max_target_chars))
+            if not prompt or not target:
+                skipped["missing_prompt_or_target"] += 1
+                continue
+            dedupe_key = stable_hash({"modality": modality, "prompt": prompt[:2048], "target": target[:2048]})
+            if dedupe_key in seen_records:
+                skipped["duplicate"] += 1
+                continue
+            seen_records.add(dedupe_key)
+            compact_row = {
+                "record_id": row.get("record_id") or row.get("id"),
+                "id": row.get("id"),
+                "source_id": row.get("source_id") or source_path.name,
+                "modality": modality,
+                "modalities": sorted(set([modality] + row_modalities(row))),
+                "artifact_refs": artifact_refs(row),
+                "quality_score": quality_value(row),
+                "contamination_status": row.get("contamination_status", "unknown"),
+            }
+            buckets[modality].append(
+                {
+                    "row": compact_row,
+                    "prompt": prompt,
+                    "target": target,
+                    "modality": modality,
+                    "source_path": source_path,
+                    "line_number": int(row.get("line_number") or read_count),
+                }
+            )
+            kept_count += 1
+            if all(len(buckets[modality_name]) >= caps.get(modality_name, 0) for modality_name in required):
+                break
+        source_reports.append(
+            {
+                "path": str(source_path),
+                "hint": source_hint,
+                "status": "read",
+                "records_read": read_count,
+                "records_kept": kept_count,
+                "total_kept_after_source": sum(len(values) for values in buckets.values()),
+                "records_kept_before_source": before,
+            }
+        )
+
+    order = [modality for modality in list(DEFAULT_STAGE_ORDER) if modality in KNOWN_MODALITIES]
+    for modality in sorted(KNOWN_MODALITIES):
+        if modality not in order:
+            order.append(modality)
+    selected = round_robin_rows(buckets, order)
+    paths = output_paths(resolve_path(args.out_dir, root), args.out_jsonl, args.manifest)
+    sft_rows = [sft_row(item["row"], item["prompt"], item["target"], item["modality"], item["source_path"], item["line_number"]) for item in selected]
+    reward_rows = [reward_row(item["row"], item["prompt"], item["target"], item["modality"], item["source_path"], item["line_number"]) for item in selected]
+    rlvr_rows = [rlvr_row(item["row"], item["prompt"], item["target"], item["modality"], item["source_path"], item["line_number"]) for item in selected]
+    counts = {
+        "sft": write_jsonl(paths["sft"], sft_rows),
+        "reward": write_jsonl(paths["reward"], reward_rows),
+        "rlvr": write_jsonl(paths["rlvr"], rlvr_rows),
+    }
+    modality_counts = {modality: len(values) for modality, values in sorted(buckets.items())}
+    missing_required = [
+        modality
+        for modality in required
+        if modality_counts.get(modality, 0) < int(args.min_records_per_required_modality or plan.get("min_records_per_modality") or 1)
+    ]
+    manifest = {
+        "schema": "omnicoder.balanced_allmodal_posttrain_2026.v1",
+        "created_at": now_iso(),
+        "profile": args.profile,
+        "paths": {key: str(value) for key, value in paths.items() if key != "manifest"},
+        "manifest": str(paths["manifest"]),
+        "counts": counts,
+        "modality_counts": modality_counts,
+        "required_modalities": required,
+        "missing_required_modalities": missing_required,
+        "caps": caps,
+        "source_reports": source_reports,
+        "skipped": dict(sorted(skipped.items())),
+        "schema_mode": args.schema,
+        "strip_token_ids": bool(args.strip_token_ids),
+        "token_id_policy": "source token ids are never copied; the pipeline trainer tokenizes generated message rows with the active tokenizer",
+        "posttrain_input_overrides": {
+            "reward_weighted_sft_replay": str(paths["sft"]),
+            "grpo_rlvr_replay": str(paths["rlvr"]),
+            "process_reward_replay": str(paths["reward"]),
+        },
+    }
+    write_json(paths["manifest"], manifest)
+    if missing_required and not args.allow_missing_required:
+        raise SystemExit(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "reason": "missing_required_modalities",
+                    "missing_required_modalities": missing_required,
+                    "manifest": str(paths["manifest"]),
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
+    return manifest
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Build balanced all-modal posttraining JSONL exports from curated real sources.")
+    parser.add_argument("--profile", default=DEFAULT_PROFILE)
+    parser.add_argument("--out-dir", default="weights/training_orchestration_2026/balanced_allmodal_posttrain_2026")
+    parser.add_argument("--out-jsonl", default="", help="Optional explicit SFT output JSONL path. Reward/RLVR siblings are written next to it.")
+    parser.add_argument("--manifest", default="")
+    parser.add_argument("--source", action="append", default=[], help="Extra source JSONL, optionally modality=path.")
+    parser.add_argument("--no-profile-sources", action="store_true")
+    parser.add_argument("--cap", action="append", default=[], help="Per-modality cap override, e.g. code=4096.")
+    parser.add_argument("--max-records-per-modality", type=int, default=256)
+    parser.add_argument("--max-source-records", type=int, default=0)
+    parser.add_argument("--require-modalities", default="")
+    parser.add_argument("--min-records-per-required-modality", type=int, default=1)
+    parser.add_argument("--allow-missing-required", action="store_true")
+    parser.add_argument("--strip-token-ids", action="store_true", help="Compatibility flag; generated rows never copy source token_ids.")
+    parser.add_argument("--schema", default="messages", choices=["messages"], help="Output schema for optimizer replay rows.")
+    parser.add_argument("--max-prompt-chars", type=int, default=24000)
+    parser.add_argument("--max-target-chars", type=int, default=24000)
+    args = parser.parse_args(argv)
+    manifest = build_balanced_exports(args)
+    print(json.dumps({"status": "passed", "manifest": manifest["manifest"], "counts": manifest["counts"], "modality_counts": manifest["modality_counts"]}, ensure_ascii=True, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

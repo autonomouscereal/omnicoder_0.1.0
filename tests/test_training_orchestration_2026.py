@@ -850,6 +850,13 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
     assert not any("omnicoder.training.reward_replay_2026" in cmd for cmd in commands)
 
 
+def test_save_interval_zero_disables_profile_interval_for_live_replay():
+    assert orch.resolve_save_interval(argparse.Namespace(save_interval=0), 32) == 0
+    assert orch.resolve_save_interval(argparse.Namespace(save_interval=-1), 32) == 0
+    assert orch.resolve_save_interval(argparse.Namespace(save_interval=None), 32) == 32
+    assert orch.resolve_save_interval(argparse.Namespace(), 32) == 32
+
+
 def test_live_posttraining_requires_bridge_defer_manifest_before_pipeline_replay(tmp_path, monkeypatch):
     profile = _profile(tmp_path)
     profile["training_plan"]["distributed_training"] = {

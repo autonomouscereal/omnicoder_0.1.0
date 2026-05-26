@@ -419,16 +419,15 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self.seq_len = int(seq_len)
         self.vocab_size = int(vocab_size)
-        self.samples: list[tuple[list[int], float]] = []
+        self.records: list[tuple[Path, int, int, str]] = []
+        self.fallback: tuple[list[int], float] = ([1] * self.seq_len, 0.05)
         limit = int(max_records) if int(max_records) > 0 else None
         p = Path(path)
         paths = sorted(p.rglob("*.jsonl")) + sorted(p.rglob("*.txt")) if p.is_dir() else [p]
         for src in paths:
-            if limit is not None and len(self.samples) >= limit:
+            if limit is not None and len(self.records) >= limit:
                 break
-            self._load_path(src, limit)
-        if not self.samples:
-            self.samples.append(([1] * self.seq_len, 0.05))
+            self._index_path(src, limit)
 
     def _sanitize_id(self, value: int) -> int:
         token = int(value)
@@ -438,56 +437,76 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
             return 1
         return token
 
-    def _load_path(self, path: Path, limit: int | None) -> None:
+    def _estimate_chunks(self, raw_len: int) -> int:
+        # A loose byte/token estimate keeps startup bounded while still sampling
+        # multiple chunks from long agentic traces instead of only prefixes.
+        approx_tokens = max(2, int(math.ceil(float(max(1, raw_len)) / 4.0)))
+        return max(1, int(math.ceil(float(approx_tokens) / float(max(1, self.seq_len)))))
+
+    def _index_path(self, path: Path, limit: int | None) -> None:
         if not path.exists():
             return
         if path.suffix.lower() == ".txt":
-            self._append_text(path.read_text(encoding="utf-8", errors="ignore"), 1.0, limit)
+            raw_len = path.stat().st_size
+            for chunk_index in range(self._estimate_chunks(raw_len)):
+                if limit is not None and len(self.records) >= limit:
+                    break
+                self.records.append((path, 0, chunk_index, "txt"))
             return
-        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            if limit is not None and len(self.samples) >= limit:
-                break
-            if not line.strip():
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
-                obj = {"text": line}
-            if not isinstance(obj, dict):
-                obj = {"text": str(obj)}
-            _, weight = _pipeline_record_to_text_and_weight(obj)
-            ids = _ids_from_record(obj)
-            if ids:
-                self._append_ids(ids, weight, limit)
-            else:
-                text, weight = _pipeline_record_to_text_and_weight(obj)
-                self._append_text(text, weight, limit)
-
-    def _append_text(self, text: str, weight: float, limit: int | None) -> None:
-        if limit is not None and len(self.samples) >= limit:
-            return
-        ids = [int(x) for x in self.tokenizer.encode(text)]
-        self._append_ids(ids, weight, limit)
-
-    def _append_ids(self, ids: list[int], weight: float, limit: int | None) -> None:
-        if limit is not None and len(self.samples) >= limit:
-            return
-        cleaned = [self._sanitize_id(x) for x in ids]
-        if len(cleaned) < 2:
-            return
-        for start in range(0, len(cleaned), max(1, self.seq_len)):
-            chunk = cleaned[start:start + self.seq_len]
-            if len(chunk) < 2:
-                continue
-            self.samples.append((chunk, float(weight)))
-            if limit is not None and len(self.samples) >= limit:
-                break
+        with path.open("rb") as handle:
+            while True:
+                offset = handle.tell()
+                raw = handle.readline()
+                if not raw:
+                    break
+                if limit is not None and len(self.records) >= limit:
+                    break
+                if not raw.strip():
+                    continue
+                for chunk_index in range(self._estimate_chunks(len(raw))):
+                    if limit is not None and len(self.records) >= limit:
+                        break
+                    self.records.append((path, offset, chunk_index, "jsonl"))
 
     def __len__(self) -> int:
-        return len(self.samples)
+        return max(1, len(self.records))
+
+    def _read_record(self, path: Path, offset: int, kind: str) -> tuple[list[int], float, int]:
+        if kind == "txt":
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            ids = [int(x) for x in self.tokenizer.encode(text)]
+            return ids, 1.0, len(ids)
+        with path.open("rb") as handle:
+            handle.seek(int(offset))
+            line = handle.readline().decode("utf-8", errors="ignore")
+        if not line.strip():
+            return self.fallback[0], self.fallback[1], len(self.fallback[0])
+        try:
+            obj = json.loads(line)
+        except Exception:
+            obj = {"text": line}
+        if not isinstance(obj, dict):
+            obj = {"text": str(obj)}
+        _, weight = _pipeline_record_to_text_and_weight(obj)
+        ids = _ids_from_record(obj)
+        if not ids:
+            text, weight = _pipeline_record_to_text_and_weight(obj)
+            ids = [int(x) for x in self.tokenizer.encode(text)]
+        return ids, weight, len(ids)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        ids, weight = self.samples[idx]
+        if not self.records:
+            ids, weight = self.fallback
+            return torch.tensor(ids[: self.seq_len], dtype=torch.long), torch.tensor(float(weight), dtype=torch.float32)
+        path, offset, chunk_index, kind = self.records[int(idx) % len(self.records)]
+        raw_ids, weight, _ = self._read_record(path, offset, kind)
+        cleaned = [self._sanitize_id(x) for x in raw_ids]
+        if len(cleaned) < 2:
+            cleaned, weight = self.fallback
+        start = int(chunk_index) * max(1, self.seq_len)
+        if start >= max(1, len(cleaned) - 1):
+            start = max(0, len(cleaned) - self.seq_len)
+        ids = cleaned[start:start + self.seq_len]
         if len(ids) < self.seq_len:
             ids = ids + [0] * (self.seq_len - len(ids))
         return torch.tensor(ids[: self.seq_len], dtype=torch.long), torch.tensor(float(weight), dtype=torch.float32)
@@ -933,6 +952,7 @@ def validate_target_device_placement(args: argparse.Namespace, ranges: list[tupl
         "name": str(props.name),
         "total_memory": int(props.total_memory),
         "layers": int(spec.layer_end - spec.layer_start),
+        "has_embed": bool(spec.has_embed),
         "has_head": bool(spec.has_head),
     }
     reports: list[dict[str, Any] | None] = [None for _ in range(int(dist.get_world_size()))]
@@ -941,11 +961,19 @@ def validate_target_device_placement(args: argparse.Namespace, ranges: list[tupl
     if len(complete) != int(dist.get_world_size()):
         raise ValueError(f"incomplete device placement report: {reports!r}")
     p40_ranks = [item for item in complete if "P40" in str(item.get("name", "")).upper()]
-    if p40_ranks:
+    if p40_ranks and not bool(getattr(args, "allow_p40_target_contract_eval", False)):
         raise ValueError(f"target-contract pipeline may not include P40 devices: {p40_ranks!r}")
-    max_layers = max(int(item["layers"]) for item in complete)
+    head_layer_equivalent = max(0, int(os.getenv("OMNICODER2026_HEAD_LAYER_EQUIVALENT", "4") or 4))
+    embed_layer_equivalent = max(0, int(os.getenv("OMNICODER2026_EMBED_LAYER_EQUIVALENT", "1") or 1))
+    for item in complete:
+        item["placement_load"] = (
+            int(item["layers"])
+            + (head_layer_equivalent if bool(item.get("has_head")) else 0)
+            + (embed_layer_equivalent if bool(item.get("has_embed")) else 0)
+        )
+    max_layers = max(int(item["placement_load"]) for item in complete)
     max_memory = max(int(item["total_memory"]) for item in complete)
-    heavy_ranks = [item for item in complete if int(item["layers"]) == max_layers]
+    heavy_ranks = [item for item in complete if int(item["placement_load"]) == max_layers]
     misplaced = [item for item in heavy_ranks if int(item["total_memory"]) < max_memory]
     if misplaced:
         raise ValueError(
@@ -1248,8 +1276,10 @@ def main(argv: list[str] | None = None) -> int:
     old_dtype = torch.get_default_dtype()
     torch.set_default_dtype(_dtype_from_name(init_dtype_name))
     try:
+        print(json.dumps({"event": "model_build_start", "rank": int(rank), "layer_start": int(spec.layer_start), "layer_end": int(spec.layer_end), "seq_len": int(seq_len)}), flush=True)
         with torch.device(device):
             shard = OmniCoder2026PipelineShard(cfg, spec, checkpoint_blocks=bool(args.activation_checkpointing)).to(device)
+        print(json.dumps({"event": "model_build_done", "rank": int(rank), "layer_start": int(spec.layer_start), "layer_end": int(spec.layer_end)}), flush=True)
     finally:
         torch.set_default_dtype(old_dtype)
 
@@ -1262,8 +1292,9 @@ def main(argv: list[str] | None = None) -> int:
 
     from torch.distributed.pipelining import PipelineStage, Schedule1F1B, ScheduleGPipe
 
-    with torch.no_grad(), autocast_context(device, str(args.precision)):
-        example_output = shard(example_input)
+    print(json.dumps({"event": "pipeline_stage_build_start", "rank": int(rank), "microbatch_size": int(microbatch_size), "seq_len": int(seq_len)}), flush=True)
+    example_output_dtype = torch.float32 if spec.has_head else _dtype_from_name(init_dtype_name)
+    example_output = torch.empty((microbatch_size, seq_len, cfg.d_model), dtype=example_output_dtype, device=device)
     stage = PipelineStage(
         shard,
         stage_index=rank,
@@ -1272,9 +1303,12 @@ def main(argv: list[str] | None = None) -> int:
         input_args=(example_input,),
         output_args=example_output,
     )
+    print(json.dumps({"event": "pipeline_stage_build_done", "rank": int(rank)}), flush=True)
     optimizer = build_optimizer(args, shard)
     if args.resume:
+        print(json.dumps({"event": "resume_load_start", "rank": int(rank), "resume": str(args.resume)}), flush=True)
         start_step, last_loss = load_checkpoint_shard(args.resume, shard, optimizer, preset=preset, args=args)
+        print(json.dumps({"event": "resume_load_done", "rank": int(rank), "start_step": int(start_step), "last_loss": last_loss}), flush=True)
 
     def _unused_nonfinal_loss(output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """Enable pipeline backward plumbing on non-final ranks.
@@ -1308,7 +1342,11 @@ def main(argv: list[str] | None = None) -> int:
         schedule = Schedule1F1B(stage, n_microbatches=pipeline_microbatches, loss_fn=loss_fn)
 
     tokenizer = get_text_tokenizer(prefer_hf=True) if rank == 0 else None
+    if rank == 0:
+        _write_log(args.log_file, {"event": "dataset_index_start", "data": str(args.data), "seq_len": int(seq_len), "max_records": int(args.max_records)})
     data = WeightedTextJsonlDataset(args.data, tokenizer, seq_len=seq_len, max_records=args.max_records, vocab_size=int(getattr(preset, "vocab_size", 0) or 0)) if rank == 0 else None
+    if rank == 0:
+        _write_log(args.log_file, {"event": "dataset_index_done", "samples": int(len(data) if data is not None else 0), "data": str(args.data), "seq_len": int(seq_len)})
     loader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True) if rank == 0 else None
     it = iter(loader) if loader is not None else None
     def debug_event(message: str) -> None:
@@ -1320,6 +1358,7 @@ def main(argv: list[str] | None = None) -> int:
         optimizer.zero_grad(set_to_none=True)
         losses: list[torch.Tensor] = []
         if rank == 0:
+            _write_log(args.log_file, {"event": "batch_fetch_start", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1)})
             debug_event("rank0_fetch_batch_start")
             try:
                 batch_item = next(it)  # type: ignore[arg-type]
@@ -1330,6 +1369,7 @@ def main(argv: list[str] | None = None) -> int:
             batch = batch.to(device, non_blocking=True)
             batch_weights = batch_weights.to(device, non_blocking=True).float()
             debug_event("rank0_fetch_batch_done")
+            _write_log(args.log_file, {"event": "batch_fetch_done", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1), "sample_weight_mean": float(batch_weights.detach().mean().cpu())})
         else:
             batch = torch.empty((batch_size, seq_len), dtype=torch.long, device=device)
             batch_weights = torch.empty((batch_size,), dtype=torch.float32, device=device)
@@ -1340,6 +1380,7 @@ def main(argv: list[str] | None = None) -> int:
         debug_event("broadcast_done")
         with autocast_context(device, str(args.precision)):
             if rank == 0:
+                _write_log(args.log_file, {"event": "schedule_step_start", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1), "rank": int(rank)})
                 debug_event("schedule_step_rank0_start")
                 schedule.step(batch, target=batch, losses=losses)
                 debug_event("schedule_step_rank0_done")
@@ -1347,7 +1388,11 @@ def main(argv: list[str] | None = None) -> int:
                 debug_event("schedule_step_nonzero_start")
                 schedule.step(target=batch, losses=losses)
                 debug_event("schedule_step_nonzero_done")
+        if rank == 0:
+            _write_log(args.log_file, {"event": "schedule_step_done", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1), "rank": int(rank)})
         optimizer.step()
+        if rank == 0:
+            _write_log(args.log_file, {"event": "optimizer_step_done", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1), "rank": int(rank)})
         debug_event("optimizer_step_done")
         global_step = start_step + local_step + 1
         _append_pipeline_telemetry(
