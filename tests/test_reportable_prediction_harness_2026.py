@@ -147,6 +147,45 @@ def test_strict_validation_rejects_unauthorized_task_before_generation(tmp_path:
     assert not (tmp_path / "predictions.jsonl").exists()
 
 
+def test_local_dev_mode_accepts_public_dev_rows_without_authorizing_reportable_score(tmp_path: Path) -> None:
+    task = _authorized_task(
+        reportable=False,
+        snapshot_authorization=None,
+        snapshot_id=None,
+        dataset_revision=None,
+        fixture_prediction="B",
+    )
+    tasks = _write_jsonl(tmp_path / "public_dev.jsonl", [task])
+    predictions = tmp_path / "predictions.jsonl"
+    summary = tmp_path / "summary.json"
+
+    assert (
+        harness.main(
+            [
+                "--backend",
+                "fixture",
+                "--model",
+                "fixture-local-dev",
+                "--tasks",
+                str(tasks),
+                "--out",
+                str(predictions),
+                "--summary",
+                str(summary),
+                "--allow-local-dev-tasks",
+            ]
+        )
+        == 0
+    )
+
+    rows = _jsonl_rows(predictions)
+    assert rows[0]["benchmark_id"] == "multimodal_mmmu_pro_2026"
+    assert rows[0]["prediction"] == "B"
+    payload = json.loads(summary.read_text(encoding="utf-8"))
+    assert payload["task_mode"] == "local_public_dev"
+    assert payload["official_score"] is False
+
+
 def test_checkpoint_runner_reads_sanitized_stdin_and_writes_prediction(tmp_path: Path) -> None:
     tasks = _write_jsonl(tmp_path / "tasks.jsonl", [_authorized_task(answer="D")])
     runner = tmp_path / "runner.py"

@@ -11,12 +11,12 @@ from typing import Any
 
 
 SYSTEM_PROMPT = (
-    "You are a teacher model producing concise, structured distillation targets "
-    "for Omnicoder's dense omnimodal student. Return useful corrections, tool "
-    "plans, verifier notes, and reward labels. Return one JSON object whenever "
-    "possible with keys: corrected_response, corrected_tool_calls, chosen, "
-    "rejected, reward, reward_components, verifier_labels, process_labels, "
-    "safety_notes."
+    "You are a teacher model producing compact structured distillation targets "
+    "for Omnicoder's dense omnimodal student. Return exactly one minified JSON "
+    "object under 650 characters, no markdown, no prose outside JSON. Include "
+    "keys corrected_response, corrected_tool_calls, chosen, "
+    "contrastive_weak_response, reward, reward_components, verifier_labels, "
+    "process_labels, quality_notes. Keep values terse and always close JSON."
 )
 
 
@@ -65,9 +65,9 @@ def extract_prompt(row: dict[str, Any]) -> str:
         for message in messages:
             if isinstance(message, dict) and isinstance(message.get("content"), str):
                 role = str(message.get("role") or "user")
-                parts.append(f"{role}: {message['content']}")
+                parts.append(f"{role}: {message['content'][:2400]}")
         if parts:
-            return "\n".join(parts)
+            return "\n".join(parts)[:3000]
     for key in ("prompt", "text", "content", "normalized_text", "completion", "answer"):
         value = row.get(key)
         if isinstance(value, str) and value.strip():
@@ -99,16 +99,25 @@ def teacher_text(response: dict[str, Any]) -> str:
         if isinstance(first, dict):
             message = first.get("message")
             if isinstance(message, dict) and isinstance(message.get("content"), str):
-                content = message["content"]
+                content = clean_teacher_content(message["content"])
                 if content.strip():
                     return content
                 for key in ("reasoning_content", "reasoning", "analysis"):
                     fallback = message.get(key)
                     if isinstance(fallback, str) and fallback.strip():
-                        return fallback
+                        return clean_teacher_content(fallback)
             if isinstance(first.get("text"), str):
-                return first["text"]
+                return clean_teacher_content(first["text"])
     return json.dumps(response, ensure_ascii=True, sort_keys=True)
+
+
+def clean_teacher_content(content: str) -> str:
+    import re
+
+    text = content.strip()
+    text = re.sub(r"(?is)^\s*<think>\s*</think>\s*", "", text).strip()
+    text = re.sub(r"(?is)^\s*<think>\s*(?:thinking process:)?\s*</think>\s*", "", text).strip()
+    return text
 
 
 def parse_teacher_signal(content: str) -> dict[str, Any]:
@@ -176,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--thermal-gpu-index", default="", help="Optional nvidia-smi GPU index to guard before each request")
     parser.add_argument("--max-gpu-temp", type=int, default=0, help="Stop before dispatch when guarded GPU reaches this Celsius temperature")
     parser.add_argument("--resume", action="store_true", help="Skip rows already written to the output JSONL so interrupted rollouts can continue")
+    parser.add_argument("--flush-every", type=int, default=1, help="Write buffered rows every N records for long-running local teachers")
     args = parser.parse_args(argv)
 
     rows = read_jsonl(args.input, limit=int(args.limit))
@@ -190,28 +200,25 @@ def main(argv: list[str] | None = None) -> int:
     for relative_index, row in enumerate(rows_to_process, 1):
         index = skipped_existing + relative_index
         if args.max_gpu_temp > 0 and str(args.thermal_gpu_index).strip():
-            temperature = gpu_temperature(str(args.thermal_gpu_index).strip())
-            if temperature is not None and temperature >= int(args.max_gpu_temp):
-                stopped_for_thermal = True
-                emitted.append(
-                    {
-                        "schema": "omnicoder.openai_teacher_rollout_2026.v1",
-                        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        "run_started_at": started,
-                        "index": index,
-                        "status": "stopped",
-                        "error": f"thermal_guard_gpu_{args.thermal_gpu_index}_temp_{temperature}_ge_{args.max_gpu_temp}",
-                        "teacher": args.model,
-                        "base_url": args.base_url,
-                        "record_kind": args.record_kind,
-                        "input_json": {"source_record": row},
-                        "target_json": {"content": "", "teacher_status": "stopped"},
-                        "modalities": ["text", "tool"],
-                        "split": "train",
-                        "quality_score": 0.0,
-                    }
+            while True:
+                temperature = gpu_temperature(str(args.thermal_gpu_index).strip())
+                if temperature is None or temperature < int(args.max_gpu_temp):
+                    break
+                print(
+                    json.dumps(
+                        {
+                            "event": "thermal_cooldown",
+                            "gpu": str(args.thermal_gpu_index),
+                            "temperature": temperature,
+                            "resume_below": int(args.max_gpu_temp),
+                            "index": index,
+                        },
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    ),
+                    flush=True,
                 )
-                break
+                time.sleep(30)
         prompt = extract_prompt(row)
         try:
             response = post_chat(args.base_url, args.model, prompt, args.timeout, args.max_tokens, args.temperature)
@@ -256,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
                 "quality_score": 0.75 if status == "ok" else 0.0,
             }
         )
-        if len(emitted) >= 8:
+        if len(emitted) >= max(1, int(args.flush_every or 1)):
             write_jsonl(args.out, emitted)
             emitted.clear()
         if args.sleep:

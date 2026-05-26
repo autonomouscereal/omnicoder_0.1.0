@@ -267,6 +267,19 @@ def parse_caps(values: list[str], profile: dict[str, Any], default_cap: int) -> 
     return caps
 
 
+def parse_source_floors(values: list[str]) -> dict[str, int]:
+    floors: dict[str, int] = {}
+    for item in values:
+        if "=" not in item:
+            raise ValueError(f"--source-floor must be source_name=count: {item!r}")
+        source_name, count = item.split("=", 1)
+        key = source_name.strip()
+        if not key:
+            raise ValueError(f"empty source name in --source-floor: {item!r}")
+        floors[key] = max(0, int(count))
+    return floors
+
+
 def required_modalities(profile: dict[str, Any], override: str) -> list[str]:
     if override.strip():
         return [value for value in (normalize_modality(part) for part in override.split(",")) if value]
@@ -396,6 +409,7 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
     plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
     required = required_modalities(profile, args.require_modalities)
     caps = parse_caps(args.cap, profile, args.max_records_per_modality)
+    source_floors = parse_source_floors(args.source_floor)
     policy_config = CurationPolicyConfig(
         reject_refusal_boilerplate=bool(args.reject_refusal_boilerplate),
         reject_eval_holdout=bool(args.reject_eval_holdout),
@@ -409,6 +423,7 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
 
     buckets: dict[str, list[dict[str, Any]]] = {modality: [] for modality in KNOWN_MODALITIES}
     seen_records: set[str] = set()
+    source_floor_counts: Counter[str] = Counter()
     source_reports: list[dict[str, Any]] = []
     skipped = Counter()
     for source_path, source_hint in sources:
@@ -418,6 +433,7 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
         before = sum(len(values) for values in buckets.values())
         read_count = 0
         kept_count = 0
+        source_floor = max(source_floors.get(source_path.name, 0), source_floors.get(str(source_path), 0))
         for row in iter_jsonl(source_path):
             read_count += 1
             if args.max_source_records and read_count > args.max_source_records:
@@ -429,7 +445,7 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
             if modality not in KNOWN_MODALITIES:
                 skipped["unknown_modality"] += 1
                 continue
-            if len(buckets[modality]) >= caps.get(modality, 0):
+            if len(buckets[modality]) >= caps.get(modality, 0) and source_floor_counts[source_path.name] >= source_floor:
                 skipped[f"{modality}_cap"] += 1
                 continue
             prompt, target = message_prompt_target(row)
@@ -481,6 +497,8 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
                     "line_number": int(row.get("line_number") or read_count),
                 }
             )
+            source_floor_counts[source_path.name] += 1
+            source_floor_counts[str(source_path)] += 1
             kept_count += 1
             if all(len(buckets[modality_name]) >= caps.get(modality_name, 0) for modality_name in required):
                 break
@@ -491,6 +509,8 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
                 "status": "read",
                 "records_read": read_count,
                 "records_kept": kept_count,
+                "source_floor": source_floor,
+                "source_floor_kept": source_floor_counts[source_path.name],
                 "total_kept_after_source": sum(len(values) for values in buckets.values()),
                 "records_kept_before_source": before,
             }
@@ -527,6 +547,8 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
         "required_modalities": required,
         "missing_required_modalities": missing_required,
         "caps": caps,
+        "source_floors": source_floors,
+        "source_floor_counts": {key: value for key, value in sorted(source_floor_counts.items()) if key in source_floors or Path(key).name in source_floors},
         "source_reports": source_reports,
         "skipped": dict(sorted(skipped.items())),
         "schema_mode": args.schema,
@@ -570,6 +592,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source", action="append", default=[], help="Extra source JSONL, optionally modality=path.")
     parser.add_argument("--no-profile-sources", action="store_true")
     parser.add_argument("--cap", action="append", default=[], help="Per-modality cap override, e.g. code=4096.")
+    parser.add_argument("--source-floor", action="append", default=[], help="Minimum accepted rows for a specific source basename/path before modality cap starvation, e.g. qwen_image_edit.clean.jsonl=8.")
     parser.add_argument("--max-records-per-modality", type=int, default=256)
     parser.add_argument("--max-source-records", type=int, default=0)
     parser.add_argument("--require-modalities", default="")

@@ -222,10 +222,19 @@ def artifact_refs(row: dict[str, Any], *, limit: int = 32) -> list[str]:
         if isinstance(nested, dict):
             containers.append(nested)
     for container in containers:
-        for key in ("artifact_refs", "artifacts", "artifact_paths", "media_paths", "media_refs"):
+        for key in (
+            "artifact_refs",
+            "artifacts",
+            "artifact_paths",
+            "media_paths",
+            "media_refs",
+            "artifact_metadata",
+            "media_metadata",
+        ):
             value = container.get(key)
-            if isinstance(value, list):
-                for item in value:
+            values = [value] if isinstance(value, dict) else value
+            if isinstance(values, list):
+                for item in values:
                     if isinstance(item, dict):
                         ref = text_value(
                             item.get("path")

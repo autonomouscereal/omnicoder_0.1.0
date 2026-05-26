@@ -130,6 +130,46 @@ def prompt_from_job(job: dict[str, Any]) -> str:
     return (text or "Create a high quality multimodal teacher artifact for this training job.")[:2400]
 
 
+def numeric_field(value: Any, default: float, *, minimum: float, maximum: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def ace_fields_from_job(job: dict[str, Any], prompt: str) -> dict[str, Any]:
+    payload = job.get("input_json") if isinstance(job.get("input_json"), dict) else {}
+    tags = first_text(
+        payload.get("tags")
+        or payload.get("style_tags")
+        or payload.get("music_tags")
+        or payload.get("caption")
+        or payload.get("prompt")
+        or prompt
+    )
+    lyrics = first_text(
+        payload.get("lyrics")
+        or payload.get("structured_lyrics")
+        or payload.get("vocal_lyrics")
+        or payload.get("song_lyrics")
+    )
+    if not tags and lyrics:
+        tags = "vocal song, polished arrangement, 48khz stereo, expressive performance"
+    seconds = numeric_field(payload.get("seconds") or payload.get("duration"), 8.0, minimum=4.0, maximum=30.0)
+    bpm = int(numeric_field(payload.get("bpm"), 96.0, minimum=40.0, maximum=220.0))
+    language = first_text(payload.get("language") or "en")[:24] or "en"
+    keyscale = first_text(payload.get("keyscale") or payload.get("key") or "A minor")[:64] or "A minor"
+    return {
+        "tags": tags[:900] or "cinematic electronic, instrumental, polished, 96 bpm",
+        "lyrics": lyrics[:3000],
+        "seconds": seconds,
+        "bpm": bpm,
+        "language": language,
+        "keyscale": keyscale,
+    }
+
+
 def classify_job(job: dict[str, Any]) -> dict[str, str]:
     teacher = str(job.get("teacher_name") or "").lower()
     job_type = str(job.get("job_type") or "").lower()
@@ -187,14 +227,41 @@ def qwen_image_workflow(prompt: str, prefix: str, seed: int) -> dict[str, Any]:
     }
 
 
-def ace_music_workflow(prompt: str, prefix: str, seed: int) -> dict[str, Any]:
-    tags = prompt[:700] or "cinematic electronic, instrumental, polished, 96 bpm"
+def qwen_image_edit_workflow(prompt: str, prefix: str, seed: int, source_image: str) -> dict[str, Any]:
+    return {
+        "1": {"class_type": "LoadImage", "inputs": {"image": source_image}},
+        "2": {"class_type": "UNETLoader", "inputs": {"unet_name": "qwen_image_fp8_e4m3fn.safetensors", "weight_dtype": "fp8_e4m3fn"}},
+        "3": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors", "type": "qwen_image"}},
+        "4": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen_image_vae.safetensors"}},
+        "5": {"class_type": "TextEncodeQwenImageEdit", "inputs": {"clip": ["3", 0], "vae": ["4", 0], "image": ["1", 0], "prompt": prompt}},
+        "6": {"class_type": "CLIPTextEncode", "inputs": {"text": NEGATIVE_IMAGE, "clip": ["3", 0]}},
+        "7": {"class_type": "VAEEncode", "inputs": {"pixels": ["1", 0], "vae": ["4", 0]}},
+        "8": {"class_type": "KSampler", "inputs": {"model": ["2", 0], "seed": seed, "steps": 8, "cfg": 4.0, "sampler_name": "euler", "scheduler": "normal", "denoise": 0.55, "positive": ["5", 0], "negative": ["6", 0], "latent_image": ["7", 0]}},
+        "9": {"class_type": "VAEDecode", "inputs": {"samples": ["8", 0], "vae": ["4", 0]}},
+        "10": {"class_type": "SaveImage", "inputs": {"filename_prefix": prefix, "images": ["9", 0]}},
+    }
+
+
+def ace_music_workflow(
+    prompt: str,
+    prefix: str,
+    seed: int,
+    *,
+    tags: str = "",
+    lyrics: str = "",
+    seconds: float = 8.0,
+    bpm: int = 96,
+    language: str = "en",
+    keyscale: str = "A minor",
+) -> dict[str, Any]:
+    tags = (tags or prompt)[:900] or "cinematic electronic, instrumental, polished, 96 bpm"
+    duration = max(4.0, min(30.0, float(seconds or 8.0)))
     return {
         "1": {"class_type": "DualCLIPLoader", "inputs": {"clip_name1": "qwen_0.6b_ace15.safetensors", "clip_name2": "qwen_1.7b_ace15.safetensors", "type": "ace", "device": "default"}},
         "2": {"class_type": "UNETLoader", "inputs": {"unet_name": "acestep_v1.5_turbo.safetensors", "weight_dtype": "default"}},
         "3": {"class_type": "VAELoader", "inputs": {"vae_name": "ace_1.5_vae.safetensors"}},
-        "4": {"class_type": "EmptyAceStep1.5LatentAudio", "inputs": {"seconds": 8.0, "batch_size": 1}},
-        "5": {"class_type": "TextEncodeAceStepAudio1.5", "inputs": {"clip": ["1", 0], "tags": tags, "lyrics": "", "seed": seed, "bpm": 96, "duration": 8.0, "timesignature": "4", "language": "en", "keyscale": "A minor", "generate_audio_codes": True, "cfg_scale": 2.0, "temperature": 0.85, "top_p": 0.9, "top_k": 0, "min_p": 0.0}},
+        "4": {"class_type": "EmptyAceStep1.5LatentAudio", "inputs": {"seconds": duration, "batch_size": 1}},
+        "5": {"class_type": "TextEncodeAceStepAudio1.5", "inputs": {"clip": ["1", 0], "tags": tags, "lyrics": lyrics[:3000], "seed": seed, "bpm": bpm, "duration": duration, "timesignature": "4", "language": language, "keyscale": keyscale, "generate_audio_codes": True, "cfg_scale": 2.0, "temperature": 0.85, "top_p": 0.9, "top_k": 0, "min_p": 0.0}},
         "6": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["5", 0]}},
         "7": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["2", 0], "shift": 3.0}},
         "8": {"class_type": "KSampler", "inputs": {"model": ["7", 0], "seed": seed, "steps": 8, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0, "positive": ["5", 0], "negative": ["6", 0], "latent_image": ["4", 0]}},
@@ -253,17 +320,27 @@ def workflow_for_job(job: dict[str, Any], family: dict[str, str], index: int, co
     prefix = f"omnicoder_{family['workflow']}_{stable_hash({'job': job, 'index': index})[:12]}"
     seed = int(stable_hash({"job": job, "index": index})[:8], 16)
     if family["media_family"] == "qwen_image":
+        if family["workflow"] == "qwen_image_edit":
+            source_image = first_text(
+                input_json.get("source_image")
+                or input_json.get("source_image_name")
+                or input_json.get("image_name")
+                or input_json.get("load_image")
+            )
+            source_image = source_image or os.getenv("OMNICODER_QWEN_EDIT_SOURCE_IMAGE", "omnicoder_qwen_edit_seed.png")
+            return qwen_image_edit_workflow(prompt, prefix, seed, source_image)
         return qwen_image_workflow(prompt, prefix, seed)
     if family["media_family"] == "ace_music":
-        return ace_music_workflow(prompt, prefix, seed)
+        fields = ace_fields_from_job(job, prompt)
+        return ace_music_workflow(prompt, prefix, seed, **fields)
     if family["media_family"] == "ltx_video":
         return ltx_video_workflow(comfyui_url, prompt, prefix, seed)
     return qwen_image_workflow(prompt, prefix, seed)
 
 
-def history_artifacts(history_item: dict[str, Any]) -> list[str]:
+def history_artifacts(history_item: dict[str, Any]) -> list[dict[str, str]]:
     outputs = history_item.get("outputs") if isinstance(history_item.get("outputs"), dict) else {}
-    artifacts: list[str] = []
+    artifacts: list[dict[str, str]] = []
     for node in outputs.values():
         if not isinstance(node, dict):
             continue
@@ -272,15 +349,37 @@ def history_artifacts(history_item: dict[str, Any]) -> list[str]:
                 continue
             for value in values:
                 if isinstance(value, dict) and value.get("filename"):
-                    artifacts.append(str(value["filename"]))
+                    artifacts.append(
+                        {
+                            "filename": str(value["filename"]),
+                            "subfolder": str(value.get("subfolder") or "").strip().strip("/\\"),
+                            "type": str(value.get("type") or "").strip(),
+                        }
+                    )
     return artifacts
 
 
-def artifact_metadata(path: str | Path, root: str | Path | None = None) -> dict[str, Any]:
-    p = Path(path)
+def artifact_metadata(path: str | Path | dict[str, Any], root: str | Path | None = None) -> dict[str, Any]:
+    filename = ""
+    subfolder = ""
+    artifact_type = ""
+    if isinstance(path, dict):
+        filename = str(path.get("filename") or "")
+        subfolder = str(path.get("subfolder") or "").strip().strip("/\\")
+        artifact_type = str(path.get("type") or "")
+        p = Path(filename)
+    else:
+        p = Path(path)
+        filename = p.name
     if root and not p.is_absolute():
-        p = Path(root) / p
-    meta: dict[str, Any] = {"path": str(p), "exists": p.exists()}
+        p = Path(root) / subfolder / filename if subfolder else Path(root) / p
+    meta: dict[str, Any] = {
+        "path": str(p),
+        "filename": filename,
+        "subfolder": subfolder,
+        "type": artifact_type,
+        "exists": p.exists(),
+    }
     if p.exists() and p.is_file():
         meta.update({"byte_size": p.stat().st_size, "sha256": file_sha256(p), "suffix": p.suffix.lower()})
     return meta
@@ -386,10 +485,18 @@ def run_comfyui_job(
                 break
         time.sleep(max(1.0, float(args.poll_seconds)))
     status_obj = history_item.get("status", {}) if isinstance(history_item.get("status"), dict) else {}
-    artifacts = [artifact_metadata(name, args.artifact_root) for name in history_artifacts(history_item)]
-    ok = status_obj.get("completed") is True and bool(artifacts or history_item.get("outputs"))
-    result = {"prompt_id": prompt_id, "queued": queued, "history_status": status_obj}
-    return ("ok" if ok else "failed"), result, artifacts, "" if ok else "comfyui_failed"
+    artifact_items = history_artifacts(history_item)
+    artifacts = [artifact_metadata(item, args.artifact_root) for item in artifact_items]
+    valid_artifacts = [item for item in artifacts if item.get("exists") and int(item.get("byte_size") or 0) > 0]
+    ok = status_obj.get("completed") is True and bool(valid_artifacts)
+    result = {"prompt_id": prompt_id, "queued": queued, "history_status": status_obj, "history_artifacts": artifact_items}
+    if ok:
+        error = ""
+    elif status_obj.get("completed") is True:
+        error = "missing_artifacts"
+    else:
+        error = "comfyui_failed"
+    return ("ok" if ok else "failed"), result, artifacts, error
 
 
 def row_for_result(
@@ -402,6 +509,39 @@ def row_for_result(
     error: str,
     args: argparse.Namespace,
 ) -> dict[str, Any]:
+    prompt = prompt_from_job(job)
+    reward = 0.85 if status == "ok" else 0.0
+    artifact_types = sorted({str(item.get("suffix") or item.get("type") or "") for item in artifacts if item.get("exists")})
+    teacher_signal = {
+        "corrected_response": (
+            f"Generate {family['modality']} tokens for the requested {family['workflow']} task, "
+            "grounded in the prompt and matching the artifact ledger."
+        ),
+        "corrected_tool_calls": [],
+        "chosen": "artifact_backed_generation",
+        "contrastive_weak_response": "Unverified generation without artifact metadata or modality-specific quality checks.",
+        "reward": reward,
+        "reward_components": {
+            "artifact_exists": 1.0 if artifacts else 0.0,
+            "workflow_completed": 1.0 if status == "ok" else 0.0,
+            "prompt_grounding": 0.85 if status == "ok" else 0.0,
+            "modality_match": 0.90 if status == "ok" else 0.0,
+        },
+        "verifier_labels": {
+            "workflow": family["workflow"],
+            "modality": family["modality"],
+            "artifact_count": len(artifacts),
+            "artifact_types": artifact_types,
+        },
+        "process_labels": [
+            "parse_user_prompt",
+            f"route_to_{family['workflow']}",
+            "run_live_comfyui_teacher",
+            "verify_artifact_metadata",
+            "emit_training_ledger",
+        ],
+        "quality_notes": "Live ComfyUI teacher artifact with metadata-backed multimodal supervision.",
+    }
     return {
         "schema": SCHEMA,
         "created_at": utc_now(),
@@ -417,11 +557,13 @@ def row_for_result(
         "modality": family["modality"],
         "modalities": modality_list(family["media_family"], family["modality"]),
         "record_kind": "comfyui_modality_teacher_rollout",
-        "input_json": {"source_job": job, "prompt": prompt_from_job(job)},
+        "input_json": {"source_job": job, "prompt": prompt},
         "target_json": {
             "teacher_status": status,
             "rollout_result": result,
             "artifact_metadata": artifacts,
+            "teacher_signal": teacher_signal,
+            "content": json.dumps(teacher_signal, ensure_ascii=True, sort_keys=True),
             "distillation_target": "Predict artifact ledger tokens, multimodal critique, reward labels, and repair actions.",
         },
         "artifact_metadata": artifacts,

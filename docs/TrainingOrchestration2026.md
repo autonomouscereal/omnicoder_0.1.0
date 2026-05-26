@@ -28,6 +28,40 @@ existing schemas and profiles explicitly support it. Protected eval data, hidden
 tests, grader labels, answer keys, and successful benchmark trajectories must
 remain quarantined from training exports.
 
+## Music, TTS, And ACE-Step Distillation Lane
+
+The posttraining queue can now blend an additional focused music/audio curation
+lane produced by `scripts/ai_server_run_music_tts_ace_curation_2026.sh`. This
+lane normalizes embedded music/audio bytes into sidecar media files, curates
+high-bandwidth text-to-music rows, HiFiTTS/speech rows, and live ACE-Step 1.5
+teacher rollouts into `music.clean.jsonl`, `musicbench.clean.jsonl`,
+`tts.clean.jsonl`, `ace_rollouts.clean.jsonl`, and
+`music_tts_ace_clean.jsonl`.
+
+The supplemental expansion entry point is
+`scripts/ai_server_run_music_tts_expansion_2026.sh`. It layers LAION
+Orpheus-style expressive TTS parquet rows with extracted WAV artifacts,
+JamendoMaxCaps CC-BY/CC-BY-SA music rows with downloaded MP3 artifacts, and
+additional ACE-Step 1.5 P40 teacher rollouts onto the latest completed base
+music/TTS run. It writes the same required family files so the queue can consume
+the expanded directory without changing the training launcher contract.
+
+Audio artifact QA is handled by `scripts/ai_server_audio_manifest_qa_2026.sh`.
+It is CPU-only and uses `ffprobe`/`ffmpeg` to gate decodeability, duration,
+sample rate, channel count, silence ratio, and clipping risk for music/TTS media
+without touching the active training GPUs. Keep the JSONL plus
+`.summary.json` next to the run logs.
+
+Live ACE rollouts are routed to the P40 ComfyUI sidecar by default
+(`docker-compose.p40.yml`, port `27189`) so the active fast-card 20B optimizer
+run is not squeezed by teacher inference. The queue watcher reads
+`weights/data_curation_agent_2026/latest_music_tts_ace_curation_dir.txt`, waits
+for that sidecar curation PID to finish, then blends the cleaned music/TTS/ACE
+rows into the balanced all-modal SFT/RLVR/reward manifests before launching the
+next chunk from the latest complete checkpoint. When a music/TTS sidecar is set,
+the queue refuses launch unless `tts.clean.jsonl`, `music.clean.jsonl`,
+`musicbench.clean.jsonl`, and `ace_rollouts.clean.jsonl` are all nonempty.
+
 The production architecture contract is `omnicoder2026_20b_1m`: a dense
 20B-class target sized by the 24GB Q4 native-1M budget, not by an exact fixed
 parameter count. The staged AI-server job defaults to `ledger_probe` because it
@@ -232,8 +266,6 @@ defaults to one 32-step balanced SFT chunk with no periodic 44GB mid-checkpoint
 save. Launch additional chunks or GRPO/RLVR chunks by overriding
 `OMNICODER_POSTTRAIN_ALGORITHM_ORDER`, `OMNICODER_POSTTRAIN_STEPS`, and
 `OMNICODER_SAVE_INTERVAL` after heldout/sample-loss and prediction gates pass.
-Set `OMNICODER_SAVE_INTERVAL=0` to disable periodic interval checkpoints while
-preserving the final stage save; omit it to use the profile default.
 
 When a complete checkpoint was saved with an older fast-card layer placement,
 the pipeline loader can repartition tensors into the current placement. This is
@@ -539,11 +571,6 @@ and the pipeline loader preserves the same reward/preference/RLVR sample
 weights used by native `reward_replay_2026` instead of treating posttraining
 JSONL as plain next-token text.
 
-P40s may validate a complete target checkpoint through the explicit
-`--allow-p40-target-contract-eval` flag in the sample-loss and prediction
-runners. That opt-in is for eval sidecars only; target-contract optimizer
-training still refuses P40 placement and stays on host GPUs `0,4,6`.
-
 Use the weighted-placement validator only when exercising the older
 single-process placement scheduler:
 
@@ -718,6 +745,64 @@ Required evidence:
   full native 1M runtime.
 - Metrics compare pre-recovery and post-recovery behavior for text, code,
   tools, multimodal generation, and long-context recall.
+
+## Teacher Distillation Lanes
+
+The 2026 queue now treats live teacher rows as first-class training sources
+instead of optional side artifacts. `scripts/ai_server_run_qwen_ltx_distillation_2026.sh`
+builds resumable distillation data from:
+
+- Qwen 3.6 27B Q4 through a local OpenAI-compatible llama.cpp server for
+  agentic, code, tool, math, text, and long-context correction/reward labels.
+- Qwen Image FP8 through ComfyUI for image generation artifact supervision.
+- Qwen Image Edit through the validated `TextEncodeQwenImageEdit` workflow with
+  a real source image and edit instruction.
+- LTX 2.3 22B distilled through ComfyUI for video generation artifact and
+  temporal-consistency supervision.
+
+The active 20B trainer keeps the fast cards. Qwen text distillation can run on
+an idle P40 partial-offload server while training is active; Qwen Image/Edit and
+LTX run after the active trainer exits so ComfyUI has the RTX 3090 path free.
+
+The queued posttraining launcher
+`scripts/ai_server_queue_policy_posttrain_after_active_20b.sh` now waits for
+the active trainer to exit, resumes or runs the Qwen/Qwen-Image/LTX teacher
+distillation, verifies nonempty family files, builds a fresh balanced manifest,
+and only then launches the next 20B chunk. Teacher files are inserted before
+base curation sources, and the balanced builder accepts `--source-floor` rows
+per teacher file before applying shared modality caps. This prevents image
+generation rows from crowding out Qwen Image Edit, and prevents broad base
+curation from crowding out Qwen 3.6 tool/code/math or LTX rows.
+
+The Qwen 3.6 text lane uses short prompts and compact one-line JSON teacher
+targets so the P40 partial-offload servers produce useful throughput. Default
+live settings are `OMNICODER_QWEN_TEXT_MAX_TOKENS=224` and
+`OMNICODER_QWEN_TEXT_TIMEOUT=420`; higher caps are allowed but should be used
+only when the fast-card trainer is idle or a dedicated faster teacher endpoint
+is available. The preferred live placement uses all four P40 sidecars on
+`127.0.0.1:18081`, `18082`, `18084`, and `18085` with
+`OMNICODER_QWEN_GPU_LAYERS=99` so the Q4 teacher uses P40 VRAM instead of
+crawling through CPU-heavy partial offload. The rollout client waits through
+thermal cooldowns instead of emitting stopped rows.
+
+Qwen Image/Edit and LTX media rollouts are strict live stages by default
+(`OMNICODER_MEDIA_STRICT_LIVE=1`). Media failures block the queued launch rather
+than creating manifest-only rows. Qwen Image Edit always has a source image: the
+script copies the newest available Qwen/image output into the ComfyUI input
+folder, or generates a deterministic PNG seed if no prior image exists.
+
+Required teacher family files:
+
+- `qwen36_tool.clean.jsonl`
+- `qwen36_code.clean.jsonl`
+- `qwen36_math.clean.jsonl`
+- `qwen_image_generate.clean.jsonl`
+- `qwen_image_edit.clean.jsonl`
+- `ltx_video.clean.jsonl`
+
+Music/TTS/ACE rows remain required through the music expansion manifest. The
+balanced manifest uses teacher-first source order and explicit caps for code,
+tool, math, image, video, audio, music, long context, and text.
 
 ## Benchmark Gates
 
