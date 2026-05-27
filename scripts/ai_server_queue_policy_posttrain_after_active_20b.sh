@@ -33,6 +33,7 @@ MIN_RECORDS_PER_REQUIRED="${OMNICODER_POLICY_BALANCED_MIN_RECORDS_PER_REQUIRED:-
 QWEN_LTX_DISTILL_SCRIPT="${OMNICODER_QWEN_LTX_DISTILL_SCRIPT:-$REPO/scripts/ai_server_run_qwen_ltx_distillation_2026.sh}"
 PYTHON_BIN="${OMNICODER_DATA_PYTHON:-python3}"
 EXTRA_BALANCED_SOURCES="${OMNICODER_EXTRA_BALANCED_SOURCES:-}"
+EXTRA_BALANCED_SOURCE_FLOORS="${OMNICODER_EXTRA_BALANCED_SOURCE_FLOORS:-}"
 
 mkdir -p "$QUEUE_DIR"
 echo $$ > "$QUEUE_DIR/pid"
@@ -289,6 +290,37 @@ build_balanced_manifest() {
   add_source ocr "$CURATION_DIR/jsonl/ocr.clean.jsonl"
   add_extra_sources "$EXTRA_BALANCED_SOURCES"
 
+  local -a source_floor_args=(
+    --source-floor qwen36_tool.clean.jsonl=16
+    --source-floor qwen36_code.clean.jsonl=16
+    --source-floor qwen36_math.clean.jsonl=16
+    --source-floor qwen_image_generate.clean.jsonl=8
+    --source-floor qwen_image_edit.clean.jsonl=8
+    --source-floor ltx_video.clean.jsonl=4
+    --source-floor tts.clean.jsonl=16
+    --source-floor music.clean.jsonl=16
+    --source-floor ace_rollouts.clean.jsonl=8
+  )
+  add_extra_source_floors() {
+    local raw="$1"
+    [[ -n "$raw" ]] || return 0
+    local old_ifs="$IFS"
+    IFS=$',\n'
+    local item
+    for item in $raw; do
+      item="${item#"${item%%[![:space:]]*}"}"
+      item="${item%"${item##*[![:space:]]}"}"
+      [[ -n "$item" ]] || continue
+      if [[ "$item" != *=* ]]; then
+        log "skipping malformed extra source floor: $item"
+        continue
+      fi
+      source_floor_args+=(--source-floor "$item")
+    done
+    IFS="$old_ifs"
+  }
+  add_extra_source_floors "$EXTRA_BALANCED_SOURCE_FLOORS"
+
   local require="text,code,tool,image,video,audio,music,long_context,math"
   if [[ -s "$CURATION_DIR/jsonl/ocr.clean.jsonl" ]]; then
     require="$require,ocr"
@@ -312,15 +344,7 @@ build_balanced_manifest() {
     --cap video=1024 \
     --cap audio=1536 \
     --cap music=1024 \
-    --source-floor qwen36_tool.clean.jsonl=16 \
-    --source-floor qwen36_code.clean.jsonl=16 \
-    --source-floor qwen36_math.clean.jsonl=16 \
-    --source-floor qwen_image_generate.clean.jsonl=8 \
-    --source-floor qwen_image_edit.clean.jsonl=8 \
-    --source-floor ltx_video.clean.jsonl=4 \
-    --source-floor tts.clean.jsonl=16 \
-    --source-floor music.clean.jsonl=16 \
-    --source-floor ace_rollouts.clean.jsonl=8 \
+    "${source_floor_args[@]}" \
     --reject-refusal-boilerplate \
     --reject-eval-holdout \
     --min-quality-score 0.60 \

@@ -787,6 +787,9 @@ curation from crowding out Qwen 3.6 tool/code/math or LTX rows.
 Fresh integrity-certified sidecar outputs can be added to the next balanced
 chunk with `OMNICODER_EXTRA_BALANCED_SOURCES`. Use comma-separated
 `modality=/absolute/path/to/file.jsonl` or `modality::/absolute/path` entries.
+Use `OMNICODER_EXTRA_BALANCED_SOURCE_FLOORS` with comma-separated
+`source_basename.jsonl=count` entries when a small high-value sidecar source
+must survive modality caps.
 The queue still runs the dataset-integrity preflight over the final SFT/RLVR
 and reward JSONL before launch, so extra OCR, music, TTS, or trace data must
 pass the same rejection gate as the base curation sources.
