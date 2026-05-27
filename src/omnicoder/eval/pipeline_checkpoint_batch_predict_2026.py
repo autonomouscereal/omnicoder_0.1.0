@@ -45,6 +45,27 @@ class BatchPredictError(ValueError):
     """Raised for input, checkpoint, or decode failures that must fail closed."""
 
 
+def _finite_nonzero_variance(tensor: torch.Tensor, *, chunk_elements: int = 1_048_576) -> bool:
+    flat = tensor.detach().reshape(-1)
+    if flat.numel() == 0:
+        return False
+    total = 0
+    sum_value = 0.0
+    sum_sq_value = 0.0
+    for start in range(0, int(flat.numel()), max(1, int(chunk_elements))):
+        chunk = flat[start : start + int(chunk_elements)].float()
+        if not torch.isfinite(chunk).all():
+            return False
+        total += int(chunk.numel())
+        sum_value += float(chunk.sum().cpu())
+        sum_sq_value += float(chunk.square().sum().cpu())
+    if total <= 0:
+        return False
+    mean = sum_value / float(total)
+    variance = max(0.0, (sum_sq_value / float(total)) - mean * mean)
+    return variance > 0.0
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -247,13 +268,13 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
         embed = state.get("embed.weight")
         if not isinstance(embed, torch.Tensor) or embed.shape != (int(cfg.vocab_size), int(cfg.d_model)):
             raise BatchPredictError("loaded rank0 checkpoint has invalid embed.weight shape")
-        if not torch.isfinite(embed.float()).all() or float(embed.float().std(unbiased=False)) <= 0.0:
+        if not _finite_nonzero_variance(embed):
             raise BatchPredictError("loaded rank0 embed.weight is non-finite or zero-variance")
     if spec.has_head:
         head = state.get("lm_head.weight")
         if not isinstance(head, torch.Tensor) or head.shape != (int(cfg.vocab_size), int(cfg.d_model)):
             raise BatchPredictError("loaded final-rank checkpoint has invalid lm_head.weight shape")
-        if not torch.isfinite(head.float()).all() or float(head.float().std(unbiased=False)) <= 0.0:
+        if not _finite_nonzero_variance(head):
             raise BatchPredictError("loaded final-rank lm_head.weight is non-finite or zero-variance")
     shard.eval()
     return shard, device, int(cfg.d_model), int(cfg.vocab_size), saved_preset_name

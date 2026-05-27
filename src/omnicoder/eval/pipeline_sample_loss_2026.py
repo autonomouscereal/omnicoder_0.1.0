@@ -130,10 +130,14 @@ def _pipeline_loss(
     d_model: int,
     precision: str,
     lm_loss_chunk_tokens: int,
-) -> float:
+    loss_token_stride: int,
+    max_loss_tokens_per_sample: int,
+) -> tuple[float, int]:
     rank = int(dist.get_rank())
     world_size = int(dist.get_world_size())
     length = int(batch.shape[1])
+    loss_token_stride = max(1, int(loss_token_stride))
+    max_loss_tokens_per_sample = max(0, int(max_loss_tokens_per_sample))
     with torch.no_grad(), autocast_context(device, precision):
         if world_size == 1:
             hidden = shard(batch)
@@ -141,8 +145,10 @@ def _pipeline_loss(
             hidden = shard(batch)
             dist.send(hidden.contiguous(), dst=1)
             loss_tensor = torch.empty((), dtype=torch.float32, device=device)
+            count_tensor = torch.empty((), dtype=torch.long, device=device)
             dist.broadcast(loss_tensor, src=world_size - 1)
-            return float(loss_tensor.cpu())
+            dist.broadcast(count_tensor, src=world_size - 1)
+            return float(loss_tensor.cpu()), int(count_tensor.cpu())
         else:
             hidden = torch.empty((1, length, d_model), dtype=hidden_dtype, device=device)
             dist.recv(hidden, src=rank - 1)
@@ -150,21 +156,60 @@ def _pipeline_loss(
             if rank < world_size - 1:
                 dist.send(hidden.contiguous(), dst=rank + 1)
                 loss_tensor = torch.empty((), dtype=torch.float32, device=device)
+                count_tensor = torch.empty((), dtype=torch.long, device=device)
                 dist.broadcast(loss_tensor, src=world_size - 1)
-                return float(loss_tensor.cpu())
+                dist.broadcast(count_tensor, src=world_size - 1)
+                return float(loss_tensor.cpu()), int(count_tensor.cpu())
         shifted_hidden = hidden[:, :-1, :]
         shifted_labels = batch[:, 1:].to(hidden.device, non_blocking=True)
+        selected_items: list[tuple[int, torch.Tensor]] = []
+        if loss_token_stride > 1 or max_loss_tokens_per_sample > 0:
+            for batch_index in range(int(shifted_hidden.shape[0])):
+                positions = torch.nonzero(shifted_labels[batch_index].ne(0), as_tuple=False).flatten()
+                if positions.numel() == 0:
+                    continue
+                if loss_token_stride > 1:
+                    positions = positions[::loss_token_stride]
+                    if positions.numel() == 0:
+                        positions = torch.nonzero(shifted_labels[batch_index].ne(0), as_tuple=False).flatten()[-1:]
+                if max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
+                    pick = torch.linspace(
+                        0,
+                        positions.numel() - 1,
+                        steps=max_loss_tokens_per_sample,
+                        device=positions.device,
+                        dtype=torch.float32,
+                    ).round().long().unique(sorted=True)
+                    positions = positions[pick]
+                selected_items.append((batch_index, positions))
         loss_tensor = hidden.new_zeros((), dtype=torch.float32)
-        for start in range(0, shifted_hidden.shape[1], max(1, int(lm_loss_chunk_tokens))):
-            end = min(shifted_hidden.shape[1], start + int(lm_loss_chunk_tokens))
-            logits = shard.lm_head(shifted_hidden[:, start:end, :]).float()
-            loss_tensor = loss_tensor + F.cross_entropy(
-                logits.transpose(1, 2),
-                shifted_labels[:, start:end],
-                reduction="sum",
+        if selected_items:
+            flat_hidden = torch.cat(
+                [shifted_hidden[batch_index, positions, :] for batch_index, positions in selected_items],
+                dim=0,
             )
+            flat_labels = torch.cat(
+                [shifted_labels[batch_index, positions] for batch_index, positions in selected_items],
+                dim=0,
+            )
+            count_tensor = torch.tensor(int(flat_labels.numel()), dtype=torch.long, device=device)
+            for start in range(0, flat_hidden.shape[0], max(1, int(lm_loss_chunk_tokens))):
+                end = min(flat_hidden.shape[0], start + int(lm_loss_chunk_tokens))
+                logits = shard.lm_head(flat_hidden[start:end, :]).float()
+                loss_tensor = loss_tensor + F.cross_entropy(logits, flat_labels[start:end], reduction="sum")
+        else:
+            count_tensor = torch.tensor(int(shifted_labels.numel()), dtype=torch.long, device=device)
+            for start in range(0, shifted_hidden.shape[1], max(1, int(lm_loss_chunk_tokens))):
+                end = min(shifted_hidden.shape[1], start + int(lm_loss_chunk_tokens))
+                logits = shard.lm_head(shifted_hidden[:, start:end, :]).float()
+                loss_tensor = loss_tensor + F.cross_entropy(
+                    logits.transpose(1, 2),
+                    shifted_labels[:, start:end],
+                    reduction="sum",
+                )
         dist.broadcast(loss_tensor, src=world_size - 1)
-        return float(loss_tensor.cpu())
+        dist.broadcast(count_tensor, src=world_size - 1)
+        return float(loss_tensor.cpu()), int(count_tensor.cpu())
 
 
 def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -203,8 +248,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
                     batch = _broadcast_batch(batch, device)
                     if batch is None:
                         raise RuntimeError("rank 0 unexpectedly received evaluation stop marker")
-                    token_count = max(0, len(chunk) - 1)
-                    loss_sum = _pipeline_loss(
+                    loss_sum, token_count = _pipeline_loss(
                         shard,
                         batch,
                         device=device,
@@ -212,6 +256,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
                         d_model=d_model,
                         precision=str(args.precision),
                         lm_loss_chunk_tokens=int(args.lm_loss_chunk_tokens),
+                        loss_token_stride=int(args.loss_token_stride),
+                        max_loss_tokens_per_sample=int(args.max_loss_tokens_per_sample),
                     )
                     _add_loss(file_bucket, loss_sum, token_count)
                     _add_loss(file_modality, loss_sum, token_count)
@@ -247,6 +293,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
             "profile": str(args.preset),
             "seq_len": int(args.seq_len),
             "max_records_per_file": int(args.max_records_per_file),
+            "loss_token_stride": int(args.loss_token_stride),
+            "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample),
             "distributed": {"world_size": int(dist.get_world_size()), "pipeline_stage": True},
             "files": file_results,
             "modalities": by_modality,
@@ -264,6 +312,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
             d_model=d_model,
             precision=str(args.precision),
             lm_loss_chunk_tokens=int(args.lm_loss_chunk_tokens),
+            loss_token_stride=int(args.loss_token_stride),
+            max_loss_tokens_per_sample=int(args.max_loss_tokens_per_sample),
         )
     return None
 
@@ -286,6 +336,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fake-quant-chunk-rows", "--fake_quant_chunk_rows", dest="fake_quant_chunk_rows", type=int, default=0)
     parser.add_argument("--fake-quant-max-full-elements", "--fake_quant_max_full_elements", dest="fake_quant_max_full_elements", type=int, default=0)
     parser.add_argument("--lm-loss-chunk-tokens", "--lm_loss_chunk_tokens", dest="lm_loss_chunk_tokens", type=int, default=int(os.getenv("OMNICODER2026_LM_LOSS_CHUNK_TOKENS", "128") or 128))
+    parser.add_argument("--loss-token-stride", "--loss_token_stride", dest="loss_token_stride", type=int, default=int(os.getenv("OMNICODER2026_LOSS_TOKEN_STRIDE", "1") or 1))
+    parser.add_argument("--max-loss-tokens-per-sample", "--max_loss_tokens_per_sample", dest="max_loss_tokens_per_sample", type=int, default=int(os.getenv("OMNICODER2026_MAX_LOSS_TOKENS_PER_SAMPLE", "0") or 0))
     parser.add_argument("--progress-records", "--progress_records", dest="progress_records", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_EVAL_PROGRESS_RECORDS", "4") or 4))
     parser.add_argument("--require_target_contract", action="store_true")
     parser.add_argument("--allow-p40-target-contract-eval", "--allow_p40_target_contract_eval", dest="allow_p40_target_contract_eval", action="store_true")

@@ -164,6 +164,8 @@ class OmniCoder2026PipelineShard(nn.Module):
         labels: torch.Tensor,
         chunk_tokens: int = 128,
         sample_weights: torch.Tensor | None = None,
+        loss_token_stride: int = 1,
+        max_loss_tokens_per_sample: int = 0,
     ) -> torch.Tensor:
         if not self.spec.has_head:
             raise RuntimeError("LM loss can only be computed on the final pipeline stage")
@@ -171,6 +173,54 @@ class OmniCoder2026PipelineShard(nn.Module):
             labels = labels.to(hidden.device, non_blocking=True)
         shifted_hidden = hidden[:, :-1, :]
         shifted_labels = labels[:, 1:]
+        loss_token_stride = max(1, int(loss_token_stride))
+        max_loss_tokens_per_sample = max(0, int(max_loss_tokens_per_sample))
+        if loss_token_stride > 1 or max_loss_tokens_per_sample > 0:
+            selected_hidden: list[torch.Tensor] = []
+            selected_labels: list[torch.Tensor] = []
+            selected_batches: list[torch.Tensor] = []
+            for batch_index in range(int(shifted_hidden.shape[0])):
+                positions = torch.nonzero(shifted_labels[batch_index].ne(0), as_tuple=False).flatten()
+                if positions.numel() == 0:
+                    continue
+                if loss_token_stride > 1:
+                    positions = positions[::loss_token_stride]
+                    if positions.numel() == 0:
+                        positions = torch.nonzero(shifted_labels[batch_index].ne(0), as_tuple=False).flatten()[-1:]
+                if max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
+                    pick = torch.linspace(
+                        0,
+                        positions.numel() - 1,
+                        steps=max_loss_tokens_per_sample,
+                        device=positions.device,
+                        dtype=torch.float32,
+                    ).round().long().unique(sorted=True)
+                    positions = positions[pick]
+                selected_hidden.append(shifted_hidden[batch_index, positions, :])
+                selected_labels.append(shifted_labels[batch_index, positions])
+                selected_batches.append(torch.full((positions.numel(),), batch_index, dtype=torch.long, device=hidden.device))
+            if not selected_hidden:
+                return hidden.sum() * 0.0
+            flat_hidden = torch.cat(selected_hidden, dim=0)
+            flat_labels = torch.cat(selected_labels, dim=0)
+            flat_batches = torch.cat(selected_batches, dim=0)
+            token_losses: list[torch.Tensor] = []
+            for start in range(0, flat_hidden.shape[0], max(1, int(chunk_tokens))):
+                end = min(flat_hidden.shape[0], start + int(chunk_tokens))
+                logits = self.lm_head(flat_hidden[start:end, :])
+                token_losses.append(F.cross_entropy(logits, flat_labels[start:end], reduction="none").float())
+            losses = torch.cat(token_losses, dim=0)
+            if sample_weights is not None:
+                weights = sample_weights.to(hidden.device, non_blocking=True).to(dtype=torch.float32).reshape(-1)
+                if weights.numel() != shifted_hidden.shape[0]:
+                    raise ValueError(f"sample_weights batch mismatch: weights={weights.numel()} batch={shifted_hidden.shape[0]}")
+                per_sample_sum = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
+                per_sample_tokens = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
+                per_sample_sum.index_add_(0, flat_batches, losses)
+                per_sample_tokens.index_add_(0, flat_batches, torch.ones_like(losses))
+                per_sample = per_sample_sum / per_sample_tokens.clamp_min(1.0)
+                return (per_sample * weights).mean().to(dtype=hidden.dtype)
+            return losses.mean().to(dtype=hidden.dtype)
         if sample_weights is not None:
             weights = sample_weights.to(hidden.device, non_blocking=True).to(dtype=torch.float32).reshape(-1)
             if weights.numel() != shifted_hidden.shape[0]:
@@ -751,6 +801,11 @@ def save_sharded_checkpoint(
             "pipeline_schedule": str(args.pipeline_schedule),
             "schedule": str(args.pipeline_schedule),
             "fake_quant": bool(args.fake_quant),
+            "fake_quant_chunk_rows": int(getattr(args, "fake_quant_chunk_rows", 0) or 0),
+            "fake_quant_max_full_elements": int(getattr(args, "fake_quant_max_full_elements", 0) or 0),
+            "lm_loss_chunk_tokens": int(getattr(args, "lm_loss_chunk_tokens", 0) or 0),
+            "loss_token_stride": int(getattr(args, "loss_token_stride", 1) or 1),
+            "max_loss_tokens_per_sample": int(getattr(args, "max_loss_tokens_per_sample", 0) or 0),
             "optimizer": str(args.optimizer),
             "optimizer_in_backward": bool(getattr(args, "optimizer_in_backward", False)),
             "optimizer_in_backward_update": str(getattr(args, "optimizer_in_backward_update", "")),
@@ -1227,6 +1282,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fake_quant_chunk_rows", type=int, default=0)
     parser.add_argument("--fake_quant_max_full_elements", type=int, default=0)
     parser.add_argument("--lm_loss_chunk_tokens", type=int, default=int(os.getenv("OMNICODER2026_LM_LOSS_CHUNK_TOKENS", "128") or 128))
+    parser.add_argument("--loss_token_stride", type=int, default=int(os.getenv("OMNICODER2026_LOSS_TOKEN_STRIDE", "1") or 1))
+    parser.add_argument("--max_loss_tokens_per_sample", type=int, default=int(os.getenv("OMNICODER2026_MAX_LOSS_TOKENS_PER_SAMPLE", "0") or 0))
     parser.add_argument("--save_interval", type=int, default=0)
     parser.add_argument("--require_target_contract", action="store_true")
     parser.add_argument("--allow_probe", action="store_true")
@@ -1336,6 +1393,8 @@ def main(argv: list[str] | None = None) -> int:
             labels,
             int(args.lm_loss_chunk_tokens),
             current_sample_weights.get("weights"),
+            int(args.loss_token_stride),
+            int(args.max_loss_tokens_per_sample),
         )
     ) if spec.has_head else _unused_nonfinal_loss
     if args.pipeline_schedule == "1f1b" and pipeline_microbatches == 1:
@@ -1422,7 +1481,7 @@ def main(argv: list[str] | None = None) -> int:
         loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
         dist.broadcast(loss_tensor, src=world_size - 1)
         if rank == 0:
-            _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": float(loss_tensor.cpu()), "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": float(batch_weights.detach().mean().cpu()), "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update)})
+            _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": float(loss_tensor.cpu()), "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": float(batch_weights.detach().mean().cpu()), "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample)})
         if int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0:
             save_sharded_checkpoint(Path(args.out).with_name(f"{Path(args.out).stem}.step{start_step + local_step + 1}"), shard, preset=preset, args=args, optimizer=optimizer, global_step=start_step + local_step + 1, last_loss=float(loss_tensor.cpu()))
 

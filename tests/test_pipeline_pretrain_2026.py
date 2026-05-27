@@ -290,6 +290,36 @@ def test_final_stage_weighted_lm_loss_matches_reward_replay_shape() -> None:
     assert hidden.grad is not None
 
 
+def test_final_stage_selected_token_lm_loss_bounds_vocab_projection() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(2, 9, cfg.d_model, requires_grad=True)
+    labels = torch.randint(1, cfg.vocab_size, (2, 9), dtype=torch.long)
+    weights = torch.tensor([0.5, 2.0], dtype=torch.float32)
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(
+        processed,
+        labels,
+        chunk_tokens=2,
+        sample_weights=weights,
+        loss_token_stride=2,
+        max_loss_tokens_per_sample=2,
+    )
+    selected = [torch.tensor([0, 6]), torch.tensor([0, 6])]
+    expected_parts = []
+    for batch_index, positions in enumerate(selected):
+        logits = final.lm_head(processed[batch_index, positions, :])
+        target = labels[batch_index, positions + 1]
+        expected_parts.append(F.cross_entropy(logits, target, reduction="none").mean() * weights[batch_index])
+    expected = torch.stack(expected_parts).mean()
+
+    assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+    loss.backward()
+    assert hidden.grad is not None
+
+
 def test_weighted_pipeline_dataset_uses_tool_reward_rows(tmp_path) -> None:
     class TinyTokenizer:
         def encode(self, text: str) -> list[int]:
