@@ -232,6 +232,25 @@ def test_checkpoint_runner_reads_sanitized_stdin_and_writes_prediction(tmp_path:
     assert _jsonl_rows(predictions)[0]["prediction"] == "D"
 
 
+def test_prediction_validation_can_preserve_rejected_model_output_for_scoring() -> None:
+    row = {
+        "schema": harness.PREDICTION_SCHEMA,
+        "schema_version": harness.SCHEMA_VERSION,
+        "benchmark_id": "agent_agentif_2025",
+        "task_id": "junk-output-fixture",
+        "model": "local-checkpoint",
+        "backend": "pipeline_checkpoint_batch_predict_2026",
+        "prediction": ",,,,,,,,,,,,,,,,",
+    }
+
+    rejections = harness.prediction_output_quality_rejections(row)
+    assert rejections
+    assert rejections[0].startswith("prediction:junk_text:")
+    with pytest.raises(harness.HarnessError, match="rejected model output"):
+        harness.validate_prediction_row(row)
+    harness.validate_prediction_row(row, allow_rejected_model_output=True)
+
+
 def test_openai_compatible_backend_requires_local_endpoint() -> None:
     with pytest.raises(harness.HarnessError, match="must be local"):
         harness.validate_local_endpoint("https://api.openai.com/v1")

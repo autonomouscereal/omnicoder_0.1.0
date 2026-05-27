@@ -449,8 +449,14 @@ def _prediction_row(
         },
     }
     row[output_field] = text
+    rejected_outputs = harness.prediction_output_quality_rejections(row)
+    if rejected_outputs:
+        row["prediction_quality_status"] = "rejected_model_output"
+        row["prediction_quality_reasons"] = rejected_outputs
+        row["generation_metadata"]["output_quality_status"] = "rejected_model_output"
+        row["generation_metadata"]["output_quality_reasons"] = rejected_outputs
     row["prediction_id"] = harness.stable_hash({key: value for key, value in row.items() if key != "prediction_id"})
-    harness.validate_prediction_row(row)
+    harness.validate_prediction_row(row, allow_rejected_model_output=True)
     return row
 
 

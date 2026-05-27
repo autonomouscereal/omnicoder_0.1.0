@@ -493,11 +493,7 @@ def call_backend(task: TaskRecord, cfg: GenerateConfig) -> dict[str, Any]:
     raise HarnessError(f"unknown backend: {cfg.backend}")
 
 
-def validate_prediction_row(row: dict[str, Any]) -> None:
-    for key in ("schema", "schema_version", "benchmark_id", "task_id", "model", "backend"):
-        if row.get(key) in (None, "", [], {}):
-            raise HarnessError(f"prediction row is missing {key}: {row!r}")
-    outputs: list[str] = []
+def prediction_output_quality_rejections(row: dict[str, Any]) -> list[str]:
     rejected_outputs: list[str] = []
     for key in MODEL_OUTPUT_KEYS:
         value = row.get(key)
@@ -506,9 +502,25 @@ def validate_prediction_row(row: dict[str, Any]) -> None:
         reason = output_quality_reason(value)
         if reason:
             rejected_outputs.append(f"{key}:{reason}")
-        else:
+    return rejected_outputs
+
+
+def validate_prediction_row(row: dict[str, Any], *, allow_rejected_model_output: bool = False) -> None:
+    for key in ("schema", "schema_version", "benchmark_id", "task_id", "model", "backend"):
+        if row.get(key) in (None, "", [], {}):
+            raise HarnessError(f"prediction row is missing {key}: {row!r}")
+    outputs: list[str] = []
+    for key in MODEL_OUTPUT_KEYS:
+        value = row.get(key)
+        if value in (None, "", [], {}):
+            continue
+        reason = output_quality_reason(value)
+        if not reason:
             outputs.append(key)
+    rejected_outputs = prediction_output_quality_rejections(row)
     if rejected_outputs:
+        if allow_rejected_model_output:
+            return
         raise HarnessError(f"prediction row has rejected model output {rejected_outputs}: {row!r}")
     if not outputs:
         raise HarnessError(f"prediction row has no model output field: {row!r}")
