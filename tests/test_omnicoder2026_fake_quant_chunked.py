@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from omnicoder.modeling.omnicoder2026 import QuantAwareLinear, _fake_quant_weight
+from omnicoder.modeling.omnicoder2026 import MHCResidual, OmniCoder2026Config, QuantAwareLinear, _fake_quant_weight
 
 
 def test_chunked_fake_quant_linear_matches_full_ste_reference(monkeypatch):
@@ -82,3 +82,15 @@ def test_chunked_fake_quant_linear_matches_full_ste_reference(monkeypatch):
     torch.testing.assert_close(x.grad, ref_x.grad, rtol=1e-6, atol=1e-6)
     torch.testing.assert_close(layer.weight.grad, ref_weight.grad, rtol=1e-6, atol=1e-6)
     torch.testing.assert_close(layer.bias.grad, ref_bias.grad, rtol=1e-6, atol=1e-6)
+
+
+def test_mhc_residual_preserves_pipeline_dtype():
+    cfg = OmniCoder2026Config(d_model=16, hc_mult=4, fake_quant=True, fake_quant_group_size=8)
+    residual = MHCResidual(cfg).half()
+
+    x = torch.randn(2, 5, 16, dtype=torch.float16)
+    update = torch.randn(2, 5, 16, dtype=torch.float32)
+
+    actual = residual(x, update)
+
+    assert actual.dtype == torch.float16

@@ -658,9 +658,13 @@ class MHCResidual(nn.Module):
         self.scale = nn.Parameter(torch.tensor([1.0 / math.sqrt(max(1, int(cfg.hc_mult)))]))
 
     def forward(self, x: torch.Tensor, update: torch.Tensor) -> torch.Tensor:
+        if update.dtype != x.dtype:
+            update = update.to(dtype=x.dtype)
         if not self.enabled:
             return x + update
-        return x + self.scale * torch.sigmoid(self.gate(x)) * update
+        scale = self.scale.to(device=x.device, dtype=x.dtype)
+        gate = torch.sigmoid(self.gate(x)).to(dtype=x.dtype)
+        return x + scale * gate * update
 
 
 class OmniCoder2026Block(nn.Module):
