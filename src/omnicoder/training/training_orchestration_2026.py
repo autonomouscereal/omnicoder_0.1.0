@@ -3723,6 +3723,12 @@ def resolve_posttrain_input_overrides(args: argparse.Namespace | None, root: Pat
     return ordered, routed
 
 
+def posttrain_explicit_inputs_only(args: argparse.Namespace | None = None) -> bool:
+    return truthy_value(arg_value(args, "posttrain_explicit_inputs_only", False)) or truthy_value(
+        os.environ.get("OMNICODER_POSTTRAIN_EXPLICIT_INPUTS_ONLY", "")
+    )
+
+
 def posttrain_dataset_for_algorithm(requested: str, paths: list[Path], routed: dict[str, Path] | None = None) -> Path | None:
     name = requested.lower()
     if routed:
@@ -3834,15 +3840,18 @@ def run_posttraining_stages(
     replay = rl.get("offline_reward_replay") if isinstance(rl.get("offline_reward_replay"), dict) else {}
     root = repo_root()
     explicit_inputs, routed_inputs = resolve_posttrain_input_overrides(args, root)
-    inputs = discover_posttrain_inputs(replay.get("inputs"), root)
-    local_export_dir = out_dir / "agentic_tool_training_2026"
-    if local_export_dir.exists():
-        local_inputs = sorted(path for path in local_export_dir.rglob("tool_*.jsonl") if path.is_file() and path.stat().st_size > 0)
-        local_seen = {str(path.resolve()) for path in local_inputs}
-        inputs = local_inputs + [path for path in inputs if str(path.resolve()) not in local_seen]
-    if explicit_inputs:
-        explicit_seen = {str(path.resolve()) for path in explicit_inputs}
-        inputs = explicit_inputs + [path for path in inputs if str(path.resolve()) not in explicit_seen]
+    if explicit_inputs and posttrain_explicit_inputs_only(args):
+        inputs = list(explicit_inputs)
+    else:
+        inputs = discover_posttrain_inputs(replay.get("inputs"), root)
+        local_export_dir = out_dir / "agentic_tool_training_2026"
+        if local_export_dir.exists():
+            local_inputs = sorted(path for path in local_export_dir.rglob("tool_*.jsonl") if path.is_file() and path.stat().st_size > 0)
+            local_seen = {str(path.resolve()) for path in local_inputs}
+            inputs = local_inputs + [path for path in inputs if str(path.resolve()) not in local_seen]
+        if explicit_inputs:
+            explicit_seen = {str(path.resolve()) for path in explicit_inputs}
+            inputs = explicit_inputs + [path for path in inputs if str(path.resolve()) not in explicit_seen]
     require_integrity_preflight(
         run_integrity_preflight(
             [path for path in inputs if path.name != "tool_safety_negatives.jsonl"],
