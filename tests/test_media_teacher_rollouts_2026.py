@@ -89,6 +89,67 @@ def test_live_subprocess_runner_records_artifact_metadata(tmp_path: Path, monkey
     assert row["artifact_metadata"][0]["sha256"]
 
 
+def test_resume_retries_failed_rows_but_skips_ok_rows(tmp_path: Path, monkeypatch) -> None:
+    retry_job = {
+        "teacher_name": "qwen_image_generate",
+        "job_type": "image_reward_label",
+        "input_json": {"prompt": "retry this failed teacher job"},
+    }
+    completed_job = {
+        "teacher_name": "qwen_image_generate",
+        "job_type": "image_reward_label",
+        "input_json": {"prompt": "do not rerun this completed teacher job"},
+    }
+    source = tmp_path / "jobs.jsonl"
+    out_dir = tmp_path / "rollouts"
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir()
+    artifact = artifact_root / "retry_result.png"
+    artifact.write_bytes(b"stub artifact")
+    _jsonl(source, [retry_job, completed_job])
+    _jsonl(
+        out_dir / "media_teacher_rollouts.jsonl",
+        [
+            {"status": "failed", "job_hash": rollouts.stable_hash(retry_job), "error": "previous_failure"},
+            {"status": "ok", "job_hash": rollouts.stable_hash(completed_job)},
+        ],
+    )
+    calls: list[str] = []
+
+    def fake_run(command, shell, check, stdout, stderr, text, timeout, env):  # noqa: ANN001
+        calls.append(command)
+        job_payload = json.loads(Path(env["OMNICODER_MEDIA_TEACHER_JOB"]).read_text(encoding="utf-8"))
+        assert job_payload == retry_job
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"ok": True, "files": [str(artifact)]}), stderr="")
+
+    monkeypatch.setattr(rollouts.subprocess, "run", fake_run)
+
+    code = rollouts.main(
+        [
+            "--input",
+            str(source),
+            "--out-dir",
+            str(out_dir),
+            "--mode",
+            "live",
+            "--resume",
+            "--artifact-root",
+            str(artifact_root),
+            "--runner-command",
+            "python runner.py --job {job_json} --test {test}",
+        ]
+    )
+
+    assert code == 0
+    assert calls == [f"python runner.py --job {out_dir / 'jobs' / 'media_teacher_job_00000001.json'} --test qwen_t2i"]
+    rows = _rows(out_dir / "media_teacher_rollouts.jsonl")
+    assert [row["status"] for row in rows] == ["failed", "ok", "ok"]
+    assert rows[-1]["job_hash"] == rollouts.stable_hash(retry_job)
+    manifest = json.loads((out_dir / "media_teacher_rollout_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["written"] == 1
+    assert manifest["counts"]["media_teacher_rollouts.jsonl"] == 2
+
+
 def test_live_http_runner_uses_embedded_workflow(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "jobs.jsonl"
     out_dir = tmp_path / "rollouts"
@@ -117,10 +178,15 @@ def test_live_http_runner_uses_embedded_workflow(tmp_path: Path, monkeypatch) ->
         }
 
     monkeypatch.setattr(rollouts, "request_json", fake_request_json)
+
+    def fake_artifact_metadata(path, root=None):  # noqa: ANN001
+        filename = path["filename"] if isinstance(path, dict) else str(path)
+        return {"path": str(Path(root or "") / filename), "exists": True, "byte_size": 10}
+
     monkeypatch.setattr(
         rollouts,
         "artifact_metadata",
-        lambda path, root=None: {"path": str(Path(root or "") / str(path)), "exists": True, "byte_size": 10},
+        fake_artifact_metadata,
     )
 
     code = rollouts.main(["--input", str(source), "--out-dir", str(out_dir), "--mode", "live", "--comfyui-url", "http://127.0.0.1:18188"])
