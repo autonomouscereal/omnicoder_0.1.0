@@ -500,7 +500,8 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
             source_floor_counts[source_path.name] += 1
             source_floor_counts[str(source_path)] += 1
             kept_count += 1
-            if all(len(buckets[modality_name]) >= caps.get(modality_name, 0) for modality_name in required):
+            source_floor_met = source_floor_counts[source_path.name] >= source_floor
+            if source_floor_met and all(len(buckets[modality_name]) >= caps.get(modality_name, 0) for modality_name in required):
                 break
         source_reports.append(
             {
