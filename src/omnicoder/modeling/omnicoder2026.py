@@ -77,6 +77,7 @@ class OmniCoder2026Config:
 
     dropout: float = 0.0
     rms_norm_eps: float = 1e-6
+    initializer_std: float = 0.02
     layer_pattern: tuple[BlockKind, ...] = DEFAULT_LAYER_PATTERN
     tie_embeddings: bool = True
     mtp_heads: int = 0
@@ -320,6 +321,17 @@ class QuantAwareLinear(nn.Linear):
     def _chunked_fake_quant_linear(self, x: torch.Tensor) -> torch.Tensor:
         rows = max(1, int(self.fake_quant_chunk_rows))
         return _ChunkedFakeQuantLinearSTE.apply(x, self.weight, self.bias, self.group_size, rows)
+
+
+def reset_omnicoder2026_parameters(module: nn.Module, cfg: OmniCoder2026Config) -> None:
+    std = float(getattr(cfg, "initializer_std", 0.02) or 0.02)
+    for child in module.modules():
+        if isinstance(child, nn.Embedding):
+            nn.init.normal_(child.weight, mean=0.0, std=std)
+        elif isinstance(child, QuantAwareLinear):
+            nn.init.normal_(child.weight, mean=0.0, std=std)
+            if child.bias is not None:
+                nn.init.zeros_(child.bias)
 
 
 class RMSNorm(nn.Module):
@@ -742,6 +754,7 @@ class OmniCoder2026(nn.Module):
             )
             self.grounding_head = QuantAwareLinear(cfg.d_model, 8, bias=True, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
             self.sync_head = QuantAwareLinear(cfg.d_model, 1, bias=True, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        reset_omnicoder2026_parameters(self, cfg)
         self._weighted_device_map: dict[str, object] | None = None
         self._weighted_pipeline_stages: list[tuple[torch.device, int, int]] = []
         self._checkpoint_blocks = bool(checkpoint_blocks)

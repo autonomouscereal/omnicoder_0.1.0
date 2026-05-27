@@ -81,6 +81,16 @@ REQUIRE_REPORTABLE_GATE="${OMNICODER_REQUIRE_REPORTABLE_GATE:-0}"
 RERUN_HELDOUT_EVALS="${OMNICODER_RERUN_HELDOUT_EVALS:-0}"
 BENCHMARK_MATERIALIZATION_ROOT="${OMNICODER_BENCHMARK_MATERIALIZATION_ROOT:-}"
 ALLOW_LOCAL_BENCHMARK_TASK_ROOTS="${OMNICODER_ALLOW_LOCAL_BENCHMARK_TASK_ROOTS:-0}"
+CHECKPOINT_READINESS_REPORT="${OMNICODER_CHECKPOINT_READINESS_REPORT:-}"
+CHECKPOINT_TOPK_PROBE="${OMNICODER_CHECKPOINT_TOPK_PROBE:-}"
+CHECKPOINT_SAMPLE_LOSS="${OMNICODER_CHECKPOINT_SAMPLE_LOSS:-}"
+CHECKPOINT_MEDIA_ROUTE_PROBE="${OMNICODER_CHECKPOINT_MEDIA_ROUTE_PROBE:-}"
+CHECKPOINT_READINESS_MAX_AVG_LOSS="${OMNICODER_CHECKPOINT_READINESS_MAX_AVG_LOSS:-20}"
+CHECKPOINT_READINESS_MAX_PERPLEXITY="${OMNICODER_CHECKPOINT_READINESS_MAX_PERPLEXITY:-1000000}"
+CHECKPOINT_READINESS_MIN_TOKENS="${OMNICODER_CHECKPOINT_READINESS_MIN_TOKENS:-64}"
+CHECKPOINT_READINESS_MIN_WEIGHT_STD="${OMNICODER_CHECKPOINT_READINESS_MIN_WEIGHT_STD:-0.00001}"
+CHECKPOINT_READINESS_MAX_WEIGHT_STD="${OMNICODER_CHECKPOINT_READINESS_MAX_WEIGHT_STD:-0.2}"
+AUTO_CHECKPOINT_MEDIA_ROUTE_PROBE="${OMNICODER_AUTO_CHECKPOINT_MEDIA_ROUTE_PROBE:-1}"
 
 cd "$REPO"
 if [[ "$OUT_DIR" == /workspace/weights/* ]]; then
@@ -123,6 +133,21 @@ append_nonempty_arg() {
     target_array+=("$flag" "$value")
   fi
 }
+
+if [[ -n "$RESUME_CHECKPOINT" && -z "$CHECKPOINT_READINESS_REPORT" && -z "$CHECKPOINT_MEDIA_ROUTE_PROBE" ]] && truthy "$AUTO_CHECKPOINT_MEDIA_ROUTE_PROBE"; then
+  CHECKPOINT_MEDIA_ROUTE_PROBE="$OUT_DIR/readiness/media_route_probe.json"
+fi
+
+shared_checkpoint_readiness_args=()
+append_nonempty_arg shared_checkpoint_readiness_args --checkpoint-readiness-report "$CHECKPOINT_READINESS_REPORT"
+append_nonempty_arg shared_checkpoint_readiness_args --checkpoint-topk-probe "$CHECKPOINT_TOPK_PROBE"
+append_nonempty_arg shared_checkpoint_readiness_args --checkpoint-sample-loss "$CHECKPOINT_SAMPLE_LOSS"
+append_nonempty_arg shared_checkpoint_readiness_args --checkpoint-media-route-probe "$CHECKPOINT_MEDIA_ROUTE_PROBE"
+append_nonzero_arg shared_checkpoint_readiness_args --checkpoint-readiness-max-avg-loss "$CHECKPOINT_READINESS_MAX_AVG_LOSS"
+append_nonzero_arg shared_checkpoint_readiness_args --checkpoint-readiness-max-perplexity "$CHECKPOINT_READINESS_MAX_PERPLEXITY"
+append_nonzero_arg shared_checkpoint_readiness_args --checkpoint-readiness-min-tokens "$CHECKPOINT_READINESS_MIN_TOKENS"
+append_nonzero_arg shared_checkpoint_readiness_args --checkpoint-readiness-min-weight-std "$CHECKPOINT_READINESS_MIN_WEIGHT_STD"
+append_nonzero_arg shared_checkpoint_readiness_args --checkpoint-readiness-max-weight-std "$CHECKPOINT_READINESS_MAX_WEIGHT_STD"
 
 shared_eval_args=()
 append_nonempty_arg shared_eval_args --heldout-max-records-per-file "$HELDOUT_MAX_RECORDS_PER_FILE"
@@ -232,6 +257,7 @@ if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then
     --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
     --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_eval_args[@]}"
+    "${shared_checkpoint_readiness_args[@]}"
     --fake-quant
   )
 elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
@@ -284,6 +310,7 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_posttrain_args[@]}"
     "${shared_eval_args[@]}"
+    "${shared_checkpoint_readiness_args[@]}"
     --fake-quant
   )
 else
@@ -324,6 +351,7 @@ else
     --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_posttrain_args[@]}"
     "${shared_eval_args[@]}"
+    "${shared_checkpoint_readiness_args[@]}"
     --fake-quant
   )
   if [[ "$MODE" == "run-full" ]]; then
@@ -367,9 +395,13 @@ if [[ -n "$BENCHMARK_PREDICTION_API_KEY_ENV" && -n "${!BENCHMARK_PREDICTION_API_
 fi
 
 printf -v common_args_quoted "%q " "${common_args[@]}"
+readiness_pre_cmd=""
+if [[ -n "$CHECKPOINT_MEDIA_ROUTE_PROBE" && -z "$CHECKPOINT_READINESS_REPORT" && ! -f "$CHECKPOINT_MEDIA_ROUTE_PROBE" ]] && truthy "$AUTO_CHECKPOINT_MEDIA_ROUTE_PROBE"; then
+  printf -v readiness_pre_cmd 'mkdir -p %q; python -m omnicoder.eval.media_route_probe_2026 --out %q; ' "$(dirname "$CHECKPOINT_MEDIA_ROUTE_PROBE")" "$CHECKPOINT_MEDIA_ROUTE_PROBE"
+fi
 run_cmd=(
   bash -lc
-  "set -euo pipefail; python -m omnicoder.training.training_orchestration_2026 ${common_args_quoted}"
+  "set -euo pipefail; ${readiness_pre_cmd}python -m omnicoder.training.training_orchestration_2026 ${common_args_quoted}"
 )
 
 if [[ "$DETACH" == "1" ]]; then

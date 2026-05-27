@@ -252,6 +252,14 @@ def test_learning_report_requires_loss_drop():
 def _runtime_args(**overrides):
     values = {
         "distributed": "",
+        "preset": "",
+        "device": "",
+        "fake_quant": False,
+        "steps_per_stage": 0,
+        "seq_len": 0,
+        "batch_size": 0,
+        "lr": 0.0,
+        "save_interval": None,
         "nproc_per_node": 0,
         "precision": "",
         "init_dtype": "",
@@ -293,6 +301,16 @@ def _runtime_args(**overrides):
         "benchmark_prediction_timeout_seconds": 0,
         "benchmark_prediction_max_output_tokens": 0,
         "require_reportable_gate": False,
+        "checkpoint_readiness_report": "",
+        "checkpoint_topk_probe": "",
+        "checkpoint_sample_loss": "",
+        "checkpoint_media_route_probe": "",
+        "require_checkpoint_readiness": None,
+        "checkpoint_readiness_max_avg_loss": 0.0,
+        "checkpoint_readiness_max_perplexity": 0.0,
+        "checkpoint_readiness_min_tokens": 0,
+        "checkpoint_readiness_min_weight_std": 0.0,
+        "checkpoint_readiness_max_weight_std": 0.0,
         "rerun_heldout_evals": False,
     }
     values.update(overrides)
@@ -308,6 +326,121 @@ def _write_complete_sharded_checkpoint(path: Path, world_size: int = 3) -> None:
         rank_path = path / rank_file
         rank_path.write_bytes(b"checkpoint")
         Path(str(rank_path) + ".complete.json").write_text("{}", encoding="utf-8")
+
+
+def _readiness_profile(root: Path) -> dict:
+    profile = _profile(root)
+    profile["checkpoint_readiness"] = {
+        "enabled": True,
+        "require_for_resume": True,
+        "max_avg_loss": 2.0,
+        "max_perplexity": 10.0,
+        "min_tokens": 8,
+        "max_weight_std": 0.2,
+    }
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_devices": ["0", "1", "2"],
+        "placement_layer_counts": [1, 1, 2],
+    }
+    return profile
+
+
+def test_checkpoint_readiness_gate_fails_closed_without_diagnostics(tmp_path: Path) -> None:
+    profile = _readiness_profile(tmp_path)
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+
+    result = orch.run_checkpoint_readiness_gate(profile, {}, tmp_path / "out", checkpoint, "resume", _runtime_args())
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "checkpoint_readiness_diagnostics_missing"
+
+
+def test_checkpoint_readiness_gate_rejects_stale_explicit_report(tmp_path: Path) -> None:
+    profile = _readiness_profile(tmp_path)
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    report_path = tmp_path / "old_readiness.json"
+    orch.write_json(
+        report_path,
+        {
+            "schema": "omnicoder.checkpoint_readiness_2026.v1",
+            "status": "passed",
+            "passed": True,
+            "checkpoint_binding": {
+                "checkpoint": str(tmp_path / "other_ckpt"),
+                "fingerprint": "not-current",
+                "expected_world_size": 3,
+            },
+            "checks": {},
+        },
+    )
+
+    result = orch.run_checkpoint_readiness_gate(
+        profile,
+        {},
+        tmp_path / "out",
+        checkpoint,
+        "resume",
+        _runtime_args(checkpoint_readiness_report=str(report_path)),
+    )
+
+    assert result["status"] == "failed"
+    assert "checkpoint_readiness_report_fingerprint_mismatch" in result["reason"]
+
+
+def test_run_posttraining_cli_blocks_failed_checkpoint_readiness_before_optimizer(tmp_path: Path, monkeypatch) -> None:
+    profile = _readiness_profile(tmp_path)
+    profile_path = tmp_path / "profile.json"
+    orch.write_json(profile_path, profile)
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    monkeypatch.setattr(orch, "run_posttraining_stages", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("optimizer must not run")))
+
+    args = _runtime_args(profile=str(profile_path), out_dir=str(tmp_path / "out"), resume_checkpoint=str(checkpoint))
+    summary = orch.run_posttrain(args)
+
+    assert summary["status"] == "failed"
+    assert summary["posttraining"]["reason"] == "checkpoint_readiness_failed"
+
+
+def test_run_training_stages_blocks_bad_initial_resume_checkpoint_before_pretrain(tmp_path: Path, monkeypatch) -> None:
+    profile = _readiness_profile(tmp_path)
+    monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    manifest = {"per_modality_split_jsonl": {}, "per_modality_jsonl": {}, "modalities": {}}
+    args = _runtime_args(resume_checkpoint=str(checkpoint))
+
+    result = orch.run_training_stages(profile, manifest, tmp_path / "out", args)
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "initial_checkpoint_readiness_failed"
+
+
+def test_run_long_context_blocks_failed_checkpoint_readiness_before_ladder(tmp_path: Path, monkeypatch) -> None:
+    profile = _readiness_profile(tmp_path)
+    profile_path = tmp_path / "profile.json"
+    orch.write_json(profile_path, profile)
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    manifest_path = tmp_path / "curation_manifest.json"
+    orch.write_json(manifest_path, {"per_modality_split_jsonl": {"long_context": {}}})
+    monkeypatch.setattr(orch, "run_long_context_curriculum_stage", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("ladder must not run")))
+
+    args = _runtime_args(
+        profile=str(profile_path),
+        out_dir=str(tmp_path / "out"),
+        resume_checkpoint=str(checkpoint),
+        curation_manifest=str(manifest_path),
+    )
+    summary = orch.run_long_context(args)
+
+    assert summary["status"] == "failed"
+    assert summary["long_context_curriculum"]["reason"] == "checkpoint_readiness_failed"
 
 
 def test_pipeline_stage_launcher_uses_torchrun_without_dense_only_flags():
@@ -1550,12 +1683,17 @@ def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args
     assert '-e PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"' in script
     assert '-e OMNICODER2026_LM_LOSS_CHUNK_TOKENS="$LM_LOSS_CHUNK_TOKENS"' in script
     assert '-e OMNICODER2026_FFN_CHUNK_TOKENS="$FFN_CHUNK_TOKENS"' in script
+    assert 'OMNICODER_CHECKPOINT_TOPK_PROBE' in script
+    assert 'OMNICODER_CHECKPOINT_SAMPLE_LOSS' in script
+    assert 'OMNICODER_CHECKPOINT_MEDIA_ROUTE_PROBE' in script
+    assert 'omnicoder.eval.media_route_probe_2026' in script
     branch = script.split('if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then', 1)[1].split(
         'elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then',
         1,
     )[0]
     assert '--curation-manifest "$CURATION_MANIFEST"' in branch
     assert '--resume-checkpoint "$RESUME_CHECKPOINT"' in branch
+    assert '"${shared_checkpoint_readiness_args[@]}"' in branch
     assert '--posttrain-steps' not in branch
     assert '--start-stage' not in branch
     assert '--distill-profile' not in branch

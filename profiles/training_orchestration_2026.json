@@ -179,6 +179,15 @@
       "release"
     ]
   },
+  "checkpoint_readiness": {
+    "enabled": true,
+    "max_avg_loss": 20.0,
+    "max_perplexity": 1000000.0,
+    "max_weight_std": 0.2,
+    "min_tokens": 64,
+    "min_weight_std": 0.00001,
+    "require_for_resume": true
+  },
   "container_runtime": {
     "media_artifact_visibility_gate": "curate-real must report nonzero train records for image, video, audio, and music before run-real is accepted as all-modality training",
     "required_mounts": [

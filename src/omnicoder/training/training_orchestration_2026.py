@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity
+from omnicoder.eval.checkpoint_readiness_2026 import (
+    ReadinessThresholds,
+    checkpoint_fingerprint,
+    checkpoint_readiness,
+    validate_checkpoint_binding,
+)
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 
 
@@ -2679,6 +2685,168 @@ def checkpoint_is_complete(path: str | Path, expected_world_size: int | None = N
     return True
 
 
+def checkpoint_readiness_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
+    raw = cfg.get("checkpoint_readiness")
+    return raw if isinstance(raw, dict) else {}
+
+
+def checkpoint_readiness_required(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> bool:
+    cli_require = arg_value(args, "require_checkpoint_readiness", None)
+    if cli_require is not None:
+        return bool(cli_require)
+    configured = checkpoint_readiness_cfg(cfg)
+    return bool(configured.get("enabled") or configured.get("require_for_resume"))
+
+
+def checkpoint_readiness_thresholds(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> ReadinessThresholds:
+    configured = checkpoint_readiness_cfg(cfg)
+    return ReadinessThresholds(
+        max_avg_loss=float(
+            arg_value(args, "checkpoint_readiness_max_avg_loss", 0.0)
+            or configured.get("max_avg_loss")
+            or ReadinessThresholds.max_avg_loss
+        ),
+        max_perplexity=float(
+            arg_value(args, "checkpoint_readiness_max_perplexity", 0.0)
+            or configured.get("max_perplexity")
+            or ReadinessThresholds.max_perplexity
+        ),
+        min_tokens=int(
+            arg_value(args, "checkpoint_readiness_min_tokens", 0)
+            or configured.get("min_tokens")
+            or ReadinessThresholds.min_tokens
+        ),
+        min_weight_std=float(
+            arg_value(args, "checkpoint_readiness_min_weight_std", 0.0)
+            or configured.get("min_weight_std")
+            or ReadinessThresholds.min_weight_std
+        ),
+        max_weight_std=float(
+            arg_value(args, "checkpoint_readiness_max_weight_std", 0.0)
+            or configured.get("max_weight_std")
+            or ReadinessThresholds.max_weight_std
+        ),
+    )
+
+
+def _resolve_optional_arg_path(args: argparse.Namespace | None, name: str) -> Path | None:
+    raw = str(arg_value(args, name, "") or "").strip()
+    if not raw:
+        return None
+    return resolve_path(raw, repo_root())
+
+
+def run_checkpoint_readiness_gate(
+    profile: dict[str, Any],
+    manifest: dict[str, Any],
+    out_dir: Path,
+    checkpoint: str | Path | None,
+    phase: str,
+    args: argparse.Namespace | None = None,
+) -> dict[str, Any]:
+    del manifest
+    cfg = profile_cfg(profile)
+    gate_dir = out_dir / "benchmarks" / safe_filename(phase) / "checkpoint_readiness"
+    gate_dir.mkdir(parents=True, exist_ok=True)
+    if not checkpoint:
+        report = {"schema": "omnicoder.checkpoint_readiness_gate_2026.v1", "status": "failed", "phase": phase, "reason": "no_checkpoint"}
+        write_json(gate_dir / "checkpoint_readiness_gate.json", report)
+        return report
+    checkpoint_path = Path(str(checkpoint))
+    expected_world_size = expected_pipeline_world_size(cfg, args) if checkpoint_path.is_dir() else None
+    fingerprint = checkpoint_fingerprint(checkpoint_path)
+    structural = {
+        "status": "passed" if checkpoint_is_complete(checkpoint_path, expected_world_size=expected_world_size) else "failed",
+        "checkpoint": str(checkpoint_path),
+        "expected_world_size": expected_world_size,
+        "completion_marker": str(checkpoint_complete_marker(checkpoint_path)),
+        "fingerprint": fingerprint,
+    }
+    if structural["status"] != "passed":
+        structural["reason"] = "checkpoint_missing_or_incomplete"
+        report = {
+            "schema": "omnicoder.checkpoint_readiness_gate_2026.v1",
+            "status": "failed",
+            "phase": phase,
+            "reason": "checkpoint_missing_or_incomplete",
+            "checkpoint": str(checkpoint_path),
+            "structural": structural,
+        }
+        write_json(gate_dir / "checkpoint_readiness_gate.json", report)
+        return report
+    if not checkpoint_readiness_required(cfg, args):
+        report = {
+            "schema": "omnicoder.checkpoint_readiness_gate_2026.v1",
+            "status": "passed",
+            "phase": phase,
+            "reason": "checkpoint_readiness_not_required",
+            "checkpoint": str(checkpoint_path),
+            "structural": structural,
+        }
+        write_json(gate_dir / "checkpoint_readiness_gate.json", report)
+        return report
+
+    explicit_report = _resolve_optional_arg_path(args, "checkpoint_readiness_report")
+    if explicit_report is not None:
+        readiness = read_json(explicit_report) if explicit_report.exists() else {"status": "failed", "reason": "checkpoint_readiness_report_missing", "path": str(explicit_report)}
+        binding = validate_checkpoint_binding(
+            {},
+            {},
+            readiness,
+            expected_checkpoint=checkpoint_path,
+            expected_fingerprint=fingerprint,
+            expected_world_size=expected_world_size,
+        )
+        if binding.get("status") != "passed":
+            readiness = {
+                **readiness,
+                "status": "failed",
+                "passed": False,
+                "reason": ",".join(str(reason) for reason in binding.get("reasons", [])) or "checkpoint_readiness_report_binding_invalid",
+                "reasons": sorted(set([*(readiness.get("reasons") if isinstance(readiness.get("reasons"), list) else []), *binding.get("reasons", [])])),
+                "checks": {**(readiness.get("checks") if isinstance(readiness.get("checks"), dict) else {}), "checkpoint_binding": binding},
+            }
+    else:
+        topk_path = _resolve_optional_arg_path(args, "checkpoint_topk_probe")
+        sample_loss_path = _resolve_optional_arg_path(args, "checkpoint_sample_loss")
+        media_route_path = _resolve_optional_arg_path(args, "checkpoint_media_route_probe")
+        if topk_path and sample_loss_path and media_route_path:
+            readiness = checkpoint_readiness(
+                topk_path,
+                sample_loss_path,
+                media_route_path,
+                thresholds=checkpoint_readiness_thresholds(cfg, args),
+                expected_checkpoint=checkpoint_path,
+                expected_fingerprint=fingerprint,
+                expected_world_size=expected_world_size,
+            )
+        else:
+            readiness = {
+                "schema": "omnicoder.checkpoint_readiness_2026.v1",
+                "status": "failed",
+                "passed": False,
+                "reason": "checkpoint_readiness_diagnostics_missing",
+                "reasons": ["checkpoint_readiness_diagnostics_missing"],
+                "required": [
+                    "checkpoint_topk_probe",
+                    "checkpoint_sample_loss",
+                    "checkpoint_media_route_probe",
+                ],
+            }
+    readiness_status = "passed" if readiness.get("status") == "passed" or readiness.get("passed") is True else "failed"
+    report = {
+        "schema": "omnicoder.checkpoint_readiness_gate_2026.v1",
+        "status": readiness_status,
+        "phase": phase,
+        "reason": "checkpoint_ready" if readiness_status == "passed" else str(readiness.get("reason") or "checkpoint_readiness_failed"),
+        "checkpoint": str(checkpoint_path),
+        "structural": structural,
+        "readiness": readiness,
+    }
+    write_json(gate_dir / "checkpoint_readiness_gate.json", report)
+    return report
+
+
 def expected_pipeline_world_size(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> int | None:
     if not uses_pipeline_stage_trainer(cfg, args):
         return None
@@ -3297,6 +3465,31 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
     checkpoint_expected_world_size = expected_pipeline_world_size(cfg, args)
     if previous_checkpoint is not None and not previous_checkpoint.exists():
         raise FileNotFoundError(f"initial_checkpoint does not exist: {previous_checkpoint}")
+    initial_readiness_gate: dict[str, Any] | None = None
+    if previous_checkpoint is not None:
+        initial_readiness_gate = run_checkpoint_readiness_gate(
+            profile,
+            manifest,
+            out_dir,
+            previous_checkpoint,
+            "dense_training_initial_resume",
+            args,
+        )
+        if initial_readiness_gate.get("status") != "passed":
+            return {
+                "schema": "omnicoder.real_training_stage_report_2026.v1",
+                "status": "failed",
+                "reason": "initial_checkpoint_readiness_failed",
+                "initial_checkpoint": str(initial_checkpoint_path) if initial_checkpoint_path is not None else None,
+                "stage_order": stage_order,
+                "start_stage": stage_order[start_stage_index - 1],
+                "resume_completed_stages": resume_completed,
+                "target_cuda_visible_devices": cuda_visible_report,
+                "failed_required_stages": [],
+                "checkpoint_readiness_gate": initial_readiness_gate,
+                "stages": [],
+                "final_checkpoint": str(previous_checkpoint),
+            }
     require_integrity_preflight(
         run_integrity_preflight(
             training_bound_jsonl_paths_from_manifest(manifest),
@@ -3480,6 +3673,7 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
         "start_stage": stage_order[start_stage_index - 1],
         "resume_completed_stages": resume_completed,
         "target_cuda_visible_devices": cuda_visible_report,
+        "checkpoint_readiness_gate": initial_readiness_gate,
         "failed_required_stages": failed_required,
         "stages": stage_reports,
         "final_checkpoint": str(previous_checkpoint) if previous_checkpoint is not None else None,
@@ -4932,6 +5126,33 @@ def run_posttrain(args: argparse.Namespace) -> dict[str, Any]:
         }
         write_json(out_dir / "posttraining_resume_summary.json", summary)
         return summary
+    eval_manifest = load_posttraining_eval_manifest(profile, out_dir, args)
+    readiness_gate = run_checkpoint_readiness_gate(
+        profile,
+        eval_manifest,
+        out_dir,
+        resume_checkpoint,
+        "posttraining_resume_initial",
+        args,
+    )
+    if readiness_gate.get("status") != "passed":
+        summary = {
+            "schema": "omnicoder.posttraining_resume_result_2026.v1",
+            "schema_version": SCHEMA_VERSION,
+            "status": "failed",
+            "created_at": now_iso(),
+            "model_contract": cfg.get("model_contract"),
+            "resume_validation": validation,
+            "checkpoint_readiness_gate": readiness_gate,
+            "posttraining": {"status": "skipped", "reason": "checkpoint_readiness_failed"},
+            "artifacts": {
+                "out_dir": str(out_dir),
+                "summary": str(out_dir / "posttraining_resume_summary.json"),
+                "initial_checkpoint": str(resume_checkpoint),
+            },
+        }
+        write_json(out_dir / "posttraining_resume_summary.json", summary)
+        return summary
     post_args = namespace_with(args, live_posttraining=True)
     try:
         posttraining = run_posttraining_stages(
@@ -4960,7 +5181,6 @@ def run_posttrain(args: argparse.Namespace) -> dict[str, Any]:
     }
     final_checkpoint = posttraining.get("final_checkpoint") or str(resume_checkpoint)
     if posttraining.get("status") == "passed" and final_checkpoint:
-        eval_manifest = load_posttraining_eval_manifest(profile, out_dir, args)
         summary["heldout_benchmark_gate"] = run_checkpoint_benchmark_gate(
             profile,
             eval_manifest,
@@ -5025,6 +5245,37 @@ def run_long_context(args: argparse.Namespace) -> dict[str, Any]:
         write_json(summary_path, summary)
         return summary
     manifest = read_json(manifest_path)
+    readiness_gate = run_checkpoint_readiness_gate(
+        profile,
+        manifest,
+        out_dir,
+        resume_checkpoint,
+        "pre_long_context_resume_readiness",
+        args,
+    )
+    if readiness_gate.get("status") != "passed":
+        summary = {
+            "schema": "omnicoder.long_context_resume_result_2026.v1",
+            "schema_version": SCHEMA_VERSION,
+            "status": "failed",
+            "created_at": now_iso(),
+            "model_contract": cfg.get("model_contract"),
+            "resume_validation": validation,
+            "checkpoint_readiness_gate": readiness_gate,
+            "long_context_curriculum": {
+                "status": "skipped",
+                "reason": "checkpoint_readiness_failed",
+                "initial_checkpoint": str(resume_checkpoint),
+            },
+            "artifacts": {
+                "out_dir": str(out_dir),
+                "summary": str(summary_path),
+                "initial_checkpoint": str(resume_checkpoint),
+                "curation_manifest": str(manifest_path),
+            },
+        }
+        write_json(summary_path, summary)
+        return summary
     short_context_gate = run_checkpoint_benchmark_gate(
         profile,
         manifest,
@@ -5263,6 +5514,19 @@ def summarize(args: argparse.Namespace) -> dict[str, Any]:
     return read_json(path)
 
 
+def add_checkpoint_readiness_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--checkpoint-readiness-report", dest="checkpoint_readiness_report", default="")
+    parser.add_argument("--checkpoint-topk-probe", dest="checkpoint_topk_probe", default="")
+    parser.add_argument("--checkpoint-sample-loss", dest="checkpoint_sample_loss", default="")
+    parser.add_argument("--checkpoint-media-route-probe", dest="checkpoint_media_route_probe", default="")
+    parser.add_argument("--require-checkpoint-readiness", dest="require_checkpoint_readiness", action="store_true", default=None)
+    parser.add_argument("--checkpoint-readiness-max-avg-loss", dest="checkpoint_readiness_max_avg_loss", type=float, default=0.0)
+    parser.add_argument("--checkpoint-readiness-max-perplexity", dest="checkpoint_readiness_max_perplexity", type=float, default=0.0)
+    parser.add_argument("--checkpoint-readiness-min-tokens", dest="checkpoint_readiness_min_tokens", type=int, default=0)
+    parser.add_argument("--checkpoint-readiness-min-weight-std", dest="checkpoint_readiness_min_weight_std", type=float, default=0.0)
+    parser.add_argument("--checkpoint-readiness-max-weight-std", dest="checkpoint_readiness_max_weight_std", type=float, default=0.0)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Production Omnicoder 2026 real multimodal training orchestration")
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
@@ -5350,6 +5614,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
     run.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     run.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
+    add_checkpoint_readiness_args(run)
     run.set_defaults(func=run_real)
     long = sub.add_parser(
         "run-long-context",
@@ -5415,6 +5680,7 @@ def main(argv: list[str] | None = None) -> int:
     long.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
     long.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     long.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
+    add_checkpoint_readiness_args(long)
     long.set_defaults(func=run_long_context)
     post = sub.add_parser(
         "run-posttraining",
@@ -5486,6 +5752,7 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
     post.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     post.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
+    add_checkpoint_readiness_args(post)
     post.set_defaults(func=run_posttrain, live_posttraining=True)
     full = sub.add_parser("run-full")
     full.add_argument("--steps-per-stage", type=int, default=0)
@@ -5565,6 +5832,7 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
     full.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     full.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
+    add_checkpoint_readiness_args(full)
     full.set_defaults(func=run_full, live_posttraining=True)
     summ = sub.add_parser("summarize")
     summ.add_argument("--summary", default="")

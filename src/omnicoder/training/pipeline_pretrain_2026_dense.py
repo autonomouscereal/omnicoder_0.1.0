@@ -20,7 +20,13 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from omnicoder.config_2026 import get_omnicoder2026_preset, preset_to_model_kwargs
-from omnicoder.modeling.omnicoder2026 import OmniCoder2026Block, OmniCoder2026Config, QuantAwareLinear, RMSNorm
+from omnicoder.modeling.omnicoder2026 import (
+    OmniCoder2026Block,
+    OmniCoder2026Config,
+    QuantAwareLinear,
+    RMSNorm,
+    reset_omnicoder2026_parameters,
+)
 from omnicoder.training.pretrain_2026_dense import (
     TARGET_PRESET,
     _ids_from_record,
@@ -132,6 +138,7 @@ class OmniCoder2026PipelineShard(nn.Module):
             if spec.has_head
             else nn.Identity()
         )
+        reset_omnicoder2026_parameters(self, cfg)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.spec.has_embed:

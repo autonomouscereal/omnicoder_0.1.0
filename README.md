@@ -232,6 +232,13 @@ That launcher is intended for a specific multi-GPU Docker environment and
 requires the mounts, checkpoint completeness rules, and artifact expectations
 described in `docs/TrainingOrchestration2026.md`.
 
+Checkpoint resumes are fail-closed. If `OMNICODER_RESUME_CHECKPOINT` is set,
+the launcher must receive fresh top-k, heldout sample-loss, and media-route
+readiness diagnostics through `OMNICODER_CHECKPOINT_TOPK_PROBE`,
+`OMNICODER_CHECKPOINT_SAMPLE_LOSS`, and
+`OMNICODER_CHECKPOINT_MEDIA_ROUTE_PROBE`, or a bound
+`OMNICODER_CHECKPOINT_READINESS_REPORT`. Stale diagnostics are rejected.
+
 ## Evaluation And Benchmarks
 
 Validate the benchmark profile:
