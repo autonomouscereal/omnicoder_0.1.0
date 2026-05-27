@@ -204,6 +204,14 @@ class OmniCoder2026Config:
 class _FakeQuantWeightSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx: Any, w: torch.Tensor, group_size: int) -> torch.Tensor:
+        return _fake_quant_weight_value(w, int(group_size))
+
+    @staticmethod
+    def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[torch.Tensor, None]:
+        return grad_output, None
+
+
+def _fake_quant_weight_value(w: torch.Tensor, group_size: int) -> torch.Tensor:
         group_size = int(group_size)
         if group_size <= 0 or w.numel() == 0:
             return w
@@ -224,13 +232,66 @@ class _FakeQuantWeightSTE(torch.autograd.Function):
             dq = dq[:, :-pad]
         return dq.reshape(orig_shape)
 
-    @staticmethod
-    def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[torch.Tensor, None]:
-        return grad_output, None
-
 
 def _fake_quant_weight(w: torch.Tensor, group_size: int) -> torch.Tensor:
     return _FakeQuantWeightSTE.apply(w, int(group_size))
+
+
+class _ChunkedFakeQuantLinearSTE(torch.autograd.Function):
+    @staticmethod
+    def forward(
+        ctx: Any,
+        x: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor | None,
+        group_size: int,
+        chunk_rows: int,
+    ) -> torch.Tensor:
+        ctx.group_size = int(group_size)
+        ctx.chunk_rows = max(1, int(chunk_rows))
+        ctx.has_bias = bias is not None
+        ctx.save_for_backward(x, weight)
+        x_flat = x.reshape(-1, x.shape[-1])
+        out_features = int(weight.shape[0])
+        output = x_flat.new_empty((x_flat.shape[0], out_features))
+        for start in range(0, out_features, ctx.chunk_rows):
+            end = min(out_features, start + ctx.chunk_rows)
+            q_weight = _fake_quant_weight_value(weight[start:end], ctx.group_size)
+            q_bias = bias[start:end] if bias is not None else None
+            output[:, start:end] = F.linear(x_flat, q_weight, q_bias)
+        return output.reshape((*x.shape[:-1], out_features))
+
+    @staticmethod
+    def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, None, None]:
+        saved = ctx.saved_tensors
+        x = saved[0]
+        weight = saved[1]
+        grad_output_flat = grad_output.reshape(-1, grad_output.shape[-1])
+        x_flat = x.reshape(-1, x.shape[-1])
+        chunk_rows = max(1, int(ctx.chunk_rows))
+        group_size = int(ctx.group_size)
+        needs_x, needs_weight, needs_bias = ctx.needs_input_grad[:3]
+
+        grad_x: torch.Tensor | None = None
+        if needs_x:
+            grad_x_flat = torch.zeros_like(x_flat)
+            for start in range(0, weight.shape[0], chunk_rows):
+                end = min(int(weight.shape[0]), start + chunk_rows)
+                q_weight = _fake_quant_weight_value(weight[start:end], group_size)
+                grad_x_flat.add_(grad_output_flat[:, start:end].matmul(q_weight))
+            grad_x = grad_x_flat.reshape_as(x)
+
+        grad_weight: torch.Tensor | None = None
+        if needs_weight:
+            grad_weight = torch.empty_like(weight)
+            for start in range(0, weight.shape[0], chunk_rows):
+                end = min(int(weight.shape[0]), start + chunk_rows)
+                grad_weight[start:end] = grad_output_flat[:, start:end].transpose(0, 1).matmul(x_flat)
+
+        grad_bias: torch.Tensor | None = None
+        if needs_bias and ctx.has_bias:
+            grad_bias = grad_output_flat.sum(dim=0)
+        return grad_x, grad_weight, grad_bias, None, None
 
 
 def _env_int(name: str, default: int) -> int:
@@ -258,19 +319,7 @@ class QuantAwareLinear(nn.Linear):
 
     def _chunked_fake_quant_linear(self, x: torch.Tensor) -> torch.Tensor:
         rows = max(1, int(self.fake_quant_chunk_rows))
-        out_features = int(self.weight.shape[0])
-        output: torch.Tensor | None = None
-        for start in range(0, out_features, rows):
-            end = min(out_features, start + rows)
-            weight = _fake_quant_weight(self.weight[start:end], self.group_size)
-            bias = self.bias[start:end] if self.bias is not None else None
-            piece = F.linear(x, weight, bias)
-            if output is None:
-                output = piece.new_empty((*piece.shape[:-1], out_features))
-            output[..., start:end] = piece
-        if output is None:
-            return x.new_empty((*x.shape[:-1], 0))
-        return output
+        return _ChunkedFakeQuantLinearSTE.apply(x, self.weight, self.bias, self.group_size, rows)
 
 
 class RMSNorm(nn.Module):
