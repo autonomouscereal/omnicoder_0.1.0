@@ -32,6 +32,7 @@ MAX_RECORDS_PER_MODALITY="${OMNICODER_POLICY_BALANCED_MAX_RECORDS_PER_MODALITY:-
 MIN_RECORDS_PER_REQUIRED="${OMNICODER_POLICY_BALANCED_MIN_RECORDS_PER_REQUIRED:-16}"
 QWEN_LTX_DISTILL_SCRIPT="${OMNICODER_QWEN_LTX_DISTILL_SCRIPT:-$REPO/scripts/ai_server_run_qwen_ltx_distillation_2026.sh}"
 PYTHON_BIN="${OMNICODER_DATA_PYTHON:-python3}"
+EXTRA_BALANCED_SOURCES="${OMNICODER_EXTRA_BALANCED_SOURCES:-}"
 
 mkdir -p "$QUEUE_DIR"
 echo $$ > "$QUEUE_DIR/pid"
@@ -232,6 +233,32 @@ build_balanced_manifest() {
       sources+=(--source "$modality=$path")
     fi
   }
+  add_extra_sources() {
+    local raw="$1"
+    [[ -n "$raw" ]] || return 0
+    local old_ifs="$IFS"
+    IFS=$',\n'
+    local item
+    for item in $raw; do
+      item="${item#"${item%%[![:space:]]*}"}"
+      item="${item%"${item##*[![:space:]]}"}"
+      [[ -n "$item" ]] || continue
+      if [[ "$item" != *=* && "$item" != *::* ]]; then
+        log "skipping malformed extra balanced source: $item"
+        continue
+      fi
+      local modality path
+      if [[ "$item" == *::* ]]; then
+        modality="${item%%::*}"
+        path="${item#*::}"
+      else
+        modality="${item%%=*}"
+        path="${item#*=}"
+      fi
+      add_source "$modality" "$path"
+    done
+    IFS="$old_ifs"
+  }
   if [[ -n "$QWEN_LTX_DISTILL_DIR" ]]; then
     add_source tool "$QWEN_LTX_DISTILL_DIR/jsonl/qwen36_tool.clean.jsonl"
     add_source code "$QWEN_LTX_DISTILL_DIR/jsonl/qwen36_code.clean.jsonl"
@@ -260,6 +287,7 @@ build_balanced_manifest() {
   add_source audio "$CURATION_DIR/jsonl/audio.clean.jsonl"
   add_source music "$CURATION_DIR/jsonl/music.clean.jsonl"
   add_source ocr "$CURATION_DIR/jsonl/ocr.clean.jsonl"
+  add_extra_sources "$EXTRA_BALANCED_SOURCES"
 
   local require="text,code,tool,image,video,audio,music,long_context,math"
   if [[ -s "$CURATION_DIR/jsonl/ocr.clean.jsonl" ]]; then

@@ -784,6 +784,13 @@ per teacher file before applying shared modality caps. This prevents image
 generation rows from crowding out Qwen Image Edit, and prevents broad base
 curation from crowding out Qwen 3.6 tool/code/math or LTX rows.
 
+Fresh integrity-certified sidecar outputs can be added to the next balanced
+chunk with `OMNICODER_EXTRA_BALANCED_SOURCES`. Use comma-separated
+`modality=/absolute/path/to/file.jsonl` or `modality::/absolute/path` entries.
+The queue still runs the dataset-integrity preflight over the final SFT/RLVR
+and reward JSONL before launch, so extra OCR, music, TTS, or trace data must
+pass the same rejection gate as the base curation sources.
+
 The Qwen 3.6 text lane uses short prompts and compact one-line JSON teacher
 targets so the P40 partial-offload servers produce useful throughput. Default
 live settings are `OMNICODER_QWEN_TEXT_MAX_TOKENS=224` and
