@@ -48,6 +48,8 @@ MEDIA_STRICT_LIVE="${OMNICODER_MEDIA_STRICT_LIVE:-1}"
 
 mkdir -p "$OUT_ROOT"/{jobs,raw,jsonl,rejected,manifests,logs,state,qwen_server,rollouts}
 echo $$ > "$OUT_ROOT/pid"
+printf '%s\n' "$OUT_ROOT" > "$WEIGHTS_ROOT/data_curation_agent_2026/current_qwen_ltx_distillation_dir.txt"
+printf '%s\n' "$OUT_ROOT" > "$WEIGHTS_ROOT/data_curation_agent_2026/latest_qwen_ltx_distillation_dir.txt"
 cd "$REPO"
 export PYTHONPATH="$REPO/src${PYTHONPATH:+:$PYTHONPATH}"
 export OMNICODER_QWEN_EDIT_SOURCE_IMAGE="$QWEN_EDIT_SOURCE_IMAGE"
@@ -70,6 +72,34 @@ count_lines() {
   else
     printf '0'
   fi
+}
+
+require_nonempty_files() {
+  local label="$1"
+  shift
+  local path
+  for path in "$@"; do
+    if [[ ! -s "$path" ]]; then
+      log "$label missing required file: $path"
+      return 1
+    fi
+  done
+}
+
+qwen_text_outputs_ready() {
+  require_nonempty_files "Qwen text distillation" \
+    "$OUT_ROOT/jsonl/qwen36_tool.clean.jsonl" \
+    "$OUT_ROOT/jsonl/qwen36_code.clean.jsonl" \
+    "$OUT_ROOT/jsonl/qwen36_math.clean.jsonl" \
+    "$OUT_ROOT/jsonl/qwen36_long_context.clean.jsonl" \
+    "$OUT_ROOT/jsonl/qwen36_text.clean.jsonl"
+}
+
+media_outputs_ready() {
+  require_nonempty_files "Qwen Image/Edit/LTX media distillation" \
+    "$OUT_ROOT/jsonl/qwen_image_generate.clean.jsonl" \
+    "$OUT_ROOT/jsonl/qwen_image_edit.clean.jsonl" \
+    "$OUT_ROOT/jsonl/ltx_video.clean.jsonl"
 }
 
 write_skip_manifest() {
@@ -358,8 +388,12 @@ PY
 
 run_qwen_text_rollouts() {
   if [[ -s "$OUT_ROOT/state/qwen_text.done" ]]; then
-    log "Qwen text rollout stage already marked done"
-    return 0
+    if qwen_text_outputs_ready; then
+      log "Qwen text rollout stage already marked done"
+      return 0
+    fi
+    log "Qwen text done marker is stale; required outputs are missing, rerunning text stage"
+    rm -f "$OUT_ROOT/state/qwen_text.done"
   fi
   build_qwen_text_jobs
   if [[ ! -s "$OUT_ROOT/jobs/qwen36_agentic_code_math_tool_jobs.jsonl" ]]; then
@@ -445,6 +479,7 @@ combined = root / "raw" / "qwen36_agentic_code_math_tool.raw.jsonl"
 print(json.dumps({"status": "ok" if failures == 0 else "partial", "failures": failures, "counts": counts, "combined_records": sum(1 for line in combined.open("r", encoding="utf-8", errors="ignore") if line.strip()) if combined.exists() else 0}, sort_keys=True))
 PY
   curate_qwen_text
+  qwen_text_outputs_ready
   touch "$OUT_ROOT/state/qwen_text.done"
 }
 
@@ -804,8 +839,12 @@ PY
 
 run_media_rollouts() {
   if [[ -s "$OUT_ROOT/state/media.done" ]]; then
-    log "media rollout stage already marked done"
-    return 0
+    if media_outputs_ready; then
+      log "media rollout stage already marked done"
+      return 0
+    fi
+    log "media done marker is stale; required outputs are missing, rerunning media stage"
+    rm -f "$OUT_ROOT/state/media.done"
   fi
   ensure_qwen_edit_source
   build_media_jobs
@@ -835,6 +874,7 @@ run_media_rollouts() {
   log "running Qwen Image/Edit and LTX 2.3 live media rollouts"
   "$PYTHON_BIN" "${args[@]}" | tee "$OUT_ROOT/logs/media_teacher_rollouts.stdout.json"
   split_and_curate_media
+  media_outputs_ready
   curl -sS --max-time 10 -X POST "$COMFYUI_URL/free" -H 'Content-Type: application/json' -d '{"unload_models":true,"free_memory":true}' >/dev/null 2>&1 || true
   touch "$OUT_ROOT/state/media.done"
 }
@@ -917,8 +957,10 @@ with combined.open("w", encoding="utf-8", newline="\n") as out:
                     records += 1
 counts = {item["name"]: item["records"] for item in families}
 missing = []
-if run_qwen and not any(counts.get(name, 0) > 0 for name in ("qwen36_tool.clean.jsonl", "qwen36_code.clean.jsonl", "qwen36_math.clean.jsonl", "qwen36_text.clean.jsonl")):
-    missing.append("qwen36_text")
+if run_qwen:
+    for name in ("qwen36_tool.clean.jsonl", "qwen36_code.clean.jsonl", "qwen36_math.clean.jsonl", "qwen36_long_context.clean.jsonl", "qwen36_text.clean.jsonl"):
+        if counts.get(name, 0) <= 0:
+            missing.append(name)
 if run_media:
     for name in ("qwen_image_generate.clean.jsonl", "qwen_image_edit.clean.jsonl", "ltx_video.clean.jsonl"):
         if counts.get(name, 0) <= 0:

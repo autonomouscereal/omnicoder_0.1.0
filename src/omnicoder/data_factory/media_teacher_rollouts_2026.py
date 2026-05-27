@@ -85,6 +85,25 @@ def count_ok(path: Path) -> int:
     return total
 
 
+def completed_job_hashes(path: Path, *, include_planned: bool = False) -> set[str]:
+    completed: set[str] = set()
+    if not path.exists():
+        return completed
+    accepted_statuses = {"ok", "planned"} if include_planned else {"ok"}
+    for row in read_jsonl(path):
+        if row.get("status") not in accepted_statuses:
+            continue
+        job_hash = str(row.get("job_hash") or "")
+        if job_hash:
+            completed.add(job_hash)
+            continue
+        input_json = row.get("input_json") if isinstance(row.get("input_json"), dict) else {}
+        source_job = input_json.get("source_job") if isinstance(input_json.get("source_job"), dict) else None
+        if source_job:
+            completed.add(stable_hash(source_job))
+    return completed
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -550,6 +569,7 @@ def row_for_result(
         "status": status,
         "error": error,
         "teacher": job.get("teacher_name"),
+        "job_hash": stable_hash(job),
         "job_type": job.get("job_type"),
         "media_family": family["media_family"],
         "workflow": family["workflow"],
@@ -592,11 +612,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             if path.exists():
                 path.unlink()
     jobs = read_jsonl(args.input, args.limit)
-    existing = count_jsonl(paths["all"]) if args.resume else 0
+    completed_hashes = completed_job_hashes(paths["all"], include_planned=args.mode != "live") if args.resume else set()
     rows_written = 0
     failures = 0
     for index, job in enumerate(jobs, 1):
-        if index <= existing:
+        job_hash = stable_hash(job)
+        if job_hash in completed_hashes:
             continue
         family = classify_job(job)
         if family["media_family"] == "unsupported":

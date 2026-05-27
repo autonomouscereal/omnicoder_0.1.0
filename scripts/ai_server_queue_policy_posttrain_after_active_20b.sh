@@ -15,6 +15,9 @@ if [[ -z "$MUSIC_TTS_ACE_DIR" && -s "$WEIGHTS_ROOT/data_curation_agent_2026/late
   MUSIC_TTS_ACE_DIR="$(cat "$WEIGHTS_ROOT/data_curation_agent_2026/latest_music_tts_ace_curation_dir.txt")"
 fi
 QWEN_LTX_DISTILL_DIR="${OMNICODER_QWEN_LTX_DISTILL_DIR:-}"
+if [[ -z "$QWEN_LTX_DISTILL_DIR" && -s "$WEIGHTS_ROOT/data_curation_agent_2026/current_qwen_ltx_distillation_dir.txt" ]]; then
+  QWEN_LTX_DISTILL_DIR="$(cat "$WEIGHTS_ROOT/data_curation_agent_2026/current_qwen_ltx_distillation_dir.txt")"
+fi
 if [[ -z "$QWEN_LTX_DISTILL_DIR" && -s "$WEIGHTS_ROOT/data_curation_agent_2026/latest_qwen_ltx_distillation_dir.txt" ]]; then
   QWEN_LTX_DISTILL_DIR="$(cat "$WEIGHTS_ROOT/data_curation_agent_2026/latest_qwen_ltx_distillation_dir.txt")"
 fi
@@ -93,6 +96,18 @@ require_music_tts_family_files() {
 }
 
 refresh_qwen_ltx_distill_dir() {
+  if [[ -s "$WEIGHTS_ROOT/data_curation_agent_2026/current_qwen_ltx_distillation_dir.txt" ]]; then
+    local current_dir
+    current_dir="$(cat "$WEIGHTS_ROOT/data_curation_agent_2026/current_qwen_ltx_distillation_dir.txt")"
+    if [[ -s "$current_dir/pid" ]] && ps -p "$(cat "$current_dir/pid")" >/dev/null 2>&1; then
+      QWEN_LTX_DISTILL_DIR="$current_dir"
+      return 0
+    fi
+    if [[ -z "$QWEN_LTX_DISTILL_DIR" ]]; then
+      QWEN_LTX_DISTILL_DIR="$current_dir"
+      return 0
+    fi
+  fi
   if [[ -z "$QWEN_LTX_DISTILL_DIR" && -s "$WEIGHTS_ROOT/data_curation_agent_2026/latest_qwen_ltx_distillation_dir.txt" ]]; then
     QWEN_LTX_DISTILL_DIR="$(cat "$WEIGHTS_ROOT/data_curation_agent_2026/latest_qwen_ltx_distillation_dir.txt")"
   fi
@@ -123,6 +138,8 @@ require_qwen_ltx_family_files() {
     "$QWEN_LTX_DISTILL_DIR/jsonl/qwen36_tool.clean.jsonl"
     "$QWEN_LTX_DISTILL_DIR/jsonl/qwen36_code.clean.jsonl"
     "$QWEN_LTX_DISTILL_DIR/jsonl/qwen36_math.clean.jsonl"
+    "$QWEN_LTX_DISTILL_DIR/jsonl/qwen36_long_context.clean.jsonl"
+    "$QWEN_LTX_DISTILL_DIR/jsonl/qwen36_text.clean.jsonl"
     "$QWEN_LTX_DISTILL_DIR/jsonl/qwen_image_generate.clean.jsonl"
     "$QWEN_LTX_DISTILL_DIR/jsonl/qwen_image_edit.clean.jsonl"
     "$QWEN_LTX_DISTILL_DIR/jsonl/ltx_video.clean.jsonl"
