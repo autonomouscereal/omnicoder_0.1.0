@@ -20,6 +20,22 @@ def test_media_generation_requires_artifact_field() -> None:
     assert "missing_media_artifact_field" in result["reasons"]
 
 
+def test_text_prediction_requires_generated_token_metadata() -> None:
+    result = gate.validate_prediction(
+        {
+            "benchmark_id": "coding_livecodebench_2026",
+            "task_id": "code-1",
+            "prediction": "def add(a, b): return a + b",
+            "generation_metadata": {},
+        },
+        min_output_tokens=16,
+    )
+
+    assert result["accepted"] is False
+    assert "missing_generated_tokens" in result["reasons"]
+    assert "too_few_generated_tokens" in result["reasons"]
+
+
 def test_image_artifact_rejects_text_file_named_png(tmp_path: Path) -> None:
     artifact = tmp_path / "fake.png"
     artifact.write_text("this is not a png", encoding="utf-8")
@@ -58,4 +74,3 @@ def test_missing_ffprobe_fails_closed_for_audio(tmp_path: Path, monkeypatch) -> 
     assert result["accepted"] is False
     assert "invalid_media_artifact" in result["reasons"]
     assert result["details"]["artifact"]["reason"] == "ffprobe_missing"
-

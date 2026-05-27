@@ -294,6 +294,12 @@ def get_text_tokenizer(prefer_hf: bool = True, hf_id: Optional[str] = None):
             except Exception as e:
                 _log.debug("AutoTokenizerWrapper failed for %s: %s", model_name, e)
 
+    if os.getenv("OMNICODER_REQUIRE_HF_TOKENIZER", "0") == "1":
+        raise RuntimeError(
+            "OMNICODER_REQUIRE_HF_TOKENIZER=1 but no HF tokenizer could be loaded; "
+            "set OMNICODER_HF_TOKENIZER/OMNICODER_TOKENIZER_CANDIDATES to the training tokenizer"
+        )
+
     # Final fallbacks
     if os.getenv("OMNICODER_FORBID_SIMPLE", "1") == "1":
         _log.info("OMNICODER_FORBID_SIMPLE=1 → using ByteTokenizer")

@@ -20,6 +20,7 @@ from omnicoder.config_2026 import get_omnicoder2026_preset, preset_to_model_kwar
 from omnicoder.eval import reportable_prediction_harness_2026 as harness
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
+from omnicoder.tokenization.text_range_2026 import effective_text_token_range
 from omnicoder.training.pipeline_pretrain_2026_dense import (
     OmniCoder2026PipelineShard,
     autocast_context,
@@ -235,11 +236,11 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
     return shard, device, int(cfg.d_model), int(cfg.vocab_size)
 
 
-def _select_text_token(logits: torch.Tensor, vocab_size: int) -> torch.Tensor:
-    lo, hi = TEXT_RANGE
+def _select_text_token(logits: torch.Tensor, vocab_size: int, text_range: tuple[int, int] | None = None) -> torch.Tensor:
+    lo, hi = text_range or TEXT_RANGE
     hi = min(int(hi), int(vocab_size), int(logits.shape[-1]))
     if hi <= int(lo):
-        raise RunnerError(f"text ledger range {TEXT_RANGE} is outside vocab_size={vocab_size}")
+        raise RunnerError(f"text generation range {(lo, hi)} is outside vocab_size={vocab_size}")
     masked = logits.float().clone()
     masked[..., : int(lo)] = float("-inf")
     masked[..., hi:] = float("-inf")
@@ -316,6 +317,7 @@ def _pipeline_next_token(
     d_model: int,
     vocab_size: int,
     precision: str,
+    text_range: tuple[int, int] | None = None,
 ) -> int:
     rank = int(dist.get_rank())
     world_size = int(dist.get_world_size())
@@ -324,7 +326,7 @@ def _pipeline_next_token(
         if world_size == 1:
             hidden = shard(batch)
             logits = shard.lm_head(hidden[:, -1:, :]).float()
-            token = _select_text_token(logits[:, -1, :], vocab_size)
+            token = _select_text_token(logits[:, -1, :], vocab_size, text_range)
             dist.broadcast(token, src=0)
             return int(token.detach().cpu().item())
         if rank == 0:
@@ -342,7 +344,7 @@ def _pipeline_next_token(
             dist.broadcast(token, src=world_size - 1)
             return int(token.detach().cpu().item())
         logits = shard.lm_head(hidden[:, -1:, :]).float()
-        token = _select_text_token(logits[:, -1, :], vocab_size)
+        token = _select_text_token(logits[:, -1, :], vocab_size, text_range)
         dist.broadcast(token, src=rank)
         return int(token.detach().cpu().item())
 
@@ -353,6 +355,7 @@ def _decode_worker(args: argparse.Namespace) -> dict[str, Any] | None:
     shard, device, d_model, vocab_size = _build_shard(args)
     rank = int(dist.get_rank())
     tokenizer = get_text_tokenizer(prefer_hf=True)
+    text_range = effective_text_token_range(tokenizer=tokenizer, model_vocab_size=vocab_size)
     eos_id = getattr(tokenizer, "eos_token_id", None)
     generated: list[int] = []
     ids = [int(item) for item in tokenizer.encode(prompt)]
@@ -362,8 +365,13 @@ def _decode_worker(args: argparse.Namespace) -> dict[str, Any] | None:
         raise RunnerError(
             f"prompt token length {len(ids)} exceeds --max-prompt-tokens={int(args.max_prompt_tokens)}"
         )
+    bad_ids = [int(item) for item in ids if int(item) < 0 or int(item) >= int(vocab_size)]
+    if bad_ids:
+        raise RunnerError(
+            "tokenizer produced ids outside model vocab; refusing modulo remap for real checkpoint decode: "
+            f"examples={bad_ids[:8]} vocab_size={int(vocab_size)}"
+        )
     if rank == 0:
-        ids = [int(item) % max(2, vocab_size) for item in ids]
         generated = list(ids)
     hidden_dtype_name = str(args.init_dtype if str(args.init_dtype or "auto").lower() != "auto" else args.precision)
     hidden_dtype = _dtype_from_name(hidden_dtype_name)
@@ -381,6 +389,7 @@ def _decode_worker(args: argparse.Namespace) -> dict[str, Any] | None:
             d_model=d_model,
             vocab_size=vocab_size,
             precision=str(args.precision),
+            text_range=text_range,
         )
         if rank == 0:
             generated.append(int(next_token) % max(2, vocab_size))
@@ -404,6 +413,7 @@ def _decode_worker(args: argparse.Namespace) -> dict[str, Any] | None:
             "task_id": str(request.get("task_id") or ""),
             "generated_tokens": len(new_tokens),
             "latency_seconds": round(time.perf_counter() - started, 6),
+            "text_token_range": [int(text_range[0]), int(text_range[1])],
         },
     }
     rejection_row = {

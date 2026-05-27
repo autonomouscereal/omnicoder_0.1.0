@@ -17,8 +17,10 @@ import torch.distributed as dist
 
 from omnicoder.config_2026 import get_omnicoder2026_preset, preset_to_model_kwargs
 from omnicoder.eval import reportable_prediction_harness_2026 as harness
+from omnicoder.inference.output_router_2026 import route_for_output, route_manifest
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
+from omnicoder.tokenization.text_range_2026 import effective_text_token_range
 from omnicoder.training.pipeline_pretrain_2026_dense import (
     OmniCoder2026PipelineShard,
     autocast_context,
@@ -257,18 +259,23 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
     return shard, device, int(cfg.d_model), int(cfg.vocab_size), saved_preset_name
 
 
-def _broadcast_task_header(device: torch.device, active: bool | None, max_new_tokens: int = 0) -> tuple[bool, int]:
+def _broadcast_task_header(
+    device: torch.device,
+    active: bool | None,
+    max_new_tokens: int = 0,
+    text_token_hi: int = 0,
+) -> tuple[bool, int, int]:
     rank = int(dist.get_rank())
     if rank == 0:
         payload = torch.tensor(
-            [1 if active else 0, int(max_new_tokens)],
+            [1 if active else 0, int(max_new_tokens), int(text_token_hi)],
             dtype=torch.long,
             device=device,
         )
     else:
-        payload = torch.empty((2,), dtype=torch.long, device=device)
+        payload = torch.empty((3,), dtype=torch.long, device=device)
     dist.broadcast(payload, src=0)
-    return bool(int(payload[0].item())), int(payload[1].item())
+    return bool(int(payload[0].item())), int(payload[1].item()), int(payload[2].item())
 
 
 def _broadcast_ids(batch: torch.Tensor | None, device: torch.device) -> torch.Tensor:
@@ -305,6 +312,7 @@ def _pipeline_next_token(
     d_model: int,
     vocab_size: int,
     precision: str,
+    text_range: tuple[int, int] | None = None,
 ) -> int:
     rank = int(dist.get_rank())
     world_size = int(dist.get_world_size())
@@ -313,7 +321,7 @@ def _pipeline_next_token(
         if world_size == 1:
             hidden = shard(batch)
             logits = shard.lm_head(hidden[:, -1:, :]).float()
-            token = _select_text_token(logits[:, -1, :], vocab_size)
+            token = _select_text_token(logits[:, -1, :], vocab_size, text_range)
             dist.broadcast(token, src=0)
             return int(token.detach().cpu().item())
         if rank == 0:
@@ -331,16 +339,16 @@ def _pipeline_next_token(
             dist.broadcast(token, src=world_size - 1)
             return int(token.detach().cpu().item())
         logits = shard.lm_head(hidden[:, -1:, :]).float()
-        token = _select_text_token(logits[:, -1, :], vocab_size)
+        token = _select_text_token(logits[:, -1, :], vocab_size, text_range)
         dist.broadcast(token, src=rank)
         return int(token.detach().cpu().item())
 
 
-def _select_text_token(logits: torch.Tensor, vocab_size: int) -> torch.Tensor:
-    lo, hi = TEXT_RANGE
+def _select_text_token(logits: torch.Tensor, vocab_size: int, text_range: tuple[int, int] | None = None) -> torch.Tensor:
+    lo, hi = text_range or TEXT_RANGE
     hi = min(int(hi), int(vocab_size), int(logits.shape[-1]))
     if hi <= int(lo):
-        raise BatchPredictError(f"text ledger range {TEXT_RANGE} is outside vocab_size={vocab_size}")
+        raise BatchPredictError(f"text generation range {(lo, hi)} is outside vocab_size={vocab_size}")
     masked = logits.float().clone()
     masked[..., : int(lo)] = float("-inf")
     masked[..., hi:] = float("-inf")
@@ -360,6 +368,7 @@ def _decode_rank0(
     d_model: int,
     vocab_size: int,
     precision: str,
+    text_range: tuple[int, int] | None = None,
 ) -> tuple[str, int]:
     ids = [int(item) for item in tokenizer.encode(prompt)]
     if not ids:
@@ -368,7 +377,13 @@ def _decode_rank0(
         raise BatchPredictError(
             f"prompt token length {len(ids)} exceeds --max-prompt-tokens={int(max_prompt_tokens)}"
         )
-    generated = [int(item) % max(2, int(vocab_size)) for item in ids]
+    bad_ids = [int(item) for item in ids if int(item) < 0 or int(item) >= int(vocab_size)]
+    if bad_ids:
+        raise BatchPredictError(
+            "tokenizer produced ids outside model vocab; refusing modulo remap for real checkpoint decode: "
+            f"examples={bad_ids[:8]} vocab_size={int(vocab_size)}"
+        )
+    generated = list(ids)
     new_tokens: list[int] = []
     for _ in range(int(max_new_tokens)):
         batch = torch.tensor([generated], dtype=torch.long, device=device)
@@ -381,6 +396,7 @@ def _decode_rank0(
             d_model=d_model,
             vocab_size=vocab_size,
             precision=precision,
+            text_range=text_range,
         )
         token_id = int(next_token) % max(2, int(vocab_size))
         generated.append(token_id)
@@ -403,6 +419,7 @@ def _decode_nonzero(
     hidden_dtype: torch.dtype,
     d_model: int,
     precision: str,
+    text_range: tuple[int, int] | None = None,
 ) -> None:
     for _ in range(int(max_new_tokens)):
         batch = _broadcast_ids(None, device)
@@ -414,6 +431,7 @@ def _decode_nonzero(
             d_model=d_model,
             vocab_size=int(getattr(shard, "cfg").vocab_size),
             precision=precision,
+            text_range=text_range,
         )
         if _broadcast_stop(device, None):
             break
@@ -442,6 +460,8 @@ def _prediction_row(
     latency_seconds: float,
     generated_tokens: int,
     checkpoint: Path,
+    text_range: tuple[int, int] | None = None,
+    output_route: dict[str, Any] | None = None,
     allow_rejected_model_output: bool = False,
 ) -> dict[str, Any]:
     if output_field == "artifact_path":
@@ -478,6 +498,10 @@ def _prediction_row(
             "temperature": 0.0,
         },
     }
+    if text_range is not None:
+        row["generation_metadata"]["text_token_range"] = [int(text_range[0]), int(text_range[1])]
+    if output_route is not None:
+        row["generation_metadata"]["output_route"] = output_route
     row[output_field] = text
     rejected_outputs = harness.decode_sanity_rejections(row)
     if rejected_outputs:
@@ -535,8 +559,12 @@ def _skipped_prediction_row(
         },
     }
     row[output_field] = f"__OMNICODER_SKIPPED__:{reason}:prompt_tokens={int(prompt_tokens)}"
+    row["prediction_quality_status"] = "rejected_model_output"
+    row["prediction_quality_reasons"] = [str(reason), "generation_metadata:non_positive_generated_tokens"]
+    row["generation_metadata"]["output_quality_status"] = "rejected_model_output"
+    row["generation_metadata"]["output_quality_reasons"] = list(row["prediction_quality_reasons"])
     row["prediction_id"] = harness.stable_hash({key: value for key, value in row.items() if key != "prediction_id"})
-    harness.validate_prediction_row(row)
+    harness.validate_prediction_row(row, allow_rejected_model_output=True)
     return row
 
 
@@ -628,6 +656,8 @@ def _run_rank0_batch(
     task_paths = harness.task_paths(list(args.tasks or []))
     tasks = harness.load_tasks(task_paths, allow_local_dev=bool(args.allow_local_dev_tasks))
     tokenizer = get_text_tokenizer(prefer_hf=True)
+    text_range = effective_text_token_range(tokenizer=tokenizer, model_vocab_size=vocab_size)
+    text_token_hi = int(text_range[1])
     eos_id = getattr(tokenizer, "eos_token_id", None)
     eos = int(eos_id) if isinstance(eos_id, int) else None
     cfg = _generation_config(args, checkpoint)
@@ -644,12 +674,37 @@ def _run_rank0_batch(
     with out_path.open("w", encoding="utf-8", newline="\n") as handle:
         for index, task in enumerate(tasks, 1):
             output_field = harness.output_field_for_task(task)
+            route = route_for_output(
+                row=task.row,
+                output_field=output_field,
+                tokenizer=tokenizer,
+                model_vocab_size=vocab_size,
+            )
+            route_info = route_manifest(route)
             task_started = time.perf_counter()
             prompt = harness.prompt_from_task(task.row)
             prompt_tokens = len(tokenizer.encode(prompt))
             skipped_reason = ""
-            if prompt_tokens > int(args.max_prompt_tokens):
-                _broadcast_task_header(device, True, 0)
+            if route.requires_artifact_decoder:
+                _broadcast_task_header(device, True, 0, text_token_hi)
+                row = _skipped_prediction_row(
+                    task,
+                    cfg,
+                    output_field,
+                    reason="unsupported_media_artifact_backend",
+                    prompt_tokens=prompt_tokens,
+                    max_prompt_tokens=int(args.max_prompt_tokens),
+                    checkpoint=checkpoint,
+                )
+                row["prediction_quality_status"] = "rejected_model_output"
+                row["prediction_quality_reasons"] = ["unsupported_media_artifact_backend"]
+                row["generation_metadata"]["output_quality_status"] = "rejected_model_output"
+                row["generation_metadata"]["output_quality_reasons"] = ["unsupported_media_artifact_backend"]
+                row["generation_metadata"]["text_token_range"] = [int(text_range[0]), int(text_range[1])]
+                row["generation_metadata"]["output_route"] = route_info
+                skipped_reason = "unsupported_media_artifact_backend"
+            elif prompt_tokens > int(args.max_prompt_tokens):
+                _broadcast_task_header(device, True, 0, text_token_hi)
                 row = _skipped_prediction_row(
                     task,
                     cfg,
@@ -661,7 +716,7 @@ def _run_rank0_batch(
                 )
                 skipped_reason = "prompt_over_max_prompt_tokens"
             else:
-                _broadcast_task_header(device, True, int(args.max_output_tokens))
+                _broadcast_task_header(device, True, int(args.max_output_tokens), text_token_hi)
                 text, generated_tokens = _decode_rank0(
                     shard,
                     prompt,
@@ -674,6 +729,7 @@ def _run_rank0_batch(
                     d_model=d_model,
                     vocab_size=vocab_size,
                     precision=str(args.precision),
+                    text_range=text_range,
                 )
                 row = _prediction_row(
                     task,
@@ -683,6 +739,8 @@ def _run_rank0_batch(
                     latency_seconds=time.perf_counter() - task_started,
                     generated_tokens=generated_tokens,
                     checkpoint=checkpoint,
+                    text_range=text_range,
+                    output_route=route_info,
                     allow_rejected_model_output=bool(args.allow_rejected_model_output),
                 )
             rows.append(row)
@@ -721,7 +779,7 @@ def _run_rank0_batch(
                     ),
                     flush=True,
                 )
-    _broadcast_task_header(device, False, 0)
+    _broadcast_task_header(device, False, 0, text_token_hi)
     if rejected_failure:
         raise BatchPredictError(rejected_failure)
     prediction_sha256 = harness.file_sha256(out_path)
@@ -750,9 +808,10 @@ def _run_nonzero_batch(
     hidden_dtype_name = str(args.init_dtype if str(args.init_dtype or "auto").lower() != "auto" else args.precision)
     hidden_dtype = _dtype_from_name(hidden_dtype_name)
     while True:
-        active, max_new_tokens = _broadcast_task_header(device, None)
+        active, max_new_tokens, text_token_hi = _broadcast_task_header(device, None)
         if not active:
             break
+        text_range = (int(TEXT_RANGE[0]), int(text_token_hi or TEXT_RANGE[1]))
         _decode_nonzero(
             shard,
             max_new_tokens=max_new_tokens,
@@ -760,6 +819,7 @@ def _run_nonzero_batch(
             hidden_dtype=hidden_dtype,
             d_model=d_model,
             precision=str(args.precision),
+            text_range=text_range,
         )
 
 

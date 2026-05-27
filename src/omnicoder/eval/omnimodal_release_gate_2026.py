@@ -157,7 +157,9 @@ def validate_prediction(row: dict[str, Any], min_output_tokens: int) -> dict[str
     details: dict[str, Any] = {"field": field, "modality": modality, "generated_tokens": generated_tokens}
     if not field:
         reasons.append("missing_output_field")
-    if generated_tokens and generated_tokens < min_output_tokens:
+    if field and field not in MEDIA_FIELDS and generated_tokens <= 0:
+        reasons.append("missing_generated_tokens")
+    if field and field not in MEDIA_FIELDS and generated_tokens < min_output_tokens:
         reasons.append("too_few_generated_tokens")
     if modality in MEDIA_MODALITIES:
         if field not in MEDIA_FIELDS:

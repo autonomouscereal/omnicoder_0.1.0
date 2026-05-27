@@ -1,515 +1,124 @@
-# OmniCoder
+# OmniCoder 2026
 
-OmniCoder is an experimental omnimodal model stack: one research codebase for a
-single model family that can ingest and emit text, code, images, video, audio,
-structured artifacts, and tool actions. The long-term target is a compact,
-edge-capable model that can reason across modalities without depending on a
-separate specialist model for every input or output type.
+OmniCoder 2026 is an experimental omnimodal agent-model research stack. The
+current design target is a dense, one-trunk model family that can share a
+reasoning core across text, code, tools, images, video, speech/audio, music,
+and long-context state.
 
-This repository is not a polished model release or a claim of frontier
-performance. It is the architecture lab: sparse experts, long-context memory,
-multimodal tokenization, mobile/runtime exports, verifier loops, reward
-training, and small runnable canaries in one place. Weights and newer training
-work may live outside this public tree until they are ready to publish.
+This repository is a research and engineering workspace, not a polished model
+release. It contains model scaffolding, data-curation tools, training
+orchestration, evaluation gates, export/runtime adapters, mobile samples, and
+smoke tests. It does not publish a proven frontier-quality checkpoint, and the
+local benchmark fixtures in this tree should not be reported as public
+leaderboard results.
 
-## 2026 Dense Rebuild Status
+## Project Goals
 
-The active rebuild is now tracked under the `omnicoder2026_20b_1m` contract:
-a dense, 20B-class, native-1M-context omnimodal agent model. The exact
-parameter count is governed by the 24GB Q4 deployment budget, all-modality
-heads, TurboQuant-style compressed state, and native 1,048,576-token context
-requirements.
+- Build a compact omnimodal model architecture around one shared trunk instead
+  of a permanent pipeline of unrelated specialist models.
+- Preserve explicit modality boundaries at the edge with typed token/codecs,
+  media artifacts, tool traces, and ledger-style training records.
+- Support native long-context experiments with bounded memory, recurrent or
+  compressed state, retrieval hooks, and q4-aware deployment planning.
+- Keep training and evaluation auditable through manifests, hashes, curation
+  records, contamination checks, and release-gate metadata.
+- Make runtime/export work first-class: ONNX, Core ML, NNAPI-style runners,
+  DirectML, ExecuTorch, GGUF/llama.cpp bridges, and mobile packaging all live
+  in the repo.
 
-The current target lane is no longer the old sparse-MoE fused-dispatch path.
-It uses a dense KDA/CSA/HCA/mHC-inspired trunk, shared ledger-token training
-records, strict sharded checkpoints, pipeline sample-loss evaluation, and live
-posttraining through `posttrain_bridge_2026` plus pipeline reward replay for
-sharded checkpoints. The fast-card AI-server profile maps host GPUs `0,4,6` to
-container ranks `0,1,2` with `16,16,32` layer placement, keeping the largest
-shard and final head on the RTX 8000 without the failed 34-layer recompute
-spike. P40s are sidecars for teacher rollout,
-probe jobs, and curation, not synchronous 20B target shards. OpenAI-compatible
-teacher rollout sidecars run as HTTP clients with `CUDA_VISIBLE_DEVICES=""`,
-so they do not pin stray tensors on P40s or collide with model servers.
-Reportable benchmark gates now require authorized snapshot metadata,
-task-file hashes, license references, official scorer references, and separate
-model outputs; smoke/contract fixtures are explicitly local-only.
+## Architecture Overview
 
-The canonical fast-card launcher now defaults to `run-full`, not the narrower
-`run-real` lane. Production runs can widen heldout and benchmark sample-loss
-coverage with `OMNICODER_HELDOUT_MAX_RECORDS_PER_FILE` and
-`OMNICODER_BENCHMARK_MAX_RECORDS_PER_FILE`; setting either to `0` means all
-records rather than the profile's bounded default. Sharded pipeline checkpoint
-gates run real distributed sample-loss immediately. They leave reportable
-prediction scoring pending when no generated prediction artifact exists, but
-consume `OMNICODER_BENCHMARK_PREDICTIONS` once a serving/export path produces
-real model outputs for authorized tasks. That lets release gates score sharded
-20B checkpoints directly without pretending smoke fixtures are reportable.
-
-The 20B lane now inserts an explicit long-context curriculum after dense
-all-modality training and before posttraining. It walks the native context
-ladder from `8K` through `1M`, resumes each rung from the previous sharded
-checkpoint, runs heldout sample-loss checks per rung, then gates the final
-long-context checkpoint. Long-context rows are fail-closed: the curation layer
-must produce enough eligible real target tokens per row and enough eligible
-rows across the dataset, so one giant row cannot hide mostly padded short
-records. Curated traces, supplemental files, and external long-context datasets
-now use `long_context_target_chars`, `long_context_text_token_limit`, and
-`long_context_max_text_file_bytes` instead of the short global text cap.
-
-Reportable benchmark gates can now generate prediction JSONL automatically for
-authorized task snapshots when a real backend is configured through
-`OMNICODER_BENCHMARK_PREDICTION_BACKEND` plus the matching model, endpoint, or
-checkpoint-runner settings. The launcher preserves argument boundaries for
-checkpoint runners with spaces, and generated prediction files are scored by
-the existing reportable gate instead of being treated as fixture outputs.
-Official/public benchmark materialization is now separate from scoring:
-`benchmark-materialize-2026` writes run-scoped task JSONL under
-`weights/data_factory/runs/benchmark_materialization/<run_id>/`, separating
-`local_2026` public/dev rows from `reportable_2026` authorized rows. The
-AI-server sidecar can opt into this with `OMNICODER_MATERIALIZE_BENCHMARK_TASKS=1`;
-the 20B launcher can consume those roots with `OMNICODER_REPORTABLE_TASK_ROOTS`
-without mutating the live benchmark profile.
-
-The posttraining orchestrator is fail-closed for 20B pipeline replay: a failed
-or incomplete sharded optimizer stage stops the remaining replay stack instead
-of silently continuing from an older checkpoint. The profile also enables
-posttraining checkpoint retention, keeping the active and most recent complete
-pipeline shards while pruning older stage shards so long RL stacks do not fill
-the AI-server training volume mid-run. For sharded checkpoints, the bridge now
-must explicitly authorize `distributed_pipeline_reward_replay`, and the pipeline
-trainer carries reward/preference/RLVR sample weights through the loss instead
-of flattening those rows into unweighted text.
-
-Posttraining-only recovery is a first-class path. Use
-`training-orchestration-2026 run-posttraining` or
-`OMNICODER_MODE=run-posttraining scripts/ai_server_fast_pipeline_20b.sh` with a
-complete existing `omnicoder2026_20b_1m` checkpoint and, when needed,
-`--posttrain-start-algorithm safety_negative_replay` /
-`OMNICODER_POSTTRAIN_START_ALGORITHM=safety_negative_replay`. This resumes live
-distributed reward/preference/RL replay without rerunning dense pretraining and
-without accepting incomplete sharded checkpoints.
-
-Balanced all-modal posttraining is now explicit rather than implicit profile
-discovery. `omnicoder.data_factory.balanced_allmodal_posttrain_2026` builds
-SFT, reward, and RLVR JSONL files with required text, code, tool, image, video,
-audio, music, and long-context coverage while stripping stale source token IDs.
-The queued AI-server policy rebuild protects agentic traces plus Qwen text and
-Qwen long-context rows with source floors before cap starvation; those rows
-must still pass the same refusal, eval-holdout, poison/watermark/provenance,
-quality, and media-artifact filters as every other source. Media-teacher floors
-can be scaled per modality with `OMNICODER_MEDIA_TEACHER_*_SOURCE_FLOOR_SCALE`,
-and small extra sources such as the 32-row Grok truth/humor clean JSONL can use
-`OMNICODER_EXTRA_BALANCED_SOURCES` plus
-`OMNICODER_EXTRA_BALANCED_SOURCE_FLOORS`.
-`--posttrain-input-jsonl` and `OMNICODER_POSTTRAIN_INPUT_JSONL` can route a
-specific JSONL to a specific algorithm, for example
-`reward_weighted_sft_replay=weights/.../balanced_allmodal_sft.jsonl`. The
-AI-server helper `scripts/ai_server_launch_balanced_allmodal_posttrain_20b.sh`
-launches one disk-safe 20B posttraining chunk at a time from the latest complete
-checkpoint, so a 44GB shard save cannot fill the training volume before evals
-and retention run.
-
-The pipeline resume loader can now repartition a complete sharded checkpoint
-when the fast-card placement changes. This is required for posttraining
-recovery from failed `16,8,40` or `16,14,34` retries back into the current
-`16,16,32` layout; missing layer tensors are filled from the old rank shards
-one file at a time and optimizer state is intentionally not reused across the
-placement change. The May 25 2048-token retries showed that `16,8,40` and
-`16,14,34` can both fill the RTX 8000 during fake-quant backward, while older
-`16,16,32` only overfilled a 3090 with the larger 64-row fake-quant chunks.
-The current default keeps the 32-layer RTX 8000 shard, uses 16-row fake-quant
-chunks, and passes `OMNICODER2026_LM_LOSS_CHUNK_TOKENS=64` into Docker to trim
-final-head transient logits. `OMNICODER2026_FFN_CHUNK_TOKENS=256` chunks the
-SwiGLU sequence path during fake-quant recompute so 2048-token posttraining
-does not build full intermediate FFN activations on the final rank.
-Distributed pipeline initialization also accepts
-`OMNICODER2026_DIST_TIMEOUT_SECONDS` so a full-size shard load and first NCCL
-collective can survive long startup phases instead of tripping the default
-short watchdog before the first loss point is recorded. Pipeline telemetry
-records per-rank free/total VRAM, CUDA capability, `CUDA_VISIBLE_DEVICES`, and
-`LOCAL_RANK` for run audits.
-
-Unsloth/local-HF training is now supported only as an optional sidecar lane,
-not as the native 20B/1M trainer. The bridge lives in
-`omnicoder.training.local_hf_trainer_bridge_2026` and validates train-only
-JSONL exports, blocks benchmark/holdout/contaminated rows, emits dependency,
-version, GPU-safety, GGUF, and checkpoint-runner metadata, then runs Unsloth
-or TRL SFT only when the backend is installed and the requested GPUs do not
-overlap the protected fast-card set. Current AI-server state makes this
-manifest-only by default: Unsloth is not installed in the host or
-`omnicoder:cuda-posttrain-2026` image, the idle P40s are compute capability
-6.1, and the training volume is already 96% full. Use
-`scripts/ai_server_dataset_training_sidecars_2026.sh local-hf-trainer` with
-`OMNICODER_LOCAL_HF_DRY_RUN=1` for validation/planning, and only flip it live
-inside an isolated Linux CUDA environment once disk and GPU ownership are safe.
-
-Long-context-only recovery is also first-class. Use
-`training-orchestration-2026 run-long-context` or
-`OMNICODER_MODE=run-long-context scripts/ai_server_fast_pipeline_20b.sh` with
-`OMNICODER_RESUME_CHECKPOINT` pointing at a complete sharded checkpoint and
-`OMNICODER_CURATION_MANIFEST` pointing at the curated corpus manifest. This
-runs only the native context ladder and refuses to rebuild curation, dense
-pretraining, distillation, or posttraining implicitly.
-
-Current rebuild docs:
-
-- `docs/Omnicoder2026Redesign.md`
-- `docs/TrainingOrchestration2026.md`
-- `docs/Omnicoder2026RebuildUpdate.md`
-- `docs/DatasetCuration2026.md`
-- `docs/DistillationAndRL2026.md`
-- `docs/BenchmarkSuite2026.md`
-- `docs/AgenticToolTraining2026.md`
-
-### Capability Curation And Release-Gate Hardening
-
-The May 26 data lane adds a reusable capability curation policy:
-`omnicoder.data_factory.curation_policy_2026`. It is the first pass every
-training-source blend should use before SFT, reward replay, RLVR/GRPO, teacher
-distillation, or trace replay. It extracts prompt/target pairs from chat,
-ledger-token, `input_json`/`target_json`, raw text, code, tool, and media
-schemas; removes refusal/exclusion boilerplate from training exports; rejects
-protected benchmark/eval-holdout markers; redacts/quarantines secret-bearing
-rows; dedupes by prompt/target/modality; scores quality; and can require real
-media references for image, video, audio, music, and OCR rows. The AI-server
-launcher is `scripts/ai_server_run_capability_curation_2026.sh`, which writes
-family manifests plus a combined clean JSONL under
-`weights/data_curation_agent_2026/runs/capability_policy_<run>/`.
-
-Dataset integrity hardening is now part of that contract. The reusable scanner
-`omnicoder.data_factory.dataset_integrity_2026` rejects prompt-injection
-payloads, poisoning/backdoor/degradation triggers, hidden Unicode/control
-payloads, rights/data-mining restrictions, and AI provenance/watermark markers
-such as SynthID, C2PA, Content Credentials, JUMBF, and
-`trainedAlgorithmicMedia`. The training orchestrator also runs a preflight over
-train-bound JSONL immediately before dense training and posttraining, while the
-queued 20B posttraining script verifies balanced SFT/RLVR/reward outputs before
-launch. Use `scripts/ai_server_run_dataset_integrity_audit_2026.sh` for a
-read-only audit of current AI-server curation and training inputs.
-
-Benchmark generation now fails closed on the one-token decode bug. Batch,
-single-request, and reportable prediction runners reject
-`max_output_tokens <= 1` unless an explicit non-reportable canary flag is set.
-`omnicoder.eval.omnimodal_release_gate_2026` validates real generated outputs
-before scoring: empty decode sentinels, repeated placeholders, and missing
-media artifacts fail the gate instead of becoming local-only benchmark noise.
-This means a checkpoint can be training correctly and still fail release gates
-until it produces usable tool calls, code patches, text answers, and media
-artifacts.
-
-### 2026 Data And Training Sidecars
-
-The data lane now has a license-aware external dataset registry and a
-nonblocking AI-server sidecar runner. The registry covers current math,
-coding/SWE, terminal/browser/tool, image/editing, video, speech/audio, and
-music sources. The May 24, 2026 expansion adds hard agentic and multimodal
-coverage beyond the initial OpenR1/OpenThoughts/SWE-smith/Nemotron/ComfyUI
-mix:
-
-- Math and RLVR: DeepMath-103K, AI-MO NuminaMath 1.5, DAPO, DeepScaleR,
-  OpenMathReasoning, Polaris Nemotron verifiable math, Korean NuminaMath,
-  R-HORIZON, Reasoning Core formal RLVR, UniRRM-RL, Nemotron Math Proofs,
-  UltraData-Math, GLM-5.1 reasoning traces, MathVision, AIME 2025/2026
-  holdouts, and HLE/HLE-Verified holdouts.
-- Coding and SWE agents: SWE-Dev, SWE-Next, DeepSWE/Kimi-K2 trajectories,
-  SWE-Swiss repair SFT/RL, SWE-Factory-Gym, SWE-bench Pro/ABS/Multilingual,
-  SWE-Lancer, SWE-PolyBench, SWE-bench Live variants, CodeElo, ICPC-Eval,
-  JetBrains trajectory analysis rows, SWE-Hero/SWE-Zero, R2E-Gym V1/SFT
-  trajectories, OpenHands CodeScout rollouts, AIDev PR traces, SWE-CI,
-  Fixbench-RTL, SWE-Synth, and Jupyter-Agent.
-- Browser, GUI, terminal, and tool agents: MCP-Atlas, Nemotron RL tool-use,
-  WebAgent-R1, WebShepherd, WebExplorer, DeepDive, WebArena Infinity,
-  BrowserAgent, Web Agent Graph, WebChain, OSWorld 2, Magic-RICH, TerminalWorld,
-  Multi-Docker-Eval, Terminal-Bench 2.0 trajectories, GUI-360, AgentNet,
-  Computer Use Large, VideoCUA, AgentSynth, Smol2Operator/Aguvis, tau2/AReaL
-  verified tool traces, BFCL/ComplexFuncBench, APEX, WildClawBench, ClawBench,
-  CodeTraceBench, Hermes, xLAM, Toucan, NVIDIA ToolScale/When2Call/Nemotron
-  Agentic and Cascade RL/SFT data, cleaned Toucan/Hermes/memory-agent/web-QA
-  tool SFT, Qwen tool-calling, browser-agent SFT, Terminal-Bench 2 HF
-  trajectories, Toolathlon trajectories, Plan-RewardBench, Agentic
-  Chain-of-Thought Coding SFT, R2E-Gym verifier/testing-agent trajectories,
-  APIGen-MT/WebShaper research rows, PrimeIntellect SYNTHETIC-1 SFT/preference,
-  CUA-Gym, A11y-CUA, Telos tool trajectories, MEnvData SWE trajectories,
-  JetBrains SWE-Smith trajectories, Kimi-K2 rejection-sampled DeepSWE,
-  WebArena Pro trajectory reviews, Mind2Web UTG eval trajectories, Turkish
-  mobile function-calling, ScreenSpot-Pro, WorkArena/ScaleCUA blocked review
-  rows, and local Codex/Claude/Hermes/agent-memory traces.
-- Extra math/coding RLVR: Nemotron RL super blends, Cascade RL SWE/RLHF,
-  Nemotron competitive coding, PrimeIntellect verifiable coding/math review
-  rows, Math-RLVR 773K, High-Quality-Verifiable-Math-156K review rows,
-  RLVR Linearity, Nous RLVR Coding Problems, IFDecorator, NuminaMath-LEAN,
-  Kimina/Lean proof rows, FoVer process-verifier labels, TritonBench,
-  KernelBench research rows, UTBoost/LiveCodeBench eval rows, ARC-AGI-2
-  public-training rows, and SWE-Agent LM 32B R2E-Gym trajectory review rows.
-- Multimodal generation and reward: FineVision/FineVisionMax, with FineVision
-  pinned to the DoclingMatix subset for bounded materialization, ScaleEdit,
-  GPT-Image-Edit, NHR-Edit, CrispEdit, BAGEL-World, Rapidata image
-  preferences, HPDv3, ImgEdit, UniREdit, BLIP3o, UniWorld, text-to-image DPO
-  preferences, VideoGen-RewardBench, Rapidata text/image-to-video preferences,
-  JavisInst-Omni, Javis AV fine-tune, TTSDS listening tests, SAM Audio data,
-  Prompt2MusicBench, OpenMMReasoner, DeepVision, RLFR-VLM, Open-MM-RL,
-  MMMU Pro, Video-MME-v2, LVOmniBench, JointAVBench, AVGen-Bench, VBench 2.0,
-  PARADE_audio, AudioMC, WildSpeech-Bench, WorldSpeech, Granary,
-  NonverbalTTS, Music Arena, Captioned AI Music Snippets, NVIDIA MMOU/QCalEval/
-  SAGE/NitroGen references, BLIP3o short/60K data, Rapidata 4o/Imagen4/
-  Seedream/Flux/Sora/Genmo/Seedance/Hailuo preference sets, JoyAI
-  OpenSpatial, OmniContext, WebSRC, VTC-Bench visual tool chains, FiVE,
-  OmniEdit-Bench, OpenAudioBench, Ming audio edit, OmniDoc-TokenBench,
-  ChartQAPro, OmniDoc OCR correction, OmniCorpus CC/YT, OmniGUI, OCRBench v2,
-  MM-IQ, Real5-OmniDocBench, MMVU,
-  VideoVista CoTs, WorldSense/MMOU/MMAU holdouts, AudioSet/zero-shot/adversarial audio
-  instruction rows, NVIDIA HiFiTTS2/LongAudio/AF-Think/AF-Chat/MF-Skills,
-  SpeechJudge, AudioCoT, EditReward-Bench, IESBench, VideoPhy2, VBench-I2V,
-  SVI, MieDB, OpenVE-3M, DocVQA 2026, ChartMuseum, Kirundi and Indonesian
-  TTS/speech rows, TrueMuse, tokenized omni/Emu3 review rows, and
-  StoryBench/OmniBench reward/eval holdouts.
-- Seventh-wave May 24, 2026 additions now cover OpenThoughts-Agent v1 SFT/RL,
-  Edge-Agent WebSearch, Exgentic traces, CUDA-Agent-Ops, AI CUDA Engineer,
-  CodeX-2M Thinking, GitHub code review, INTELLECT-2 RL, DeepSeek-ProverBench,
-  MathArena model-output verifier rows, ECHO/TRIG/MIGE/ReShape/DLE/Inter-Edit,
-  OpenS2V-5M, VEFX, VideoGen-Eval, VABench, OmniVideoBench, UniM,
-  FysicsWorld, MME-Unify, Zero-To-CAD, ASID-1M, VisCoR, CMI-Pref, VoxEval,
-  LongSpeech, UltraEval-Audio, and ATTM 2026. These are tagged as
-  `seventh_wave_agentic_math_code_omni_2026_05_24` for delta materialization.
-- Eighth-wave May 24, 2026 additions add MCP-Universe and MCPMark trajectories,
-  Qwen 3.6 and Qwen agent-distillation tool traces, Computer Use PSAI,
-  BrowseCompLongContext, BrowseComp-Plus corpus/QA holdout, PaperBench,
-  TheAgentCompany, AudioMarathon, Audio-Alpaca, OpenAudioBench, and
-  VideoRewardBench. These are tagged as
-  `eighth_wave_agentic_curation_training_2026_05_24`.
-- Tenth-wave May 25, 2026 additions add MCPToolBench++ Preview, WebBench,
-  mAIME2025, MMLongBench, NoLiMa, LongCodeBench, SagaScale, AcademicEval,
-  FineWeb2, Common Pile v0.1, LEMAS, Emilia, AudioBench, MMAU-Pro, MMAR,
-  CMI-Bench, MUSE, MPBench, RTV-Bench, and RIVER Bench. These are tagged as
-  `tenth_wave_curated_benchmarks_2026_05_25`; FineWeb2 and Common Pile are
-  train-eligible, while benchmark and speech-media rows stay eval-only or
-  research-internal until licensing and holdout checks pass.
-- Eleventh-wave May 25, 2026 additions add LiveMCPBench, SRA-Bench, SkillRet,
-  DAPO-Math-17k, Guru RL 92K, MemoryAgentBench, OmniGAIA,
-  Omnimodal-Agent-SFT-2K, OmniRAG-Agent, VSTAT, and Tricky TTS under
-  `eleventh_wave_agentic_omni_eval_2026_05_25`. The benchmark materializer now
-  treats HF file patterns as strict metadata-only constraints so public-dev
-  benchmark pulls do not accidentally download full video/audio corpora.
-- Twelfth-wave May 25, 2026 additions add AMA-Bench and SMMBench under
-  `twelfth_wave_agent_memory_state_2026_05_25`, plus STATE-Bench as a
-  benchmark-suite gate. These extend long-horizon agent memory, source-
-  distributed multimodal memory, and stateful enterprise tool-use evaluation.
-  STATE-Bench materialization now prefers canonical
-  `state_bench/domains/*/tasks/*.json` task definitions, preserves split,
-  sandbox-state assertions, user simulator rules, and scoring requirements, and
-  attaches matching public train trajectories only as reference evidence.
-  SMMBench uses pinned raw `Samples/cluster_*/QA_sample.json` task files; its
-  HF `default/train` imagefolder split is image-only and is rejected for scored
-  benchmark material. HF image/audio/video features are otherwise cast
-  metadata-only during curation and benchmark materialization so rows can be
-  extracted without media codec failures.
-- Thirteenth-wave May 25, 2026 additions add Agentic-MME, MM-ToolBench/TOBench
-  tracking, ABC-Bench, LongBench-Pro, MEGA-Bench, StepEval-Audio-360, and
-  IndiMathBench to release gates. The dataset registry also stages
-  DeepResearch-9K, MMFineReason-1.8M Qwen3-VL Thinking, and Lean Math Formal
-  Corpus v4.27.0 as research-internal sources until license/decontamination
-  review clears them for weight-bearing training.
-- Fourteenth-wave May 25, 2026 additions add MCPVerse, UI-Vision, and
-  ViMUL-Bench under `fourteenth_wave_agentic_gui_video_eval_2026_05_25`.
-  These cover real MCP tool-server tasks, desktop GUI grounding/action
-  prediction, and multilingual audio-video reasoning while remaining
-  eval-holdout by default. LongCodeBench materialization now points at the
-  concrete `Steefano/LCB` HF source instead of paper-only metadata.
-- Fifteenth-wave May 25, 2026 additions add AgentWorldModel-1K, WebGym Tasks,
-  AudioMCQ StrongAC Gemini CoT, AgentIF, OmniAgentBench, BeyondSWE,
-  ContextBench, CCBench, NVIDIA ComputeEval, MCP Security Bench, ParseBench,
-  and OfficeQA. AgentWorldModel/WebGym/AudioMCQ are trainable only with clean
-  contamination metadata; Tool-Genesis and all benchmark-answer suites stay
-  eval-holdout with authorized snapshot roots for reportable scoring.
-  OmniAgentBench public HF media streaming is intentionally disabled in the
-  built-in benchmark materializer; use an operator-authorized descriptor or
-  `--source-override` snapshot so sidecars do not spend hours pulling media
-  assets before bounded task rows are available.
-- Sixteenth-wave May 25, 2026 additions add PD12M and Meta Omnilingual ASR as
-  trainable rows, keep BigEarthNet.txt, HOIGen-1M, GigaSpeech 2, and GUI-World
-  in research-internal review, and add protected eval gates for VideoWebArena,
-  OSUniverse, AVATAR, SWE-bench Multimodal, LOFT, FrontierMath, GIE-Bench, and
-  EditInspector.
-- Seventeenth-wave May 25, 2026 additions close the agentic/coding/generation
-  gaps from the latest scout pass: BFCL v4 is registered as an eval-only
-  function-calling source, FEA-Bench as a repo feature-implementation holdout,
-  WorldGenBench as a license-reviewed T2I world-knowledge reward/eval source,
-  and OmniGenBench as an authorized-snapshot image-generation gate.
-- Eighteenth-wave May 25, 2026 additions add FineVideo metadata, Raon OpenTTS
-  commercial core, Toucan Agentic Thinking MiniMax-M2.1, and LightOnOCR Mix
-  0126. Only the Raon commercial-use core split is trainable by default;
-  FineVideo, Toucan-thinking, and LightOnOCR remain research/internal until
-  source-rights and teacher-provenance reviews clear. The same update marks a
-  bounded set of permissive agentic, coding, math, speech, music, and
-  omnimodal sources with clean protected-benchmark scan tags so filtered
-  sidecars can materialize real train rows instead of quarantine rows.
-
-Each source is tagged as `train`, `research_internal`, `eval_only`,
-`benchmark_holdout`, or `blocked_until_review` before any row is eligible for
-training. Expansion is fail-closed: review, pending, unknown, noncommercial,
-no-derivatives, gated, research-only, or holdout license markers cannot
-materialize into the `train` bucket even if a profile row is accidentally marked
-train.
-
-External expansion now reports real rows separately from synthetic seed rows
-and can fail the run when required family minima are not met. The current
-minimum gates require nonzero real coverage across math, coding, agentic
-tool-use, terminal/browser agents, image/editing, video, audio/speech/music,
-music, and omnimodal understanding before the dataset symlink can be promoted
-as a fresh 20B training source.
-
-Useful entry points:
-
-```bash
-dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
-  --out-dir weights/external_datasets_2026/latest \
-  --download --max-records-per-dataset 1024 \
-  --enforce-requirements build
-
-dataset-expansion-2026 --profile profiles/dataset_curation_2026.json \
-  --out-dir weights/external_datasets_2026/runs/fresh_wave_delta \
-  --download --max-records-per-dataset 512 \
-  --include-wave fifth_wave_agentic_rlvr_multimodal_2026_05_24 \
-  --include-wave sixth_wave_formal_code_media_2026_05_24 \
-  --include-wave seventh_wave_agentic_math_code_omni_2026_05_24 \
-  --include-wave eighth_wave_agentic_curation_training_2026_05_24 \
-  --include-wave fifteenth_wave_agentic_coding_security_audio_2026_05_25 \
-  build
-
-agentic-tool-train-2026 --profile profiles/agentic_tool_training_2026.json build
-
-distill-curriculum-2026 validate --profile profiles/distillation_curriculum_2026.json
-
-python -m omnicoder.training.training_orchestration_2026 \
-  --profile profiles/training_orchestration_2026.json mix-plan
-
-python -m omnicoder.data_factory.coverage_validator_2026 \
-  --run-id <run_id> --require-media-teacher-rollouts --require-reportable-tasks
-
-scripts/ai_server_dataset_training_sidecars_2026.sh all
-```
-
-The coverage validator is read-only. It reports the actual row counts for
-curated modality JSONLs, strict local traces, external expansion, agentic
-SFT/reward/preference/RLVR exports, teacher jobs, Qwen/P40 rollouts, media
-teacher rollout artifacts, mixture plans, and reportable eval task roots. Use
-`--strict` only when the run should fail closed instead of producing a report.
-
-The sidecar runner now emits `mixture_plan.json`, a bounded adaptive sampling
-plan with native `8K -> 1M` context ladder targets, modality-gap flags, q4
-recovery gates, and agentic/multimodal scheduler signals for the next 20B pass.
-
-The sidecar script keeps the 20B target lane on fast GPUs `0,4,6` and uses CPU
-plus P40s for trace collection, dataset expansion, teacher-job sharding, and
-Qwen3.6 P40 rollouts. It exports agent-memory audit rows before the trace
-orchestrator, collects Codex/Claude/Hermes/LM Studio traces, consumes ComfyUI
-manifests as first-class multimodal trace sources, and writes
-trace-orchestrator outputs to run-scoped writable directories. Memory exports
-now use `limit=0` as an unlimited export and target
-`data/raw/agent_memory_events_2026.jsonl` explicitly, so workstation or
-AI-server PostgreSQL exports can feed the same trace gate without stale
-run-scoped ambiguity. The sidecar also has a strict `local-traces` lane that
-exports Codex/Claude/agent-memory rows through 2025-2026 date gating and secret
-quarantine before they become agentic training rows. The sidecar now gates
-required trace artifacts, refuses
-synthetic-only train promotion, refreshes
-agentic SFT/reward/preference/RLVR exports from each trace pass, parses typed
-teacher critiques into corrected responses/tool calls/reward components, and
-refreshes those exports again after Qwen3.6 teacher rollouts. New sidecar
-outputs write run-scoped first; shared `weights/agentic_tool_training_2026`
-promotion is opt-in with `OMNICODER_PROMOTE_SHARED_ARTIFACTS=1`.
-The sidecar also builds modality-specific teacher job JSONL for Qwen Image,
-Qwen Image Edit, LTX 2.3, ACE-Step 1.5, and omni/audio teachers so image,
-video, audio, music, and image-to-video distillation work is routed to the
-right teacher family instead of the P40 text/tool rollout path.
-Official/protected benchmark rows remain release-gate evidence only; missing
-official metadata now produces `local_only` benchmark results instead of being
-misreported as public leaderboard quality.
-The benchmark profile now also carries a reportable-core hardening pass:
-MathArena keeps math reasoning represented inside the 25-task release gate, and
-TerminalWorld-style parquet/materialized task roots are supported as local
-regression rows until authorized release snapshots are supplied.
-
-The latest dataset registry waves add train/eval coverage for Aureth Agent SFT
-Curriculum, AFM CodeAgent SFT, LiteCoder Terminal RL Preview, LiteCoder
-Terminal World Model SFT, LexBench Browser, AgencyBench, GAIA 2, Claw-Eval
-Live, AgentFly, ProgramBench, ProjDevBench, GooseReason, ORZ Math, AEC-Bench,
-MDPBench, MMAU, Voices of Civilizations, SoulX, WaxalNLP, Qwen Image Edit VIBE,
-and VLABench video. Train promotion remains license- and contamination-gated;
-browser, project-development, official benchmark, noncommercial, license-mixed,
-and storage-heavy rows stay eval or research-internal until their gates clear.
-
-## Why This Exists
-
-Most multimodal systems are pipelines: an LLM delegates to an image model, an
-audio model, a video model, a detector, a retriever, and a tool runner. That can
-work, but it creates brittle handoffs and makes edge deployment painful.
-OmniCoder explores a different direction:
-
-- Use a shared reasoning core across modalities.
-- Prefer a dense 20B-class core with depth-biased layers, fake-quant/turboquant
-  training paths, and pipeline placement across the fast GPUs.
-- Keep long context bounded with compressed memory, retrieval, and KV policies.
-- Make text, code, vision, video, audio, and action heads trainable together.
-- Export pieces to realistic local runtimes such as ONNX Runtime, Core ML,
-  NNAPI-oriented runners, DirectML, ExecuTorch, llama.cpp/GGUF, and mobile app
-  bundles.
-
-The practical bet is that a compact dense omnimodal model with good data,
-memory, verification, and device-aware exports can be more useful than a
-collection of large disconnected models when privacy, latency, bandwidth, and
-hardware budget matter.
-
-## Current Capabilities
-
-- Dense 20B-class transformer target with depth-biased placement, 1M native
-  context metadata, fake-quant/turboquant-aware training hooks, pipeline
-  sharding across RTX 3090/RTX 8000 devices, and GGUF/llama.cpp-oriented
-  release contracts.
-- Long-context mechanisms including sliding-window decode, memory slots,
-  landmark/random-access attention experiments, retrieval/PQ/kNN hooks, KV
-  quantization, KV retention sidecars, and learned KV compression experiments.
-- Multimodal input/output modules for vision, image VQ, image decoding, video
-  VQ, video heads, interpolation, audio tokenization, audio VQ-VAE, vocoder,
-  ASR/TTS adapters, 3D latent scaffolding, and cross-modal fusion.
-- Reasoning and verification experiments including HRM-style refinement,
-  reward modeling, GRPO/PPO/RLHF scaffolds, code verification, multi-solution
-  generation, verifier distillation, cross-modal verification, and cycle
-  consistency checks.
-- Export and runtime work for ONNX decode steps, provider benchmarking,
-  DirectML, Core ML, NNAPI-style runners, mobile packaging, GGUF/llama.cpp
-  adapters, MLC/TVM hooks, Core ML sample apps, and Android/iOS smoke paths.
-- Training and data plumbing for pretraining, LoRA/QLoRA, KD, multimodal JSONL,
-  VQA/VL/video/audio datasets, teacher profiles, dataset profiles, acceptance
-  thresholds, benchmark canaries, and time-budgeted training probes.
-
-## Repository Map
+The active 2026 contract is documented in
+[`docs/Omnicoder2026Redesign.md`](docs/Omnicoder2026Redesign.md). In short:
 
 ```text
-src/omnicoder/
-  modeling/          Core transformer, dense attention/memory, quant, kernels
-  modeling/multimodal/
-                     Image, video, audio, grounding, fusion, VQ, latent heads
-  inference/         Generation loops and runtime adapters
-  export/            ONNX, Core ML, ExecuTorch, GGUF, mobile packaging
-  training/          Pretrain, KD, LoRA, reward, verifier, data loaders
-  eval/              Benchmarks, canaries, verifier/eval harnesses
-  retrieval/         PQ, graph/RAG, prefix hydration
-  sfb/               Symbolic/factorized reasoning experiments
-  tools/             CLI entrypoints for training, export, benches, packaging
-profiles/            Device, provider, dataset, teacher, and threshold presets
-examples/            Tiny JSONL and prompt fixtures for smoke testing
-docs/                Current docs plus archived legacy notes
-tests/               Unit, smoke, export, provider, and architecture canaries
+raw text, code, media, tool traces, and long-context records
+        |
+        v
+typed ledger tokens, modality codecs, and artifact manifests
+        |
+        v
+dense KDA/CSA/HCA/mHC-inspired decoder trunk
+        |
+        v
+shared token head plus flow, grounding, sync, verifier, and tool heads
+        |
+        v
+edge decoders, runtimes, tool adapters, benchmarks, and export packages
 ```
 
-## Quick Start
+Important implementation areas:
 
-Use a virtual environment. The base install is enough for CPU smoke tests; use
-extras only when you need export, audio, vision, or evaluation packages.
+- `src/omnicoder/modeling/`: core transformer, attention, long-context memory,
+  quantization, kernels, and the 2026 dense model path.
+- `src/omnicoder/modeling/multimodal/`: image, video, audio, speech, grounding,
+  fusion, VQ, latent, and decoder experiments.
+- `src/omnicoder/tokenization/`: ledger/tokenizer utilities for typed 2026
+  modality ranges.
+- `src/omnicoder/inference/output_router_2026.py`: modality-aware output
+  routing that keeps text, tool/action JSON, image, video, speech/audio, and
+  music generations on the correct ledger lanes before any edge decoder runs.
+- `src/omnicoder/data_factory/`: ingestion, curation, integrity scanning,
+  trace export, teacher-job generation, and benchmark materialization.
+- `src/omnicoder/training/`: staged harnesses, dense pretraining, SFT/QLoRA
+  bridges, distillation, reward replay, and orchestration.
+- `src/omnicoder/eval/`: sample-loss checks, benchmark-suite plumbing,
+  reportable prediction validation, and release gates.
+- `src/omnicoder/export/` and `src/omnicoder/inference/runtimes/`: ONNX,
+  Core ML, ExecuTorch, GGUF, provider benches, llama.cpp/vLLM/MLC adapters,
+  mobile paths, and runtime helpers.
+- `profiles/`: device, provider, dataset, teacher, benchmark, and training
+  configuration.
+- `scripts/`: AI-server launchers and curation/training sidecar helpers.
 
-```bash
+Data and training metadata are JSONL-first. Where database mirroring is used,
+the repo provides raw PostgreSQL schemas under `schemas/`; it does not require
+an ORM for the documented 2026 path.
+
+## Current Status
+
+What is present in this repository:
+
+- A packageable Python project named `omnicoder` with console entry points in
+  `pyproject.toml`.
+- Dense 2026 model scaffolding, token-ledger utilities, and a native-1M-context
+  architecture contract.
+- Training orchestration for curation, staged dense training, long-context
+  checks, posttraining bridges, and sharded checkpoint workflows.
+- Data-factory lanes for local traces, media manifests, teacher jobs,
+  capability curation, dataset-integrity checks, and benchmark task
+  materialization.
+- Evaluation harnesses for smoke, sample-loss, pipeline checkpoint checks,
+  reportable prediction validation, and release-gate bookkeeping.
+- Export/runtime experiments for desktop, server, mobile, and bridge formats.
+- Unit and smoke tests across modeling, data, training, export, runtime, and
+  benchmark components.
+
+What should be treated carefully:
+
+- The production target is 20B-class and native-1M-context, but public weights
+  and public benchmark-quality evidence are not included here.
+- Many commands exercise contracts, probes, canaries, or local engineering
+  regression paths. Passing them is useful evidence, not a leaderboard claim.
+- Some legacy docs describe earlier sparse-MoE or ONNX-first assumptions. Use
+  the 2026 docs listed below as the current source of truth.
+- Real training runs require appropriate datasets, teacher endpoints, storage,
+  GPU placement, and artifact mounts.
+
+Recent local evidence is stored in machine-readable artifacts such as
+`pytest_exit_code.txt`, `tests_logs/`, `weights/**/manifests/`,
+`weights/**/results*.jsonl`, and run registry outputs when generated. Keep
+those artifacts attached to any claim about a specific run.
+
+## Install
+
+Use a virtual environment. The base install is enough for CPU smoke checks;
+optional extras are available for ONNX, vision, audio, eval, generation, and
+Linux-only Unsloth experiments.
+
+Windows PowerShell:
+
+```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
 python -m pip install -U pip
@@ -518,7 +127,7 @@ python -m pip install -e .
 copy env.example.txt .env
 ```
 
-On macOS/Linux:
+macOS/Linux:
 
 ```bash
 python -m venv .venv
@@ -529,103 +138,225 @@ python -m pip install -e .
 cp env.example.txt .env
 ```
 
-Run a weights-free smoke path:
+Optional extras:
+
+```bash
+python -m pip install -e ".[onnx,vision,audio,eval,gen]"
+```
+
+Do not commit private paths, API tokens, model credentials, or service
+passwords. Use environment variables or local vault tooling for secrets.
+
+## Quick Run
+
+CPU package/import smoke:
 
 ```bash
 python -m omnicoder.inference.generate --prompt "Hello OmniCoder" --device cpu
 ```
 
-Run the one-button development flow:
+One-button development harness:
 
 ```bash
 python -m omnicoder.tools.press_play --device cpu --out_root weights
 ```
 
-The one-button flow is intended to exercise tests, exports, benchmarks, and
-release artifacts under `weights/`. It is a development harness, not a magic
-training recipe.
+The development harness exercises local wiring and writes artifacts under
+`weights/`. It is not a full training recipe.
 
-## Common Workflows
+## Data And Curation
 
-### Train Or Probe
+Validate the training orchestration profile:
+
+```bash
+training-orchestration-2026 --profile profiles/training_orchestration_2026.json validate
+```
+
+Run a dry curation/harness pass over trace data:
+
+```powershell
+full-harness-2026 run `
+  --profile profiles/training_harness_2026.json `
+  --trace-input data/raw/agent_memory_events_2026.jsonl `
+  --stages ingest_trace,quality_score,contam_scan,export_sft,teacher_jobs `
+  --dry-run
+```
+
+Run dataset integrity checks against current training inputs:
+
+```bash
+python -m omnicoder.data_factory.dataset_integrity_2026 --help
+```
+
+AI-server sidecar launchers for trace mining, dataset expansion, teacher jobs,
+benchmark materialization, and coverage reports live in `scripts/`. Read
+[`docs/TrainingOrchestration2026.md`](docs/TrainingOrchestration2026.md) before
+using them against real GPUs or shared training volumes.
+
+## Training Commands
+
+Small legacy/dev training probe:
 
 ```bash
 python -m omnicoder.tools.run_training --budget_hours 1 --device cuda
 ```
 
-For quick timing and planning:
+2026 staged harness:
 
-```bash
-python -m omnicoder.tools.train_probe --budget_minutes 120 --device cuda
+```powershell
+full-harness-2026 run `
+  --profile profiles/training_harness_2026.json `
+  --trace-input data/raw/agent_memory_events_2026.jsonl `
+  --stages all
 ```
 
-Teacher and dataset profiles live in `profiles/teachers.json` and
-`profiles/datasets.json`. Override paths with environment variables when
-running local experiments.
+Focused dense 2026 pretraining entry point:
 
-### Export And Benchmark
+```bash
+pretrain-2026-dense --help
+```
+
+Production-oriented orchestration entry point:
+
+```bash
+training-orchestration-2026 --profile profiles/training_orchestration_2026.json --help
+```
+
+On the AI-server lane, the documented launcher is:
+
+```bash
+scripts/ai_server_fast_pipeline_20b.sh
+```
+
+That launcher is intended for a specific multi-GPU Docker environment and
+requires the mounts, checkpoint completeness rules, and artifact expectations
+described in `docs/TrainingOrchestration2026.md`.
+
+## Evaluation And Benchmarks
+
+Validate the benchmark profile:
+
+```bash
+benchmark-suite-2026 --profile profiles/benchmark_suite_2026.json validate
+```
+
+Run a local smoke cycle:
+
+```powershell
+benchmark-suite-2026 `
+  --profile profiles/benchmark_suite_2026.json `
+  --model weights/harness_2026/smoke.pt `
+  --out-dir weights/benchmarks_2026/smoke `
+  run-smoke `
+  --run-id smoke-local `
+  --timeout-seconds 30
+```
+
+Summarize results:
+
+```powershell
+benchmark-suite-2026 `
+  --profile profiles/benchmark_suite_2026.json `
+  --out-dir weights/benchmarks_2026/smoke `
+  summarize `
+  --results results.jsonl
+```
+
+For sharded or pipeline checkpoints, use the sample-loss and checkpoint tools
+documented in
+[`docs/TrainingHarness2026.md`](docs/TrainingHarness2026.md) and
+[`docs/TrainingOrchestration2026.md`](docs/TrainingOrchestration2026.md).
+Reportable benchmark scoring requires authorized task metadata, immutable task
+hashes, real model-generated prediction artifacts, and the matching scorer
+references.
+
+## Export And Runtime
+
+Export a decode-step ONNX artifact:
 
 ```bash
 python -m omnicoder.export.onnx_export --out weights/release/text/omnicoder_decode_step.onnx
-python -m omnicoder.inference.runtimes.provider_bench ^
-  --model weights/release/text/omnicoder_decode_step.onnx ^
-  --providers CPUExecutionProvider DmlExecutionProvider ^
+```
+
+Run a provider bench:
+
+```bash
+python -m omnicoder.inference.runtimes.provider_bench \
+  --model weights/release/text/omnicoder_decode_step.onnx \
+  --providers CPUExecutionProvider \
   --out_json weights/release/text/provider_bench.json
 ```
 
-Provider thresholds live in `profiles/provider_thresholds.json`.
-
-### Package For A Phone
+Package mobile-oriented artifacts:
 
 ```bash
 python -m omnicoder.tools.export_to_phone --platform android --tps_threshold 15
 python -m omnicoder.tools.export_to_phone --platform ios --tps_threshold 6
 ```
 
-Mobile sample code lives under `src/omnicoder/inference/serverless_mobile/`.
+Mobile sample code lives under
+`src/omnicoder/inference/serverless_mobile/`.
 
-### Enable Runtime Experiments
+## Artifact Paths
 
-```bash
-set OMNICODER_EXPERT_PAGING=1
-set OMNICODER_EXPERT_PAGING_BUDGET_MB=256
-set OMNICODER_EXPERT_PREFETCH_N=2
-set OMNICODER_MULTI_INDEX_ROOT=weights/retrieval_multi_index
-```
+Common output locations:
 
-Useful knobs include expert paging, KV retention sidecars, activation fake
-quantization, variable-K routing, landmark attention, memory slots, windowed
-decode, and retrieval augmentation.
+- `weights/harness_2026/<run_id>/`: staged harness data, logs, registry events,
+  checkpoints, and smoke outputs.
+- `weights/training_orchestration_2026/<run_id>/`: production-oriented
+  orchestration outputs and checkpoints.
+- `weights/curated_datasets_2026/runs/<run_id>/`: curated training JSONL and
+  manifests.
+- `weights/external_datasets_2026/runs/<run_id>/`: external dataset expansion
+  outputs.
+- `weights/data_factory/runs/<run_id>/`: teacher jobs, benchmark
+  materialization, curation reports, and sidecar manifests.
+- `weights/data_factory/teacher_rollouts/<run_id>/`: generated teacher rollout
+  rows and metadata.
+- `weights/benchmarks_2026/<run_id>/`: benchmark manifests, JSONL results, and
+  summaries.
+- `weights/release/`: export artifacts such as ONNX models, provider benches,
+  packaged assets, and release metadata.
+- `tests_logs/`: local test logs and duration records.
 
-## Documentation
+Most generated artifacts are intentionally excluded from source control. Preserve
+the run-scoped manifests and hashes when moving or publishing evidence.
 
-- [Current Architecture](docs/ARCHITECTURE_CURRENT.md)
-- [Current Quickstart](docs/QUICKSTART_CURRENT.md)
-- [Legacy Architecture Notes](docs/legacy/Architecture.md)
-- [Legacy Dataset Notes](docs/legacy/Datasets.md)
-- [Legacy Teacher Notes](docs/legacy/Teachers.md)
-- [Backlog](todo/TODO.md)
+## Documentation Map
 
-The legacy docs are retained because they contain useful research notes, but
-they do not fully describe the present intent of the project. Start with the
-current docs above.
+- [`docs/Omnicoder2026Redesign.md`](docs/Omnicoder2026Redesign.md): current
+  model and ledger architecture.
+- [`docs/TrainingOrchestration2026.md`](docs/TrainingOrchestration2026.md):
+  end-to-end curation, training, sidecar, recovery, and benchmark contract.
+- [`docs/TrainingHarness2026.md`](docs/TrainingHarness2026.md): staged harness
+  commands and checkpoint notes.
+- [`docs/DatasetCuration2026.md`](docs/DatasetCuration2026.md): curation,
+  licensing, source policy, and integrity gates.
+- [`docs/DistillationAndRL2026.md`](docs/DistillationAndRL2026.md): teacher,
+  reward, preference, and posttraining lanes.
+- [`docs/BenchmarkSuite2026.md`](docs/BenchmarkSuite2026.md): benchmark-suite
+  contracts and release-gate expectations.
+- [`docs/AgenticToolTraining2026.md`](docs/AgenticToolTraining2026.md):
+  tool-use, trace, preference, reward, and safety-negative training artifacts.
+- [`docs/QUICKSTART_CURRENT.md`](docs/QUICKSTART_CURRENT.md): shorter smoke-test
+  quickstart.
+- `docs/legacy/`: archived notes from earlier design directions.
 
-## Status
+## Limitations
 
-This is an active research codebase. Some modules are runnable, some are smoke
-tested scaffolds, and some are architectural experiments waiting for larger
-training runs or unpublished weights. Treat the repo as a map of the model
-system and a set of reproducible experiments, not as a packaged consumer model.
-
-## Design Principles
-
-- One model family should reason across all modalities.
-- Edge constraints are architecture constraints, not an afterthought.
-- Every capability should have a small canary, export path, or benchmark hook.
-- Verification and reward loops should be built into the system, not bolted on.
-- Runtime truth matters: provider benches, device profiles, and memory budgets
-  are first-class artifacts.
+- No public model card or checkpoint in this repo establishes production-grade
+  benchmark quality.
+- The local smoke tests and fixtures are mainly regression evidence for wiring,
+  schemas, exports, and training/eval contracts.
+- The 20B-class path depends on a specific multi-GPU training environment and
+  is not expected to run on a normal laptop.
+- Some modality modules are scaffolds or canaries awaiting larger training
+  runs, real artifacts, or external runtimes.
+- Optional dependencies vary by platform; audio, generation, and acceleration
+  extras are not equally available on every OS.
+- Official or reportable evaluation requires authorized snapshots and scorer
+  metadata that are intentionally separate from local smoke fixtures.
 
 ## License
 
-See `LICENSE`.
+See [`LICENSE`](LICENSE).

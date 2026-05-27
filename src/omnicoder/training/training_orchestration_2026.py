@@ -352,12 +352,18 @@ def sample_loss_metric_gate(sample_loss: dict[str, Any]) -> dict[str, Any]:
     tokens = int(overall.get("tokens") or 0)
     samples = int(overall.get("samples") or 0)
     records = int(overall.get("records") or 0)
-    warnings: list[str] = []
+    reasons: list[str] = []
     if perplexity is None:
-        warnings.append("missing_perplexity")
-    if tokens <= 0 and samples <= 0 and records <= 0:
-        warnings.append("missing_token_sample_record_counts")
-    status = "passed" if avg_loss is not None else "failed"
+        reasons.append("missing_perplexity")
+    if tokens <= 0:
+        reasons.append("missing_tokens")
+    if samples <= 0:
+        reasons.append("missing_samples")
+    if records <= 0:
+        reasons.append("missing_records")
+    if avg_loss is None:
+        reasons.append("missing_non_null_avg_loss")
+    status = "passed" if not reasons else "failed"
     return {
         "schema": "omnicoder.sample_loss_metric_gate_2026.v1",
         "status": status,
@@ -366,8 +372,8 @@ def sample_loss_metric_gate(sample_loss: dict[str, Any]) -> dict[str, Any]:
         "tokens": tokens,
         "samples": samples,
         "records": records,
-        "warnings": warnings,
-        "reason": "non_null_loss_present" if status == "passed" else "missing_non_null_avg_loss",
+        "reasons": reasons,
+        "reason": "finite_loss_perplexity_and_counts_present" if status == "passed" else ",".join(reasons),
     }
 
 

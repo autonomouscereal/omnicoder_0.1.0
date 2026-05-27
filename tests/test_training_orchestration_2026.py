@@ -438,7 +438,7 @@ def test_pipeline_checkpoint_sample_loss_uses_distributed_eval(tmp_path, monkeyp
         assert timeout_seconds == 3600
         out_path = Path(cmd[cmd.index("--out") + 1])
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0}}), encoding="utf-8")
+        out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.71, "tokens": 16, "samples": 1, "records": 1}}), encoding="utf-8")
         return 0
 
     monkeypatch.setattr(orch, "run_command", fake_run_command)
@@ -473,13 +473,14 @@ def test_explicit_zero_sample_loss_records_means_all_records() -> None:
 
 
 def test_sample_loss_metric_gate_requires_non_null_loss() -> None:
-    passed = orch.sample_loss_metric_gate({"overall": {"avg_loss": 1.25, "perplexity": 3.49, "tokens": 42}})
+    passed = orch.sample_loss_metric_gate({"overall": {"avg_loss": 1.25, "perplexity": 3.49, "tokens": 42, "samples": 2, "records": 1}})
     failed = orch.sample_loss_metric_gate({"overall": {"avg_loss": None, "tokens": 42}})
 
     assert passed["status"] == "passed"
     assert passed["perplexity"] == 3.49
     assert failed["status"] == "failed"
-    assert failed["reason"] == "missing_non_null_avg_loss"
+    assert "missing_non_null_avg_loss" in failed["reasons"]
+    assert "missing_perplexity" in failed["reasons"]
 
 
 def test_prediction_file_quality_gate_rejects_punctuation_only_predictions(tmp_path: Path) -> None:
@@ -541,7 +542,10 @@ def test_pipeline_checkpoint_benchmark_gate_does_not_fail_on_prediction_pending(
     def fake_run_command(cmd: list[str], log_path: Path, timeout_seconds: int = 0) -> int:
         out_path = Path(cmd[cmd.index("--out") + 1])
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0}}), encoding="utf-8")
+        out_path.write_text(
+            json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.71, "tokens": 16, "samples": 1, "records": 1}}),
+            encoding="utf-8",
+        )
         return 0
 
     monkeypatch.setattr(orch, "run_command", fake_run_command)
@@ -569,7 +573,7 @@ def test_full_run_final_reportable_gate_fails_closed_without_reportable_tasks(tm
     def fake_run_command(cmd: list[str], log_path: Path, timeout_seconds: int = 0) -> int:
         out_path = Path(cmd[cmd.index("--out") + 1])
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0}}), encoding="utf-8")
+        out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.71, "tokens": 16, "samples": 1, "records": 1}}), encoding="utf-8")
         return 0
 
     monkeypatch.setattr(orch, "run_command", fake_run_command)
@@ -630,7 +634,7 @@ def test_pipeline_checkpoint_benchmark_gate_scores_generated_predictions(tmp_pat
         if "omnicoder.eval.pipeline_sample_loss_2026" in cmd:
             out_path = Path(cmd[cmd.index("--out") + 1])
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0}}), encoding="utf-8")
+            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.71, "tokens": 16, "samples": 1, "records": 1}}), encoding="utf-8")
         elif "run-reportable" in cmd:
             assert "--predictions" in cmd
             assert cmd[cmd.index("--predictions") + 1] == str(predictions_path)
@@ -713,7 +717,7 @@ def test_pipeline_checkpoint_benchmark_gate_generates_predictions_when_backend_c
         if "omnicoder.eval.pipeline_sample_loss_2026" in cmd:
             out_path = Path(cmd[cmd.index("--out") + 1])
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0}}), encoding="utf-8")
+            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.71, "tokens": 16, "samples": 1, "records": 1}}), encoding="utf-8")
         elif "omnicoder.eval.reportable_prediction_harness_2026" in cmd:
             assert cmd[cmd.index("--backend") + 1] == "fixture"
             out_path = Path(cmd[cmd.index("--out") + 1])
@@ -799,7 +803,7 @@ def test_pipeline_checkpoint_benchmark_gate_fails_on_junk_generated_predictions(
         if "omnicoder.eval.pipeline_sample_loss_2026" in cmd:
             out_path = Path(cmd[cmd.index("--out") + 1])
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.718, "tokens": 8}}), encoding="utf-8")
+            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.718, "tokens": 8, "samples": 1, "records": 1}}), encoding="utf-8")
         elif "omnicoder.eval.reportable_prediction_harness_2026" in cmd:
             out_path = Path(cmd[cmd.index("--out") + 1])
             out_path.parent.mkdir(parents=True, exist_ok=True)

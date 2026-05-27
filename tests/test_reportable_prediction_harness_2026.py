@@ -255,7 +255,8 @@ def test_prediction_validation_can_preserve_rejected_model_output_for_scoring() 
     harness.validate_prediction_row(row, allow_rejected_model_output=True)
 
 
-def test_prediction_validation_rejects_short_repeated_unicode_junk() -> None:
+@pytest.mark.parametrize("prediction", ["\u73f8\u73f8", "\u3042\u3042\u3042"])
+def test_prediction_validation_rejects_short_repeated_unicode_junk(prediction: str) -> None:
     row = {
         "schema": harness.PREDICTION_SCHEMA,
         "schema_version": harness.SCHEMA_VERSION,
@@ -263,7 +264,7 @@ def test_prediction_validation_rejects_short_repeated_unicode_junk() -> None:
         "task_id": "unicode-junk-fixture",
         "model": "local-checkpoint",
         "backend": "pipeline_checkpoint_batch_predict_2026",
-        "prediction": "\u73f8\u73f8",
+        "prediction": prediction,
         "generation_metadata": {"generated_tokens": 2},
     }
 

@@ -200,6 +200,7 @@ docker_eval() {
     -e OMNICODER2026_FAKE_QUANT_CHUNK_ROWS="$FAKE_QUANT_CHUNK_ROWS" \
     -e OMNICODER2026_FAKE_QUANT_MAX_FULL_ELEMENTS="$FAKE_QUANT_MAX_FULL_ELEMENTS" \
     -e OMNICODER2026_FFN_CHUNK_TOKENS="${OMNICODER_EVAL_FFN_CHUNK_TOKENS:-256}" \
+    -e OMNICODER_REQUIRE_HF_TOKENIZER="${OMNICODER_REQUIRE_HF_TOKENIZER:-1}" \
     -e TOKENIZERS_PARALLELISM=false \
     -v "$REPO:/workspace" \
     -v "$WEIGHTS_ROOT:/workspace/weights" \
@@ -371,35 +372,27 @@ if [[ "${#public_dev_roots_present[@]}" -gt 0 ]]; then
     public_task_args+=(--tasks "$(container_path "$root")")
     score_task_args+=(--tasks "$(container_path "$root")")
   done
-  checkpoint_runner=(
-    "$PYTHON_BIN" -m omnicoder.eval.pipeline_checkpoint_predict_2026
-    --nproc-per-node "$NPROC_PER_NODE"
-    --rank-device-map "$RANK_DEVICE_MAP"
-    --placement-layer-counts "$PLACEMENT_LAYER_COUNTS"
-    --precision "$PRECISION"
-    --init-dtype "$INIT_DTYPE"
-    --max-new-tokens-limit "$PREDICT_MAX_OUTPUT_TOKENS"
-    --max-prompt-tokens "$PREDICT_MAX_PROMPT_TOKENS"
-    --torchrun-timeout-seconds "$PREDICT_TIMEOUT_SECONDS"
-    --dist-timeout-seconds "$DIST_TIMEOUT_SECONDS"
-    --fake-quant
-    --require-target-contract
-    --allow-p40-target-contract-eval
-  )
-  printf -v checkpoint_runner_quoted '%q ' "${checkpoint_runner[@]}"
   docker_eval public_dev_predictions "$LOG_DIR/public_dev_predictions.log" \
-    "$PYTHON_BIN" -m omnicoder.eval.reportable_prediction_harness_2026 \
+    "$PYTHON_BIN" -m omnicoder.eval.pipeline_checkpoint_batch_predict_2026 \
+    --checkpoint "$CHECKPOINT_CONTAINER" \
     "${public_task_args[@]}" \
     --out "/workspace/$OUT_DIR/public_dev_predictions.local_regression.jsonl" \
     --summary "/workspace/$OUT_DIR/public_dev_prediction_summary.local_regression.json" \
-	    --backend checkpoint-runner \
-	    --allow-local-dev-tasks \
-	    --model "$CHECKPOINT_CONTAINER" \
-    --checkpoint-path "$CHECKPOINT_CONTAINER" \
-    --checkpoint-runner "$checkpoint_runner_quoted" \
+    --model "$CHECKPOINT_CONTAINER" \
+    --nproc-per-node "$NPROC_PER_NODE" \
+    --rank-device-map "$RANK_DEVICE_MAP" \
+    --placement-layer-counts "$PLACEMENT_LAYER_COUNTS" \
+    --precision "$PRECISION" \
+    --init-dtype "$INIT_DTYPE" \
+    --max-prompt-tokens "$PREDICT_MAX_PROMPT_TOKENS" \
     --max-output-tokens "$PREDICT_MAX_OUTPUT_TOKENS" \
-    --temperature 0 \
-    --timeout-seconds "$PREDICT_TIMEOUT_SECONDS" \
+    --dist-timeout-seconds "$DIST_TIMEOUT_SECONDS" \
+    --fake-quant \
+    --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS" \
+    --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS" \
+    --require-target-contract \
+    --allow-p40-target-contract-eval \
+    --allow-local-dev-tasks \
     --force
   release_gate_args=(
     --predictions "/workspace/$OUT_DIR/public_dev_predictions.local_regression.jsonl"
