@@ -50,6 +50,7 @@ JUNK_OUTPUT_PATTERNS = tuple(
         r"^(.)\1{15,}$",
     )
 )
+ASCII_ALNUM_RE = re.compile(r"[A-Za-z0-9]")
 SENSITIVE_TASK_KEYS = {
     "answer",
     "answers",
@@ -135,6 +136,10 @@ def output_quality_reason(value: Any) -> str:
         for pattern in JUNK_OUTPUT_PATTERNS:
             if pattern.search(text):
                 return f"junk_text:{pattern.pattern}"
+        if len(text) >= 2 and len(set(text)) == 1:
+            return "junk_text:single_repeated_character"
+        if len(text) <= 3 and not ASCII_ALNUM_RE.search(text):
+            return "junk_text:short_non_ascii_or_symbol_text"
         return ""
     if isinstance(value, (dict, list)):
         if not value:

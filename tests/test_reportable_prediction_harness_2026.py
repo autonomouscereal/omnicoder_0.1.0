@@ -255,6 +255,24 @@ def test_prediction_validation_can_preserve_rejected_model_output_for_scoring() 
     harness.validate_prediction_row(row, allow_rejected_model_output=True)
 
 
+def test_prediction_validation_rejects_short_repeated_unicode_junk() -> None:
+    row = {
+        "schema": harness.PREDICTION_SCHEMA,
+        "schema_version": harness.SCHEMA_VERSION,
+        "benchmark_id": "agent_agentif_2025",
+        "task_id": "unicode-junk-fixture",
+        "model": "local-checkpoint",
+        "backend": "pipeline_checkpoint_batch_predict_2026",
+        "prediction": "\u73f8\u73f8",
+        "generation_metadata": {"generated_tokens": 2},
+    }
+
+    rejections = harness.prediction_output_quality_rejections(row)
+    assert rejections == ["prediction:junk_text:single_repeated_character"]
+    with pytest.raises(harness.HarnessError, match="single_repeated_character"):
+        harness.validate_prediction_row(row)
+
+
 def test_prediction_validation_rejects_non_positive_generated_tokens() -> None:
     row = {
         "schema": harness.PREDICTION_SCHEMA,

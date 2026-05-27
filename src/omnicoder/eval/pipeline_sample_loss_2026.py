@@ -7,6 +7,7 @@ import json
 import os
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import torch
@@ -92,7 +93,16 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
             shard = OmniCoder2026PipelineShard(cfg, spec, checkpoint_blocks=False).to(device)
     finally:
         torch.set_default_dtype(old_dtype)
-    load_checkpoint_shard(args.checkpoint, shard, optimizer=None, preset=preset, args=None)
+    resume_args = SimpleNamespace(
+        require_target_contract=bool(args.require_target_contract),
+        allow_p40_target_contract_eval=bool(args.allow_p40_target_contract_eval),
+        placement_layer_counts=str(args.placement_layer_counts or ""),
+        pipeline_stage_ranges=str(train_args.get("pipeline_stage_ranges") or ""),
+        pipeline_microbatches=str(train_args.get("pipeline_microbatches") or ""),
+        pipeline_schedule=str(train_args.get("pipeline_schedule") or ""),
+        fake_quant=bool(kwargs.get("fake_quant")),
+    )
+    load_checkpoint_shard(args.checkpoint, shard, optimizer=None, preset=preset, args=resume_args)
     shard.eval()
     return shard, device, int(cfg.d_model), int(cfg.vocab_size)
 
