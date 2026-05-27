@@ -472,6 +472,58 @@ def test_explicit_zero_sample_loss_records_means_all_records() -> None:
     assert orch.sample_loss_max_records_per_file(cfg, _runtime_args(heldout_max_records_per_file=0)) == 0
 
 
+def test_sample_loss_metric_gate_requires_non_null_loss() -> None:
+    passed = orch.sample_loss_metric_gate({"overall": {"avg_loss": 1.25, "perplexity": 3.49, "tokens": 42}})
+    failed = orch.sample_loss_metric_gate({"overall": {"avg_loss": None, "tokens": 42}})
+
+    assert passed["status"] == "passed"
+    assert passed["perplexity"] == 3.49
+    assert failed["status"] == "failed"
+    assert failed["reason"] == "missing_non_null_avg_loss"
+
+
+def test_prediction_file_quality_gate_rejects_punctuation_only_predictions(tmp_path: Path) -> None:
+    predictions = tmp_path / "predictions.jsonl"
+    _write_jsonl(
+        predictions,
+        [
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "arc-junk",
+                "prediction": ",,,,,,,,,,,,,,,,",
+            }
+        ],
+    )
+
+    result = orch.prediction_file_quality_gate(predictions)
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "rejected_or_junk_model_outputs"
+    assert result["rejected"] == 1
+
+
+def test_prediction_file_quality_gate_rejects_zero_generated_tokens(tmp_path: Path) -> None:
+    predictions = tmp_path / "predictions.jsonl"
+    _write_jsonl(
+        predictions,
+        [
+            {
+                "benchmark_id": "coding_livecodebench_2026",
+                "task_id": "code-1",
+                "prediction": "def add(a, b):\n    return a + b\n",
+                "generation_metadata": {"generated_tokens": 0},
+            }
+        ],
+    )
+
+    result = orch.prediction_file_quality_gate(predictions)
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "rejected_or_junk_model_outputs"
+    assert result["rejected"] == 1
+    assert result["examples"][0]["reasons"] == ["generation_metadata:non_positive_generated_tokens"]
+
+
 def test_pipeline_checkpoint_benchmark_gate_does_not_fail_on_prediction_pending(tmp_path, monkeypatch) -> None:
     checkpoint = tmp_path / "pipeline_ckpt"
     _write_complete_sharded_checkpoint(checkpoint)
@@ -710,6 +762,68 @@ def test_pipeline_checkpoint_benchmark_gate_generates_predictions_when_backend_c
     assert any("omnicoder.eval.reportable_prediction_harness_2026" in cmd for cmd in commands)
 
 
+def test_pipeline_checkpoint_benchmark_gate_fails_on_junk_generated_predictions(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    eval_path = tmp_path / "eval.jsonl"
+    tasks_path = tmp_path / "reportable_tasks.jsonl"
+    _write_jsonl(eval_path, [{"text": "hello world", "modality": "text"}])
+    _write_jsonl(
+        tasks_path,
+        [
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "arc-1",
+                "reportable": True,
+                "official": True,
+                "source": "authorized_fixture",
+                "snapshot_id": "arcagi3-2026-fixture",
+                "snapshot_hash": "abc123",
+                "authorization": "unit-test-authorized",
+                "gold": "A",
+            }
+        ],
+    )
+    profile = _profile(tmp_path)
+    profile["reportable_task_roots"] = [str(tasks_path)]
+    profile["benchmark_gates"] = {"benchmark_cycle": "release", "benchmark_min_tasks": 1}
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+    }
+    manifest = {"eval_all_jsonl": str(eval_path)}
+
+    def fake_run_command(cmd: list[str], log_path: Path, timeout_seconds: int = 0) -> int:
+        if "omnicoder.eval.pipeline_sample_loss_2026" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.718, "tokens": 8}}), encoding="utf-8")
+        elif "omnicoder.eval.reportable_prediction_harness_2026" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_jsonl(out_path, [{"benchmark_id": "reasoning_arc_agi3_2026", "task_id": "arc-1", "prediction": ",,,,,,,,,"}])
+            summary_path = Path(cmd[cmd.index("--summary") + 1])
+            summary_path.write_text(json.dumps({"status": "ok", "records": 1}), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+
+    result = orch.run_checkpoint_benchmark_gate(
+        profile,
+        manifest,
+        tmp_path,
+        checkpoint,
+        "pipeline",
+        _runtime_args(benchmark_cycle="release", benchmark_prediction_backend="fixture"),
+    )
+
+    assert result["status"] == "failed"
+    assert result["reportable_gate"]["reason"] == "model_generated_predictions_failed_quality_gate"
+
+
 def test_live_posttraining_runs_native_reward_replay_not_dry_run(tmp_path, monkeypatch):
     profile = _profile(tmp_path)
     profile["reinforcement_learning"] = {
@@ -753,6 +867,14 @@ def test_live_posttraining_runs_native_reward_replay_not_dry_run(tmp_path, monke
         return 0
 
     monkeypatch.setattr(orch, "run_command", fake_run_command)
+    monkeypatch.setattr(
+        orch,
+        "run_checkpoint_benchmark_gate",
+        lambda *args, **kwargs: {
+            "status": "passed",
+            "short_context_generation_gate": {"status": "passed"},
+        },
+    )
     args = argparse.Namespace(
         live_posttraining=True,
         preset="omnicoder2026_20b_1m",
@@ -767,6 +889,7 @@ def test_live_posttraining_runs_native_reward_replay_not_dry_run(tmp_path, monke
     assert result["status"] == "passed"
     assert result["mode"] == "posttrain_bridge_live_optimizer"
     assert result["final_checkpoint"].endswith("sft_live_replay.pt")
+    assert result["stages"][0]["heldout_benchmark_gate"]["status"] == "passed"
     bridge_cmd = next(cmd for cmd in commands if "omnicoder.training.posttrain_bridge_2026" in cmd)
     assert "--dry_run" not in bridge_cmd
     assert not any("omnicoder.training.reward_replay_2026" in cmd for cmd in commands)
@@ -822,6 +945,14 @@ def test_live_posttraining_runs_pipeline_reward_replay_for_sharded_checkpoint(tm
         return 0
 
     monkeypatch.setattr(orch, "run_command", fake_run_command)
+    monkeypatch.setattr(
+        orch,
+        "run_checkpoint_benchmark_gate",
+        lambda *args, **kwargs: {
+            "status": "passed",
+            "short_context_generation_gate": {"status": "passed"},
+        },
+    )
     args = argparse.Namespace(
         live_posttraining=True,
         preset="omnicoder2026_20b_1m",
@@ -1353,6 +1484,58 @@ def test_run_long_context_cli_requires_existing_curation_manifest(tmp_path, monk
     assert summary["long_context_curriculum"]["reason"] == "missing_curation_manifest"
 
 
+def test_run_long_context_cli_blocks_when_short_context_gate_fails(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+    }
+    profile_path = tmp_path / "profile.json"
+    orch.write_json(profile_path, profile)
+    curation = tmp_path / "curation.json"
+    orch.write_json(
+        curation,
+        {
+            "per_modality_split_jsonl": {
+                "long_context": {
+                    "train": str(tmp_path / "train_long_context.jsonl"),
+                    "eval": str(tmp_path / "eval_long_context.jsonl"),
+                }
+            }
+        },
+    )
+    checkpoint = tmp_path / "stage_checkpoint"
+    _write_complete_sharded_checkpoint(checkpoint)
+
+    monkeypatch.setattr(
+        orch,
+        "run_checkpoint_benchmark_gate",
+        lambda *args, **kwargs: {
+            "status": "failed",
+            "short_context_generation_gate": {"status": "failed", "reason": "junk_decode"},
+        },
+    )
+
+    def fail_long_context(*_args, **_kwargs):
+        raise AssertionError("long-context ladder must not start after failed short-context generation")
+
+    monkeypatch.setattr(orch, "run_long_context_curriculum_stage", fail_long_context)
+
+    args = _runtime_args(
+        profile=str(profile_path),
+        out_dir=str(tmp_path / "out"),
+        resume_checkpoint=str(checkpoint),
+        curation_manifest=str(curation),
+        preset="omnicoder2026_20b_1m",
+    )
+    summary = orch.run_long_context(args)
+
+    assert summary["status"] == "failed"
+    assert summary["long_context_curriculum"]["reason"] == "short_context_generation_gate_not_passed"
+
+
 def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args():
     script = (Path(__file__).resolve().parents[1] / "scripts" / "ai_server_fast_pipeline_20b.sh").read_text(encoding="utf-8")
     assert 'OMNICODER_CURATION_MANIFEST' in script
@@ -1703,6 +1886,14 @@ def test_run_real_cli_wires_live_posttraining_args(tmp_path, monkeypatch):
 
     monkeypatch.setattr(orch, "build_real_corpus", lambda loaded, out: {"status": "ok"})
     monkeypatch.setattr(orch, "run_training_stages", lambda loaded, manifest, out, args: {"status": "passed", "final_checkpoint": str(tmp_path / "ckpt.pt")})
+    monkeypatch.setattr(
+        orch,
+        "run_checkpoint_benchmark_gate",
+        lambda *args, **kwargs: {
+            "status": "passed",
+            "short_context_generation_gate": {"status": "passed"},
+        },
+    )
     monkeypatch.setattr(
         orch,
         "run_long_context_curriculum_stage",

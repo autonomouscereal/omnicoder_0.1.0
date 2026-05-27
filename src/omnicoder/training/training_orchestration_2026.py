@@ -337,6 +337,127 @@ def count_jsonl_rows(path: str | Path) -> int:
     return count
 
 
+def finite_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number == number and number not in (float("inf"), float("-inf")) else None
+
+
+def sample_loss_metric_gate(sample_loss: dict[str, Any]) -> dict[str, Any]:
+    overall = sample_loss.get("overall") if isinstance(sample_loss.get("overall"), dict) else {}
+    avg_loss = finite_float(overall.get("avg_loss") if overall.get("avg_loss") is not None else overall.get("loss"))
+    perplexity = finite_float(overall.get("perplexity"))
+    tokens = int(overall.get("tokens") or 0)
+    samples = int(overall.get("samples") or 0)
+    records = int(overall.get("records") or 0)
+    warnings: list[str] = []
+    if perplexity is None:
+        warnings.append("missing_perplexity")
+    if tokens <= 0 and samples <= 0 and records <= 0:
+        warnings.append("missing_token_sample_record_counts")
+    status = "passed" if avg_loss is not None else "failed"
+    return {
+        "schema": "omnicoder.sample_loss_metric_gate_2026.v1",
+        "status": status,
+        "avg_loss": avg_loss,
+        "perplexity": perplexity,
+        "tokens": tokens,
+        "samples": samples,
+        "records": records,
+        "warnings": warnings,
+        "reason": "non_null_loss_present" if status == "passed" else "missing_non_null_avg_loss",
+    }
+
+
+def prediction_file_quality_gate(path: str | Path, *, max_examples: int = 8) -> dict[str, Any]:
+    source = Path(str(path))
+    if not source.exists() or not source.is_file():
+        return {"status": "failed", "reason": "prediction_file_missing", "path": str(source), "records": 0}
+    try:
+        from omnicoder.eval import reportable_prediction_harness_2026 as prediction_harness
+    except Exception as exc:
+        return {"status": "failed", "reason": "prediction_harness_unavailable", "path": str(source), "error": str(exc)}
+    records = 0
+    rejected = 0
+    missing_output = 0
+    examples: list[dict[str, Any]] = []
+    for row in iter_jsonl(source):
+        records += 1
+        outputs = [
+            key
+            for key in getattr(prediction_harness, "MODEL_OUTPUT_KEYS", ())
+            if row.get(key) not in (None, "", [], {})
+        ]
+        reasons = prediction_harness.decode_sanity_rejections(row)
+        if not outputs:
+            missing_output += 1
+            reasons = ["missing_model_output_field"]
+        if reasons or str(row.get("prediction_quality_status") or "") == "rejected_model_output":
+            rejected += 1
+            if len(examples) < max_examples:
+                examples.append(
+                    {
+                        "benchmark_id": row.get("benchmark_id"),
+                        "task_id": row.get("task_id"),
+                        "reasons": reasons or row.get("prediction_quality_reasons") or ["rejected_model_output"],
+                    }
+                )
+    status = "passed" if records > 0 and rejected == 0 and missing_output == 0 else "failed"
+    reason = "all_predictions_have_usable_outputs"
+    if records <= 0:
+        reason = "prediction_file_empty"
+    elif missing_output:
+        reason = "missing_model_outputs"
+    elif rejected:
+        reason = "rejected_or_junk_model_outputs"
+    return {
+        "schema": "omnicoder.prediction_file_quality_gate_2026.v1",
+        "status": status,
+        "reason": reason,
+        "path": str(source),
+        "records": records,
+        "rejected": rejected,
+        "missing_output": missing_output,
+        "examples": examples,
+    }
+
+
+def short_context_generation_gate_from_reportable(reportable_gate: dict[str, Any]) -> dict[str, Any]:
+    predictions = reportable_gate.get("predictions") if isinstance(reportable_gate.get("predictions"), dict) else {}
+    quality = predictions.get("quality_gate") if isinstance(predictions.get("quality_gate"), dict) else {}
+    records = int(predictions.get("records") or 0)
+    if quality:
+        return {
+            "schema": "omnicoder.short_context_generation_gate_2026.v1",
+            "status": "passed" if quality.get("status") == "passed" else "failed",
+            "reason": quality.get("reason"),
+            "prediction_quality_gate": quality,
+        }
+    if records > 0:
+        return {
+            "schema": "omnicoder.short_context_generation_gate_2026.v1",
+            "status": "pending",
+            "reason": "prediction_quality_not_evaluated",
+            "records": records,
+        }
+    return {
+        "schema": "omnicoder.short_context_generation_gate_2026.v1",
+        "status": "pending",
+        "reason": str(reportable_gate.get("reason") or "no_model_predictions_available"),
+    }
+
+
+def checkpoint_promotable_to_long_context(gate: dict[str, Any]) -> bool:
+    if gate.get("status") != "passed":
+        return False
+    generation_gate = gate.get("short_context_generation_gate")
+    if not isinstance(generation_gate, dict):
+        return True
+    return generation_gate.get("status") == "passed"
+
+
 def row_identity(row: dict[str, Any]) -> str:
     refs = row.get("artifact_refs") if isinstance(row.get("artifact_refs"), list) else []
     ref_keys = []
@@ -4034,6 +4155,9 @@ def run_posttraining_stages(
                             f"posttrain_{index:02d}_{safe_name}",
                             args,
                         )
+                        if report["heldout_benchmark_gate"].get("status") == "failed":
+                            report["status"] = "failed"
+                            report["reason"] = "heldout_benchmark_gate_failed"
                         if retention.get("enabled"):
                             report["checkpoint_retention"] = prune_posttrain_checkpoints(
                                 out_dir,
@@ -4071,6 +4195,9 @@ def run_posttraining_stages(
                         f"posttrain_{index:02d}_{safe_name}",
                         args,
                     )
+                    if report["heldout_benchmark_gate"].get("status") == "failed":
+                        report["status"] = "failed"
+                        report["reason"] = "heldout_benchmark_gate_failed"
                 else:
                     report["status"] = "failed"
                     report["reason"] = "posttrain_bridge_live_optimizer_failed"
@@ -4298,6 +4425,20 @@ def run_checkpoint_benchmark_gate(
                 }
                 return gate, required_predictions
 
+        if int(prediction_seed.get("records") or 0) > 0 and prediction_seed.get("path"):
+            prediction_seed["quality_gate"] = prediction_file_quality_gate(str(prediction_seed["path"]))
+            if prediction_seed["quality_gate"].get("status") != "passed":
+                gate = {
+                    "status": "failed",
+                    "reason": "model_generated_predictions_failed_quality_gate",
+                    "cycle": benchmark_cycle,
+                    "task_roots": [str(path) for path in reportable_paths],
+                    "configured_task_roots": [str(path) for path in reportable_roots],
+                    "root_sources": reportable_sources,
+                    "predictions": prediction_seed,
+                }
+                return gate, True
+
         reportable_cmd = [
             sys.executable,
             "-m",
@@ -4405,10 +4546,13 @@ def run_checkpoint_benchmark_gate(
             sample_code = run_command(sample_cmd, out_dir / "logs" / f"benchmark_{safe_filename(phase)}_pipeline_sample_loss.log", timeout_seconds=sample_loss_timeout_seconds(cfg, args, benchmark=True))
             report["sample_loss"] = read_json(sample_out) if sample_out.exists() else {}
             report["sample_loss"]["returncode"] = sample_code
-            if sample_code != 0:
+            report["sample_loss_metric_gate"] = sample_loss_metric_gate(report["sample_loss"])
+            if sample_code != 0 or report["sample_loss_metric_gate"].get("status") != "passed":
                 report["status"] = "failed"
+                report["reason"] = "pipeline_checkpoint_sample_loss_failed_or_missing_metrics"
         else:
             report["sample_loss"] = {"status": "skipped", "reason": "no_eval_or_test_jsonl"}
+            report["sample_loss_metric_gate"] = {"status": "pending", "reason": "no_eval_or_test_jsonl"}
         require_reportable_gate = truthy_value(arg_value(args, "require_reportable_gate", False))
         report["contract_benchmark_gate"] = {
             "status": "skipped",
@@ -4419,9 +4563,13 @@ def run_checkpoint_benchmark_gate(
         benchmark_profile = str(cfg.get("benchmark_profile") or gates_cfg.get("benchmark_profile") or "profiles/benchmark_suite_2026.json")
         reportable_gate, reportable_failed = run_reportable_gate(benchmark_profile, f"{safe_filename(phase)}_{int(time.time())}")
         report["reportable_gate"] = reportable_gate
+        report["short_context_generation_gate"] = short_context_generation_gate_from_reportable(reportable_gate)
         if reportable_failed and report.get("status") != "failed":
             report["status"] = "failed"
             report["reason"] = str(reportable_gate.get("reason") or "pipeline_checkpoint_reportable_gate_failed")
+        if report["short_context_generation_gate"].get("status") == "failed" and report.get("status") != "failed":
+            report["status"] = "failed"
+            report["reason"] = "short_context_generation_gate_failed"
         write_json(gate_dir / "benchmark_gate_summary.json", report)
         return report
 
@@ -4451,10 +4599,13 @@ def run_checkpoint_benchmark_gate(
         sample_code = run_command(sample_cmd, out_dir / "logs" / f"benchmark_{safe_filename(phase)}_sample_loss.log", timeout_seconds=sample_loss_timeout_seconds(cfg, args, benchmark=True))
         report["sample_loss"] = read_json(sample_out) if sample_out.exists() else {}
         report["sample_loss"]["returncode"] = sample_code
-        if sample_code != 0:
+        report["sample_loss_metric_gate"] = sample_loss_metric_gate(report["sample_loss"])
+        if sample_code != 0 or report["sample_loss_metric_gate"].get("status") != "passed":
             report["status"] = "failed"
+            report["reason"] = "checkpoint_sample_loss_failed_or_missing_metrics"
     else:
         report["sample_loss"] = {"status": "skipped", "reason": "no_eval_or_test_jsonl"}
+        report["sample_loss_metric_gate"] = {"status": "pending", "reason": "no_eval_or_test_jsonl"}
 
     gates_cfg = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
     benchmark_profile = str(cfg.get("benchmark_profile") or gates_cfg.get("benchmark_profile") or "profiles/benchmark_suite_2026.json")
@@ -4519,8 +4670,13 @@ def run_checkpoint_benchmark_gate(
 
     reportable_gate, reportable_failed = run_reportable_gate(benchmark_profile, smoke_run_id)
     report["reportable_gate"] = reportable_gate
+    report["short_context_generation_gate"] = short_context_generation_gate_from_reportable(reportable_gate)
     if reportable_failed:
         report["status"] = "failed"
+        report["reason"] = str(reportable_gate.get("reason") or report.get("reason") or "reportable_gate_failed")
+    if report["short_context_generation_gate"].get("status") == "failed":
+        report["status"] = "failed"
+        report["reason"] = "short_context_generation_gate_failed"
 
     write_json(gate_dir / "benchmark_gate_summary.json", report)
     return report
@@ -4807,6 +4963,9 @@ def run_posttrain(args: argparse.Namespace) -> dict[str, Any]:
             "posttraining_resume_final",
             args,
         )
+        if summary["heldout_benchmark_gate"].get("status") == "failed":
+            summary["status"] = "failed"
+            summary["reason"] = "heldout_benchmark_gate_failed"
     write_json(out_dir / "posttraining_resume_summary.json", summary)
     return summary
 
@@ -4860,6 +5019,37 @@ def run_long_context(args: argparse.Namespace) -> dict[str, Any]:
         write_json(summary_path, summary)
         return summary
     manifest = read_json(manifest_path)
+    short_context_gate = run_checkpoint_benchmark_gate(
+        profile,
+        manifest,
+        out_dir,
+        resume_checkpoint,
+        "pre_long_context_resume_short_context",
+        args,
+    )
+    if not checkpoint_promotable_to_long_context(short_context_gate):
+        summary = {
+            "schema": "omnicoder.long_context_resume_result_2026.v1",
+            "schema_version": SCHEMA_VERSION,
+            "status": "failed",
+            "created_at": now_iso(),
+            "model_contract": cfg.get("model_contract"),
+            "resume_validation": validation,
+            "short_context_generation_gate": short_context_gate,
+            "long_context_curriculum": {
+                "status": "skipped",
+                "reason": "short_context_generation_gate_not_passed",
+                "initial_checkpoint": str(resume_checkpoint),
+            },
+            "artifacts": {
+                "out_dir": str(out_dir),
+                "summary": str(summary_path),
+                "initial_checkpoint": str(resume_checkpoint),
+                "curation_manifest": str(manifest_path),
+            },
+        }
+        write_json(summary_path, summary)
+        return summary
     long_context_curriculum = run_long_context_curriculum_stage(profile, manifest, out_dir, resume_checkpoint, args)
     summary = {
         "schema": "omnicoder.long_context_resume_result_2026.v1",
@@ -4868,6 +5058,7 @@ def run_long_context(args: argparse.Namespace) -> dict[str, Any]:
         "created_at": now_iso(),
         "model_contract": cfg.get("model_contract"),
         "resume_validation": validation,
+        "short_context_generation_gate": short_context_gate,
         "curation": manifest,
         "long_context_curriculum": long_context_curriculum,
         "final_checkpoint": long_context_curriculum.get("final_checkpoint") or str(resume_checkpoint),
@@ -4889,16 +5080,23 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     manifest = build_real_corpus(profile, out_dir)
     pretrain = run_training_stages(profile, manifest, out_dir, args)
     current_checkpoint = pretrain.get("final_checkpoint")
-    if pretrain.get("status") == "passed" and current_checkpoint:
+    pre_long_context_gate = (
+        run_checkpoint_benchmark_gate(profile, manifest, out_dir, current_checkpoint, "pre_long_context_short_context", args)
+        if pretrain.get("status") == "passed" and current_checkpoint
+        else {"status": "skipped", "reason": "multimodal_pretrain_failed"}
+    )
+    if pretrain.get("status") == "passed" and current_checkpoint and checkpoint_promotable_to_long_context(pre_long_context_gate):
         long_context_curriculum = run_long_context_curriculum_stage(profile, manifest, out_dir, current_checkpoint, args)
         current_checkpoint = long_context_curriculum.get("final_checkpoint") or current_checkpoint
     else:
-        long_context_curriculum = {"status": "skipped", "reason": "multimodal_pretrain_failed"}
-    initial_benchmark = (
-        run_checkpoint_benchmark_gate(profile, manifest, out_dir, current_checkpoint, "after_multimodal_pretrain", args)
-        if long_context_curriculum.get("status") == "passed"
-        else {"status": "skipped", "reason": "long_context_curriculum_failed"}
-    )
+        long_context_curriculum = {
+            "status": "failed" if pretrain.get("status") == "passed" else "skipped",
+            "reason": "short_context_generation_gate_not_passed"
+            if pretrain.get("status") == "passed"
+            else "multimodal_pretrain_failed",
+            "short_context_generation_gate": pre_long_context_gate,
+        }
+    initial_benchmark = pre_long_context_gate
     if long_context_curriculum.get("status") == "passed":
         distillation = run_distillation_curriculum_stage(profile, manifest, out_dir, current_checkpoint, args)
         current_checkpoint = distillation.get("final_checkpoint") or current_checkpoint
@@ -4933,6 +5131,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         "model_contract": profile_cfg(profile).get("model_contract"),
         "curation": manifest,
         "pretraining": pretrain,
+        "pre_long_context_short_context_gate": pre_long_context_gate,
         "long_context_curriculum": long_context_curriculum,
         "benchmark_after_pretraining": initial_benchmark,
         "distillation": distillation,
@@ -5008,10 +5207,21 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
     out_dir = Path(args.out_dir or profile_cfg(profile).get("work_dir") or DEFAULT_OUT_DIR)
     manifest = build_real_corpus(profile, out_dir)
     training = run_training_stages(profile, manifest, out_dir, args)
-    if training["status"] == "passed" and training.get("final_checkpoint"):
+    pre_long_context_gate = (
+        run_checkpoint_benchmark_gate(profile, manifest, out_dir, training.get("final_checkpoint"), "pre_long_context_short_context", args)
+        if training["status"] == "passed" and training.get("final_checkpoint")
+        else {"status": "skipped", "reason": "dense_training_failed"}
+    )
+    if training["status"] == "passed" and training.get("final_checkpoint") and checkpoint_promotable_to_long_context(pre_long_context_gate):
         long_context_curriculum = run_long_context_curriculum_stage(profile, manifest, out_dir, training["final_checkpoint"], args)
     else:
-        long_context_curriculum = {"status": "skipped", "reason": "dense_training_failed"}
+        long_context_curriculum = {
+            "status": "failed" if training["status"] == "passed" else "skipped",
+            "reason": "short_context_generation_gate_not_passed"
+            if training["status"] == "passed"
+            else "dense_training_failed",
+            "short_context_generation_gate": pre_long_context_gate,
+        }
     if long_context_curriculum["status"] == "passed":
         training_with_context = dict(training)
         training_with_context["final_checkpoint"] = long_context_curriculum.get("final_checkpoint") or training.get("final_checkpoint")
@@ -5027,6 +5237,7 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
         "model_contract": profile_cfg(profile).get("model_contract"),
         "curation": manifest,
         "training": training,
+        "pre_long_context_short_context_gate": pre_long_context_gate,
         "long_context_curriculum": long_context_curriculum,
         "posttraining": posttraining,
         "artifacts": {

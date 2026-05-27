@@ -147,6 +147,19 @@ def output_quality_reason(value: Any) -> str:
     return ""
 
 
+def decode_sanity_rejections(row: dict[str, Any]) -> list[str]:
+    rejections = prediction_output_quality_rejections(row)
+    metadata = row.get("generation_metadata") or row.get("metadata")
+    if isinstance(metadata, dict):
+        try:
+            generated_tokens = int(metadata.get("generated_tokens"))
+        except (TypeError, ValueError):
+            generated_tokens = None
+        if generated_tokens is not None and generated_tokens <= 0:
+            rejections.append("generation_metadata:non_positive_generated_tokens")
+    return rejections
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -350,11 +363,18 @@ def openai_chat_url(base_url: str) -> str:
 
 def parse_model_payload(value: Any, fallback_field: str) -> dict[str, Any]:
     if isinstance(value, dict):
+        metadata = value.get("generation_metadata") or value.get("metadata")
         for key in MODEL_OUTPUT_KEYS:
             if value.get(key) not in (None, "", [], {}):
-                return {key: value[key]}
+                parsed = {key: value[key]}
+                if isinstance(metadata, dict):
+                    parsed["generation_metadata"] = metadata
+                return parsed
         if value.get("content") not in (None, "", [], {}):
-            return {fallback_field: value["content"]}
+            parsed = {fallback_field: value["content"]}
+            if isinstance(metadata, dict):
+                parsed["generation_metadata"] = metadata
+            return parsed
         raise HarnessError("model response JSON object does not contain a model output field")
     if isinstance(value, str):
         text = value.strip()
@@ -517,7 +537,7 @@ def validate_prediction_row(row: dict[str, Any], *, allow_rejected_model_output:
         reason = output_quality_reason(value)
         if not reason:
             outputs.append(key)
-    rejected_outputs = prediction_output_quality_rejections(row)
+    rejected_outputs = decode_sanity_rejections(row)
     if rejected_outputs:
         if allow_rejected_model_output:
             return

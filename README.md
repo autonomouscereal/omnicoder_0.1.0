@@ -94,6 +94,14 @@ Balanced all-modal posttraining is now explicit rather than implicit profile
 discovery. `omnicoder.data_factory.balanced_allmodal_posttrain_2026` builds
 SFT, reward, and RLVR JSONL files with required text, code, tool, image, video,
 audio, music, and long-context coverage while stripping stale source token IDs.
+The queued AI-server policy rebuild protects agentic traces plus Qwen text and
+Qwen long-context rows with source floors before cap starvation; those rows
+must still pass the same refusal, eval-holdout, poison/watermark/provenance,
+quality, and media-artifact filters as every other source. Media-teacher floors
+can be scaled per modality with `OMNICODER_MEDIA_TEACHER_*_SOURCE_FLOOR_SCALE`,
+and small extra sources such as the 32-row Grok truth/humor clean JSONL can use
+`OMNICODER_EXTRA_BALANCED_SOURCES` plus
+`OMNICODER_EXTRA_BALANCED_SOURCE_FLOORS`.
 `--posttrain-input-jsonl` and `OMNICODER_POSTTRAIN_INPUT_JSONL` can route a
 specific JSONL to a specific algorithm, for example
 `reward_weighted_sft_replay=weights/.../balanced_allmodal_sft.jsonl`. The

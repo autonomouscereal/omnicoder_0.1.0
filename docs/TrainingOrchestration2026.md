@@ -782,7 +782,32 @@ and only then launches the next 20B chunk. Teacher files are inserted before
 base curation sources, and the balanced builder accepts `--source-floor` rows
 per teacher file before applying shared modality caps. This prevents image
 generation rows from crowding out Qwen Image Edit, and prevents broad base
-curation from crowding out Qwen 3.6 tool/code/math or LTX rows.
+curation from crowding out Qwen 3.6 tool/code/math/text/long-context, LTX, or
+agentic trace rows. The active queue also fails closed if
+`agentic.clean.jsonl`, `qwen36_text.clean.jsonl`, or
+`qwen36_long_context.clean.jsonl` have zero accepted rows after the normal
+refusal, eval-holdout, dataset-integrity, watermark/provenance, and media-ref
+filters run.
+
+The active balanced defaults now target a larger trainable mix than the old
+roughly 20k-row cap slice. Override per-modality caps with
+`OMNICODER_POLICY_BALANCED_TEXT_CAP`, `OMNICODER_POLICY_BALANCED_CODE_CAP`,
+`OMNICODER_POLICY_BALANCED_TOOL_CAP`, `OMNICODER_POLICY_BALANCED_MATH_CAP`,
+`OMNICODER_POLICY_BALANCED_LONG_CONTEXT_CAP`,
+`OMNICODER_POLICY_BALANCED_IMAGE_CAP`, `OMNICODER_POLICY_BALANCED_VIDEO_CAP`,
+`OMNICODER_POLICY_BALANCED_AUDIO_CAP`, and
+`OMNICODER_POLICY_BALANCED_MUSIC_CAP`.
+
+Protected source floors are configurable without weakening filters:
+`OMNICODER_BALANCED_AGENTIC_SOURCE_FLOOR`,
+`OMNICODER_BALANCED_QWEN_TEXT_SOURCE_FLOOR`,
+`OMNICODER_BALANCED_QWEN_LONG_CONTEXT_SOURCE_FLOOR`, and
+`OMNICODER_BALANCED_BASE_LONG_CONTEXT_SOURCE_FLOOR`. Media-teacher floors can
+be scaled globally with `OMNICODER_MEDIA_TEACHER_SOURCE_FLOOR_SCALE` or by
+family with `OMNICODER_MEDIA_TEACHER_IMAGE_SOURCE_FLOOR_SCALE`,
+`OMNICODER_MEDIA_TEACHER_VIDEO_SOURCE_FLOOR_SCALE`,
+`OMNICODER_MEDIA_TEACHER_AUDIO_SOURCE_FLOOR_SCALE`, and
+`OMNICODER_MEDIA_TEACHER_MUSIC_SOURCE_FLOOR_SCALE`.
 
 Fresh integrity-certified sidecar outputs can be added to the next balanced
 chunk with `OMNICODER_EXTRA_BALANCED_SOURCES`. Use comma-separated
@@ -790,6 +815,9 @@ chunk with `OMNICODER_EXTRA_BALANCED_SOURCES`. Use comma-separated
 Use `OMNICODER_EXTRA_BALANCED_SOURCE_FLOORS` with comma-separated
 `source_basename.jsonl=count` entries when a small high-value sidecar source
 must survive modality caps.
+For the 32-row Grok public truth/humor clean file, use the file as an extra
+text source and set its source floor to 32, for example
+`OMNICODER_EXTRA_BALANCED_SOURCE_FLOORS=grok_public_truth_humor.clean.jsonl=32`.
 The queue still runs the dataset-integrity preflight over the final SFT/RLVR
 and reward JSONL before launch, so extra OCR, music, TTS, or trace data must
 pass the same rejection gate as the base curation sources.
@@ -816,13 +844,16 @@ Required teacher family files:
 - `qwen36_tool.clean.jsonl`
 - `qwen36_code.clean.jsonl`
 - `qwen36_math.clean.jsonl`
+- `qwen36_text.clean.jsonl`
+- `qwen36_long_context.clean.jsonl`
 - `qwen_image_generate.clean.jsonl`
 - `qwen_image_edit.clean.jsonl`
 - `ltx_video.clean.jsonl`
 
 Music/TTS/ACE rows remain required through the music expansion manifest. The
-balanced manifest uses teacher-first source order and explicit caps for code,
-tool, math, image, video, audio, music, long context, and text.
+balanced manifest uses teacher-first source order, explicit caps for code,
+tool, math, image, video, audio, music, long context, and text, and source
+floors for the protected agentic/Qwen/media teacher families.
 
 ## Benchmark Gates
 

@@ -34,6 +34,27 @@ QWEN_LTX_DISTILL_SCRIPT="${OMNICODER_QWEN_LTX_DISTILL_SCRIPT:-$REPO/scripts/ai_s
 PYTHON_BIN="${OMNICODER_DATA_PYTHON:-python3}"
 EXTRA_BALANCED_SOURCES="${OMNICODER_EXTRA_BALANCED_SOURCES:-}"
 EXTRA_BALANCED_SOURCE_FLOORS="${OMNICODER_EXTRA_BALANCED_SOURCE_FLOORS:-}"
+BALANCED_TEXT_CAP="${OMNICODER_POLICY_BALANCED_TEXT_CAP:-8192}"
+BALANCED_CODE_CAP="${OMNICODER_POLICY_BALANCED_CODE_CAP:-8192}"
+BALANCED_TOOL_CAP="${OMNICODER_POLICY_BALANCED_TOOL_CAP:-8192}"
+BALANCED_MATH_CAP="${OMNICODER_POLICY_BALANCED_MATH_CAP:-8192}"
+BALANCED_LONG_CONTEXT_CAP="${OMNICODER_POLICY_BALANCED_LONG_CONTEXT_CAP:-4096}"
+BALANCED_IMAGE_CAP="${OMNICODER_POLICY_BALANCED_IMAGE_CAP:-2048}"
+BALANCED_VIDEO_CAP="${OMNICODER_POLICY_BALANCED_VIDEO_CAP:-2048}"
+BALANCED_AUDIO_CAP="${OMNICODER_POLICY_BALANCED_AUDIO_CAP:-2048}"
+BALANCED_MUSIC_CAP="${OMNICODER_POLICY_BALANCED_MUSIC_CAP:-2048}"
+BALANCED_AGENTIC_SOURCE_FLOOR="${OMNICODER_BALANCED_AGENTIC_SOURCE_FLOOR:-512}"
+BALANCED_BASE_LONG_CONTEXT_SOURCE_FLOOR="${OMNICODER_BALANCED_BASE_LONG_CONTEXT_SOURCE_FLOOR:-$MIN_RECORDS_PER_REQUIRED}"
+BALANCED_QWEN_TEXT_SOURCE_FLOOR="${OMNICODER_BALANCED_QWEN_TEXT_SOURCE_FLOOR:-16}"
+BALANCED_QWEN_LONG_CONTEXT_SOURCE_FLOOR="${OMNICODER_BALANCED_QWEN_LONG_CONTEXT_SOURCE_FLOOR:-16}"
+MEDIA_TEACHER_SOURCE_FLOOR_SCALE="${OMNICODER_MEDIA_TEACHER_SOURCE_FLOOR_SCALE:-1}"
+MEDIA_TEACHER_IMAGE_SOURCE_FLOOR_SCALE="${OMNICODER_MEDIA_TEACHER_IMAGE_SOURCE_FLOOR_SCALE:-$MEDIA_TEACHER_SOURCE_FLOOR_SCALE}"
+MEDIA_TEACHER_VIDEO_SOURCE_FLOOR_SCALE="${OMNICODER_MEDIA_TEACHER_VIDEO_SOURCE_FLOOR_SCALE:-$MEDIA_TEACHER_SOURCE_FLOOR_SCALE}"
+MEDIA_TEACHER_AUDIO_SOURCE_FLOOR_SCALE="${OMNICODER_MEDIA_TEACHER_AUDIO_SOURCE_FLOOR_SCALE:-$MEDIA_TEACHER_SOURCE_FLOOR_SCALE}"
+MEDIA_TEACHER_MUSIC_SOURCE_FLOOR_SCALE="${OMNICODER_MEDIA_TEACHER_MUSIC_SOURCE_FLOOR_SCALE:-$MEDIA_TEACHER_SOURCE_FLOOR_SCALE}"
+REQUIRE_AGENTIC_BALANCED_SOURCE="${OMNICODER_REQUIRE_AGENTIC_BALANCED_SOURCE:-1}"
+REQUIRE_QWEN_TEXT_LONG_CONTEXT_BALANCED_SOURCES="${OMNICODER_REQUIRE_QWEN_TEXT_LONG_CONTEXT_BALANCED_SOURCES:-1}"
+REQUIRE_MEDIA_TEACHER_BALANCED_FLOORS="${OMNICODER_REQUIRE_MEDIA_TEACHER_BALANCED_FLOORS:-1}"
 
 mkdir -p "$QUEUE_DIR"
 echo $$ > "$QUEUE_DIR/pid"
@@ -42,6 +63,13 @@ export PYTHONPATH="$REPO/src${PYTHONPATH:+:$PYTHONPATH}"
 
 log() {
   printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+}
+
+truthy() {
+  case "${1,,}" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 wait_for_pid_file_exit() {
@@ -290,17 +318,41 @@ build_balanced_manifest() {
   add_source ocr "$CURATION_DIR/jsonl/ocr.clean.jsonl"
   add_extra_sources "$EXTRA_BALANCED_SOURCES"
 
-  local -a source_floor_args=(
-    --source-floor qwen36_tool.clean.jsonl=16
-    --source-floor qwen36_code.clean.jsonl=16
-    --source-floor qwen36_math.clean.jsonl=16
-    --source-floor qwen_image_generate.clean.jsonl=8
-    --source-floor qwen_image_edit.clean.jsonl=8
-    --source-floor ltx_video.clean.jsonl=4
-    --source-floor tts.clean.jsonl=16
-    --source-floor music.clean.jsonl=16
-    --source-floor ace_rollouts.clean.jsonl=8
-  )
+  scale_floor() {
+    local base="$1"
+    local scale="$2"
+    "$PYTHON_BIN" - "$base" "$scale" <<'PY'
+import math
+import sys
+
+base = max(0, int(float(sys.argv[1])))
+scale = max(0.0, float(sys.argv[2]))
+print(int(math.ceil(base * scale)))
+PY
+  }
+  add_source_floor() {
+    local source_name="$1"
+    local floor="$2"
+    if [[ "$floor" =~ ^[0-9]+$ ]] && (( floor > 0 )); then
+      source_floor_args+=(--source-floor "$source_name=$floor")
+    fi
+  }
+  local -a source_floor_args=()
+  add_source_floor qwen36_tool.clean.jsonl 16
+  add_source_floor qwen36_code.clean.jsonl 16
+  add_source_floor qwen36_math.clean.jsonl 16
+  add_source_floor qwen36_long_context.clean.jsonl "$BALANCED_QWEN_LONG_CONTEXT_SOURCE_FLOOR"
+  add_source_floor qwen36_text.clean.jsonl "$BALANCED_QWEN_TEXT_SOURCE_FLOOR"
+  add_source_floor agentic.clean.jsonl "$BALANCED_AGENTIC_SOURCE_FLOOR"
+  add_source_floor long_context.clean.jsonl "$BALANCED_BASE_LONG_CONTEXT_SOURCE_FLOOR"
+  add_source_floor qwen_image_generate.clean.jsonl "$(scale_floor "${OMNICODER_BALANCED_QWEN_IMAGE_GENERATE_SOURCE_FLOOR:-8}" "$MEDIA_TEACHER_IMAGE_SOURCE_FLOOR_SCALE")"
+  add_source_floor qwen_image_edit.clean.jsonl "$(scale_floor "${OMNICODER_BALANCED_QWEN_IMAGE_EDIT_SOURCE_FLOOR:-8}" "$MEDIA_TEACHER_IMAGE_SOURCE_FLOOR_SCALE")"
+  add_source_floor ltx_video.clean.jsonl "$(scale_floor "${OMNICODER_BALANCED_LTX_VIDEO_SOURCE_FLOOR:-4}" "$MEDIA_TEACHER_VIDEO_SOURCE_FLOOR_SCALE")"
+  add_source_floor tts.clean.jsonl "$(scale_floor "${OMNICODER_BALANCED_TTS_SOURCE_FLOOR:-16}" "$MEDIA_TEACHER_AUDIO_SOURCE_FLOOR_SCALE")"
+  add_source_floor ace_tts.clean.jsonl "$(scale_floor "${OMNICODER_BALANCED_ACE_TTS_SOURCE_FLOOR:-8}" "$MEDIA_TEACHER_AUDIO_SOURCE_FLOOR_SCALE")"
+  add_source_floor music.clean.jsonl "$(scale_floor "${OMNICODER_BALANCED_MUSIC_SOURCE_FLOOR:-16}" "$MEDIA_TEACHER_MUSIC_SOURCE_FLOOR_SCALE")"
+  add_source_floor musicbench.clean.jsonl "$(scale_floor "${OMNICODER_BALANCED_MUSICBENCH_SOURCE_FLOOR:-8}" "$MEDIA_TEACHER_MUSIC_SOURCE_FLOOR_SCALE")"
+  add_source_floor ace_rollouts.clean.jsonl "$(scale_floor "${OMNICODER_BALANCED_ACE_ROLLOUTS_SOURCE_FLOOR:-8}" "$MEDIA_TEACHER_MUSIC_SOURCE_FLOOR_SCALE")"
   add_extra_source_floors() {
     local raw="$1"
     [[ -n "$raw" ]] || return 0
@@ -335,21 +387,131 @@ build_balanced_manifest() {
     --require-modalities "$require" \
     --min-records-per-required-modality "$MIN_RECORDS_PER_REQUIRED" \
     --max-records-per-modality "$MAX_RECORDS_PER_MODALITY" \
-    --cap text=2048 \
-    --cap code=3072 \
-    --cap tool=3072 \
-    --cap math=4096 \
-    --cap long_context=2048 \
-    --cap image=1024 \
-    --cap video=1024 \
-    --cap audio=1536 \
-    --cap music=1024 \
+    --cap "text=$BALANCED_TEXT_CAP" \
+    --cap "code=$BALANCED_CODE_CAP" \
+    --cap "tool=$BALANCED_TOOL_CAP" \
+    --cap "math=$BALANCED_MATH_CAP" \
+    --cap "long_context=$BALANCED_LONG_CONTEXT_CAP" \
+    --cap "image=$BALANCED_IMAGE_CAP" \
+    --cap "video=$BALANCED_VIDEO_CAP" \
+    --cap "audio=$BALANCED_AUDIO_CAP" \
+    --cap "music=$BALANCED_MUSIC_CAP" \
     "${source_floor_args[@]}" \
     --reject-refusal-boilerplate \
     --reject-eval-holdout \
     --min-quality-score 0.60 \
     --require-media-artifacts \
     --strip-token-ids
+}
+
+verify_balanced_source_presence() {
+  local manifest="$BALANCED_ABS/balanced_allmodal_manifest.json"
+  local -a required_sources=()
+  if truthy "$REQUIRE_AGENTIC_BALANCED_SOURCE"; then
+    required_sources+=(agentic.clean.jsonl)
+  fi
+  if truthy "$REQUIRE_QWEN_TEXT_LONG_CONTEXT_BALANCED_SOURCES"; then
+    required_sources+=(qwen36_text.clean.jsonl qwen36_long_context.clean.jsonl)
+  fi
+  if (( ${#required_sources[@]} == 0 )); then
+    log "balanced source presence gate disabled"
+    return 0
+  fi
+  log "verifying protected balanced sources survived policy filters: ${required_sources[*]}"
+  "$PYTHON_BIN" - "$manifest" "${required_sources[@]}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest = Path(sys.argv[1])
+required = sys.argv[2:]
+payload = json.loads(manifest.read_text(encoding="utf-8"))
+kept_by_name: dict[str, int] = {}
+for report in payload.get("source_reports", []):
+    name = Path(str(report.get("path") or "")).name
+    if not name:
+        continue
+    kept_by_name[name] = kept_by_name.get(name, 0) + int(report.get("records_kept") or 0)
+missing = {name: kept_by_name.get(name, 0) for name in required if kept_by_name.get(name, 0) <= 0}
+if missing:
+    raise SystemExit(json.dumps({
+        "status": "failed",
+        "reason": "protected_balanced_sources_missing_after_filters",
+        "manifest": str(manifest),
+        "missing": missing,
+        "kept_by_name": {name: kept_by_name.get(name, 0) for name in required},
+    }, ensure_ascii=True, sort_keys=True))
+print(json.dumps({
+    "status": "passed",
+    "manifest": str(manifest),
+    "kept_by_name": {name: kept_by_name.get(name, 0) for name in required},
+}, ensure_ascii=True, sort_keys=True))
+PY
+}
+
+verify_balanced_media_source_floors() {
+  if ! truthy "$REQUIRE_MEDIA_TEACHER_BALANCED_FLOORS"; then
+    log "media teacher source-floor gate disabled"
+    return 0
+  fi
+  local manifest="$BALANCED_ABS/balanced_allmodal_manifest.json"
+  local -a required_paths=()
+  if [[ -n "$QWEN_LTX_DISTILL_DIR" ]]; then
+    required_paths+=(
+      "$QWEN_LTX_DISTILL_DIR/jsonl/qwen_image_generate.clean.jsonl"
+      "$QWEN_LTX_DISTILL_DIR/jsonl/qwen_image_edit.clean.jsonl"
+      "$QWEN_LTX_DISTILL_DIR/jsonl/ltx_video.clean.jsonl"
+    )
+  fi
+  if [[ -n "$MUSIC_TTS_ACE_DIR" ]]; then
+    required_paths+=(
+      "$MUSIC_TTS_ACE_DIR/jsonl/tts.clean.jsonl"
+      "$MUSIC_TTS_ACE_DIR/jsonl/music.clean.jsonl"
+      "$MUSIC_TTS_ACE_DIR/jsonl/musicbench.clean.jsonl"
+      "$MUSIC_TTS_ACE_DIR/jsonl/ace_rollouts.clean.jsonl"
+    )
+    if [[ -s "$MUSIC_TTS_ACE_DIR/jsonl/ace_tts.clean.jsonl" ]]; then
+      required_paths+=("$MUSIC_TTS_ACE_DIR/jsonl/ace_tts.clean.jsonl")
+    fi
+  fi
+  if (( ${#required_paths[@]} == 0 )); then
+    log "no media teacher floor paths configured"
+    return 0
+  fi
+  log "verifying media teacher source floors survived policy filters"
+  "$PYTHON_BIN" - "$manifest" "${required_paths[@]}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest = Path(sys.argv[1])
+required_paths = [Path(item) for item in sys.argv[2:]]
+payload = json.loads(manifest.read_text(encoding="utf-8"))
+source_floors = payload.get("source_floors") if isinstance(payload.get("source_floors"), dict) else {}
+source_floor_counts = payload.get("source_floor_counts") if isinstance(payload.get("source_floor_counts"), dict) else {}
+kept_by_path: dict[str, int] = {}
+for report in payload.get("source_reports", []):
+    path = str(report.get("path") or "")
+    if path:
+        kept_by_path[path] = kept_by_path.get(path, 0) + int(report.get("records_kept") or 0)
+missing: dict[str, dict[str, int]] = {}
+for path in required_paths:
+    name = path.name
+    expected = int(source_floors.get(str(path)) or source_floors.get(name) or 0)
+    if expected <= 0:
+        continue
+    kept = int(source_floor_counts.get(str(path)) or kept_by_path.get(str(path)) or 0)
+    if kept < expected:
+        missing[str(path)] = {"expected_floor": expected, "kept": kept}
+if missing:
+    raise SystemExit(json.dumps({
+        "status": "failed",
+        "reason": "media_teacher_source_floors_below_target_after_filters",
+        "manifest": str(manifest),
+        "missing": missing,
+    }, ensure_ascii=True, sort_keys=True))
+print(json.dumps({"status": "passed", "manifest": str(manifest), "checked": len(required_paths)}, ensure_ascii=True, sort_keys=True))
+PY
 }
 
 verify_balanced_integrity_preflight() {
@@ -412,6 +574,8 @@ fi
 wait_for_container_exit "$ACTIVE_CONTAINER"
 run_qwen_ltx_distillation_if_needed
 build_balanced_manifest
+verify_balanced_source_presence
+verify_balanced_media_source_floors
 verify_balanced_integrity_preflight
 RESUME_CHECKPOINT="$(latest_complete_checkpoint)"
 log "launching next posttraining from $RESUME_CHECKPOINT"

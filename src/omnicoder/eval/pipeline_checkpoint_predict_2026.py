@@ -17,7 +17,9 @@ import torch
 import torch.distributed as dist
 
 from omnicoder.config_2026 import get_omnicoder2026_preset, preset_to_model_kwargs
+from omnicoder.eval import reportable_prediction_harness_2026 as harness
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
+from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 from omnicoder.training.pipeline_pretrain_2026_dense import (
     OmniCoder2026PipelineShard,
     autocast_context,
@@ -34,6 +36,7 @@ from omnicoder.training.simple_tokenizer import get_text_tokenizer
 REQUEST_SCHEMA = "omnicoder.reportable_prediction_request_2026.v1"
 OUTPUT_KEYS = ("prediction", "model_patch", "tool_call", "model_actions", "artifact_path")
 CONFIG_FIELDS = {field.name for field in fields(OmniCoder2026Config)}
+TEXT_RANGE = DEFAULT_LEDGER.as_config_ranges()["text"]
 
 
 class RunnerError(ValueError):
@@ -215,8 +218,32 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
         preset=SimpleNamespace(name=saved_preset_name),
         args=resume_args,
     )
+    state = shard.state_dict()
+    if spec.has_embed:
+        embed = state.get("embed.weight")
+        if not isinstance(embed, torch.Tensor) or embed.shape != (int(cfg.vocab_size), int(cfg.d_model)):
+            raise RunnerError("loaded rank0 checkpoint has invalid embed.weight shape")
+        if not torch.isfinite(embed.float()).all() or float(embed.float().std(unbiased=False)) <= 0.0:
+            raise RunnerError("loaded rank0 embed.weight is non-finite or zero-variance")
+    if spec.has_head:
+        head = state.get("lm_head.weight")
+        if not isinstance(head, torch.Tensor) or head.shape != (int(cfg.vocab_size), int(cfg.d_model)):
+            raise RunnerError("loaded final-rank checkpoint has invalid lm_head.weight shape")
+        if not torch.isfinite(head.float()).all() or float(head.float().std(unbiased=False)) <= 0.0:
+            raise RunnerError("loaded final-rank lm_head.weight is non-finite or zero-variance")
     shard.eval()
     return shard, device, int(cfg.d_model), int(cfg.vocab_size)
+
+
+def _select_text_token(logits: torch.Tensor, vocab_size: int) -> torch.Tensor:
+    lo, hi = TEXT_RANGE
+    hi = min(int(hi), int(vocab_size), int(logits.shape[-1]))
+    if hi <= int(lo):
+        raise RunnerError(f"text ledger range {TEXT_RANGE} is outside vocab_size={vocab_size}")
+    masked = logits.float().clone()
+    masked[..., : int(lo)] = float("-inf")
+    masked[..., hi:] = float("-inf")
+    return torch.argmax(masked, dim=-1).to(dtype=torch.long)
 
 
 def _output_field(request: dict[str, Any]) -> str:
@@ -287,6 +314,7 @@ def _pipeline_next_token(
     device: torch.device,
     hidden_dtype: torch.dtype,
     d_model: int,
+    vocab_size: int,
     precision: str,
 ) -> int:
     rank = int(dist.get_rank())
@@ -296,7 +324,7 @@ def _pipeline_next_token(
         if world_size == 1:
             hidden = shard(batch)
             logits = shard.lm_head(hidden[:, -1:, :]).float()
-            token = torch.argmax(logits[:, -1, :], dim=-1).to(dtype=torch.long)
+            token = _select_text_token(logits[:, -1, :], vocab_size)
             dist.broadcast(token, src=0)
             return int(token.detach().cpu().item())
         if rank == 0:
@@ -314,7 +342,7 @@ def _pipeline_next_token(
             dist.broadcast(token, src=world_size - 1)
             return int(token.detach().cpu().item())
         logits = shard.lm_head(hidden[:, -1:, :]).float()
-        token = torch.argmax(logits[:, -1, :], dim=-1).to(dtype=torch.long)
+        token = _select_text_token(logits[:, -1, :], vocab_size)
         dist.broadcast(token, src=rank)
         return int(token.detach().cpu().item())
 
@@ -351,6 +379,7 @@ def _decode_worker(args: argparse.Namespace) -> dict[str, Any] | None:
             device=device,
             hidden_dtype=hidden_dtype,
             d_model=d_model,
+            vocab_size=vocab_size,
             precision=str(args.precision),
         )
         if rank == 0:
@@ -366,7 +395,7 @@ def _decode_worker(args: argparse.Namespace) -> dict[str, Any] | None:
     field = _output_field(request)
     if field == "artifact_path":
         raise RunnerError("text-only pipeline checkpoint decode cannot produce a real artifact_path")
-    return {
+    result = {
         field: text,
         "metadata": {
             "backend": "pipeline_checkpoint_predict_2026",
@@ -377,6 +406,20 @@ def _decode_worker(args: argparse.Namespace) -> dict[str, Any] | None:
             "latency_seconds": round(time.perf_counter() - started, 6),
         },
     }
+    rejection_row = {
+        "schema": harness.PREDICTION_SCHEMA,
+        "schema_version": harness.SCHEMA_VERSION,
+        "benchmark_id": str(request.get("benchmark_id") or "decode_sanity"),
+        "task_id": str(request.get("task_id") or "decode_sanity"),
+        "model": str(request.get("model") or request.get("checkpoint_path") or "checkpoint"),
+        "backend": "pipeline_checkpoint_predict_2026",
+        field: text,
+        "generation_metadata": result["metadata"],
+    }
+    rejected = harness.decode_sanity_rejections(rejection_row)
+    if rejected:
+        raise RunnerError(f"greedy decode failed sanity gate: {rejected}")
+    return result
 
 
 def _torchrun_world_size(checkpoint: Path, manifest: dict[str, Any], explicit: int) -> int:
@@ -454,6 +497,8 @@ def _parent_main(args: argparse.Namespace) -> int:
             cmd.append("--require-target-contract")
         if bool(args.allow_p40_target_contract_eval):
             cmd.append("--allow-p40-target-contract-eval")
+        if bool(args.allow_one_token_canary):
+            cmd.append("--allow-one-token-canary")
         proc = subprocess.run(
             cmd,
             cwd=str(Path(__file__).resolve().parents[3]),

@@ -173,3 +173,24 @@ def test_balanced_builder_rejects_dataset_integrity_poisoned_rows(tmp_path: Path
     assert manifest["skipped"]["policy_dataset_integrity"] >= 1
     rows = [json.loads(line) for line in Path(manifest["paths"]["sft"]).read_text(encoding="utf-8").splitlines()]
     assert rows[0]["source_record_id"] == "good"
+
+
+def test_queue_policy_script_protects_agentic_qwen_and_scaled_media_floors() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "scripts" / "ai_server_queue_policy_posttrain_after_active_20b.sh").read_text(encoding="utf-8")
+
+    assert "add_source_floor agentic.clean.jsonl \"$BALANCED_AGENTIC_SOURCE_FLOOR\"" in script
+    assert "add_source_floor qwen36_text.clean.jsonl \"$BALANCED_QWEN_TEXT_SOURCE_FLOOR\"" in script
+    assert "add_source_floor qwen36_long_context.clean.jsonl \"$BALANCED_QWEN_LONG_CONTEXT_SOURCE_FLOOR\"" in script
+    assert "OMNICODER_MEDIA_TEACHER_IMAGE_SOURCE_FLOOR_SCALE" in script
+    assert "OMNICODER_MEDIA_TEACHER_VIDEO_SOURCE_FLOOR_SCALE" in script
+    assert "OMNICODER_MEDIA_TEACHER_AUDIO_SOURCE_FLOOR_SCALE" in script
+    assert "OMNICODER_MEDIA_TEACHER_MUSIC_SOURCE_FLOOR_SCALE" in script
+    assert "verify_balanced_source_presence" in script
+    assert "verify_balanced_media_source_floors" in script
+    assert "OMNICODER_REQUIRE_MEDIA_TEACHER_BALANCED_FLOORS" in script
+    assert "media_teacher_source_floors_below_target_after_filters" in script
+    assert "protected_balanced_sources_missing_after_filters" in script
+    assert "--reject-refusal-boilerplate" in script
+    assert "--reject-eval-holdout" in script
+    assert "--require-media-artifacts" in script

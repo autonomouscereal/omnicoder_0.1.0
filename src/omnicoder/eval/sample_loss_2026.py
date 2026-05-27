@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any, Iterable
@@ -449,6 +450,7 @@ def _finalize(bucket: dict[str, Any]) -> None:
     avg_loss = (float(bucket["loss_sum"]) / tokens) if tokens else None
     bucket["avg_loss"] = avg_loss
     bucket["loss"] = avg_loss
+    bucket["perplexity"] = math.exp(min(50.0, float(avg_loss))) if avg_loss is not None else None
     if "modalities" in bucket:
         for child in bucket["modalities"].values():
             _finalize(child)

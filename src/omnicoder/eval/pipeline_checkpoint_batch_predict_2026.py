@@ -18,6 +18,7 @@ import torch.distributed as dist
 from omnicoder.config_2026 import get_omnicoder2026_preset, preset_to_model_kwargs
 from omnicoder.eval import reportable_prediction_harness_2026 as harness
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
+from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 from omnicoder.training.pipeline_pretrain_2026_dense import (
     OmniCoder2026PipelineShard,
     autocast_context,
@@ -35,6 +36,7 @@ BACKEND_NAME = "pipeline_checkpoint_batch_predict_2026"
 SUMMARY_SCHEMA = "omnicoder.pipeline_checkpoint_batch_predict_2026.summary.v1"
 EXPECTED_SHARDS = 3
 CONFIG_FIELDS = {field.name for field in fields(OmniCoder2026Config)}
+TEXT_RANGE = DEFAULT_LEDGER.as_config_ranges()["text"]
 
 
 class BatchPredictError(ValueError):
@@ -238,6 +240,19 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
         preset=SimpleNamespace(name=saved_preset_name),
         args=resume_args,
     )
+    state = shard.state_dict()
+    if spec.has_embed:
+        embed = state.get("embed.weight")
+        if not isinstance(embed, torch.Tensor) or embed.shape != (int(cfg.vocab_size), int(cfg.d_model)):
+            raise BatchPredictError("loaded rank0 checkpoint has invalid embed.weight shape")
+        if not torch.isfinite(embed.float()).all() or float(embed.float().std(unbiased=False)) <= 0.0:
+            raise BatchPredictError("loaded rank0 embed.weight is non-finite or zero-variance")
+    if spec.has_head:
+        head = state.get("lm_head.weight")
+        if not isinstance(head, torch.Tensor) or head.shape != (int(cfg.vocab_size), int(cfg.d_model)):
+            raise BatchPredictError("loaded final-rank checkpoint has invalid lm_head.weight shape")
+        if not torch.isfinite(head.float()).all() or float(head.float().std(unbiased=False)) <= 0.0:
+            raise BatchPredictError("loaded final-rank lm_head.weight is non-finite or zero-variance")
     shard.eval()
     return shard, device, int(cfg.d_model), int(cfg.vocab_size), saved_preset_name
 
@@ -288,6 +303,7 @@ def _pipeline_next_token(
     device: torch.device,
     hidden_dtype: torch.dtype,
     d_model: int,
+    vocab_size: int,
     precision: str,
 ) -> int:
     rank = int(dist.get_rank())
@@ -297,7 +313,7 @@ def _pipeline_next_token(
         if world_size == 1:
             hidden = shard(batch)
             logits = shard.lm_head(hidden[:, -1:, :]).float()
-            token = torch.argmax(logits[:, -1, :], dim=-1).to(dtype=torch.long)
+            token = _select_text_token(logits[:, -1, :], vocab_size)
             dist.broadcast(token, src=0)
             return int(token.detach().cpu().item())
         if rank == 0:
@@ -315,9 +331,20 @@ def _pipeline_next_token(
             dist.broadcast(token, src=world_size - 1)
             return int(token.detach().cpu().item())
         logits = shard.lm_head(hidden[:, -1:, :]).float()
-        token = torch.argmax(logits[:, -1, :], dim=-1).to(dtype=torch.long)
+        token = _select_text_token(logits[:, -1, :], vocab_size)
         dist.broadcast(token, src=rank)
         return int(token.detach().cpu().item())
+
+
+def _select_text_token(logits: torch.Tensor, vocab_size: int) -> torch.Tensor:
+    lo, hi = TEXT_RANGE
+    hi = min(int(hi), int(vocab_size), int(logits.shape[-1]))
+    if hi <= int(lo):
+        raise BatchPredictError(f"text ledger range {TEXT_RANGE} is outside vocab_size={vocab_size}")
+    masked = logits.float().clone()
+    masked[..., : int(lo)] = float("-inf")
+    masked[..., hi:] = float("-inf")
+    return torch.argmax(masked, dim=-1).to(dtype=torch.long)
 
 
 def _decode_rank0(
@@ -352,6 +379,7 @@ def _decode_rank0(
             device=device,
             hidden_dtype=hidden_dtype,
             d_model=d_model,
+            vocab_size=vocab_size,
             precision=precision,
         )
         token_id = int(next_token) % max(2, int(vocab_size))
@@ -384,6 +412,7 @@ def _decode_nonzero(
             device=device,
             hidden_dtype=hidden_dtype,
             d_model=d_model,
+            vocab_size=int(getattr(shard, "cfg").vocab_size),
             precision=precision,
         )
         if _broadcast_stop(device, None):
@@ -413,6 +442,7 @@ def _prediction_row(
     latency_seconds: float,
     generated_tokens: int,
     checkpoint: Path,
+    allow_rejected_model_output: bool = False,
 ) -> dict[str, Any]:
     if output_field == "artifact_path":
         raise BatchPredictError(
@@ -449,7 +479,7 @@ def _prediction_row(
         },
     }
     row[output_field] = text
-    rejected_outputs = harness.prediction_output_quality_rejections(row)
+    rejected_outputs = harness.decode_sanity_rejections(row)
     if rejected_outputs:
         row["prediction_quality_status"] = "rejected_model_output"
         row["prediction_quality_reasons"] = rejected_outputs
@@ -610,6 +640,7 @@ def _run_rank0_batch(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     progress_tasks = int(args.progress_tasks or 0)
+    rejected_failure = ""
     with out_path.open("w", encoding="utf-8", newline="\n") as handle:
         for index, task in enumerate(tasks, 1):
             output_field = harness.output_field_for_task(task)
@@ -652,10 +683,17 @@ def _run_rank0_batch(
                     latency_seconds=time.perf_counter() - task_started,
                     generated_tokens=generated_tokens,
                     checkpoint=checkpoint,
+                    allow_rejected_model_output=bool(args.allow_rejected_model_output),
                 )
             rows.append(row)
             handle.write(json.dumps(row, ensure_ascii=True, sort_keys=True, default=str, separators=(",", ":")) + "\n")
             handle.flush()
+            if row.get("prediction_quality_status") == "rejected_model_output" and not bool(args.allow_rejected_model_output):
+                rejected_failure = (
+                    f"{task.source_path}:{task.source_line}: greedy decode failed sanity gate: "
+                    f"{row.get('prediction_quality_reasons')}"
+                )
+                break
             if progress_tasks and (index % progress_tasks) == 0:
                 elapsed = max(1.0e-6, time.perf_counter() - started)
                 event = {
@@ -684,6 +722,8 @@ def _run_rank0_batch(
                     flush=True,
                 )
     _broadcast_task_header(device, False, 0)
+    if rejected_failure:
+        raise BatchPredictError(rejected_failure)
     prediction_sha256 = harness.file_sha256(out_path)
     summary = _summary(
         args,
@@ -815,6 +855,10 @@ def _parent_main(args: argparse.Namespace) -> int:
         cmd.append("--allow-p40-target-contract-eval")
     if bool(args.allow_local_dev_tasks):
         cmd.append("--allow-local-dev-tasks")
+    if bool(args.allow_one_token_canary):
+        cmd.append("--allow-one-token-canary")
+    if bool(args.allow_rejected_model_output):
+        cmd.append("--allow-rejected-model-output")
     if bool(args.force):
         cmd.append("--force")
     proc = subprocess.run(cmd, cwd=str(repo_root()), check=False)
@@ -840,6 +884,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-prompt-tokens", "--max_prompt_tokens", dest="max_prompt_tokens", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_MAX_PROMPT_TOKENS", "4096") or 4096))
     parser.add_argument("--max-output-tokens", "--max_output_tokens", "--max-new-tokens", "--max_new_tokens", dest="max_output_tokens", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_MAX_OUTPUT_TOKENS", "256") or 256))
     parser.add_argument("--allow-one-token-canary", "--allow_one_token_canary", dest="allow_one_token_canary", action="store_true", help="Explicitly allow <=1 output token canary runs. Real benchmark/eval runs should not use this.")
+    parser.add_argument("--allow-rejected-model-output", "--allow_rejected_model_output", dest="allow_rejected_model_output", action="store_true", help="Debug-only: write rejected/junk model outputs instead of failing nonzero.")
     parser.add_argument("--fake-quant", "--fake_quant", dest="fake_quant", action="store_true")
     parser.add_argument("--fake-quant-chunk-rows", "--fake_quant_chunk_rows", dest="fake_quant_chunk_rows", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_FAKE_QUANT_CHUNK_ROWS", "0") or 0))
     parser.add_argument("--fake-quant-max-full-elements", "--fake_quant_max_full_elements", dest="fake_quant_max_full_elements", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_FAKE_QUANT_MAX_FULL_ELEMENTS", "0") or 0))

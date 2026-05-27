@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -92,7 +93,9 @@ def is_junk_text(value: Any) -> bool:
 def ffprobe_ok(path: Path, modality: str) -> tuple[bool, dict[str, Any]]:
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
-        return True, {"ffprobe": "missing", "file_size": path.stat().st_size}
+        if os.getenv("OMNICODER_ALLOW_MISSING_FFPROBE_MEDIA_GATE", "").lower() in {"1", "true", "yes"}:
+            return True, {"ffprobe": "missing_debug_allowed", "file_size": path.stat().st_size}
+        return False, {"reason": "ffprobe_missing", "file_size": path.stat().st_size}
     cmd = [
         ffprobe,
         "-v",
@@ -126,6 +129,18 @@ def media_artifact_ok(value: Any, modality: str) -> tuple[bool, dict[str, Any]]:
         return False, {"reason": "artifact_path_not_absolute", "path": str(path)}
     if not path.exists() or not path.is_file() or path.stat().st_size <= 0:
         return False, {"reason": "artifact_missing_or_empty", "path": str(path)}
+    if modality == "image":
+        header = path.read_bytes()[:16]
+        image_magic = (
+            header.startswith(b"\x89PNG\r\n\x1a\n")
+            or header.startswith(b"\xff\xd8\xff")
+            or header.startswith(b"GIF87a")
+            or header.startswith(b"GIF89a")
+            or header.startswith(b"RIFF") and header[8:12] == b"WEBP"
+            or header.startswith(b"BM")
+        )
+        if not image_magic:
+            return False, {"reason": "image_artifact_magic_mismatch", "path": str(path), "size": path.stat().st_size}
     if modality in {"video", "audio", "music"}:
         ok, details = ffprobe_ok(path, modality)
         details["path"] = str(path)
@@ -144,11 +159,14 @@ def validate_prediction(row: dict[str, Any], min_output_tokens: int) -> dict[str
         reasons.append("missing_output_field")
     if generated_tokens and generated_tokens < min_output_tokens:
         reasons.append("too_few_generated_tokens")
-    if modality in MEDIA_MODALITIES and field in MEDIA_FIELDS:
-        ok, artifact_details = media_artifact_ok(value, modality)
-        details["artifact"] = artifact_details
-        if not ok:
-            reasons.append("invalid_media_artifact")
+    if modality in MEDIA_MODALITIES:
+        if field not in MEDIA_FIELDS:
+            reasons.append("missing_media_artifact_field")
+        else:
+            ok, artifact_details = media_artifact_ok(value, modality)
+            details["artifact"] = artifact_details
+            if not ok:
+                reasons.append("invalid_media_artifact")
     elif is_junk_text(value):
         reasons.append("junk_or_empty_text")
     return {

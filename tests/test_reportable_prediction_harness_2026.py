@@ -29,6 +29,8 @@ def _authorized_task(**overrides: Any) -> dict[str, Any]:
         "snapshot_authorization": "authorized_private",
         "snapshot_sha256": "sha256:mmmu-pro-smoke",
         "authorization_ref": "internal-authorized-eval-ledger",
+        "license_ref": "internal-authorized-eval-ledger:mmmu-pro-smoke",
+        "official_scorer_ref": "mmmu-pro-official-eval-2026",
         "source": "https://mmmu-benchmark.github.io/",
         "reportable": True,
         "question": "Which option matches the diagram?",
@@ -196,7 +198,7 @@ def test_checkpoint_runner_reads_sanitized_stdin_and_writes_prediction(tmp_path:
                 "import json, pathlib, sys",
                 "payload = json.loads(sys.stdin.read())",
                 f"pathlib.Path({str(seen)!r}).write_text(json.dumps(payload, sort_keys=True), encoding='utf-8')",
-                "print(json.dumps({'prediction': 'D'}))",
+                "print(json.dumps({'prediction': 'D', 'metadata': {'generated_tokens': 3}}))",
             ]
         )
         + "\n",
@@ -229,7 +231,9 @@ def test_checkpoint_runner_reads_sanitized_stdin_and_writes_prediction(tmp_path:
     assert request["task_id"] == "mmmu-fixture-1"
     assert "answer" not in request["task"]
     assert "gold" not in request["task"]
-    assert _jsonl_rows(predictions)[0]["prediction"] == "D"
+    row = _jsonl_rows(predictions)[0]
+    assert row["prediction"] == "D"
+    assert row["generation_metadata"]["generated_tokens"] == 3
 
 
 def test_prediction_validation_can_preserve_rejected_model_output_for_scoring() -> None:
@@ -249,6 +253,22 @@ def test_prediction_validation_can_preserve_rejected_model_output_for_scoring() 
     with pytest.raises(harness.HarnessError, match="rejected model output"):
         harness.validate_prediction_row(row)
     harness.validate_prediction_row(row, allow_rejected_model_output=True)
+
+
+def test_prediction_validation_rejects_non_positive_generated_tokens() -> None:
+    row = {
+        "schema": harness.PREDICTION_SCHEMA,
+        "schema_version": harness.SCHEMA_VERSION,
+        "benchmark_id": "reasoning_arc_agi3_2026",
+        "task_id": "zero-token-fixture",
+        "model": "local-checkpoint",
+        "backend": "pipeline_checkpoint_predict_2026",
+        "prediction": "A",
+        "generation_metadata": {"generated_tokens": 0},
+    }
+
+    with pytest.raises(harness.HarnessError, match="non_positive_generated_tokens"):
+        harness.validate_prediction_row(row)
 
 
 def test_openai_compatible_backend_requires_local_endpoint() -> None:
