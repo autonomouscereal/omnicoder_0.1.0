@@ -134,6 +134,8 @@ start_qwen_server_if_needed() {
     log "port $port is already listening but Qwen endpoint probe failed"
     return 1
   fi
+  local log_file="$server_dir/llama_server_${port}_gpu${QWEN_SERVER_GPU}.log"
+  local pid_file="$server_dir/pid_${port}_gpu${QWEN_SERVER_GPU}"
   log "starting managed Qwen 3.6 27B Q4 llama-server on P40 gpu=$QWEN_SERVER_GPU port=$port ngl=$QWEN_GPU_LAYERS ctx=$QWEN_CTX_SIZE"
   (
     CUDA_DEVICE_ORDER=PCI_BUS_ID \
@@ -143,8 +145,8 @@ start_qwen_server_if_needed() {
       -c "$QWEN_CTX_SIZE" -ngl "$QWEN_GPU_LAYERS" --split-mode none -np 1 \
       --flash-attn off --reasoning off --reasoning-budget 0 --reasoning-format none \
       --threads "$QWEN_THREADS" --threads-batch "$QWEN_THREADS" \
-      > "$server_dir/llama-server.log" 2>&1 &
-    echo $! > "$server_dir/pid"
+      > "$log_file" 2>&1 &
+    echo $! > "$pid_file"
   )
   local attempt
   for attempt in $(seq 1 180); do
@@ -152,15 +154,15 @@ start_qwen_server_if_needed() {
       log "managed Qwen endpoint is healthy"
       return 0
     fi
-    if [[ -s "$server_dir/pid" ]] && ! ps -p "$(cat "$server_dir/pid")" >/dev/null 2>&1; then
+    if [[ -s "$pid_file" ]] && ! ps -p "$(cat "$pid_file")" >/dev/null 2>&1; then
       log "managed Qwen server exited during load"
-      tail -120 "$server_dir/llama-server.log" | tee -a "$OUT_ROOT/logs/qwen_server_load_failure.log" || true
+      tail -120 "$log_file" | tee -a "$OUT_ROOT/logs/qwen_server_load_failure.log" || true
       return 1
     fi
     sleep 2
   done
   log "managed Qwen endpoint did not become healthy"
-  tail -120 "$server_dir/llama-server.log" | tee -a "$OUT_ROOT/logs/qwen_server_load_timeout.log" || true
+  tail -120 "$log_file" | tee -a "$OUT_ROOT/logs/qwen_server_load_timeout.log" || true
   return 1
 }
 
@@ -192,15 +194,16 @@ stop_managed_qwen_if_requested() {
   if ! truthy "$QWEN_STOP_MANAGED_SERVER"; then
     return 0
   fi
-  local pid_file="$OUT_ROOT/qwen_server/pid"
-  if [[ -s "$pid_file" ]]; then
-    local pid
+  local pid_file pid
+  shopt -s nullglob
+  for pid_file in "$OUT_ROOT"/qwen_server/pid_*; do
     pid="$(cat "$pid_file")"
     if ps -p "$pid" -o cmd= | grep -q 'Qwen3.6-27B-Q4_K_M.gguf'; then
-      log "stopping managed Qwen server pid=$pid"
+      log "stopping managed Qwen server pid=$pid file=$pid_file"
       kill "$pid" || true
     fi
-  fi
+  done
+  shopt -u nullglob
 }
 
 build_qwen_text_jobs() {
