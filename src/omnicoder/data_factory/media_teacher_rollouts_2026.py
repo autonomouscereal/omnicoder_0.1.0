@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -227,8 +228,12 @@ def request_json(method: str, url: str, payload: Any | None = None, timeout: int
         data = json.dumps(payload, ensure_ascii=True).encode("utf-8")
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=int(timeout)) as response:
-        raw = response.read()
+    try:
+        with urllib.request.urlopen(req, timeout=int(timeout)) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise ValueError(f"HTTP {exc.code} {exc.reason} for {url}: {body[:4000]}") from exc
     return json.loads(raw.decode("utf-8", errors="replace")) if raw else {}
 
 

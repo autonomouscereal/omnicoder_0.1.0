@@ -639,17 +639,33 @@ curate_qwen_text() {
   run_curation_family qwen36_text text 0.55 0 0 "$OUT_ROOT/raw/qwen36_text.raw.jsonl"
 }
 
+upload_qwen_edit_source() {
+  local path="$1"
+  local response="$OUT_ROOT/logs/qwen_edit_source_upload.json"
+  if [[ ! -s "$path" ]]; then
+    log "Qwen edit source upload skipped; missing local source: $path"
+    return 1
+  fi
+  curl -fsS --max-time 120 -X POST "$COMFYUI_URL/upload/image" \
+    -F "image=@${path};filename=${QWEN_EDIT_SOURCE_IMAGE}" \
+    -F "overwrite=true" \
+    > "$response"
+  log "uploaded Qwen edit source image to ComfyUI input via $COMFYUI_URL/upload/image: $QWEN_EDIT_SOURCE_IMAGE"
+}
+
 ensure_qwen_edit_source() {
   mkdir -p "$COMFY_INPUT_ROOT"
+  local target="$COMFY_INPUT_ROOT/$QWEN_EDIT_SOURCE_IMAGE"
   if [[ -s "$COMFY_INPUT_ROOT/$QWEN_EDIT_SOURCE_IMAGE" ]]; then
     log "Qwen edit source image already present: $COMFY_INPUT_ROOT/$QWEN_EDIT_SOURCE_IMAGE"
+    upload_qwen_edit_source "$target"
     return 0
   fi
   local source
   source="$(find "$COMFY_OUTPUT_ROOT" -maxdepth 2 -type f \( -name 'codex_qwen_t2i*.png' -o -name 'omnicoder_qwen_image_generate*.png' -o -name '*.png' \) -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2- || true)"
   if [[ -z "$source" || ! -s "$source" ]]; then
-    log "no existing Qwen source image found; generating deterministic edit seed at $COMFY_INPUT_ROOT/$QWEN_EDIT_SOURCE_IMAGE"
-    "$PYTHON_BIN" - "$COMFY_INPUT_ROOT/$QWEN_EDIT_SOURCE_IMAGE" <<'PY'
+    log "no existing Qwen source image found; generating deterministic edit seed at $target"
+    "$PYTHON_BIN" - "$target" <<'PY'
 import math
 import pathlib
 import struct
@@ -687,10 +703,11 @@ payload += chunk(b"IDAT", zlib.compress(b"".join(rows), 9))
 payload += chunk(b"IEND", b"")
 path.write_bytes(payload)
 PY
-    return 0
+  else
+    cp "$source" "$target"
+    log "seeded Qwen edit source image from $source -> $target"
   fi
-  cp "$source" "$COMFY_INPUT_ROOT/$QWEN_EDIT_SOURCE_IMAGE"
-  log "seeded Qwen edit source image from $source -> $COMFY_INPUT_ROOT/$QWEN_EDIT_SOURCE_IMAGE"
+  upload_qwen_edit_source "$target"
 }
 
 build_media_jobs() {
