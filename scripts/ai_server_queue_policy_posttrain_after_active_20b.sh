@@ -300,6 +300,41 @@ build_balanced_manifest() {
     --strip-token-ids
 }
 
+verify_balanced_integrity_preflight() {
+  local integrity_preflight_dir="$BALANCED_ABS/integrity_preflight"
+  mkdir -p "$integrity_preflight_dir"
+  log "running dataset-integrity preflight for balanced posttraining JSONL"
+  local -a integrity_args=(
+    --input "$BALANCED_ABS/balanced_allmodal_sft.jsonl" \
+    --input "$BALANCED_ABS/balanced_allmodal_rlvr.jsonl" \
+    --input "$BALANCED_ABS/balanced_allmodal_reward.jsonl" \
+    --out-dir "$integrity_preflight_dir" \
+    --manifest "$integrity_preflight_dir/dataset_integrity_manifest.json" \
+    --max-artifact-bytes "${OMNICODER_QUEUE_INTEGRITY_MAX_ARTIFACT_BYTES:-4194304}"
+  )
+  if [[ "${OMNICODER_QUEUE_INTEGRITY_NO_ARTIFACT_SCAN:-0}" == "1" || "${OMNICODER_QUEUE_INTEGRITY_NO_ARTIFACT_SCAN:-0}" == "true" ]]; then
+    integrity_args+=(--no-artifact-scan)
+  fi
+  "$PYTHON_BIN" -m omnicoder.data_factory.dataset_integrity_2026 "${integrity_args[@]}" \
+    | tee -a "$QUEUE_DIR/dataset_integrity_preflight.log"
+  "$PYTHON_BIN" - "$integrity_preflight_dir/dataset_integrity_manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+payload = json.loads(path.read_text(encoding="utf-8"))
+if int(payload.get("rejected") or 0) > 0:
+    raise SystemExit(json.dumps({
+        "status": "failed",
+        "reason": "dataset_integrity_preflight_rejected_rows",
+        "manifest": str(path),
+        "rejected": payload.get("rejected"),
+        "counts": payload.get("counts"),
+    }, ensure_ascii=True, sort_keys=True))
+print(json.dumps({"status": "passed", "manifest": str(path), "records": payload.get("accepted", 0)}, ensure_ascii=True, sort_keys=True))
+PY
+}
+
 if [[ -s "$CURATION_DIR/pid" ]]; then
   wait_for_pid_file_exit "$CURATION_DIR/pid" "capability_curation" || true
 elif [[ -s "$CURATION_DIR/curation_manifest_index.json" ]]; then
@@ -325,6 +360,7 @@ fi
 wait_for_container_exit "$ACTIVE_CONTAINER"
 run_qwen_ltx_distillation_if_needed
 build_balanced_manifest
+verify_balanced_integrity_preflight
 RESUME_CHECKPOINT="$(latest_complete_checkpoint)"
 log "launching next posttraining from $RESUME_CHECKPOINT"
 

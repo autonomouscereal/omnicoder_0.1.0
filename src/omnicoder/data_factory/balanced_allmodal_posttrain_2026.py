@@ -415,6 +415,9 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
         reject_eval_holdout=bool(args.reject_eval_holdout),
         min_quality_score=float(args.min_quality_score or 0.0),
         require_media_artifacts=bool(args.require_media_artifacts),
+        reject_dataset_integrity_issues=not bool(args.allow_dataset_integrity_issues),
+        scan_integrity_artifacts=not bool(args.skip_integrity_artifact_scan),
+        max_integrity_artifact_bytes=int(args.max_integrity_artifact_bytes),
     )
     sources: list[tuple[Path, str]] = []
     if not args.no_profile_sources:
@@ -556,10 +559,13 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
         "strip_token_ids": bool(args.strip_token_ids),
         "reject_refusal_boilerplate": bool(args.reject_refusal_boilerplate),
         "reject_eval_holdout": bool(args.reject_eval_holdout),
+        "reject_dataset_integrity_issues": not bool(args.allow_dataset_integrity_issues),
+        "scan_integrity_artifacts": not bool(args.skip_integrity_artifact_scan),
+        "max_integrity_artifact_bytes": int(args.max_integrity_artifact_bytes),
         "min_quality_score": float(args.min_quality_score or 0.0),
         "require_media_artifacts": bool(args.require_media_artifacts),
         "refusal_boilerplate_policy": "reject explicit refusal/alignment-negative boilerplate when requested; capability and benign security/tool competence rows remain eligible",
-        "quality_policy": "rows can be rejected by curation_policy_2026 for low quality, placeholders, secrets, eval holdout markers, or missing media artifacts when requested",
+        "quality_policy": "rows can be rejected by curation_policy_2026 for low quality, placeholders, secrets, eval holdout markers, dataset-integrity poison/watermark/provenance flags, or missing media artifacts when requested",
         "token_id_policy": "source token ids are never copied; the pipeline trainer tokenizes generated message rows with the active tokenizer",
         "posttrain_input_overrides": {
             "reward_weighted_sft_replay": str(paths["sft"]),
@@ -602,6 +608,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strip-token-ids", action="store_true", help="Compatibility flag; generated rows never copy source token_ids.")
     parser.add_argument("--reject-refusal-boilerplate", action="store_true", help="Reject rows that contain explicit refusal/alignment-negative boilerplate.")
     parser.add_argument("--reject-eval-holdout", action="store_true", help="Reject rows tagged as eval/public-dev/protected benchmark material.")
+    parser.add_argument("--allow-dataset-integrity-issues", action="store_true", help="Permit rows flagged by dataset_integrity_2026; default is hard reject.")
+    parser.add_argument("--skip-integrity-artifact-scan", action="store_true", help="Skip local media byte marker scans; text/metadata integrity checks still run.")
+    parser.add_argument("--max-integrity-artifact-bytes", type=int, default=64 * 1024 * 1024)
     parser.add_argument("--min-quality-score", type=float, default=0.0, help="Reject rows below the curation_policy_2026 score floor.")
     parser.add_argument("--require-media-artifacts", action="store_true", help="Require existing artifact refs for image/video/audio/music rows.")
     parser.add_argument("--schema", default="messages", choices=["messages"], help="Output schema for optimizer replay rows.")

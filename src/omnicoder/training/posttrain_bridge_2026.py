@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity, row_prompt_target
+
 
 ALGORITHM_REGISTRY: dict[str, dict[str, Any]] = {
     "sft": {
@@ -215,10 +217,31 @@ def is_tool_trajectory_record(obj: dict[str, Any]) -> bool:
     } or is_rlvr_training_kind(kind)
 
 
+def artifact_ref_strings(row: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    for container in (row, row.get("input_json"), row.get("target_json"), row.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in ("artifact_refs", "artifacts", "artifact_paths", "media_paths", "media_refs", "artifact_metadata", "media_metadata"):
+            value = container.get(key)
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                if isinstance(item, dict):
+                    ref = item.get("path") or item.get("source_path") or item.get("artifact_path") or item.get("file") or item.get("uri") or item.get("url")
+                else:
+                    ref = item
+                ref_text = str(ref).strip() if ref is not None else ""
+                if ref_text:
+                    refs.append(ref_text)
+    return sorted(set(refs))[:64]
+
+
 def inspect_dataset(path: str | Path | None, limit: int = 2000) -> dict[str, Any]:
     if not path or not Path(path).exists():
         return {"exists": False, "records": 0, "schemas": {}}
     schemas: dict[str, int] = {}
+    integrity_reasons: dict[str, int] = {}
+    integrity_examples: list[dict[str, Any]] = []
     records = 0
     for line in Path(path).read_text(encoding="utf-8", errors="ignore").splitlines():
         if not line.strip():
@@ -228,7 +251,31 @@ def inspect_dataset(path: str | Path | None, limit: int = 2000) -> dict[str, Any
             obj = json.loads(line)
         except Exception:
             schemas["parse_error"] = schemas.get("parse_error", 0) + 1
+            integrity_reasons["json_parse_error"] = integrity_reasons.get("json_parse_error", 0) + 1
+            if len(integrity_examples) < 12:
+                integrity_examples.append({"line": records, "reasons": ["json_parse_error"]})
             continue
+        if isinstance(obj, dict):
+            prompt, target = row_prompt_target(obj)
+            integrity = audit_dataset_integrity(
+                obj,
+                prompt=prompt,
+                target=target,
+                modality=str(obj.get("modality") or obj.get("training_kind") or ""),
+                source_path=Path(path),
+                refs=artifact_ref_strings(obj),
+            )
+            if not integrity.get("accepted", True):
+                for reason in integrity.get("reasons") or ["unknown"]:
+                    integrity_reasons[str(reason)] = integrity_reasons.get(str(reason), 0) + 1
+                if len(integrity_examples) < 12:
+                    integrity_examples.append(
+                        {
+                            "line": records,
+                            "record_id": obj.get("record_id") or obj.get("id"),
+                            "reasons": integrity.get("reasons") or [],
+                        }
+                    )
         if isinstance(obj, dict) and is_tool_trajectory_record(obj):
             schemas["tool_trajectory"] = schemas.get("tool_trajectory", 0) + 1
         elif isinstance(obj, dict) and isinstance(obj.get("messages"), list):
@@ -243,7 +290,18 @@ def inspect_dataset(path: str | Path | None, limit: int = 2000) -> dict[str, Any
             schemas["other"] = schemas.get("other", 0) + 1
         if limit and records >= limit:
             break
-    return {"exists": True, "records_sampled": records, "schemas": schemas, "path": str(path)}
+    return {
+        "exists": True,
+        "records_sampled": records,
+        "schemas": schemas,
+        "path": str(path),
+        "dataset_integrity_2026": {
+            "status": "failed" if integrity_reasons else "passed",
+            "rejected": sum(integrity_reasons.values()),
+            "reasons": dict(sorted(integrity_reasons.items())),
+            "examples": integrity_examples,
+        },
+    }
 
 
 def write_manifest(path: str | Path, payload: dict[str, Any]) -> None:
@@ -295,6 +353,21 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
                     "error": "empty_dataset",
                     "message": "posttraining replay dataset is empty; use --dry_run or --smoke only for explicit smoke checks",
                     "train_jsonl": args.train_jsonl,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
+    integrity = dataset.get("dataset_integrity_2026") if isinstance(dataset.get("dataset_integrity_2026"), dict) else {}
+    if integrity.get("status") == "failed":
+        raise SystemExit(
+            json.dumps(
+                {
+                    "status": "error",
+                    "error": "dataset_integrity_failed",
+                    "train_jsonl": args.train_jsonl,
+                    "rejected": integrity.get("rejected"),
+                    "reasons": integrity.get("reasons"),
                 },
                 ensure_ascii=True,
                 sort_keys=True,

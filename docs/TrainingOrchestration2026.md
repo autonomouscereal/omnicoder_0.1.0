@@ -28,6 +28,16 @@ existing schemas and profiles explicitly support it. Protected eval data, hidden
 tests, grader labels, answer keys, and successful benchmark trajectories must
 remain quarantined from training exports.
 
+All optimizer launches now require a dataset-integrity preflight. The curation
+policy and balanced posttraining builder reject rows flagged by
+`dataset_integrity_2026`; `training_orchestration_2026` also rescans
+train-bound JSONL immediately before dense training and posttraining. The queue
+script performs the same check after building balanced SFT/RLVR/reward files
+and before launching the next container. Positive SynthID/C2PA/Content
+Credentials/provenance markers, data-mining restrictions, hidden Unicode prompt
+payloads, prompt-injection strings, and poisoning/backdoor/degradation cues are
+quarantined instead of silently dropped into training.
+
 ## Music, TTS, And ACE-Step Distillation Lane
 
 The posttraining queue can now blend an additional focused music/audio curation

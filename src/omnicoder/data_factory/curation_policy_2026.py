@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity
+
 
 REFUSAL_BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(pattern, re.IGNORECASE)
@@ -76,6 +78,9 @@ class CurationPolicyConfig:
     max_control_char_ratio: float = 0.015
     max_repetition_ratio: float = 0.42
     min_target_chars: int = 2
+    reject_dataset_integrity_issues: bool = True
+    scan_integrity_artifacts: bool = True
+    max_integrity_artifact_bytes: int = 64 * 1024 * 1024
 
 
 def stable_hash(value: Any) -> str:
@@ -443,6 +448,28 @@ def audit_training_record(
     eval_hit = eval_holdout_hit(row, source_path) if cfg.reject_eval_holdout else ""
     if eval_hit:
         reasons.append(f"eval_holdout:{eval_hit}")
+    integrity = (
+        audit_dataset_integrity(
+            row,
+            prompt=prompt,
+            target=target,
+            modality=modality,
+            source_path=source_path,
+            refs=refs or [],
+            scan_artifacts=cfg.scan_integrity_artifacts,
+            max_artifact_bytes=cfg.max_integrity_artifact_bytes,
+        )
+        if cfg.reject_dataset_integrity_issues
+        else {
+            "schema": "omnicoder.dataset_integrity_2026.v1",
+            "accepted": True,
+            "reasons": [],
+            "issues": [],
+            "signals": {"disabled": True},
+        }
+    )
+    if cfg.reject_dataset_integrity_issues and not integrity.get("accepted", True):
+        reasons.extend(f"dataset_integrity:{reason}" for reason in integrity.get("reasons") or ["unknown"])
     quality = quality_audit(
         row,
         prompt=prompt,
@@ -460,9 +487,12 @@ def audit_training_record(
         "accepted": accepted,
         "reasons": sorted(set(reasons)),
         "quality": quality,
+        "dataset_integrity_2026": integrity,
         "policy": {
             "reject_refusal_boilerplate": cfg.reject_refusal_boilerplate,
             "reject_eval_holdout": cfg.reject_eval_holdout,
+            "reject_dataset_integrity_issues": cfg.reject_dataset_integrity_issues,
+            "scan_integrity_artifacts": cfg.scan_integrity_artifacts,
             "min_quality_score": cfg.min_quality_score,
             "require_media_artifacts": cfg.require_media_artifacts,
         },
@@ -491,6 +521,9 @@ def run_agent(args: argparse.Namespace) -> dict[str, Any]:
         reject_placeholder_junk=True,
         min_quality_score=float(args.min_quality),
         require_media_artifacts=bool(args.require_media_artifacts),
+        reject_dataset_integrity_issues=not bool(args.allow_dataset_integrity_issues),
+        scan_integrity_artifacts=not bool(args.skip_integrity_artifact_scan),
+        max_integrity_artifact_bytes=int(args.max_integrity_artifact_bytes),
     )
     out_path = Path(args.out)
     rejected_path = Path(args.rejected)
@@ -567,6 +600,10 @@ def run_agent(args: argparse.Namespace) -> dict[str, Any]:
         "rejected_count": rejected,
         "counts": dict(sorted(counts.items())),
         "policy": cfg.__dict__ | {"media_modalities": sorted(cfg.media_modalities)},
+        "integrity_policy_note": (
+            "Rejects prompt-injection payloads, poisoning/backdoor/degradation cues, hidden Unicode/control payloads, "
+            "AI watermark/provenance markers such as SynthID/C2PA/Content Credentials, and suspicious media metadata/artifact markers."
+        ),
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {"status": "ok", "manifest": str(manifest_path), "accepted": accepted, "rejected": rejected, "counts": manifest["counts"]}
@@ -583,6 +620,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require-media-artifacts", action="store_true")
     parser.add_argument("--allow-refusal-boilerplate", action="store_true")
     parser.add_argument("--allow-eval-holdout", action="store_true")
+    parser.add_argument("--allow-dataset-integrity-issues", action="store_true", help="Permit rows flagged by dataset_integrity_2026; default is hard reject.")
+    parser.add_argument("--skip-integrity-artifact-scan", action="store_true", help="Skip local media byte marker scans; text/metadata integrity checks still run.")
+    parser.add_argument("--max-integrity-artifact-bytes", type=int, default=64 * 1024 * 1024)
     parser.add_argument("--dedupe", action="store_true")
     parser.add_argument("--max-records", type=int, default=0)
     args = parser.parse_args(argv)

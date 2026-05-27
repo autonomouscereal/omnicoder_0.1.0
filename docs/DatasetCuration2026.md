@@ -85,6 +85,55 @@ safety/red-team rows in eval or analysis quarantines; do not mix
 `tool_safety_negatives`, refusal-alignment, hidden-eval, benchmark-answer, or
 policy-denial rows into capability SFT, reward replay, or RLVR manifests.
 
+## Dataset Integrity And Poisoning Gate
+
+Every train-bound JSONL now passes `omnicoder.data_factory.dataset_integrity_2026`
+before it can be promoted into curation outputs, balanced posttraining
+manifests, or optimizer launch preflights. The gate is fail-closed for prompt
+injection, poisoning/backdoor/degradation cues, hidden Unicode/control payloads,
+rights/data-mining restrictions, and AI provenance/watermark markers including
+SynthID, C2PA, Content Credentials, JUMBF, `trainedAlgorithmicMedia`, and
+provider-generated metadata labels. Media rows also scan local artifact bytes
+for common C2PA/SynthID/provenance marker strings when the artifact is mounted.
+
+This detector is intentionally conservative: a missing watermark marker is not
+proof that a row is human or safe, but a positive marker quarantines the row
+from train splits. Ambiguous provenance should stay in a review/eval bucket, not
+in release-weight training.
+
+Run a read-only audit over current curation and training inputs on the AI
+server:
+
+```bash
+scripts/ai_server_run_dataset_integrity_audit_2026.sh
+```
+
+Direct CLI usage:
+
+```powershell
+python -m omnicoder.data_factory.dataset_integrity_2026 `
+  --input weights/data_curation_agent_2026/runs/current/jsonl/text.clean.jsonl `
+  --out-dir weights/data_curation_agent_2026/integrity_audits/manual `
+  --max-records-per-input 2000 `
+  --write-accepted
+```
+
+Audit outputs:
+
+- `dataset_integrity_manifest.json`
+- `dataset_integrity_rejected.jsonl`
+- `dataset_integrity_accepted.jsonl` when `--write-accepted` is set
+
+The AI-server launcher writes only the manifest and rejected rows by default to
+avoid duplicating multi-GB accepted corpora during audits. Set
+`OMNICODER_INTEGRITY_WRITE_ACCEPTED=1` only when a downstream review job needs a
+full accepted copy. It audits the current capability/Qwen/music curation runs
+plus the active and next policy balanced manifests by default; set
+`OMNICODER_INTEGRITY_INCLUDE_HISTORICAL_BALANCED=1` for a slower historical
+balanced-output sweep. For quick operator checks, set
+`OMNICODER_INTEGRITY_MAX_RECORDS_PER_INPUT=<n>`; training launch preflights do
+not use that cap and still fail closed on the full train-bound files.
+
 ## Outputs
 
 - `jsonl/normalized_traces.jsonl`: harness-normalized trace rows.

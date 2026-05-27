@@ -17,6 +17,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 
 
@@ -112,6 +113,25 @@ def iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
             if isinstance(payload, dict):
                 payload.setdefault("line_number", line_number)
                 yield payload
+
+
+def artifact_ref_strings(row: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    for container in (row, row.get("input_json"), row.get("target_json"), row.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in ("artifact_refs", "artifacts", "artifact_paths", "media_paths", "media_refs", "artifact_metadata", "media_metadata"):
+            value = container.get(key)
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                if isinstance(item, dict):
+                    ref = item.get("path") or item.get("source_path") or item.get("artifact_path") or item.get("file") or item.get("uri") or item.get("url")
+                else:
+                    ref = item
+                ref_text = str(ref).strip() if ref is not None else ""
+                if ref_text:
+                    refs.append(ref_text)
+    return sorted(set(refs))[:64]
 
 
 def read_json_if_exists(path: str | Path) -> dict[str, Any]:
@@ -1636,6 +1656,159 @@ def build_dataset_blend_manifest(
     }
 
 
+def integrity_scan_jsonl(path: str | Path, *, max_records: int = 0, scan_artifacts: bool = True, max_artifact_bytes: int = 64 * 1024 * 1024) -> dict[str, Any]:
+    source = Path(path)
+    report: dict[str, Any] = {
+        "schema": "omnicoder.dataset_integrity_file_scan_2026.v1",
+        "path": str(source),
+        "exists": source.exists(),
+        "records": 0,
+        "rejected": 0,
+        "status": "passed",
+        "reasons": {},
+        "max_records": int(max_records),
+        "scan_artifacts": bool(scan_artifacts),
+    }
+    if not source.exists() or not source.is_file():
+        report["status"] = "missing_or_empty"
+        return report
+    if source.stat().st_size <= 0:
+        report["empty"] = True
+        return report
+    reason_counts: Counter[str] = Counter()
+    examples: list[dict[str, Any]] = []
+    for row in iter_jsonl(source):
+        audit = audit_dataset_integrity(
+            row,
+            prompt=row_prompt(row),
+            target=row_target(row),
+            modality=str(row.get("modality") or ""),
+            source_path=source,
+            refs=artifact_ref_strings(row),
+            scan_artifacts=scan_artifacts,
+            max_artifact_bytes=max_artifact_bytes,
+        )
+        report["records"] = int(report["records"]) + 1
+        if not audit.get("accepted", True):
+            report["rejected"] = int(report["rejected"]) + 1
+            for reason in audit.get("reasons") or ["unknown"]:
+                reason_counts[str(reason)] += 1
+            if len(examples) < 12:
+                examples.append(
+                    {
+                        "line_number": row.get("line_number"),
+                        "record_id": row.get("record_id") or row.get("id"),
+                        "reasons": audit.get("reasons") or [],
+                        "source_id": row.get("source_id"),
+                    }
+                )
+        if max_records and int(report["records"]) >= max_records:
+            break
+    report["reasons"] = dict(sorted(reason_counts.items()))
+    report["examples"] = examples
+    report["status"] = "failed" if int(report["rejected"]) > 0 else "passed"
+    return report
+
+
+def training_bound_jsonl_paths_from_manifest(manifest: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+
+    def add(value: Any) -> None:
+        if not value:
+            return
+        path = Path(str(value))
+        if not path.is_absolute():
+            path = resolve_path(path, repo_root())
+        if path not in paths:
+            paths.append(path)
+
+    for key in ("train_all_jsonl", "curated_jsonl"):
+        add(manifest.get(key))
+    per_modality = manifest.get("per_modality_jsonl") if isinstance(manifest.get("per_modality_jsonl"), dict) else {}
+    for value in per_modality.values():
+        add(value)
+    curricula = manifest.get("curriculum_jsonl") if isinstance(manifest.get("curriculum_jsonl"), dict) else {}
+    for key, value in curricula.items():
+        if str(key).startswith(("eval_", "test_")):
+            continue
+        add(value)
+    posttraining = manifest.get("posttraining_curation_exports")
+    if isinstance(posttraining, dict):
+        exports = posttraining.get("exports") if isinstance(posttraining.get("exports"), dict) else {}
+        for key, value in exports.items():
+            if str(key) == "safety_negative":
+                continue
+            add(value)
+    return sorted([path for path in paths if path.name.endswith(".jsonl")], key=lambda item: str(item))
+
+
+def run_integrity_preflight(
+    paths: Iterable[str | Path],
+    out_dir: Path,
+    *,
+    label: str,
+    max_records: int = 0,
+    scan_artifacts: bool = True,
+    max_artifact_bytes: int = 64 * 1024 * 1024,
+) -> dict[str, Any]:
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for raw in paths:
+        path = Path(raw)
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    reports = [
+        integrity_scan_jsonl(
+            path,
+            max_records=max_records,
+            scan_artifacts=scan_artifacts,
+            max_artifact_bytes=max_artifact_bytes,
+        )
+        for path in unique
+    ]
+    failed = [report for report in reports if report.get("status") != "passed"]
+    payload = {
+        "schema": "omnicoder.training_integrity_preflight_2026.v1",
+        "created_at": now_iso(),
+        "label": label,
+        "status": "failed" if failed else "passed",
+        "path_count": len(unique),
+        "records": sum(int(report.get("records") or 0) for report in reports),
+        "rejected": sum(int(report.get("rejected") or 0) for report in reports),
+        "reports": reports,
+        "policy": {
+            "reject_on_any_integrity_issue": True,
+            "scan_artifacts": bool(scan_artifacts),
+            "max_records_per_file": int(max_records),
+            "max_artifact_bytes": int(max_artifact_bytes),
+        },
+    }
+    path = out_dir / "manifests" / "integrity" / f"{safe_filename(label)}_integrity_preflight.json"
+    write_json(path, payload)
+    payload["manifest"] = str(path)
+    return payload
+
+
+def require_integrity_preflight(preflight: dict[str, Any]) -> None:
+    if preflight.get("status") != "passed":
+        raise SystemExit(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "reason": "dataset_integrity_preflight_failed",
+                    "manifest": preflight.get("manifest"),
+                    "rejected": preflight.get("rejected"),
+                    "path_count": preflight.get("path_count"),
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            )
+        )
+
+
 def build_posttraining_curation_exports(
     profile: dict[str, Any],
     out_dir: Path,
@@ -1961,7 +2134,15 @@ def build_real_corpus(profile: dict[str, Any], out_dir: Path) -> dict[str, Any]:
         "sources": {key: [str(path) for path in existing_paths(value, root)] for key, value in sources.items() if key.endswith(("jsonl", "roots")) or key == "media_roots"},
         "ledger": DEFAULT_LEDGER.as_metadata(),
     }
+    manifest["dataset_integrity_preflight"] = run_integrity_preflight(
+        training_bound_jsonl_paths_from_manifest(manifest),
+        out_dir,
+        label="real_corpus_training_bound",
+    )
+    if manifest["dataset_integrity_preflight"]["status"] != "passed":
+        manifest["status"] = "failed"
     write_json(out_dir / "manifests" / "curation_manifest.json", manifest)
+    require_integrity_preflight(manifest["dataset_integrity_preflight"])
     return manifest
 
 
@@ -2989,6 +3170,13 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
     checkpoint_expected_world_size = expected_pipeline_world_size(cfg, args)
     if previous_checkpoint is not None and not previous_checkpoint.exists():
         raise FileNotFoundError(f"initial_checkpoint does not exist: {previous_checkpoint}")
+    require_integrity_preflight(
+        run_integrity_preflight(
+            training_bound_jsonl_paths_from_manifest(manifest),
+            out_dir,
+            label="dense_training_launch",
+        )
+    )
     stage_reports: list[dict[str, Any]] = []
 
     for index, modality in enumerate(stage_order, 1):
@@ -3655,6 +3843,13 @@ def run_posttraining_stages(
     if explicit_inputs:
         explicit_seen = {str(path.resolve()) for path in explicit_inputs}
         inputs = explicit_inputs + [path for path in inputs if str(path.resolve()) not in explicit_seen]
+    require_integrity_preflight(
+        run_integrity_preflight(
+            [path for path in inputs if path.name != "tool_safety_negatives.jsonl"],
+            out_dir,
+            label="posttraining_launch",
+        )
+    )
     reports: list[dict[str, Any]] = []
     current_checkpoint = Path(str(training.get("final_checkpoint") or "")) if training.get("final_checkpoint") else None
     model = str(current_checkpoint) if current_checkpoint is not None else str(cfg.get("distillation", {}).get("base_model") or "Qwen/Qwen3-4B")

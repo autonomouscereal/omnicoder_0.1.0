@@ -490,6 +490,9 @@ def curate_record(record: dict[str, Any], args: argparse.Namespace, protected_ha
         reject_eval_holdout=not bool(getattr(args, "allow_eval_holdout", False)),
         min_quality_score=float(getattr(args, "min_policy_quality", 0.0) or 0.0),
         require_media_artifacts=bool(getattr(args, "require_media_artifacts", False)),
+        reject_dataset_integrity_issues=not bool(getattr(args, "allow_dataset_integrity_issues", False)),
+        scan_integrity_artifacts=not bool(getattr(args, "skip_integrity_artifact_scan", False)),
+        max_integrity_artifact_bytes=int(getattr(args, "max_integrity_artifact_bytes", 64 * 1024 * 1024)),
     )
     inferred_modality = "code" if code.get("is_code") else "tool" if tools.get("tool_families") else ""
     if not inferred_modality:
@@ -956,6 +959,9 @@ def main() -> None:
     curate.set_defaults(redact=True)
     curate.add_argument("--allow-refusal-boilerplate", action="store_true", help="Permit refusal/alignment-negative rows; off by default for capability-first curation")
     curate.add_argument("--allow-eval-holdout", action="store_true", help="Permit eval/public-dev/protected benchmark rows into curated train candidates")
+    curate.add_argument("--allow-dataset-integrity-issues", action="store_true", help="Permit rows flagged by dataset_integrity_2026; default is hard reject")
+    curate.add_argument("--skip-integrity-artifact-scan", action="store_true", help="Skip local media byte marker scans; text/metadata integrity checks still run")
+    curate.add_argument("--max-integrity-artifact-bytes", type=int, default=64 * 1024 * 1024)
     curate.add_argument("--min-policy-quality", type=float, default=0.0, help="Additional curation_policy_2026 quality floor during canonical curation")
     curate.add_argument("--require-media-artifacts", action="store_true", help="Reject media rows without usable artifact refs")
     curate.add_argument("--manifest", action="store_true", help="Write sidecar manifest JSON")

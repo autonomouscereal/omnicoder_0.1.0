@@ -169,6 +169,17 @@ launcher is `scripts/ai_server_run_capability_curation_2026.sh`, which writes
 family manifests plus a combined clean JSONL under
 `weights/data_curation_agent_2026/runs/capability_policy_<run>/`.
 
+Dataset integrity hardening is now part of that contract. The reusable scanner
+`omnicoder.data_factory.dataset_integrity_2026` rejects prompt-injection
+payloads, poisoning/backdoor/degradation triggers, hidden Unicode/control
+payloads, rights/data-mining restrictions, and AI provenance/watermark markers
+such as SynthID, C2PA, Content Credentials, JUMBF, and
+`trainedAlgorithmicMedia`. The training orchestrator also runs a preflight over
+train-bound JSONL immediately before dense training and posttraining, while the
+queued 20B posttraining script verifies balanced SFT/RLVR/reward outputs before
+launch. Use `scripts/ai_server_run_dataset_integrity_audit_2026.sh` for a
+read-only audit of current AI-server curation and training inputs.
+
 Benchmark generation now fails closed on the one-token decode bug. Batch,
 single-request, and reportable prediction runners reject
 `max_output_tokens <= 1` unless an explicit non-reportable canary flag is set.
