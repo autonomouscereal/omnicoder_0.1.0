@@ -44,6 +44,51 @@ What is not proven yet:
 
 ## Architecture
 
+### Current 20B Target
+
+The production-size contract is `omnicoder2026_20b_1m`, defined in
+`src/omnicoder/config_2026.py` and implemented in
+`src/omnicoder/modeling/omnicoder2026.py`.
+
+| Field | Current value |
+|---|---:|
+| Architecture | dense one-trunk decoder |
+| Layers | 64 |
+| Width | 4096 |
+| Heads | 32 query heads |
+| Head dim | 128 |
+| KV style | shared K=V / MQA-style sparse branches |
+| MLP | SwiGLU, 16384 hidden |
+| Vocab ledger | 330000 typed tokens |
+| Native context target | 1048576 tokens |
+| Layer cycle | `kda, kda, kda, csa, kda, kda, kda, hca` |
+
+Expanded over 64 layers, the trunk is 48 KDA recurrent-linear layers, 8 CSA
+compressed sparse attention layers, and 8 HCA heavily compressed attention
+layers. The model is dense: there is no MoE router or fused expert dispatch in
+the current target path.
+
+### Long Context
+
+The 1M-context design does not attempt full quadratic attention or full resident
+GQA KV cache at every layer. The active long-context path combines:
+
+- KDA/Gated-DeltaNet-2 recurrent-linear layers for the dominant memory path.
+- Exact local causal attention over a 128-token window on CSA/HCA layers.
+- CSA global recall with `compress_rate=4`, prefix retention, causal recent
+  top-k block selection, low-rank Q projection, grouped low-rank output, sink
+  logits, and shared K=V summaries.
+- HCA long-range trail with `compress_rate=128` for cheap coarse memory.
+- Partial RoPE on trailing head dimensions with base `1000000.0`.
+- Chunked prefill/runtime expectations for native 1M validation.
+
+This is a native-runtime design. The GGUF path is an adoption bridge for
+standard local runners and shorter-context compatibility; true native 1M needs
+the OmniCoder 2026 KDA/CSA/HCA runtime path unless llama.cpp grows equivalent
+custom support.
+
+### Omnimodal Token Space
+
 ```text
 text, code, tool traces, media specs, long-context records
         |
@@ -60,10 +105,72 @@ shared token head and route-aware output contract
 edge decoders, artifact renderers, tools, benchmarks, and exports
 ```
 
-The active model path is dense, not sparse MoE. Modality routing is represented
-inside the training and generation contract with visible route prefixes and
-typed artifact tokens such as image/video/music/TTS/OCR outputs. The trunk is
-trained to emit those tokens; external decoders consume them after generation.
+All modalities enter the trunk as integer token IDs from one typed ledger and
+share the same embeddings, blocks, and token head. The ledger ranges cover:
+
+- `text`: text/code tokens.
+- `control`: system, task, style, routing, and boundary tokens.
+- `vision_semantic` and `vision_residual`: image/video semantic and detail
+  tokens.
+- `speech_tts`: speech, prosody, speaker, and TTS codec tokens.
+- `audio_music` and `music_control`: audio, music, tempo, key, stem, and
+  arrangement tokens.
+- `time_space`: frame, pixel-grid, spectrogram, and alignment tokens.
+- `tool_agent`: tool calls, memory, terminal, verifier, and agent actions.
+- `flow`: mask, denoise, edit-span, and refinement-control tokens.
+
+Media routing is visible in the generated stream, for example `image |`,
+`video |`, `music |`, `tts |`, and `ocr |`. The trunk learns to emit the route
+and artifact token stream; edge codecs/renderers convert raw pixels, waveforms,
+video, and music to and from ledger packets. There are no learned modality
+adapters inside the trunk, but raw media codecs still live at the edge.
+
+### Auxiliary Heads
+
+The main output is the shared tied token head. The target model also defines:
+
+- `flow_head` for continuous latent/flow supervision used by media planning and
+  reconstruction-style targets.
+- `grounding_head` for spatial or modality grounding supervision.
+- `sync_head` for temporal/audio-video synchronization signals.
+- `mtp_heads` support in the config, currently set to `0` for the active 20B
+  target.
+
+### Speed And Memory Optimizations
+
+The current implementation includes:
+
+- Dense depth-first 20B-class sizing instead of MoE routing overhead.
+- KDA recurrent-linear layers to avoid per-token KV growth in most layers.
+- CSA/HCA compressed sparse global memory instead of full attention at 1M.
+- MQA-style shared K=V sparse branches.
+- Low-rank Q and grouped low-rank output projections on CSA/HCA layers.
+- Chunked sparse/global attention gathers and chunked LM loss.
+- Chunked SwiGLU forward/backward support for memory pressure.
+- Activation checkpointing in the pipeline trainer.
+- Three-rank fast-card pipeline placement with the current 20B lane using
+  `16,16,32` layer placement.
+- GPipe fallback for one-microbatch stability, with 1F1B reserved for validated
+  multi-microbatch runs.
+- Low-memory Adafactor optimizer-in-backward path.
+- Q4 fake-quant/QAT hooks with chunked fake-quant linear support.
+- Docker/NCCL `ipc: host` and explicit distributed timeout/checkpoint sync
+  controls for the AI-server training lane.
+
+### Explicit Non-Claims
+
+- Residual attention as a full attention-logit accumulator is not implemented.
+  What exists is `mHC-lite`: trainable gated residual/depth scaling around the
+  mixer and FFN updates.
+- Samba/Mamba/SSM blocks are not in the active 20B target. The closest piece is
+  KDA/Gated-DeltaNet-2 recurrent-linear memory.
+- YaRN is not the active 1M solution. Older legacy paths mention YaRN/PI, but
+  the 2026 target relies on KDA plus CSA/HCA compressed state and still needs
+  the staged 8K -> 1M validation ladder.
+- Stock GGUF/llama.cpp is not claimed to run full native 1M KDA/CSA/HCA without
+  native support. GGUF remains the compatibility/export goal.
+- Release-quality image/video/TTS/music generation is not claimed until decoded
+  artifacts and scored benchmarks pass.
 
 Key code areas:
 
