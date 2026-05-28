@@ -189,9 +189,9 @@ if [[ "${BACKEND,,}" == "docker" ]]; then
   fi
 fi
 
-IFS=',' read -r -a GROUPS <<< "$GROUPS_RAW"
+IFS=',' read -r -a PROOF_GROUP_ARRAY <<< "$GROUPS_RAW"
 GROUPS_CLEAN=()
-for group in "${GROUPS[@]}"; do
+for group in "${PROOF_GROUP_ARRAY[@]}"; do
   group="${group#"${group%%[![:space:]]*}"}"
   group="${group%"${group##*[![:space:]]}"}"
   [[ -n "$group" ]] && GROUPS_CLEAN+=("$group")
