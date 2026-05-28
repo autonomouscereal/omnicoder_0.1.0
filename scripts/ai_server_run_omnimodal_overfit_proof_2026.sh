@@ -287,7 +287,7 @@ run_cmd() {
     -w /workspace
   )
   if (( USE_GPU == 1 )); then
-    docker_args+=(--gpus "\"device=${GPU_DEVICES}\"" -e CUDA_DEVICE_ORDER=PCI_BUS_ID)
+    docker_args+=(--gpus "device=${GPU_DEVICES}" -e CUDA_DEVICE_ORDER=PCI_BUS_ID)
   else
     docker_args+=(-e CUDA_VISIBLE_DEVICES="")
   fi
