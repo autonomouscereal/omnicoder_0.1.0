@@ -22,7 +22,7 @@ RUN_TAG="${RUN_TAG_RAW//[^A-Za-z0-9_.-]/_}"
 OUT_DIR="${OMNICODER_OVERFIT_OUT_DIR:-weights/overfit_proof_2026/omnimodal_overfit_${RUN_TAG}}"
 
 EXAMPLES_PER_MODALITY="${OMNICODER_OVERFIT_EXAMPLES_PER_MODALITY:-10}"
-GROUPS_RAW="${OMNICODER_OVERFIT_GROUPS:-text,code_tool,image_ocr,video,audio_tts_music,ledger_all}"
+GROUPS_RAW="${OMNICODER_OVERFIT_GROUPS:-text,code_tool,image_ocr,video,audio_tts_music,ledger_all,omni_all}"
 RUN_TRAIN="${OMNICODER_OVERFIT_RUN_TRAIN:-1}"
 RUN_EVAL="${OMNICODER_OVERFIT_RUN_EVAL:-1}"
 RUN_PREDICT="${OMNICODER_OVERFIT_RUN_PREDICT:-0}"
@@ -316,7 +316,8 @@ from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 from omnicoder.training.simple_tokenizer import get_text_tokenizer
 
 SCHEMA = "omnicoder.omnimodal_overfit_proof_2026.v1"
-GROUPS = ("text", "code_tool", "image_ocr", "video", "audio_tts_music", "ledger_all")
+MODALITY_GROUPS = ("text", "code_tool", "image_ocr", "video", "audio_tts_music", "ledger_all")
+GROUPS = MODALITY_GROUPS + ("omni_all",)
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -399,6 +400,15 @@ def main() -> int:
         row("ledger_all", "tool" if family == "tool_agent" else "image" if family.startswith("vision") else "text", f"user: ledger family {family} proof\nassistant:", span(family, i, 8), family, f"{family}_proof")
         for i, family in enumerate(families[:examples])
     ]
+    omni_rows = []
+    for source_group in MODALITY_GROUPS:
+        for index, item in enumerate(groups[source_group]):
+            clone = dict(item)
+            clone["group"] = "omni_all"
+            clone["origin_group"] = source_group
+            clone["source_id"] = f"omnimodal_overfit_omni_all_{source_group}_{index:03d}"
+            omni_rows.append(clone)
+    groups["omni_all"] = omni_rows
     manifest_groups = []
     for group, rows in groups.items():
         write_jsonl(data_dir / f"{group}.jsonl", rows)
@@ -434,6 +444,8 @@ def main() -> int:
             "schema": SCHEMA,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "examples_per_modality": examples,
+            "shared_checkpoint_group": "omni_all",
+            "modality_proof_groups": list(MODALITY_GROUPS),
             "groups": manifest_groups,
             "ledger": DEFAULT_LEDGER.as_metadata(),
             "fallback_materializer": True,
@@ -550,7 +562,15 @@ for group in groups:
     if targets.exists():
         try:
             item["target_json"] = json.loads(targets.read_text(encoding="utf-8"))
-            if int(item["target_json"].get("target_tokens") or item["target_json"].get("target_token_count") or 0) <= 0:
+            overall = item["target_json"].get("overall") if isinstance(item["target_json"].get("overall"), dict) else {}
+            target_count = int(
+                item["target_json"].get("target_tokens")
+                or item["target_json"].get("target_token_count")
+                or overall.get("target_tokens")
+                or overall.get("target_token_count")
+                or 0
+            )
+            if target_count <= 0:
                 add_failure(item, "no_target_tokens")
         except Exception as exc:
             item["target_error"] = repr(exc)
@@ -586,6 +606,26 @@ checkpoint_is_owned_and_complete() {
   [[ "$count" -eq "$expected_world_size" ]] || return 1
 }
 
+group_row_count() {
+  local group="$1"
+  "$HOST_PYTHON_BIN" - "$HOST_OUT_DIR/omnimodal_overfit_manifest.json" "$group" "$EXAMPLES_PER_MODALITY" <<'PY'
+import json
+import pathlib
+import sys
+
+manifest = pathlib.Path(sys.argv[1])
+group = sys.argv[2]
+fallback = int(sys.argv[3])
+if manifest.exists():
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    for item in data.get("groups") or []:
+        if item.get("group") == group:
+            print(int(item.get("rows") or fallback))
+            raise SystemExit(0)
+print(fallback)
+PY
+}
+
 materialize_proof_data() {
   local log_file="$LOG_DIR/materialize.log"
   local -a cmd=(
@@ -610,6 +650,8 @@ train_group() {
   local group="$1"
   local data="$CONTAINER_OUT_DIR/data/${group}.jsonl"
   local ckpt="$CONTAINER_OUT_DIR/ckpt/${group}"
+  local max_records
+  max_records="$(group_row_count "$group")"
   local -a cmd=(
     "$PYTHON_BIN" -m torch.distributed.run
     --standalone
@@ -629,7 +671,7 @@ train_group() {
     --seq_len "$SEQ_LEN"
     --steps "$STEPS"
     --lr "$LEARNING_RATE"
-    --max_records "$EXAMPLES_PER_MODALITY"
+    --max_records "$max_records"
     --precision "$PRECISION"
     --init_dtype "$INIT_DTYPE"
     --optimizer_in_backward_update lowmem_adafactor
@@ -654,6 +696,8 @@ eval_group() {
   local group="$1"
   local data="$CONTAINER_OUT_DIR/data/${group}.jsonl"
   local ckpt="$CONTAINER_OUT_DIR/ckpt/${group}"
+  local max_records
+  max_records="$(group_row_count "$group")"
   local -a loss_cmd=(
     "$PYTHON_BIN" -m torch.distributed.run
     --standalone
@@ -668,7 +712,7 @@ eval_group() {
     --precision "$PRECISION"
     --init-dtype "$INIT_DTYPE"
     --seq-len "$SEQ_LEN"
-    --max-records-per-file "$EXAMPLES_PER_MODALITY"
+    --max-records-per-file "$max_records"
     --lm-loss-chunk-tokens "$LM_LOSS_CHUNK_TOKENS"
   )
   run_cmd "loss_${group}" "$LOG_DIR/${group}.loss.console.log" "${loss_cmd[@]}"
@@ -687,7 +731,7 @@ eval_group() {
     --precision "$PRECISION"
     --init-dtype "$INIT_DTYPE"
     --seq-len "$SEQ_LEN"
-    --max-records-per-file "$EXAMPLES_PER_MODALITY"
+    --max-records-per-file "$max_records"
     --top-k "$TOP_K"
     --max-positions "$MAX_POSITIONS"
   )

@@ -6,6 +6,7 @@ import math
 import os
 import time
 from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,9 @@ from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 
 
 SCHEMA = "omnicoder.omnimodal_overfit_proof_2026.v1"
-PROOF_GROUPS = ("text", "code_tool", "image_ocr", "video", "audio_tts_music", "ledger_all")
+MODALITY_PROOF_GROUPS = ("text", "code_tool", "image_ocr", "video", "audio_tts_music", "ledger_all")
+SHARED_PROOF_GROUP = "omni_all"
+PROOF_GROUPS = MODALITY_PROOF_GROUPS + (SHARED_PROOF_GROUP,)
 DEFAULT_MAX_RELOAD_SAMPLE_LOSS = 0.05
 _TOKENIZER_CACHE: Any | None = None
 
@@ -304,6 +307,15 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         )
         for index, family in enumerate(ledger_names[:examples])
     ]
+    omni_rows: list[dict[str, Any]] = []
+    for source_group in MODALITY_PROOF_GROUPS:
+        for index, row in enumerate(groups[source_group]):
+            clone = deepcopy(row)
+            clone["group"] = SHARED_PROOF_GROUP
+            clone["origin_group"] = source_group
+            clone["source_id"] = f"omnimodal_overfit_{SHARED_PROOF_GROUP}_{source_group}_{index:03d}"
+            omni_rows.append(clone)
+    groups[SHARED_PROOF_GROUP] = omni_rows
 
     manifest_rows: list[dict[str, Any]] = []
     for group, rows in groups.items():
@@ -337,6 +349,8 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "schema": SCHEMA,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "examples_per_modality": examples,
+        "shared_checkpoint_group": SHARED_PROOF_GROUP,
+        "modality_proof_groups": list(MODALITY_PROOF_GROUPS),
         "groups": manifest_rows,
         "ledger": DEFAULT_LEDGER.as_metadata(),
         "commands": {

@@ -51,17 +51,24 @@ def test_materialize_overfit_proof_covers_all_token_families(tmp_path: Path) -> 
     assert code == 0
     manifest = json.loads((out / "omnimodal_overfit_manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema"] == proof.SCHEMA
+    assert manifest["shared_checkpoint_group"] == "omni_all"
     assert {item["group"] for item in manifest["groups"]} == set(proof.PROOF_GROUPS)
     for group in proof.PROOF_GROUPS:
         rows = _read_jsonl(out / "data" / f"{group}.jsonl")
-        assert len(rows) == 10
+        assert len(rows) == (60 if group == "omni_all" else 10)
         assert all(row["target_token_ids"] for row in rows)
         assert all(row["contamination_status"] == "clean" for row in rows)
         assert all(row["quality_score"] == 1.0 for row in rows)
+        for row in rows:
+            if row.get("artifact_token_ids"):
+                assert row["artifact_token_ids"] == row["target_token_ids"]
+                assert row["valid_target_tokens"] == len(row["target_token_ids"])
     ledger_rows = _read_jsonl(out / "data" / "ledger_all.jsonl")
     assert {"vision_semantic", "vision_residual", "speech_tts", "audio_music", "music_control", "time_space", "tool_agent"}.issubset(
         {row["target_ledger_family"] for row in ledger_rows}
     )
+    omni_rows = _read_jsonl(out / "data" / "omni_all.jsonl")
+    assert {"text", "code_tool", "image_ocr", "video", "audio_tts_music", "ledger_all"} == {row["origin_group"] for row in omni_rows}
 
 
 def test_summary_fails_without_eval_artifacts(tmp_path: Path) -> None:

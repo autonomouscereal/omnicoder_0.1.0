@@ -845,6 +845,20 @@ def _labels_to_mask(value: object, length: int) -> list[float] | None:
     return mask
 
 
+def _contains_token_subsequence(haystack: list[int], needle: list[int]) -> bool:
+    if not needle:
+        return True
+    if len(needle) > len(haystack):
+        return False
+    if len(needle) == len(haystack):
+        return haystack == needle
+    limit = len(haystack) - len(needle) + 1
+    for start in range(limit):
+        if haystack[start : start + len(needle)] == needle:
+            return True
+    return False
+
+
 def _explicit_token_ids_and_mask(record: dict[str, Any]) -> tuple[list[int], list[float]] | None:
     prompt_ids: list[int] = []
     for key in ("prompt_token_ids", "prompt_ids", "input_token_ids"):
@@ -856,7 +870,11 @@ def _explicit_token_ids_and_mask(record: dict[str, Any]) -> tuple[list[int], lis
     for key in ("target_token_ids", "completion_token_ids", "assistant_token_ids", "media_token_ids", "artifact_token_ids"):
         value = _token_id_list(record.get(key))
         if value:
-            target_ids.extend(value)
+            # Some curated media rows carry artifact_token_ids as metadata for
+            # indexing while target_token_ids already contains the exact same
+            # output sequence. Do not silently double the supervised target.
+            if not _contains_token_subsequence(target_ids, value):
+                target_ids.extend(value)
     if target_ids:
         if not prompt_ids:
             # Explicit media/assistant target rows can be target-only. Prepend a

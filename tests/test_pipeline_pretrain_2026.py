@@ -690,6 +690,20 @@ def test_explicit_token_rows_concatenate_assistant_and_media_targets() -> None:
     assert weight > 0.0
 
 
+def test_explicit_token_rows_do_not_duplicate_artifact_metadata_targets() -> None:
+    record = {
+        "prompt_token_ids": [10, 11],
+        "target_token_ids": [30, 31],
+        "artifact_token_ids": [30, 31],
+    }
+
+    ids, labels, weight = pipeline.record_ids_labels_weight(record, tokenizer=None)
+
+    assert ids == [10, 11, 30, 31]
+    assert labels == [-100, -100, 30, 31]
+    assert weight > 0.0
+
+
 def test_explicit_target_only_rows_prepend_masked_context() -> None:
     record = {"assistant_token_ids": [13]}
 
