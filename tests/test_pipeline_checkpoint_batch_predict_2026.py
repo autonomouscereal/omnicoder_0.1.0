@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -143,3 +144,77 @@ def test_target_diagnostics_single_rank_hidden_path_does_not_send(monkeypatch: p
 
     assert hidden is not None
     assert hidden.shape == (1, 3, 1)
+
+
+def test_target_diagnostics_single_rank_evaluate_uses_local_final_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    torch = pytest.importorskip("torch")
+    from omnicoder.eval import pipeline_target_token_diagnostics_2026 as target_diagnostics
+
+    class FakeTokenizer:
+        def decode(self, token_ids: list[int]) -> str:
+            return f"tok{int(token_ids[0])}"
+
+    class FakeShard:
+        def __call__(self, batch: torch.Tensor) -> torch.Tensor:
+            values = batch.float().unsqueeze(-1)
+            return values / values.clamp_min(1.0)
+
+        def lm_head(self, hidden: torch.Tensor) -> torch.Tensor:
+            shape = tuple(hidden.shape[:-1]) + (8,)
+            logits = torch.zeros(shape, dtype=torch.float32, device=hidden.device)
+            logits[..., 3] = 4.0
+            logits[..., 4] = 3.0
+            return logits
+
+    data = tmp_path / "records.jsonl"
+    data.write_text("{}\n", encoding="utf-8")
+
+    def fail_object_broadcast(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("single-rank target diagnostics should build the final record locally")
+
+    monkeypatch.setattr(target_diagnostics.dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(target_diagnostics.dist, "get_rank", lambda: 0)
+    monkeypatch.setattr(target_diagnostics.dist, "get_world_size", lambda: 1)
+    monkeypatch.setattr(target_diagnostics.dist, "broadcast", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(target_diagnostics.dist, "broadcast_object_list", fail_object_broadcast)
+    monkeypatch.setattr(target_diagnostics, "_build_shard", lambda _args: (FakeShard(), torch.device("cpu"), 1, 8, "fake"))
+    monkeypatch.setattr(target_diagnostics, "get_text_tokenizer", lambda prefer_hf=True: FakeTokenizer())
+    monkeypatch.setattr(target_diagnostics, "effective_text_token_range", lambda **_kwargs: (0, 8))
+    monkeypatch.setattr(target_diagnostics, "_candidate_data_files", lambda *_args, **_kwargs: [data])
+    monkeypatch.setattr(target_diagnostics, "_read_jsonl", lambda *_args, **_kwargs: [{}])
+    monkeypatch.setattr(target_diagnostics, "record_ids_labels_weight", lambda *_args, **_kwargs: ([2, 3, 4], [-100, 3, 4], 1.0))
+
+    args = SimpleNamespace(
+        checkpoint="ckpt",
+        data=[],
+        data_dir=str(tmp_path),
+        exclude_aggregate_jsonl=False,
+        dist_backend="gloo",
+        dist_timeout_seconds=1,
+        init_dtype="fp32",
+        precision="fp32",
+        preset="fake",
+        rank_device_map="",
+        placement_layer_counts="",
+        fake_quant=False,
+        fake_quant_chunk_rows=0,
+        fake_quant_max_full_elements=0,
+        require_target_contract=False,
+        allow_p40_target_contract_eval=False,
+        seq_len=8,
+        max_records_per_file=0,
+        top_k=2,
+        max_positions=4,
+        progress_records=0,
+    )
+
+    result = target_diagnostics.evaluate(args)
+
+    assert result is not None
+    assert result["status"] == "ok"
+    assert result["overall"]["records"] == 1
+    assert result["overall"]["target_tokens"] == 2
+    assert result["records"][0]["target_token_count"] == 2

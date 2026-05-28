@@ -350,6 +350,37 @@ def _diagnose_on_final_rank(
     }
 
 
+def _rank0_collect_final_diagnostic(
+    *,
+    logits: torch.Tensor | None,
+    labels: torch.Tensor,
+    prefix_logits: torch.Tensor | None,
+    tokenizer: Any,
+    text_range: tuple[int, int],
+    top_k: int,
+    max_positions: int,
+) -> dict[str, Any]:
+    world_size = int(dist.get_world_size())
+    if world_size == 1:
+        result = _diagnose_on_final_rank(
+            record_meta={},
+            logits=logits,
+            labels=labels,
+            prefix_logits=prefix_logits,
+            tokenizer=tokenizer,
+            text_range=text_range,
+            top_k=top_k,
+            max_positions=max_positions,
+        )
+    else:
+        objects: list[Any] = [None]
+        dist.broadcast_object_list(objects, src=world_size - 1)
+        result = objects[0]
+    if not isinstance(result, dict):
+        raise RuntimeError("final rank did not return a diagnostic record")
+    return result
+
+
 def _bucket_add(bucket: dict[str, Any], record: dict[str, Any]) -> None:
     bucket["records"] = int(bucket.get("records") or 0) + 1
     target_count = int(record.get("target_token_count") or 0)
@@ -462,11 +493,15 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
                     "token_count": int(len(ids)),
                     "prompt_token_count_before_first_target": int(first_label),
                 }
-                objects: list[Any] = [None]
-                dist.broadcast_object_list(objects, src=dist.get_world_size() - 1)
-                result = objects[0]
-                if not isinstance(result, dict):
-                    raise RuntimeError("final rank did not return a diagnostic record")
+                result = _rank0_collect_final_diagnostic(
+                    logits=logits,
+                    labels=label_batch,
+                    prefix_logits=prefix_logits,
+                    tokenizer=tokenizer,
+                    text_range=text_range,
+                    top_k=int(args.top_k),
+                    max_positions=int(args.max_positions),
+                )
                 result.update(meta)
                 records.append(result)
                 bucket = modality_buckets.setdefault(modality, {"records": 0, "target_tokens": 0, "first_targets": 0, "first_target_top1": 0})
