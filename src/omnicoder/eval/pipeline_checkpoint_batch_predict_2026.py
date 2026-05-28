@@ -24,7 +24,7 @@ from omnicoder.eval.pipeline_checkpoint_manifest_2026 import (
     read_json as manifest_read_json,
     resolve_expected_world_size as manifest_resolve_expected_world_size,
 )
-from omnicoder.inference.output_router_2026 import route_for_output, route_manifest
+from omnicoder.inference.output_router_2026 import route_for_model_output_text, route_for_output, route_manifest
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 from omnicoder.tokenization.text_range_2026 import effective_text_token_range
@@ -706,7 +706,7 @@ def _run_rank0_batch(
             prompt = harness.prompt_from_task(task.row)
             prompt_tokens = len(tokenizer.encode(prompt))
             skipped_reason = ""
-            if route.requires_artifact_decoder:
+            if route.requires_artifact_decoder and not bool(args.allow_media_route_text_proof):
                 _broadcast_task_header(device, True, 0, text_token_hi)
                 row = _skipped_prediction_row(
                     task,
@@ -737,6 +737,7 @@ def _run_rank0_batch(
                 )
                 skipped_reason = "prompt_over_max_prompt_tokens"
             else:
+                effective_output_field = "generated_artifact" if route.requires_artifact_decoder else output_field
                 _broadcast_task_header(device, True, int(args.max_output_tokens), text_token_hi)
                 text, generated_tokens = _decode_rank0(
                     shard,
@@ -752,10 +753,25 @@ def _run_rank0_batch(
                     precision=str(args.precision),
                     text_range=text_range,
                 )
+                if route.requires_artifact_decoder and bool(args.allow_media_route_text_proof):
+                    parsed_route, cleaned_text = route_for_model_output_text(
+                        text=text,
+                        row=task.row,
+                        output_field=output_field,
+                        tokenizer=tokenizer,
+                        model_vocab_size=vocab_size,
+                    )
+                    route_info = {
+                        **route_info,
+                        "diagnostic_only": True,
+                        "media_route_text_proof": True,
+                        "parsed_output_route": route_manifest(parsed_route),
+                        "route_text_cleaned_chars": len(cleaned_text),
+                    }
                 row = _prediction_row(
                     task,
                     cfg,
-                    output_field,
+                    effective_output_field,
                     text,
                     latency_seconds=time.perf_counter() - task_started,
                     generated_tokens=generated_tokens,
@@ -963,6 +979,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-output-tokens", "--max_output_tokens", "--max-new-tokens", "--max_new_tokens", dest="max_output_tokens", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_MAX_OUTPUT_TOKENS", "256") or 256))
     parser.add_argument("--allow-one-token-canary", "--allow_one_token_canary", dest="allow_one_token_canary", action="store_true", help="Explicitly allow <=1 output token canary runs. Real benchmark/eval runs should not use this.")
     parser.add_argument("--allow-rejected-model-output", "--allow_rejected_model_output", dest="allow_rejected_model_output", action="store_true", help="Debug-only: write rejected/junk model outputs instead of failing nonzero.")
+    parser.add_argument(
+        "--allow-media-route-text-proof",
+        "--allow_media_route_text_proof",
+        dest="allow_media_route_text_proof",
+        action="store_true",
+        help="Debug-only: decode media artifact tasks as text to prove route prefixes/structured artifact text; never reportable.",
+    )
     parser.add_argument("--fake-quant", "--fake_quant", dest="fake_quant", action="store_true")
     parser.add_argument("--fake-quant-chunk-rows", "--fake_quant_chunk_rows", dest="fake_quant_chunk_rows", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_FAKE_QUANT_CHUNK_ROWS", "0") or 0))
     parser.add_argument("--fake-quant-max-full-elements", "--fake_quant_max_full_elements", dest="fake_quant_max_full_elements", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_FAKE_QUANT_MAX_FULL_ELEMENTS", "0") or 0))

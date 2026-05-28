@@ -70,6 +70,15 @@ EVAL_LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("eval_leak_fixture", r"\b(?:fixture|smoke|canary)\b"),
     )
 )
+REFUSAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (reason, re.compile(pattern, re.IGNORECASE))
+    for reason, pattern in (
+        ("refusal_as_an_ai", r"\bas an ai(?: language)? model\b"),
+        ("refusal_cannot_assist", r"\b(?:cannot|can't|can not|unable to) (?:assist|help|comply|provide)\b"),
+        ("refusal_policy", r"\b(?:against|violates?) (?:the )?(?:policy|safety policy|guidelines)\b"),
+        ("refusal_refuse", r"\b(?:must refuse|have to refuse|refusal|refused|refusing)\b"),
+    )
+)
 
 RIGHTS_RESTRICTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (reason, re.compile(pattern, re.IGNORECASE))
@@ -308,6 +317,9 @@ def audit_dataset_integrity(
     for reason in _pattern_hits(combined, EVAL_LEAK_PATTERNS):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "eval_leakage"})
+    for reason in _pattern_hits(combined, REFUSAL_PATTERNS):
+        reasons.append(reason)
+        issues.append({"reason": reason, "kind": "refusal_boilerplate"})
     for reason in _pattern_hits(combined, RIGHTS_RESTRICTION_PATTERNS):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "rights_restriction"})
@@ -528,6 +540,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
             "reject_poisoning": True,
             "reject_ai_watermark_or_provenance_markers": True,
             "reject_eval_leakage": True,
+            "reject_refusal_boilerplate": True,
             "reject_hidden_unicode": True,
             "reject_one_token_targets": True,
             "reject_prompt_copy": True,

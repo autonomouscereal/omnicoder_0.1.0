@@ -297,12 +297,37 @@ PY
   "$PYTHON_BIN" - <<'PY'
 import json
 import os
+import shutil
 from pathlib import Path
 run_id = os.environ["RUN_ID"]
-manifest = Path("weights/external_datasets_2026/runs") / run_id / "integrity" / "dataset_integrity_manifest.json"
+run_dir = Path("weights/external_datasets_2026/runs") / run_id
+manifest = run_dir / "integrity" / "dataset_integrity_manifest.json"
 data = json.loads(manifest.read_text(encoding="utf-8"))
-if int(data.get("rejected") or 0) > 0:
-    raise SystemExit(f"external train bucket integrity scan rejected rows; delete/repair before training: {json.dumps(data.get('counts', {}), sort_keys=True)}")
+rejected = int(data.get("rejected") or 0)
+accepted = int(data.get("accepted") or 0)
+train_path = run_dir / "jsonl" / "train_all_external.jsonl"
+accepted_path = Path(data.get("accepted_jsonl") or "")
+rejected_path = Path(data.get("rejected_jsonl") or "")
+if rejected > 0:
+    if accepted <= 0 or not accepted_path.exists():
+        raise SystemExit(f"external train bucket integrity scan rejected every row; refusing train promotion: {json.dumps(data.get('counts', {}), sort_keys=True)}")
+    backup_path = train_path.with_suffix(".pre_integrity_rewrite.bad.jsonl")
+    if train_path.exists():
+        train_path.replace(backup_path)
+    shutil.copyfile(accepted_path, train_path)
+    if rejected_path.exists():
+        rejected_path.unlink()
+    if backup_path.exists():
+        backup_path.unlink()
+    rewrite = {
+        "status": "rewritten_clean",
+        "accepted_rows": accepted,
+        "deleted_rejected_rows": rejected,
+        "train_path": str(train_path),
+        "counts": data.get("counts", {}),
+    }
+    (run_dir / "integrity" / "train_bucket_integrity_rewrite.json").write_text(json.dumps(rewrite, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps(rewrite, sort_keys=True))
 PY
 }
 
