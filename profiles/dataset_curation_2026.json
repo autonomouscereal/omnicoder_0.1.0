@@ -31252,6 +31252,7 @@
         "source_year": 2026,
         "last_verified": "2026-05-28",
         "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "config": "default",
         "splits": [
           "chat",
           "code",
@@ -31261,11 +31262,14 @@
         ],
         "max_records": 32768,
         "target_modality": "tool",
-        "use_policy": "research_internal",
-        "license": "NVIDIA dataset terms require release-specific review",
-        "license_tier": "manual_terms_review",
-        "source_review_status": "research_internal_until_exact_license_and_component_mix_verified_2026_05_28",
-        "materialization_note": "High-value SFT/RL blend, but keep out of train until exact license, component provenance, and benchmark overlap review clear.",
+        "use_policy": "train",
+        "license": "CC-BY-4.0 with per-sample license metadata",
+        "license_tier": "attribution",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.9,
+        "source_review_status": "public_train_reviewed_2026_05_28",
+        "materialization_note": "CC-BY-4.0 post-training SFT/RL blend with public Hugging Face materialization; preserve per-sample license metadata and keep protected eval overlap scans on.",
         "curriculum_axes": [
           "posttraining",
           "sft",
@@ -31301,6 +31305,7 @@
         "source_year": 2026,
         "last_verified": "2026-05-28",
         "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "config": "SFT",
         "splits": [
           "chat",
           "code",
@@ -31315,12 +31320,15 @@
         "max_records": 32768,
         "target_modality": "tool",
         "use_policy": "research_internal",
-        "license": "NVIDIA dataset terms require release-specific review",
-        "license_tier": "manual_terms_review",
+        "license": "gated NVIDIA dataset with Qwen/DeepSeek redistribution/use caveats and per-sample license metadata",
+        "license_tier": "manual_terms_review_qwen_deepseek_redistribution_caveat",
         "gated": true,
         "token_env": "HF_TOKEN",
-        "source_review_status": "research_internal_until_exact_license_and_component_mix_verified_2026_05_28",
-        "materialization_note": "Prefer v2 after license review; do not mix with protected eval answer traces.",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.9,
+        "source_review_status": "research_internal_until_qwen_deepseek_redistribution_terms_accepted_2026_05_28",
+        "materialization_note": "High-value gated post-training blend. Keep research-internal until access terms and Qwen/DeepSeek redistribution requirements are accepted for release-weight training; preserve per-sample license metadata and keep protected eval overlap scans on.",
         "curriculum_axes": [
           "posttraining",
           "sft",
@@ -31365,8 +31373,8 @@
         "license": "CC-BY-4.0 metadata; individual images retain their own copyrights and opt-out flags",
         "license_tier": "copyright_privacy_opt-out_blocked_until_review",
         "gated": true,
-        "source_review_status": "blocked_until_url_rights_privacy_and_optout_filtering_exist_2026_05_28",
-        "materialization_note": "Do not train directly from URL metadata. Use only after local authorized image fetch, PII/face/document filtering, opt-out removal, C2PA/SynthID scan, and artifact hashing.",
+        "source_review_status": "blocked_until_official_accessible_payload_terms_url_rights_privacy_and_optout_filtering_exist_2026_05_28",
+        "materialization_note": "Do not train directly from URL metadata. Use only after an official accessible payload and accepted terms are verified, plus local authorized image fetch, PII/face/document filtering, opt-out removal, C2PA/SynthID scan, and artifact hashing.",
         "curriculum_axes": [
           "image_text_pairs",
           "datacomp",
@@ -31870,6 +31878,63 @@
           "media": [
             "image",
             "path"
+          ]
+        }
+      },
+      {
+        "name": "COCO 2017 Captions and Detection",
+        "family": "omnimodal_understanding",
+        "url": "https://cocodataset.org/#download",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "validation"
+        ],
+        "max_records": 5000,
+        "target_modality": "image",
+        "use_policy": "eval_only",
+        "license": "COCO annotations are CC-BY-4.0; images are governed by original Flickr licenses and terms",
+        "license_tier": "manual_image_rights_eval_holdout",
+        "source_review_status": "official_eval_holdout_manual_image_rights_2026_05_28",
+        "materialization_note": "Materialize only official validation annotations from the annotation zip for eval/decontamination. Do not train on COCO images or captions, and do not treat Flickr/COCO URLs as media artifacts.",
+        "curriculum_axes": [
+          "image_captioning",
+          "object_detection",
+          "segmentation",
+          "vision_eval",
+          "protected_benchmark"
+        ],
+        "remote_files": [
+          {
+            "url": "http://images.cocodataset.org/annotations/annotations_trainval2017.zip",
+            "format": "zip",
+            "members": [
+              "annotations/captions_val2017.json",
+              "annotations/instances_val2017.json"
+            ],
+            "timeout": 180
+          }
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "image_id"
+          ],
+          "prompt": [
+            "image_id",
+            "file_name",
+            "category_id"
+          ],
+          "target": [
+            "caption",
+            "bbox",
+            "segmentation",
+            "category_id"
+          ],
+          "media": [
+            "image_id",
+            "file_name"
           ]
         }
       },

@@ -52,7 +52,14 @@ def test_dataset_index_tracks_train_eval_research_block_buckets(tmp_path: Path) 
     _write_jsonl(
         data,
         [
-            {"record_id": "train-1", "source_id": "src", "modality": "text", "training_bucket": "train", "target": "Useful training target."},
+            {
+                "record_id": "train-1",
+                "source_id": "src",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "target": "Useful training target.",
+            },
             {"record_id": "eval-1", "source_id": "src", "modality": "text", "training_bucket": "eval_holdout", "target": "Eval-only target."},
             {"record_id": "research-1", "source_id": "src", "modality": "text", "training_bucket": "research_internal", "target": "Research-only target."},
             {"record_id": "block-1", "source_id": "src", "modality": "text", "training_bucket": "blocked_until_review", "target": "Blocked review target."},
@@ -68,6 +75,104 @@ def test_dataset_index_tracks_train_eval_research_block_buckets(tmp_path: Path) 
         "train": 1,
     }
     assert payload["by_train_eval_research_block"] == {"block": 1, "eval": 1, "research": 1, "train": 1}
+    assert payload["by_source_training_bucket"] == [
+        {"source_id": "src", "training_bucket": "blocked_until_review", "rows": 1},
+        {"source_id": "src", "training_bucket": "eval_holdout", "rows": 1},
+        {"source_id": "src", "training_bucket": "research_internal", "rows": 1},
+        {"source_id": "src", "training_bucket": "train", "rows": 1},
+    ]
+
+
+def test_dataset_index_rejects_eval_only_policy_in_train_bucket(tmp_path: Path) -> None:
+    data = tmp_path / "mixed.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "eval-policy-in-train",
+                "source_id": "heldout_public_suite",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "validation_only",
+                "training_allowed": False,
+                "target": "Held out validation target text.",
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert "non_training_policy_in_train_bucket" in payload["fail_reasons"]
+    assert payload["counts"]["non_training_policy_in_train_bucket"] == 1
+    assert payload["non_training_policy_train_examples"][0]["reason"] == "use_policy:validation_only"
+
+
+def test_dataset_index_rejects_eval_policy_aliases_for_explicit_train_bucket(tmp_path: Path) -> None:
+    data = tmp_path / "mixed.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "eval-alias-in-train",
+                "source_id": "swe_bench_verified",
+                "modality": "code",
+                "training_bucket": "train",
+                "use_policy": "eval",
+                "target": "Protected benchmark target text.",
+            },
+            {
+                "record_id": "holdout-alias-in-train",
+                "source_id": "webarena",
+                "modality": "tool",
+                "training_bucket": "train",
+                "use_policy": "benchmark_holdout",
+                "target": "Protected browser task verifier.",
+            },
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert payload["counts"]["non_training_policy_in_train_bucket"] == 2
+    assert {row["reason"] for row in payload["non_training_policy_train_examples"]} == {
+        "use_policy:benchmark_holdout",
+        "use_policy:eval",
+    }
+
+
+def test_dataset_index_rejects_train_rows_missing_source_or_policy(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "missing-source",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "target": "Train rows must name their source.",
+            },
+            {
+                "record_id": "missing-policy",
+                "source_id": "fineweb_edu",
+                "modality": "text",
+                "training_bucket": "train",
+                "target": "Train rows must carry a policy.",
+            },
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert "train_rows_missing_source_or_policy" in payload["fail_reasons"]
+    assert payload["counts"]["train_rows_missing_source_or_policy"] == 2
+    assert {row["reason"] for row in payload["train_metadata_examples"]} == {
+        "missing_source_id",
+        "missing_use_policy",
+    }
 
 
 def test_dataset_index_flags_empty_prompt_leak_and_url_only_media(tmp_path: Path) -> None:
@@ -130,6 +235,7 @@ def test_dataset_index_counts_structured_target_json_content(tmp_path: Path) -> 
                 "source_id": "structured_source",
                 "target_modality": "text",
                 "split": "train",
+                "use_policy": "train",
                 "target_json": {"content": "Useful structured target text."},
             }
         ],
@@ -153,6 +259,7 @@ def test_dataset_index_counts_target_json_when_input_messages_are_prompt_only(tm
                 "source_id": "structured_source",
                 "modality": "text",
                 "split": "train",
+                "use_policy": "train",
                 "input_json": {"messages": [{"role": "user", "content": "Pretraining chunk prompt"}]},
                 "target_json": {"content": "Pretraining chunk target"},
             }

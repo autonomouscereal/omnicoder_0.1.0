@@ -103,9 +103,17 @@ def test_materializer_writes_local_public_dev_rows_without_network(tmp_path: Pat
     assert len(rows) == 1
     assert rows[0]["reportable"] is False
     assert rows[0]["local_only"] is True
+    assert rows[0]["training_bucket"] == "eval_holdout"
+    assert rows[0]["use_policy"] == "validation_only"
+    assert rows[0]["source_bucket"] == "public_dev_validation"
+    assert rows[0]["training_allowed"] is False
+    assert rows[0]["evaluation_only"] is True
+    assert rows[0]["reportability_scope"] == "validation_only_public_dev"
     assert rows[0]["benchmark_id"] == "multimodal_mmmu_pro_2026"
     assert manifest["rows"] == 1
     assert manifest["records"][0]["local_only"] is True
+    assert manifest["records"][0]["training_bucket"] == "eval_holdout"
+    assert manifest["records"][0]["training_allowed"] is False
 
 
 def test_materializer_writes_run_scoped_authorized_rows(tmp_path: Path) -> None:
@@ -139,6 +147,11 @@ def test_materializer_writes_run_scoped_authorized_rows(tmp_path: Path) -> None:
     manifest = _read_json(out_root / "manifests" / "benchmark_materialization_manifest.json")
     assert rows[0]["reportable"] is True
     assert rows[0]["local_only"] is False
+    assert rows[0]["training_bucket"] == "eval_holdout"
+    assert rows[0]["use_policy"] == "reportable_eval_only"
+    assert rows[0]["source_bucket"] == "reportable_eval"
+    assert rows[0]["training_allowed"] is False
+    assert rows[0]["evaluation_only"] is True
     assert rows[0]["snapshot_id"] == "mmmu-pro-authorized-2026-current"
     assert rows[0]["snapshot_authorization"] == "official_or_authorized_current_release"
     assert manifest["records"][0]["reportable"] is True
@@ -176,6 +189,64 @@ def test_reportable_mode_requires_authorized_source_override(tmp_path: Path, mon
     manifest = _read_json(out_root / "manifests" / "benchmark_materialization_manifest.json")
     assert manifest["needs_data"] == 1
     assert manifest["records"][0]["status"] == "needs_data"
+    assert "requires an authorized local snapshot" in manifest["records"][0]["errors"][0]
+
+
+def test_reportable_mode_requires_override_for_any_snapshot_descriptor(tmp_path: Path, monkeypatch) -> None:
+    profile = tmp_path / "profile.json"
+    _write_json(
+        profile,
+        {
+            "benchmarks": [
+                {
+                    "benchmark_id": "multimodal_mmmu_pro_2026",
+                    "adapter_kind": "expert_multimodal_reasoning",
+                    "axis": "multimodal_understanding",
+                    "source": "https://huggingface.co/datasets/MMMU/MMMU_Pro",
+                    "splits": {"smoke": "one public-dev item"},
+                }
+            ],
+            "reportable_snapshots": {
+                "multimodal_mmmu_pro_2026": {
+                    "snapshot_id": "mmmu-pro-official-current",
+                    "dataset_revision": "mmmu-pro-official-current",
+                    "source": "https://huggingface.co/datasets/MMMU/MMMU_Pro",
+                }
+            },
+        },
+    )
+
+    def fail_collect(*_args, **_kwargs):
+        raise AssertionError("reportable materialization must not collect public rows for snapshot descriptors")
+
+    monkeypatch.setattr(materializer, "collect_source_rows", fail_collect)
+    out_root = tmp_path / "materialized"
+
+    assert (
+        materializer.main(
+            [
+                "--profile",
+                str(profile),
+                "--out-root",
+                str(out_root),
+                "--run-id",
+                "run_reportable_snapshot_blocked",
+                "--benchmark",
+                "multimodal_mmmu_pro_2026",
+                "--mode",
+                "reportable",
+                "--download",
+                "materialize",
+            ]
+        )
+        == 0
+    )
+
+    manifest = _read_json(out_root / "manifests" / "benchmark_materialization_manifest.json")
+    assert manifest["needs_data"] == 1
+    assert manifest["records"][0]["status"] == "needs_data"
+    assert manifest["records"][0]["training_bucket"] == "eval_holdout"
+    assert manifest["records"][0]["training_allowed"] is False
     assert "requires an authorized local snapshot" in manifest["records"][0]["errors"][0]
 
 
@@ -711,6 +782,12 @@ def test_materializer_normalizes_hellaswag_completion_rows() -> None:
     assert task["question"] == "A person opens the oven door and"
     assert task["choices"][1] == "pulls out a tray."
     assert task["answer"] == "1"
+    assert task["training_bucket"] == "eval_holdout"
+    assert task["use_policy"] == "validation_only"
+    assert task["source_bucket"] == "public_dev_validation"
+    assert task["training_allowed"] is False
+    assert task["evaluation_only"] is True
+    assert task["reportability_scope"] == "validation_only_public_dev"
     assert materializer.is_scorable_task(task, spec)
 
 
@@ -786,6 +863,10 @@ def test_materializer_reportable_hellaswag_attaches_scorer_license_and_file_hash
     assert rows[0]["license_ref"] == "authorized-eval-ledger:hellaswag"
     assert rows[0]["official_scorer_ref"] == "hellaswag-official-eval-2026"
     assert len(rows[0]["task_file_sha256"]) == 64
+    assert rows[0]["training_bucket"] == "eval_holdout"
+    assert rows[0]["use_policy"] == "reportable_eval_only"
+    assert rows[0]["source_bucket"] == "reportable_eval"
+    assert rows[0]["training_allowed"] is False
 
 
 def test_materializer_normalizes_countdown_rewardbench_and_oneig_aliases() -> None:

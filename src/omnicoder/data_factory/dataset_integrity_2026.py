@@ -45,9 +45,11 @@ AI_PROVENANCE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (reason, re.compile(pattern, re.IGNORECASE))
     for reason, pattern in (
         ("ai_watermark_synthid", r"\bsynthid\b"),
+        ("ai_watermark_ai_id", r"\b(?:ai[-_ ]?id|aigc[-_ ]?id|ai generated content id|ai content id)\b"),
         ("ai_watermark_c2pa", r"\bc2pa(?:\b|_)|\bcontent credentials?\b|\bcontent authenticity\b|\bcai manifest\b|\bjumbf\b"),
         ("ai_watermark_invisible", r"\b(?:ai|synthetic|generative)\s+(?:watermark|signature|fingerprint|provenance)\b"),
         ("ai_watermark_detected", r"\b(?:watermark|provenance)\s+(?:detected|embedded|verified|signed)\b"),
+        ("ai_watermark_provenance_boilerplate", r"\b(?:this|the)\s+(?:image|video|audio|content|media|artifact)\s+(?:contains|includes|carries|has)\s+(?:an?\s+)?(?:ai[-_ ]?id|aigc[-_ ]?id|synthid|watermark|provenance marker)\b"),
         ("ai_generated_source_label", r"\b(?:made|created|generated|edited)\s+(?:with|by)\s+(?:google ai|gemini|imagen|veo|lyria|firefly|dall[- ]?e)\b"),
         ("ai_generated_metadata_label", r"\b(?:digitalSourceType|trainedAlgorithmicMedia|algorithmicMedia|aiGenerated|generatedByAI|model_signature)\b"),
     )
@@ -58,7 +60,43 @@ LOW_VALUE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     for reason, pattern in (
         ("low_value_boilerplate_cookie", r"\b(?:accept all cookies|cookie policy|privacy choices|enable javascript|captcha)\b"),
         ("low_value_scrape_chrome", r"\b(?:subscribe to our newsletter|all rights reserved|advertisement|sponsored content)\b"),
-        ("low_value_placeholder", r"\b(?:lorem ipsum|placeholder|dummy output|mock output|stubbed response|todo|fixme|tbd)\b"),
+        ("low_value_placeholder", r"^\s*(?:lorem ipsum(?:\s+dolor sit amet)?|placeholder|dummy output|mock output|stubbed response|todo|fixme|tbd)\s*$|\b(?:placeholder text|synthetic placeholder|dummy output|mock output|stubbed response)\b"),
+    )
+)
+
+LOW_VALUE_TEXT_SOURCE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (reason, re.compile(pattern, re.IGNORECASE | re.DOTALL))
+    for reason, pattern in (
+        (
+            "low_value_retracted_or_withdrawn_paper",
+            r"\b(?:this\s+)?(?:article|paper|preprint|manuscript|publication)\s+(?:has\s+been\s+)?(?:withdrawn|retracted)\b"
+            r"|\b(?:withdrawn|retracted)\s+(?:by|from)\s+(?:the\s+)?(?:author|authors|publisher|journal|arxiv|medrxiv|biorxiv)\b"
+            r"|\bretraction notice\b|\bwithdrawal notice\b",
+        ),
+        (
+            "low_value_admin_redacted",
+            r"\b(?:redacted|removed|deleted)\s+by\s+(?:an?\s+)?(?:[\w.-]+\s+)?(?:admin|admins|administrator|administrators|moderator|moderators|site staff)\b"
+            r"|\bcontent\s+(?:has\s+been\s+)?(?:redacted|removed|deleted)\s+by\s+(?:an?\s+)?(?:admin|administrator|moderator)\b",
+        ),
+        (
+            "low_value_no_abstract_available",
+            r"\b(?:no abstract available|no abstract is available|this article has no abstract|an abstract is not available|abstract\s+(?:is\s+)?(?:not available|unavailable))\b",
+        ),
+        (
+            "low_value_review_only",
+            r"\b(?:review only|reviews only|book review only|peer review only)\b"
+            r"|\bthis\s+(?:record|entry|page)\s+is\s+(?:a\s+)?review\s+only\b"
+            r"|\bno abstract;?\s*(?:review|reviews?)\s+only\b",
+        ),
+        (
+            "low_value_unavailable_abstract_boilerplate",
+            r"\b(?:abstract unavailable|abstract not provided|summary not available|no summary available|full text unavailable|content unavailable|not available for this record)\b",
+        ),
+        (
+            "low_value_deleted_or_removed_text",
+            r"^\s*(?:\[?(?:deleted|removed|redacted|unavailable)\]?|n/?a|null|none)\s*$"
+            r"|\bthis\s+(?:post|comment|content|record|page|item)\s+(?:has\s+been\s+)?(?:deleted|removed|redacted|withheld)\b",
+        ),
     )
 )
 EVAL_LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
@@ -130,6 +168,21 @@ MODALITY_KEYS = (
     "media_family",
 )
 MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts", "ocr"}
+CODE_TOOL_MODALITIES = {"code", "tool"}
+TEXT_PRETRAINING_HINTS = (
+    "pretrain",
+    "pretraining",
+    "language_modeling",
+    "language-modeling",
+    "lm_corpus",
+    "text_corpus",
+    "web_corpus",
+    "webtext",
+    "plain_text",
+    "document_corpus",
+    "next_token",
+    "causal_lm",
+)
 REMOTE_REF_PREFIXES = ("http://", "https://", "s3://", "hf://")
 MEDIA_URL_RE = re.compile(
     r"(?i)^\s*(?:https?://|s3://|hf://)\S+\.(?:png|jpe?g|webp|gif|bmp|tiff|mp4|mov|mkv|webm|avi|wav|mp3|flac|ogg|m4a|aac|mid|midi)(?:[?#]\S*)?\s*$"
@@ -228,6 +281,83 @@ def _pattern_hits(text: str, patterns: tuple[tuple[str, re.Pattern[str]], ...]) 
     return [reason for reason, pattern in patterns if pattern.search(text)]
 
 
+def _normalized_modality(value: str) -> str:
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _is_code_tool_modality(modality: str) -> bool:
+    normalized = _normalized_modality(modality)
+    return normalized in CODE_TOOL_MODALITIES or any(marker in normalized for marker in ("code", "tool", "function_call", "shell", "terminal"))
+
+
+def _is_media_modality(modality: str) -> bool:
+    normalized = _normalized_modality(modality)
+    return normalized in MEDIA_MODALITIES or any(marker in normalized for marker in ("image", "video", "audio", "music", "tts", "ocr"))
+
+
+def _metadata_hint_blob(row: dict[str, Any]) -> str:
+    keys = (
+        "source_id",
+        "dataset_name",
+        "dataset_family",
+        "task_type",
+        "training_kind",
+        "curriculum_axes",
+        "domain",
+        "tags",
+        "labels",
+        "categories",
+        "split",
+        "split_name",
+    )
+    parts: list[str] = []
+    for container in (row, row.get("metadata"), row.get("input_json"), row.get("target_json"), row.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        parts.extend(text_value(container.get(key), limit=2048) for key in keys)
+    return " ".join(part for part in parts if part).lower()
+
+
+def _normalized_compare_text(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _same_normalized_text(left: str, right: str) -> bool:
+    left_norm = _normalized_compare_text(left)
+    right_norm = _normalized_compare_text(right)
+    return bool(left_norm and right_norm and left_norm == right_norm)
+
+
+def _is_text_pretraining_row(row: dict[str, Any], prompt: str, modality: str) -> bool:
+    normalized = _normalized_modality(modality)
+    if _is_code_tool_modality(normalized) or _is_media_modality(normalized) or normalized == "math":
+        return False
+    hint_blob = _metadata_hint_blob(row)
+    if any(hint in hint_blob for hint in TEXT_PRETRAINING_HINTS):
+        return True
+    if normalized in {"text", "long_context"} and not prompt.strip():
+        return True
+    return False
+
+
+def _low_value_text_source_hits(row: dict[str, Any], prompt: str, target: str, combined: str, modality: str) -> list[str]:
+    if _is_code_tool_modality(modality) or _is_media_modality(modality):
+        return []
+    hits = _pattern_hits(combined, LOW_VALUE_TEXT_SOURCE_PATTERNS)
+    line_blob = "\n".join(part for part in (prompt, target) if part)
+    for reason in (
+        _pattern_hits(line_blob, LOW_VALUE_TEXT_SOURCE_PATTERNS)
+        + _pattern_hits(prompt, LOW_VALUE_TEXT_SOURCE_PATTERNS)
+        + _pattern_hits(target, LOW_VALUE_TEXT_SOURCE_PATTERNS)
+    ):
+        hits.append(reason)
+    if _is_text_pretraining_row(row, prompt, modality):
+        words = WORD_RE.findall(target)
+        if 0 < len(words) < 8 and len(target.strip()) < 80:
+            hits.append("low_value_short_text_pretraining_target")
+    return sorted(set(hits))
+
+
 def _repetition_issue(text: str) -> str:
     tokens = WORD_RE.findall(text.lower())
     if len(tokens) < 120:
@@ -308,7 +438,9 @@ def _modality_metadata(row: dict[str, Any], explicit: str = "") -> str:
     return ""
 
 
-def _one_token_target_issue(target: str, row: dict[str, Any]) -> str:
+def _one_token_target_issue(target: str, row: dict[str, Any], modality: str = "") -> str:
+    if _is_code_tool_modality(modality):
+        return ""
     if isinstance(row.get("target_token_ids"), list) and len(row["target_token_ids"]) > 1:
         return ""
     if isinstance(row.get("assistant_token_ids"), list) and len(row["assistant_token_ids"]) > 1:
@@ -334,8 +466,10 @@ def _record_length_issue(prompt: str, target: str, row: dict[str, Any]) -> str:
     return ""
 
 
-def _prompt_target_leakage_issues(prompt: str, target: str, row: dict[str, Any]) -> list[str]:
+def _prompt_target_leakage_issues(prompt: str, target: str, row: dict[str, Any], modality: str = "") -> list[str]:
     if _row_has_media_target_payload(row):
+        return []
+    if _is_text_pretraining_row(row, prompt, modality):
         return []
     norm_prompt = " ".join(prompt.split()).casefold()
     norm_target = " ".join(target.split()).casefold()
@@ -470,6 +604,9 @@ def audit_dataset_integrity(
     for reason in _pattern_hits(combined, LOW_VALUE_PATTERNS):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "low_value"})
+    for reason in _low_value_text_source_hits(row, prompt, target, combined, resolved_modality):
+        reasons.append(reason)
+        issues.append({"reason": reason, "kind": "low_value_text_source"})
     for reason in _pattern_hits(combined, EVAL_LEAK_PATTERNS):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "eval_leakage"})
@@ -487,7 +624,7 @@ def audit_dataset_integrity(
     if repetition:
         reasons.append(repetition)
         issues.append({"reason": repetition, "kind": "low_value"})
-    tiny_target = _one_token_target_issue(target, row)
+    tiny_target = _one_token_target_issue(target, row, resolved_modality)
     if tiny_target:
         reasons.append(tiny_target)
         issues.append({"reason": tiny_target, "kind": "target_coverage"})
@@ -498,7 +635,7 @@ def audit_dataset_integrity(
     if record_length:
         reasons.append(record_length)
         issues.append({"reason": record_length, "kind": "target_coverage"})
-    for reason in _prompt_target_leakage_issues(prompt, target, row):
+    for reason in _prompt_target_leakage_issues(prompt, target, row, resolved_modality):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "target_leakage"})
     url_only = _url_only_media_issue(row, target=target, modality=resolved_modality, refs=refs)
@@ -570,6 +707,7 @@ def row_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
     target_json = row.get("target_json") if isinstance(row.get("target_json"), dict) else {}
     output_json = row.get("output_json") if isinstance(row.get("output_json"), dict) else {}
     teacher_output = row.get("teacher_output")
+    resolved_modality = _modality_metadata(row, str(row.get("modality") or ""))
     messages = row.get("messages")
     if isinstance(messages, list):
         prompt, target = _messages_prompt_target(messages)
@@ -590,6 +728,8 @@ def row_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
         if target:
             break
     if prompt and target:
+        if _is_text_pretraining_row(row, prompt, resolved_modality) and _same_normalized_text(prompt, target):
+            prompt = ""
         return prompt, target
     for key in ("prompt", "instruction", "question", "input", "query", "text"):
         prompt = text_value(row.get(key))
@@ -608,6 +748,11 @@ def row_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
                 break
     if not target:
         target = text_value(target_json or row.get("output_json") or row.get("teacher_output"))
+    if not target and prompt and _is_text_pretraining_row(row, prompt, resolved_modality):
+        target = prompt
+        prompt = ""
+    if prompt and target and _is_text_pretraining_row(row, prompt, resolved_modality) and _same_normalized_text(prompt, target):
+        prompt = ""
     return prompt, target
 
 
@@ -738,6 +883,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
             "reject_prompt_copy": True,
             "reject_rights_restrictions": True,
             "reject_low_value_scrape_noise": True,
+            "reject_low_value_science_and_text_boilerplate": True,
         },
     }
     manifest_path = Path(args.manifest) if args.manifest else out_dir / "dataset_integrity_manifest.json"

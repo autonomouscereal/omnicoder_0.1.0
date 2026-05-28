@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import types
+import zipfile
 from pathlib import Path
 
 from omnicoder.data_factory import dataset_expansion_2026 as expansion
@@ -99,6 +100,8 @@ def test_dataset_expansion_materializes_license_tiered_rows(tmp_path: Path, monk
     assert manifest["records"]["eval_holdout"] == 1
     assert manifest["families"]["math_reasoning"] == 1
     train_row = json.loads((root / "weights" / "external" / "jsonl" / "train_all_external.jsonl").read_text().splitlines()[0])
+    assert train_row["source_id"]
+    assert train_row["use_policy"] == "train"
     assert train_row["dataset_name"] == "unit_math"
     assert train_row["training_bucket"] == "train"
     assert train_row["license_tier"] == "permissive"
@@ -442,6 +445,71 @@ def test_dataset_expansion_downloads_remote_tsv_rows(tmp_path: Path, monkeypatch
     assert manifest["records"]["eval_holdout"] == 2
     assert rows[0]["media_refs"] == ["images/a.jpg"]
     assert rows[0]["trajectory"] == ['["Crop", "Flip"]']
+
+
+def test_dataset_expansion_materializes_remote_zip_json_members_for_eval_only(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    annotations = {
+        "images": [{"id": 100, "file_name": "000000000100.jpg", "coco_url": "https://images.example.invalid/100.jpg"}],
+        "annotations": [
+            {"id": 1, "image_id": 100, "caption": "A clean validation caption for a kitchen scene."},
+            {"id": 2, "image_id": 100, "bbox": [1, 2, 3, 4], "category_id": 17},
+        ],
+    }
+    zip_path = root / "data" / "coco_annotations.zip"
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("annotations/captions_val2017.json", json.dumps(annotations))
+
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "unit_coco_eval",
+                    "family": "omnimodal_understanding",
+                    "target_modality": "image",
+                    "remote_files": [
+                        {
+                            "url": "data/coco_annotations.zip",
+                            "format": "zip",
+                            "members": ["annotations/captions_val2017.json"],
+                        }
+                    ],
+                    "license": "COCO annotations CC-BY-4.0; images remain under original image terms",
+                    "license_tier": "manual_image_rights_eval_holdout",
+                    "use_policy": "eval_only",
+                    "field_map": {
+                        "id": ["id", "image_id"],
+                        "prompt": ["image_id"],
+                        "target": ["caption", "bbox", "category_id"],
+                        "media": ["image_id", "file_name"],
+                    },
+                }
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": True, "no_streaming": False, "max_records_per_dataset": 0})(),
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (root / "weights" / "external" / "jsonl" / "eval_holdout_all_external.jsonl").read_text().splitlines()
+    ]
+    assert manifest["datasets"][0]["source"] == "remote_files"
+    assert manifest["records"]["eval_holdout"] == 2
+    assert manifest["records"]["train"] == 0
+    assert rows[0]["training_bucket"] == "eval_holdout"
+    assert rows[0]["target_json"]["content"] == "A clean validation caption for a kitchen scene."
+    assert rows[0]["media_refs"] == [100]
+    assert rows[1]["target_json"]["content"] == "1\n2\n3\n4"
 
 
 def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, monkeypatch) -> None:
@@ -2439,7 +2507,7 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
         "Common Pile v0.1": "train",
         "MathX-5M": "train",
         "MathX-20M": "train",
-        "NVIDIA Nemotron Post-Training Dataset v1": "research_internal",
+        "NVIDIA Nemotron Post-Training Dataset v1": "train",
         "NVIDIA Nemotron Post-Training Dataset v2": "research_internal",
         "DataComp-1B Metadata": "blocked_until_review",
         "OpenCoder Clean Code Corpus": "train",
@@ -2454,6 +2522,7 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
         "WebVid-10M": "blocked_until_review",
         "SA-1B Segment Anything": "research_internal",
         "ImageNet ILSVRC": "eval_only",
+        "COCO 2017 Captions and Detection": "eval_only",
         "DocVQA Official": "eval_only",
         "IIT-CDIP": "research_internal",
         "FUNSD": "research_internal",
@@ -2462,7 +2531,16 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
         assert wave in expansion.entry_registry_waves(by_name[name])
         assert by_name[name]["use_policy"] == policy
 
-    for name in ["FineWeb-Edu", "FinePhrase", "Common Corpus", "Common Pile v0.1", "MathX-5M", "MathX-20M", "OpenCoder Clean Code Corpus"]:
+    for name in [
+        "FineWeb-Edu",
+        "FinePhrase",
+        "Common Corpus",
+        "Common Pile v0.1",
+        "MathX-5M",
+        "MathX-20M",
+        "NVIDIA Nemotron Post-Training Dataset v1",
+        "OpenCoder Clean Code Corpus",
+    ]:
         assert by_name[name]["contamination_status"] == "clean"
         assert by_name[name]["protected_benchmark_scan"] == "clean"
         assert by_name[name]["quality_score"] > 0
@@ -2472,8 +2550,15 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
     assert by_name["Common Pile v0.1"]["hf_id"] == "common-pile/comma_v0.1_training_dataset"
     assert by_name["DataComp-1B Metadata"]["gated"] is True
     assert "opt-out" in by_name["DataComp-1B Metadata"]["license_tier"]
+    assert "official accessible payload" in by_name["DataComp-1B Metadata"]["materialization_note"]
+    assert "accepted terms" in by_name["DataComp-1B Metadata"]["materialization_note"]
     assert expansion.source_use_bucket(by_name["DataComp-1B Metadata"]) == "blocked_until_review"
-    assert expansion.source_use_bucket(by_name["NVIDIA Nemotron Post-Training Dataset v1"]) == "research_internal"
+    assert by_name["NVIDIA Nemotron Post-Training Dataset v2"]["config"] == "SFT"
+    assert by_name["NVIDIA Nemotron Post-Training Dataset v2"]["token_env"] == "HF_TOKEN"
+    assert "qwen_deepseek" in by_name["NVIDIA Nemotron Post-Training Dataset v2"]["license_tier"]
+    assert "redistribution" in by_name["NVIDIA Nemotron Post-Training Dataset v2"]["materialization_note"].lower()
+    assert expansion.source_use_bucket(by_name["NVIDIA Nemotron Post-Training Dataset v1"]) == "train"
+    assert expansion.source_use_bucket(by_name["NVIDIA Nemotron Post-Training Dataset v2"]) == "research_internal"
     assert expansion.source_use_bucket(by_name["ToolBench Official SFT"]) == "research_internal"
     assert expansion.source_use_bucket(by_name["FUNSD"]) == "research_internal"
     assert expansion.source_use_bucket(by_name["FSD50K"]) == "research_internal"
@@ -2484,6 +2569,9 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
     assert expansion.source_use_bucket(by_name["WebVid-10M"]) == "blocked_until_review"
     assert expansion.source_use_bucket(by_name["SA-1B Segment Anything"]) == "research_internal"
     assert expansion.source_use_bucket(by_name["ImageNet ILSVRC"]) == "eval_holdout"
+    assert by_name["COCO 2017 Captions and Detection"]["remote_files"][0]["format"] == "zip"
+    assert "annotations/captions_val2017.json" in by_name["COCO 2017 Captions and Detection"]["remote_files"][0]["members"]
+    assert expansion.source_use_bucket(by_name["COCO 2017 Captions and Detection"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["DocVQA Official"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["IIT-CDIP"]) == "research_internal"
     assert by_name["SWE-bench Verified Official"]["splits"] == ["test"]

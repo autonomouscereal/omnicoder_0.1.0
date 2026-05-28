@@ -8,6 +8,7 @@ import json
 import os
 import re
 import time
+import zipfile
 from collections import Counter, defaultdict
 from itertools import islice
 from pathlib import Path
@@ -886,7 +887,21 @@ def rows_from_text_payload(text: str, fmt: str) -> list[dict[str, Any]]:
                     out.extend(flatten(item))
                 return out
             if isinstance(value, dict):
-                if any(value.get(key) not in (None, "", [], {}) for key in ("question", "prompt", "instruction", "task", "problem")):
+                if any(
+                    value.get(key) not in (None, "", [], {})
+                    for key in (
+                        "answer",
+                        "bbox",
+                        "caption",
+                        "category_id",
+                        "label",
+                        "problem",
+                        "prompt",
+                        "question",
+                        "segmentation",
+                        "task",
+                    )
+                ):
                     return [dict(value)]
                 for key in ("data", "rows", "examples", "records", "items", "questions", "tasks"):
                     child = value.get(key)
@@ -940,10 +955,31 @@ def rows_from_remote_files(entry: dict[str, Any], root: Path, limit: int) -> tup
             if url.startswith(("http://", "https://")):
                 request = Request(url, headers={"User-Agent": "omnicoder-dataset-expansion-2026"})
                 with urlopen(request, timeout=float(spec.get("timeout") or 60)) as response:
-                    text = response.read().decode(str(spec.get("encoding") or "utf-8"), errors="replace")
+                    payload_bytes = response.read()
             else:
-                text = resolve_path(url, root).read_text(encoding=str(spec.get("encoding") or "utf-8"), errors="replace")
-            loaded = rows_from_text_payload(text, fmt)
+                payload_bytes = resolve_path(url, root).read_bytes()
+            if fmt.strip().lower().lstrip(".") == "zip":
+                member_raw = spec.get("members") or spec.get("member")
+                requested_members = set(requested_values(member_raw)) if member_raw else set()
+                loaded = []
+                with zipfile.ZipFile(io.BytesIO(payload_bytes)) as archive:
+                    for member in archive.namelist():
+                        if limit > 0 and len(rows) + len(loaded) >= limit:
+                            break
+                        if requested_members and member not in requested_members:
+                            continue
+                        inner_fmt = Path(member).suffix.lstrip(".").lower()
+                        if inner_fmt not in {"json", "jsonl", "ndjson", "csv", "tsv"}:
+                            continue
+                        text = archive.read(member).decode(str(spec.get("encoding") or "utf-8"), errors="replace")
+                        member_rows = rows_from_text_payload(text, inner_fmt)
+                        for member_row in member_rows:
+                            member_row.setdefault("_remote_member", member)
+                        loaded.extend(member_rows)
+                        per_file[f"{url}#{member}"] = len(member_rows)
+            else:
+                text = payload_bytes.decode(str(spec.get("encoding") or "utf-8"), errors="replace")
+                loaded = rows_from_text_payload(text, fmt)
         except Exception as exc:
             errors.append(f"{url}: {repr(exc)}")
             continue

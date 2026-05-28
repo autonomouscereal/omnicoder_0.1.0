@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from omnicoder.data_factory import curation_policy_2026 as policy
 from omnicoder.data_factory import dataset_integrity_2026 as integrity
 
@@ -90,6 +92,136 @@ def test_dataset_integrity_rejects_refusal_phrases() -> None:
     assert "refusal_as_an_ai" in audit["reasons"]
     assert "refusal_cannot_assist" in audit["reasons"]
     assert "refusal_policy" in audit["reasons"]
+
+
+@pytest.mark.parametrize(
+    ("target", "expected_reason"),
+    [
+        ("This paper has been withdrawn", "low_value_retracted_or_withdrawn_paper"),
+        ("This paper has been withdrawn temporarily", "low_value_retracted_or_withdrawn_paper"),
+        ("Redacted by arXiv admins", "low_value_admin_redacted"),
+        ("No abstract; review only", "low_value_review_only"),
+        ("Abstract not provided for this record.", "low_value_unavailable_abstract_boilerplate"),
+        ("[deleted]", "low_value_deleted_or_removed_text"),
+        ("This study explores several important ideas.", "low_value_short_text_pretraining_target"),
+    ],
+)
+def test_dataset_integrity_rejects_low_value_science_and_deleted_text(target: str, expected_reason: str) -> None:
+    row = {
+        "prompt": "",
+        "response": target,
+        "modality": "text",
+        "dataset_name": "scientific_abstract_pretraining_2026",
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], refs=[])
+
+    assert audit["accepted"] is False
+    assert expected_reason in audit["reasons"]
+
+
+def test_dataset_integrity_rejects_ai_id_provenance_boilerplate() -> None:
+    row = {
+        "prompt": "Caption this media provenance record.",
+        "response": "This image contains an AI-ID provenance marker and SynthID watermark.",
+        "modality": "text",
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], refs=[])
+
+    assert audit["accepted"] is False
+    assert "ai_watermark_ai_id" in audit["reasons"]
+    assert "ai_watermark_synthid" in audit["reasons"]
+    assert "ai_watermark_provenance_boilerplate" in audit["reasons"]
+
+
+def test_dataset_integrity_rejects_short_low_substance_text_pretraining_target() -> None:
+    row = {
+        "prompt": "",
+        "response": "Not available.",
+        "modality": "text",
+        "training_kind": "text_pretraining",
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], refs=[])
+
+    assert audit["accepted"] is False
+    assert "low_value_short_text_pretraining_target" in audit["reasons"]
+
+
+def test_dataset_integrity_allows_substantive_science_math_code_and_tool_rows() -> None:
+    rows = [
+        {
+            "prompt": "Summarize the result.",
+            "response": (
+                "We prove that the proposed spectral estimator converges at rate n^-1/2 under bounded fourth moments. "
+                "The argument decomposes the empirical operator into a martingale term and a deterministic bias term, "
+                "then controls both with a matrix Bernstein inequality."
+            ),
+            "modality": "text",
+        },
+        {
+            "prompt": "Prove the identity.",
+            "response": (
+                "Let f(x)=sin(x)^2+cos(x)^2. Differentiating gives f'(x)=2sin(x)cos(x)-2cos(x)sin(x)=0, "
+                "so f is constant. Since f(0)=1, the identity holds for all real x."
+            ),
+            "modality": "math",
+        },
+        {
+            "prompt": "Patch the parser.",
+            "response": "def parse_items(items):\n    # TODO: preserve legacy empty strings.\n    return [item.strip() for item in items if item is not None]\n",
+            "modality": "code",
+        },
+        {
+            "prompt": "Call the status tool.",
+            "response": "OK",
+            "modality": "tool",
+        },
+    ]
+
+    for row in rows:
+        audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], modality=row["modality"], refs=[])
+        assert audit["accepted"] is True, row["modality"]
+
+
+def test_dataset_integrity_allows_common_pile_target_only_text_without_self_overlap() -> None:
+    target = (
+        "In computational geometry, a Voronoi diagram partitions a metric space according to the nearest member "
+        "of a finite set of sites. The construction supports nearest-neighbor queries, mesh generation, and "
+        "spatial interpolation because each cell records the locus of points sharing the same closest site."
+    )
+    row = {
+        "text": target,
+        "target_json": {"content": target},
+        "modality": "text",
+        "dataset_name": "common_pile_text_pretraining_2026",
+        "training_kind": "text_pretraining",
+    }
+
+    prompt, extracted_target = integrity.row_prompt_target(row)
+    audit = integrity.audit_dataset_integrity(row, prompt=prompt, target=extracted_target, refs=[])
+    direct_wrapper_audit = integrity.audit_dataset_integrity(row, prompt=target, target=target, modality="text", refs=[])
+    policy_audit = policy.audit_training_record(
+        row,
+        prompt=target,
+        target=target,
+        modality="text",
+        refs=[],
+        existing_quality=0.99,
+        config=policy.CurationPolicyConfig(min_quality_score=0.0),
+    )
+
+    assert prompt == ""
+    assert extracted_target == target
+    assert audit["accepted"] is True
+    assert "prompt_target_high_overlap" not in audit["reasons"]
+    assert "prompt_copy" not in direct_wrapper_audit["reasons"]
+    assert "prompt_target_high_overlap" not in direct_wrapper_audit["reasons"]
+    assert direct_wrapper_audit["accepted"] is True
+    assert policy_audit["dataset_integrity_2026"]["accepted"] is True
+    assert "prompt_target_high_overlap" not in policy_audit["dataset_integrity_2026"]["reasons"]
+    assert "dataset_integrity:prompt_target_high_overlap" not in policy_audit["reasons"]
 
 
 def test_dataset_integrity_rejects_url_only_media_and_prompt_target_leakage() -> None:
@@ -207,6 +339,29 @@ def test_curation_policy_hard_rejects_dataset_integrity_issues() -> None:
     assert audit["accepted"] is False
     assert "dataset_integrity:poison_wrong_answer_rule" in audit["reasons"]
     assert audit["dataset_integrity_2026"]["accepted"] is False
+
+
+def test_curation_policy_exposes_nested_dataset_integrity_reasons_for_low_value_rows() -> None:
+    row = {
+        "prompt": "",
+        "response": "This paper has been retracted by the journal.",
+        "modality": "text",
+        "training_kind": "text_pretraining",
+        "quality_score": 0.99,
+    }
+    audit = policy.audit_training_record(
+        row,
+        prompt=row["prompt"],
+        target=row["response"],
+        modality="text",
+        refs=[],
+        existing_quality=0.99,
+        config=policy.CurationPolicyConfig(min_quality_score=0.0),
+    )
+
+    assert audit["accepted"] is False
+    assert "dataset_integrity:low_value_retracted_or_withdrawn_paper" in audit["reasons"]
+    assert "low_value_retracted_or_withdrawn_paper" in audit["dataset_integrity_2026"]["reasons"]
 
 
 def test_curation_policy_rejects_scalar_music_target_even_with_artifact_ref(tmp_path: Path) -> None:

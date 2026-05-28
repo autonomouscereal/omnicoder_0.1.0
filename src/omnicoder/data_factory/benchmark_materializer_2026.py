@@ -1551,7 +1551,19 @@ def snapshot_requires_operator_manifest(snapshot: dict[str, Any]) -> bool:
 
 
 def needs_reportable_source_override(mode: str, snapshot: dict[str, Any], override: Path | None) -> bool:
-    return mode == "reportable" and snapshot_requires_operator_manifest(snapshot) and override is None
+    return mode == "reportable" and bool(snapshot) and override is None
+
+
+def benchmark_eval_policy(mode: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+    reportable = bool(mode == "reportable" and snapshot)
+    return {
+        "training_bucket": "eval_holdout",
+        "use_policy": "reportable_eval_only" if reportable else "validation_only",
+        "source_bucket": "reportable_eval" if reportable else "public_dev_validation",
+        "evaluation_only": True,
+        "training_allowed": False,
+        "reportability_scope": "official_or_authorized_snapshot" if reportable else "validation_only_public_dev",
+    }
 
 
 def reportable_root_for(profile: dict[str, Any], benchmark_id: str, out_root: Path, respect_profile_roots: bool) -> Path:
@@ -2586,6 +2598,7 @@ def normalize_task(
         for key in ("image", "images", "img", "image_path", "img_path", "pdf", "document", "doc_path", "file_path")
     ):
         prompt = "Parse the document image and return the requested text, layout, table, formula, or markdown content."
+    policy = benchmark_eval_policy(mode, snapshot)
     row: dict[str, Any] = {
         "schema": TASK_SCHEMA,
         "benchmark_id": benchmark_id,
@@ -2601,6 +2614,7 @@ def normalize_task(
         "contamination_class": "protected_eval" if mode == "reportable" and snapshot else "public_dev_eval",
         "reportable": bool(mode == "reportable" and snapshot),
         "local_only": not bool(mode == "reportable" and snapshot),
+        **policy,
     }
     if prompt is not None:
         row["prompt"] = make_jsonable(prompt)
@@ -3035,6 +3049,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         if not spec:
             spec = {"source": record.get("source") or "profile_only", "kind": record.get("adapter_kind") or record.get("axis") or "unknown"}
         snapshot = snapshot_for(profile, benchmark_id)
+        policy = benchmark_eval_policy(args.mode, snapshot)
         override = overrides.get(benchmark_id)
         if needs_reportable_source_override(args.mode, snapshot, override):
             rows_raw = []
@@ -3086,6 +3101,10 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                 "source_ref": source_ref,
                 "reportable": bool(args.mode == "reportable" and snapshot and rows),
                 "local_only": not bool(args.mode == "reportable" and snapshot and rows),
+                "training_bucket": policy["training_bucket"],
+                "training_allowed": policy["training_allowed"],
+                "use_policy": policy["use_policy"],
+                "source_bucket": policy["source_bucket"],
                 "has_snapshot_descriptor": bool(snapshot),
                 "errors": errors[:12],
             }

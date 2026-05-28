@@ -18,6 +18,29 @@ TRAIN_LEAK_RE = re.compile(
     r"frontier[_ -]?math|frontiermath|fixture|smoke|canary)\b",
     re.IGNORECASE,
 )
+NON_TRAINING_USE_POLICIES = {
+    "benchmark_eval_only",
+    "benchmark_holdout",
+    "diagnostic_only",
+    "dev",
+    "eval",
+    "eval_only",
+    "evaluation",
+    "holdout",
+    "protected_eval",
+    "public_dev_eval",
+    "reportable_eval_only",
+    "test",
+    "valid",
+    "validation",
+    "validation_only",
+}
+NON_TRAINING_CONTAMINATION_CLASSES = {
+    "benchmark_holdout",
+    "eval_holdout",
+    "protected_eval",
+    "public_dev_eval",
+}
 ID_KEYS = ("record_id", "id", "uid", "uuid", "example_id", "sample_id", "row_id")
 MODALITY_KEYS = ("modality", "target_modality", "input_modality", "output_modality", "declared_target_modality", "media_family")
 TEXT_TARGET_KEYS = ("content", "text", "target", "response", "completion", "answer", "expected_answer", "output")
@@ -220,7 +243,23 @@ def _canonical_training_bucket(value: str) -> str:
     normalized = str(value or "").strip().lower()
     if normalized in {"train", "training"}:
         return "train"
-    if normalized in {"eval", "evaluation", "validation", "valid", "dev", "test", "eval_holdout", "holdout"}:
+    if normalized in {
+        "benchmark_eval_only",
+        "diagnostic_only",
+        "eval",
+        "eval_only",
+        "evaluation",
+        "eval_holdout",
+        "holdout",
+        "protected_eval",
+        "public_dev_eval",
+        "reportable_eval_only",
+        "test",
+        "valid",
+        "validation",
+        "validation_only",
+        "dev",
+    }:
         return "eval_holdout"
     if normalized in {"research", "research_internal", "internal_research", "distill_seed", "internal_distill_seed", "reward_only"}:
         return "research_internal"
@@ -257,6 +296,49 @@ def _coarse_status(bucket: str) -> str:
         "research_internal": "research",
         "blocked_until_review": "block",
     }.get(bucket, "unknown")
+
+
+def _bool_flag(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y"}:
+            return True
+        if normalized in {"0", "false", "no", "n"}:
+            return False
+    return None
+
+
+def _non_training_train_bucket_issue(row: dict[str, Any], *, training_bucket: str, use_policy: str, contamination: str) -> str:
+    bucket = _canonical_training_bucket(training_bucket)
+    if bucket != "train":
+        return ""
+    policy = str(use_policy or "").strip().lower()
+    contamination_class = str(contamination or "").strip().lower()
+    if policy in NON_TRAINING_USE_POLICIES:
+        return f"use_policy:{policy}"
+    if contamination_class in NON_TRAINING_CONTAMINATION_CLASSES:
+        return f"contamination_class:{contamination_class}"
+    if row.get("reportable") is True:
+        return "reportable_true"
+    for key in ("eval_only", "evaluation_only", "validation_only", "diagnostic_only"):
+        if _bool_flag(row.get(key)) is True:
+            return f"{key}:true"
+    if _bool_flag(row.get("training_allowed")) is False:
+        return "training_allowed:false"
+    return ""
+
+
+def _train_metadata_issue(*, training_bucket: str, source: str, use_policy: str) -> str:
+    bucket = _canonical_training_bucket(training_bucket)
+    if bucket != "train":
+        return ""
+    if str(source or "").strip().lower() in {"", "unknown", "none", "null"}:
+        return "missing_source_id"
+    if str(use_policy or "").strip().lower() in {"", "unknown", "none", "null"}:
+        return "missing_use_policy"
+    return ""
 
 
 def _target_token_count(row: dict[str, Any]) -> int:
@@ -406,6 +488,7 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
     by_split: Counter[str] = Counter()
     by_training_bucket: Counter[str] = Counter()
     by_train_eval_research_block: Counter[str] = Counter()
+    by_source_training_bucket: Counter[tuple[str, str]] = Counter()
     by_use_policy: Counter[str] = Counter()
     by_license: Counter[str] = Counter()
     by_contamination: Counter[str] = Counter()
@@ -424,6 +507,8 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
     prompt_target_leakage_rows: list[dict[str, Any]] = []
     url_only_media_rows: list[dict[str, Any]] = []
     split_mismatch_rows: list[dict[str, Any]] = []
+    non_training_policy_train_rows: list[dict[str, Any]] = []
+    train_metadata_rows: list[dict[str, Any]] = []
     bad_json = 0
     rows_with_target_tokens = 0
     rows_with_artifact_tokens = 0
@@ -444,7 +529,7 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             source = _first(row, "source_id", "dataset_name", "source", "source_uri", default="unknown")
             use_policy = _first(row, "use_policy", "policy", default="unknown")
             license_id = _first(row, "license", "license_id", default="unknown")
-            contamination = _first(row, "contamination_status", default="unknown")
+            contamination = _first(row, "contamination_status", "contamination_class", default="unknown")
             training_bucket = _training_bucket(path, row, split, use_policy)
             coarse_status = _coarse_status(training_bucket)
             by_modality[modality] += 1
@@ -452,6 +537,7 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             by_split[split] += 1
             by_training_bucket[training_bucket] += 1
             by_train_eval_research_block[coarse_status] += 1
+            by_source_training_bucket[(source, training_bucket)] += 1
             by_use_policy[use_policy] += 1
             by_license[license_id] += 1
             by_contamination[contamination] += 1
@@ -520,6 +606,37 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
                         "reason": url_only,
                     }
                 )
+            policy_issue = _non_training_train_bucket_issue(
+                row,
+                training_bucket=training_bucket,
+                use_policy=use_policy,
+                contamination=contamination,
+            )
+            if policy_issue:
+                non_training_policy_train_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "modality": modality,
+                        "split": split,
+                        "training_bucket": training_bucket,
+                        "reason": policy_issue,
+                    }
+                )
+            metadata_issue = _train_metadata_issue(training_bucket=training_bucket, source=source, use_policy=use_policy)
+            if metadata_issue:
+                train_metadata_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "modality": modality,
+                        "split": split,
+                        "training_bucket": training_bucket,
+                        "reason": metadata_issue,
+                    }
+                )
             if isinstance(row.get("artifact_token_ids"), list) and row["artifact_token_ids"]:
                 rows_with_artifact_tokens += 1
             payload_hash = _sha256_text(_json_blob(row))
@@ -527,7 +644,7 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
                 duplicate_payloads += 1
             payload_hashes.add(payload_hash)
             blob = _json_blob(row)[:100_000]
-            if (split == "train" or training_bucket == "train") and TRAIN_LEAK_RE.search(blob):
+            if training_bucket == "train" and TRAIN_LEAK_RE.search(blob):
                 train_leak_rows.append({"path": str(path), "line": line_number, "source_id": source, "modality": modality, "training_bucket": training_bucket})
         files.append(
             {
@@ -559,6 +676,10 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         fail_reasons.append("split_mismatch")
     if fail_on_train_leakage and train_leak_rows:
         fail_reasons.append("train_eval_leakage_markers")
+    if non_training_policy_train_rows:
+        fail_reasons.append("non_training_policy_in_train_bucket")
+    if train_metadata_rows:
+        fail_reasons.append("train_rows_missing_source_or_policy")
     return {
         "schema": SCHEMA,
         "status": "failed" if fail_reasons else "passed",
@@ -575,6 +696,8 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             "prompt_target_leakage": len(prompt_target_leakage_rows),
             "split_mismatch": len(split_mismatch_rows),
             "train_eval_leakage_markers": len(train_leak_rows),
+            "non_training_policy_in_train_bucket": len(non_training_policy_train_rows),
+            "train_rows_missing_source_or_policy": len(train_metadata_rows),
             "url_only_media_rows": len(url_only_media_rows),
             "rows_with_target_tokens": rows_with_target_tokens,
             "rows_with_artifact_tokens": rows_with_artifact_tokens,
@@ -584,6 +707,10 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         "by_split": dict(sorted(by_split.items())),
         "by_training_bucket": dict(sorted(by_training_bucket.items())),
         "by_train_eval_research_block": dict(sorted(by_train_eval_research_block.items())),
+        "by_source_training_bucket": [
+            {"source_id": source, "training_bucket": bucket, "rows": rows}
+            for (source, bucket), rows in sorted(by_source_training_bucket.items())
+        ],
         "by_use_policy": dict(sorted(by_use_policy.items())),
         "by_license": dict(sorted(by_license.items())),
         "by_contamination": dict(sorted(by_contamination.items())),
@@ -602,6 +729,8 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         "prompt_target_leakage_examples": prompt_target_leakage_rows[:50],
         "split_mismatch_examples": split_mismatch_rows[:50],
         "train_leak_examples": train_leak_rows[:50],
+        "non_training_policy_train_examples": non_training_policy_train_rows[:50],
+        "train_metadata_examples": train_metadata_rows[:50],
         "url_only_media_examples": url_only_media_rows[:50],
     }
 
