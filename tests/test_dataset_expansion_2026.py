@@ -2548,6 +2548,9 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
         assert expansion.training_bucket_for_record(by_name[name], _reviewed_train_record()) == "train"
 
     assert by_name["Common Pile v0.1"]["hf_id"] == "common-pile/comma_v0.1_training_dataset"
+    assert "Open Cookbook" in by_name["OpenCoder Clean Code Corpus"]["aliases"]
+    assert "Stack v2 Clean Code" in by_name["OpenCoder Clean Code Corpus"]["aliases"]
+    assert "The Open Cookbook" in by_name["OpenCoder Clean Code Corpus"]["materialization_note"]
     assert by_name["DataComp-1B Metadata"]["gated"] is True
     assert "opt-out" in by_name["DataComp-1B Metadata"]["license_tier"]
     assert "official accessible payload" in by_name["DataComp-1B Metadata"]["materialization_note"]

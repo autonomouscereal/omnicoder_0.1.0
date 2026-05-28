@@ -31404,8 +31404,14 @@
       {
         "name": "OpenCoder Clean Code Corpus",
         "family": "coding_agentic",
-        "hf_id": "OpenCoder-LLM/opc-fineweb-code-corpus",
-        "url": "https://huggingface.co/collections/MegaTronX/opencoder-dataset",
+      "hf_id": "OpenCoder-LLM/opc-fineweb-code-corpus",
+      "aliases": [
+        "Open Cookbook",
+        "The Open Cookbook",
+        "Stack v2 Clean Code",
+        "The Stack v2 cleaned slice"
+      ],
+      "url": "https://huggingface.co/collections/MegaTronX/opencoder-dataset",
         "source_year": 2026,
         "last_verified": "2026-05-28",
         "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
@@ -31421,7 +31427,7 @@
         "protected_benchmark_scan": "clean",
         "quality_score": 0.92,
         "source_review_status": "public_train_reviewed_2026_05_28",
-        "materialization_note": "Prefer OpenCoder cleaned corpus over raw The Stack v2; keep exact repo license metadata when present and dedupe against benchmark repositories.",
+      "materialization_note": "OpenCoder/The Open Cookbook cleaned code corpus derived from a curated Stack v2-style slice. Prefer this cleaned corpus over raw The Stack v2; keep exact repo license metadata when present and dedupe against benchmark repositories.",
         "curriculum_axes": [
           "code_pretraining",
           "cleaned_stack_v2",
