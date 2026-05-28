@@ -31725,6 +31725,31 @@
         ]
       },
       {
+        "name": "Kinetics-800",
+        "family": "video_generation",
+        "url": "https://github.com/cvdfoundation/kinetics-dataset",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "thirtieth_wave_requested_dataset_completion_2026_05_28",
+        "splits": [
+          "train",
+          "validation"
+        ],
+        "max_records": 0,
+        "target_modality": "video",
+        "use_policy": "blocked_until_review",
+        "license": "YouTube video source rights require manual review",
+        "license_tier": "manual_video_rights_blocked_until_review",
+        "gated": true,
+        "source_review_status": "blocked_until_video_rights_and_download_availability_verified_2026_05_28",
+        "materialization_note": "Registry coverage only until official payload access, video rights, watermark/provenance, and benchmark-overlap scans pass.",
+        "curriculum_axes": [
+          "video_action",
+          "temporal_understanding",
+          "rights_review"
+        ]
+      },
+      {
         "name": "ActivityNet",
         "family": "video_generation",
         "url": "http://activity-net.org/download.html",

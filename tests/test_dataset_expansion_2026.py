@@ -2577,6 +2577,9 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
     assert by_name["SWE-bench Verified Official"]["splits"] == ["test"]
     assert expansion.source_use_bucket(by_name["SWE-bench Verified Official"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["WebArena Official"]) == "eval_holdout"
+    assert "thirtieth_wave_requested_dataset_completion_2026_05_28" in expansion.entry_registry_waves(by_name["Kinetics-800"])
+    assert by_name["Kinetics-800"]["use_policy"] == "blocked_until_review"
+    assert expansion.source_use_bucket(by_name["Kinetics-800"]) == "blocked_until_review"
 
 
 def test_dataset_expansion_honors_explicit_zero_max_records_and_skips_blocked_by_default(tmp_path: Path, monkeypatch) -> None:
