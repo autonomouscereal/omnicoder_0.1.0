@@ -1886,6 +1886,55 @@ def test_run_full_summarizes_all_major_training_phases(tmp_path, monkeypatch):
     assert (out_dir / "full_training_summary.json").exists()
 
 
+def test_distillation_curriculum_uses_train_all_instead_of_combined_curated(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    out_dir = tmp_path / "out"
+    curated = out_dir / "jsonl" / "curated_records.jsonl"
+    train_all = out_dir / "jsonl" / "train_all_modalities.jsonl"
+    _write_jsonl(curated, [{"split": "eval", "target": "heldout leak"}])
+    _write_jsonl(train_all, [{"split": "train", "target": "train answer"}])
+    commands: list[list[str]] = []
+
+    def fake_run_command(cmd, log_path, timeout_seconds=None):
+        commands.append(list(cmd))
+        return 1
+
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    args = argparse.Namespace(distill_profile="", distill_limit=0)
+    stage = orch.run_distillation_curriculum_stage(
+        profile,
+        {"curated_jsonl": str(curated), "train_all_jsonl": str(train_all)},
+        out_dir,
+        checkpoint=None,
+        args=args,
+    )
+    assert stage["status"] == "failed"
+    assert commands
+    assert commands[0][commands[0].index("--records") + 1] == str(train_all)
+    assert stage["records_selection"]["source"] == "train_all_jsonl"
+
+
+def test_distillation_fallback_filters_curated_to_train_only(tmp_path):
+    out_dir = tmp_path / "out"
+    curated = out_dir / "jsonl" / "curated_records.jsonl"
+    _write_jsonl(
+        curated,
+        [
+            {"split": "train", "training_bucket": "train", "target": "keep"},
+            {"split": "eval", "training_bucket": "eval_holdout", "target": "drop eval"},
+            {"split": "test", "training_bucket": "eval_holdout", "target": "drop test"},
+            {"split": "train", "training_bucket": "research_internal", "target": "drop research"},
+            {"split": "train", "training_allowed": False, "target": "drop blocked"},
+        ],
+    )
+    records, selection = orch.distillation_train_records_path({"curated_jsonl": str(curated)}, out_dir)
+    assert selection["status"] == "passed"
+    assert selection["filtered_rows"] == 1
+    assert selection["rejected_rows"] == 4
+    rows = list(orch.iter_jsonl(records))
+    assert [row["target"] for row in rows] == ["keep"]
+
+
 def test_long_context_curriculum_runs_real_ladder_and_resumes_each_rung(tmp_path, monkeypatch):
     profile = _profile(tmp_path)
     profile["model_contract"] = {"target_context_length": 4096, "target_profile": "ledger_probe"}

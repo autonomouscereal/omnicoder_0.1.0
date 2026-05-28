@@ -1940,6 +1940,69 @@ def training_bound_jsonl_paths_from_manifest(manifest: dict[str, Any]) -> list[P
     return sorted([path for path in paths if path.name.endswith(".jsonl")], key=lambda item: str(item))
 
 
+def distillation_train_records_path(manifest: dict[str, Any], out_dir: Path) -> tuple[str, dict[str, Any]]:
+    train_all = str(manifest.get("train_all_jsonl") or "").strip()
+    if train_all:
+        return train_all, {
+            "schema": "omnicoder.distillation_records_selection_2026.v1",
+            "status": "passed",
+            "source": "train_all_jsonl",
+            "records": train_all,
+            "filtered_rows": None,
+            "rejected_rows": None,
+        }
+    curated = str(manifest.get("curated_jsonl") or "").strip()
+    if not curated:
+        return "", {
+            "schema": "omnicoder.distillation_records_selection_2026.v1",
+            "status": "failed",
+            "reason": "missing_train_records_jsonl",
+        }
+    curated_path = Path(curated)
+    if not curated_path.exists():
+        return "", {
+            "schema": "omnicoder.distillation_records_selection_2026.v1",
+            "status": "failed",
+            "reason": "curated_jsonl_missing",
+            "curated_jsonl": curated,
+        }
+    rows: list[dict[str, Any]] = []
+    rejected = 0
+    for row in iter_jsonl(curated_path):
+        split = str(row.get("split") or row.get("training_split") or "").strip().lower()
+        bucket = str(row.get("training_bucket") or row.get("bucket") or row.get("use_bucket") or "").strip().lower()
+        use_policy = str(row.get("use_policy") or row.get("policy") or "").strip().lower()
+        training_allowed = row.get("training_allowed")
+        if training_allowed is False or str(training_allowed).strip().lower() == "false":
+            rejected += 1
+            continue
+        if split and split != "train":
+            rejected += 1
+            continue
+        if bucket and bucket not in {"train", "training", "internal_train", "distill_train", "train_ok"}:
+            rejected += 1
+            continue
+        if use_policy and use_policy in {"eval", "eval_only", "benchmark_holdout", "protected_eval", "research_internal", "blocked_until_review"}:
+            rejected += 1
+            continue
+        rows.append(row)
+    filtered = out_dir / "distillation" / "train_only_records_from_curated.jsonl"
+    write_jsonl(filtered, rows)
+    status = "passed" if rows else "failed"
+    selection = {
+        "schema": "omnicoder.distillation_records_selection_2026.v1",
+        "status": status,
+        "source": "curated_jsonl_filtered_train_only",
+        "records": str(filtered),
+        "curated_jsonl": curated,
+        "filtered_rows": len(rows),
+        "rejected_rows": rejected,
+    }
+    if not rows:
+        selection["reason"] = "no_train_rows_in_curated_jsonl"
+    return str(filtered), selection
+
+
 def run_integrity_preflight(
     paths: Iterable[str | Path],
     out_dir: Path,
@@ -4990,8 +5053,17 @@ def run_distillation_curriculum_stage(
     cfg = profile_cfg(profile)
     distill = cfg.get("distillation") if isinstance(cfg.get("distillation"), dict) else {}
     teacher_profile = str(arg_value(args, "distill_profile", "") or distill.get("teacher_profile") or "profiles/distillation_curriculum_2026.json")
-    records = str(manifest.get("curated_jsonl") or manifest.get("train_all_jsonl") or "")
     distill_dir = out_dir / "distillation"
+    records, records_selection = distillation_train_records_path(manifest, out_dir)
+    write_json(distill_dir / "distillation_records_selection.json", records_selection)
+    if records_selection.get("status") != "passed":
+        return {
+            "schema": "omnicoder.distillation_training_stage_2026.v1",
+            "status": "failed",
+            "reason": str(records_selection.get("reason") or "distillation_records_selection_failed"),
+            "records_selection": records_selection,
+            "initial_checkpoint": str(checkpoint) if checkpoint else None,
+        }
     limit = int(arg_value(args, "distill_limit", 0) or distill.get("per_teacher_limit") or 0)
     curriculum_cmd = [
         sys.executable,
@@ -5014,6 +5086,7 @@ def run_distillation_curriculum_stage(
         "status": "passed" if curriculum_code == 0 and manifest_path.exists() else "failed",
         "curriculum_returncode": curriculum_code,
         "curriculum_manifest": str(manifest_path),
+        "records_selection": records_selection,
         "initial_checkpoint": str(checkpoint) if checkpoint else None,
     }
     if stage["status"] != "passed":
