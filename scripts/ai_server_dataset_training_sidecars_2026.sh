@@ -279,14 +279,8 @@ with train_path.open("r", encoding="utf-8", errors="ignore") as handle:
 if synthetic_train:
     raise SystemExit(f"external expansion attempted to promote {synthetic_train} synthetic seed rows into train")
 PY
-  if truthy "$PROMOTE_LATEST"; then
-    ln -sfn "$ROOT/$out" weights/external_datasets_2026/latest
-    EXTERNAL_DATASET_SOURCE="weights/external_datasets_2026/latest"
-    log "promoted external dataset symlink to $out"
-  else
-    EXTERNAL_DATASET_SOURCE="$out"
-    log "kept external dataset run-scoped at $out"
-  fi
+  EXTERNAL_DATASET_SOURCE="$out"
+  log "kept external dataset run-scoped until integrity and index gates pass: $out"
   log "strict integrity scan for external train bucket"
   mkdir -p "$out/integrity"
   "$PYTHON_BIN" -m omnicoder.data_factory.dataset_integrity_2026 \
@@ -324,6 +318,13 @@ PY
     --out "$out/integrity/train_all_external.index.json" \
     --expected-split train \
     | tee "$out/integrity/train_all_external.index.stdout.json"
+  if truthy "$PROMOTE_LATEST"; then
+    ln -sfn "$ROOT/$out" weights/external_datasets_2026/latest
+    EXTERNAL_DATASET_SOURCE="weights/external_datasets_2026/latest"
+    log "promoted external dataset symlink to $out after integrity and index gates"
+  else
+    log "kept external dataset run-scoped at $out"
+  fi
 }
 
 agentic_tool_training() {
