@@ -17,6 +17,8 @@ TEACHER_JOB_SOURCE="${OMNICODER_TEACHER_JOB_SOURCE:-${TEACHER_JOB_ROOT}/latest}"
 PYTHON_BIN="${OMNICODER_DATA_PYTHON:-python3}"
 ENFORCE_DATASET_MINIMA="${OMNICODER_ENFORCE_DATASET_MINIMA:-1}"
 DATASET_INCLUDE_WAVES="${OMNICODER_DATASET_INCLUDE_WAVES:-}"
+DATASET_INCLUDE_FAMILIES="${OMNICODER_DATASET_INCLUDE_FAMILIES:-}"
+DATASET_INCLUDE_NAMES="${OMNICODER_DATASET_INCLUDE_NAMES:-}"
 TRACE_LIMIT="${OMNICODER_TRACE_LIMIT:-0}"
 LMSTUDIO_TRACE_LIMIT="${OMNICODER_LMSTUDIO_TRACE_LIMIT:-100000}"
 LOCAL_TRACE_SOURCE="${OMNICODER_LOCAL_TRACE_SOURCE:-weights/curated_datasets_2026/runs/${RUN_ID}_local_traces}"
@@ -244,6 +246,28 @@ external_expansion() {
       [[ -n "$wave" ]] && selection_args+=(--include-wave "$wave")
     done
     log "external dataset expansion is filtered to registry wave(s): $DATASET_INCLUDE_WAVES"
+  fi
+  if [[ -n "$DATASET_INCLUDE_FAMILIES" ]]; then
+    local old_ifs="$IFS"
+    IFS=","
+    read -ra families <<< "$DATASET_INCLUDE_FAMILIES"
+    IFS="$old_ifs"
+    for family in "${families[@]}"; do
+      family="${family//[[:space:]]/}"
+      [[ -n "$family" ]] && selection_args+=(--include-family "$family")
+    done
+    log "external dataset expansion is filtered to registry family/families: $DATASET_INCLUDE_FAMILIES"
+  fi
+  if [[ -n "$DATASET_INCLUDE_NAMES" ]]; then
+    local old_ifs="$IFS"
+    IFS=","
+    read -ra names <<< "$DATASET_INCLUDE_NAMES"
+    IFS="$old_ifs"
+    for name in "${names[@]}"; do
+      name="${name//[[:space:]]/}"
+      [[ -n "$name" ]] && selection_args+=(--include-name "$name")
+    done
+    log "external dataset expansion is filtered to registry dataset name(s): $DATASET_INCLUDE_NAMES"
   fi
   mkdir -p "$out"
   log "build external dataset expansion"

@@ -89,26 +89,30 @@ def get_logger(name: str = "omnicoder") -> logging.Logger:
     # Optional file handler (enabled unless explicitly disabled)
     log_path = os.getenv("OMNICODER_LOG_FILE", "tests_logs/omnicoder.log").strip()
     if log_path:
-        try:
-            p = Path(log_path)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            fh = _SafeFileHandler(p, encoding="utf-8")
-            fh.setLevel(level)
-            fh.setFormatter(fmt)
-            if use_buffer:
-                # Buffer INFO/DEBUG logs and flush rarely to reduce per-record IO.
-                # Fixed capacity (no env gating); flush on CRITICAL and at shutdown.
-                buf_cap = 65536
-                mh = MemoryHandler(capacity=buf_cap, flushLevel=logging.CRITICAL, target=fh)
-                logger.addHandler(mh)
-                try:
-                    _MEMORY_HANDLERS.append(mh)
-                except Exception:
-                    pass
-            else:
-                logger.addHandler(fh)
-        except Exception:
-            logging.getLogger('omnicoder.log').warning('file handler setup failed', exc_info=True)
+        for candidate in (log_path, os.getenv("OMNICODER_LOG_FALLBACK_FILE", "/tmp/omnicoder.log").strip()):
+            if not candidate:
+                continue
+            try:
+                p = Path(candidate)
+                p.parent.mkdir(parents=True, exist_ok=True)
+                fh = _SafeFileHandler(p, encoding="utf-8")
+                fh.setLevel(level)
+                fh.setFormatter(fmt)
+                if use_buffer:
+                    # Buffer INFO/DEBUG logs and flush rarely to reduce per-record IO.
+                    # Fixed capacity (no env gating); flush on CRITICAL and at shutdown.
+                    buf_cap = 65536
+                    mh = MemoryHandler(capacity=buf_cap, flushLevel=logging.CRITICAL, target=fh)
+                    logger.addHandler(mh)
+                    try:
+                        _MEMORY_HANDLERS.append(mh)
+                    except Exception:
+                        pass
+                else:
+                    logger.addHandler(fh)
+                break
+            except Exception:
+                continue
 
     # Attach console handler last; keep console at INFO to avoid overwhelming TTY,
     # while file handlers capture full DEBUG. No env gating.
