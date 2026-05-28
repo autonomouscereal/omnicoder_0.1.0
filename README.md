@@ -190,6 +190,8 @@ Start here:
 - `docs/DatasetCuration2026.md` - curation and quality contract.
 - `docs/TrainingOrchestration2026.md` - training orchestration and AI-server
   runbook.
+- `docs/OMNIMODAL_MASKING_CONTRACT_2026.md` - loss-mask and shared-trunk
+  training contract for media/text/tool targets.
 - `docs/DistillationAndRL2026.md` - teacher distillation and RL/posttraining
   plan.
 - `docs/BenchmarkSuite2026.md` - benchmark registry and release-gate contract.

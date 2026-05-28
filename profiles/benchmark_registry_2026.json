@@ -650,6 +650,19 @@
       "smoke": "one public simulated-company task with answers hidden",
       "source": "https://github.com/TheAgentCompany/TheAgentCompany",
       "use": "enterprise browser/tool workflow completion and state consistency"
+    },
+    {
+      "holdout": [
+        "answer_labels",
+        "gold_endings",
+        "official_validation_revision"
+      ],
+      "id": "hellaswag_full_2026",
+      "kind": "commonsense_completion_mcq",
+      "reportable_split": "authorized_validation_or_private_snapshot",
+      "smoke": "validation_64_public_dev_regression_signal",
+      "source": "https://huggingface.co/datasets/Rowan/hellaswag",
+      "use": "commonsense continuation accuracy and early learning signal"
     }
   ],
   "contamination_controls": [
@@ -734,7 +747,8 @@
       "mmmu_pro_split_2026",
       "video_mme_v2_grouped_2026",
       "audiobench_mmau_2026",
-      "omni_any_to_any_unim_2026"
+      "omni_any_to_any_unim_2026",
+      "hellaswag_full_2026"
     ]
   },
   "schema": "schemas/eval_harness_2026.sql",

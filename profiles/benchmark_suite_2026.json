@@ -6447,6 +6447,37 @@
         "smoke": "two multi-session memory tasks"
       },
       "task_format": "jsonl_agent_memory_task"
+    },
+    {
+      "adapter_kind": "commonsense_completion_mcq",
+      "axis": "reasoning",
+      "benchmark_id": "reasoning_hellaswag_full_2026",
+      "holdout_policy": [
+        "gold_ending_labels_hidden_from_training_and_inference",
+        "train_validation_test_splits_kept_separate",
+        "authorized_snapshot_manifest_required_for_reportable_scores",
+        "public_dev_scores_labeled_regression_signal_only"
+      ],
+      "metrics": [
+        "accuracy",
+        "normalized_accuracy",
+        "choice_logprob_margin",
+        "calibration_error",
+        "loss_delta"
+      ],
+      "modalities": [
+        "text",
+        "commonsense",
+        "multiple_choice"
+      ],
+      "release_gate": "reasoning_release",
+      "source": "https://huggingface.co/datasets/Rowan/hellaswag",
+      "splits": {
+        "smoke": "authorized_validation_64_examples",
+        "nightly": "authorized_validation_1024_examples",
+        "release": "authorized_full_validation_or_private_snapshot"
+      },
+      "task_format": "jsonl_multiple_choice_completion"
     }
   ],
   "contamination_controls": [
@@ -6717,7 +6748,8 @@
       "reasoning_imo_bench_2026",
       "reasoning_maime2025_2026",
       "reasoning_indimathbench_2026",
-      "reasoning_frontiermath_2026"
+      "reasoning_frontiermath_2026",
+      "reasoning_hellaswag_full_2026"
     ],
     "safety_security_release": [
       "safety_tool_security_2026",
@@ -7531,6 +7563,15 @@
       "snapshot_id": "tool-security-authorized-2026-current",
       "source": "internal_red_team_jsonl_and_authorized_public_slices",
       "task_root": "data/eval/reportable_2026/tool_security_authorized.jsonl"
+    },
+    "reasoning_hellaswag_full_2026": {
+      "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+      "dataset_revision": "hellaswag-authorized-2026-current",
+      "min_tasks": 1,
+      "snapshot_authorization": "official_or_authorized_current_release",
+      "snapshot_id": "hellaswag-authorized-2026-current",
+      "source": "https://huggingface.co/datasets/Rowan/hellaswag",
+      "task_root": "data/eval/reportable_2026/hellaswag_authorized.jsonl"
     }
   },
   "reportable_task_roots": {
@@ -7785,7 +7826,8 @@
     ],
     "safety_tool_security_2026": [
       "data/eval/reportable_2026/tool_security_authorized.jsonl"
-    ]
+    ],
+    "reasoning_hellaswag_full_2026": "data/eval/reportable_2026/hellaswag_authorized.jsonl"
   },
   "run_cycles": {
     "nightly": {
@@ -7940,7 +7982,9 @@
     "reasoning_2026": [
       "https://matharena.ai/",
       "https://huggingface.co/MathArena",
-      "https://imobench.github.io/"
+      "https://imobench.github.io/",
+      "https://huggingface.co/datasets/Rowan/hellaswag",
+      "https://rowanzellers.com/hellaswag/"
     ],
     "swe_bench": [
       "https://github.com/SWE-bench/SWE-bench",

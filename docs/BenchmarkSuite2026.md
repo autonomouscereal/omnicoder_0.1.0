@@ -55,8 +55,8 @@ The broad profile covers the active benchmark axes:
 - Coding: SWE-bench Pro, SWE-bench Live, LiveCodeBench, private repo maintenance.
 - Agent/tool: BFCL v4, tau3/tau2-style stateful tasks, MCPMark-style workflows,
   and Terminal-Bench 2.1-style terminal tasks.
-- Reasoning: ARC-AGI-3-style interactive environments and private expert
-  reasoning/math refreshes.
+- Reasoning: ARC-AGI-3-style interactive environments, HellaSwag-style
+  commonsense continuation, and private expert reasoning/math refreshes.
 - Long context: RULER/InfiniteBench-style retrieval plus LongBench-v2-style
   32K to 1M-plus context reasoning.
 - Multimodal understanding: MMMU-Pro, Video-MME-v2, LVBench, LVOmniBench,

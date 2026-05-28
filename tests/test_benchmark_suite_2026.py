@@ -1093,3 +1093,19 @@ def test_suite_profile_includes_terminalworld_agent_gate() -> None:
     assert benchmark_id in suite["reportable_task_roots"]
     assert adapters[benchmark_id]["source"] == "https://github.com/EuniAI/TerminalWorld"
     assert "terminal" in adapters[benchmark_id]["modalities"]
+
+
+def test_suite_profile_includes_hellaswag_learning_signal_gate() -> None:
+    suite = runner.load_profile(runner.DEFAULT_PROFILE)
+    adapters = {adapter["benchmark_id"]: adapter for adapter in suite["benchmarks"]}
+
+    benchmark_id = "reasoning_hellaswag_full_2026"
+    adapter = adapters[benchmark_id]
+    assert benchmark_id in suite["release_gates"]["reasoning_release"]
+    assert benchmark_id in suite["reportable_snapshots"]
+    assert benchmark_id in suite["reportable_task_roots"]
+    assert adapter["adapter_kind"] == "commonsense_completion_mcq"
+    assert adapter["task_format"] == "jsonl_multiple_choice_completion"
+    assert "multiple_choice" in adapter["modalities"]
+    assert "normalized_accuracy" in adapter["metrics"]
+    assert adapter["source"] == "https://huggingface.co/datasets/Rowan/hellaswag"

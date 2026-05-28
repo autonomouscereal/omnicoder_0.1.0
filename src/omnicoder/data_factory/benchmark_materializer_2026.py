@@ -488,6 +488,12 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "git": "https://github.com/LiveBench/LiveBench.git",
         "kind": "math",
     },
+    "reasoning_hellaswag_full_2026": {
+        "source": "https://huggingface.co/datasets/Rowan/hellaswag",
+        "hf": ["hellaswag"],
+        "kind": "commonsense_completion_mcq",
+        "splits": ["validation", "train"],
+    },
     "reasoning_hle_rolling_2026": {
         "source": "https://huggingface.co/datasets/cais/hle",
         "hf": ["cais/hle"],
@@ -2451,6 +2457,9 @@ def normalize_task(
             "strategy_hint",
             "input",
             "text",
+            "ctx",
+            "ctx_a",
+            "ctx_b",
             "context",
             "context_document",
             "scenario",

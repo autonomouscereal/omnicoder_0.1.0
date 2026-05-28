@@ -688,6 +688,31 @@ def test_materializer_normalizes_long_context_prompt_aliases() -> None:
     assert task["answer"] == "name\tprice\nexample\t1"
 
 
+def test_materializer_normalizes_hellaswag_completion_rows() -> None:
+    spec = materializer.KNOWN_BENCHMARKS["reasoning_hellaswag_full_2026"]
+    task = materializer.normalize_task(
+        "reasoning_hellaswag_full_2026",
+        {
+            "ind": 17,
+            "ctx": "A person opens the oven door and",
+            "endings": ["sits on the couch.", "pulls out a tray.", "drives away.", "prints a receipt."],
+            "label": "1",
+        },
+        spec,
+        {"adapter_kind": "commonsense_completion_mcq"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert task is not None
+    assert task["question"] == "A person opens the oven door and"
+    assert task["choices"][1] == "pulls out a tray."
+    assert task["answer"] == "1"
+    assert materializer.is_scorable_task(task, spec)
+
+
 def test_materializer_normalizes_countdown_rewardbench_and_oneig_aliases() -> None:
     countdown = materializer.normalize_task(
         "long_context_longproc_2026",
@@ -1586,6 +1611,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
         "coding_swe_mera_2026",
         "coding_ale_bench_2026",
         "reasoning_hle_rolling_2026",
+        "reasoning_hellaswag_full_2026",
         "reasoning_imo_bench_2026",
         "reasoning_matharena_2026",
         "reasoning_maime2025_2026",
@@ -1663,6 +1689,7 @@ def test_materializer_tracks_2026_official_source_mirrors() -> None:
     assert voicebench["config"] == "ifeval"
     assert materializer.KNOWN_BENCHMARKS["agent_clawbench_browser_2026"]["hf"][0] == "TIGER-Lab/ClawBench"
     assert materializer.KNOWN_BENCHMARKS["agent_mcptoolbenchpp_2026"]["hf"] == ["MCPToolBench/MCPToolBenchPP"]
+    assert materializer.KNOWN_BENCHMARKS["reasoning_hellaswag_full_2026"]["hf"] == ["hellaswag"]
     assert materializer.KNOWN_BENCHMARKS["reasoning_maime2025_2026"]["hf"] == ["LumiOpen/mAIME2025"]
     assert materializer.KNOWN_BENCHMARKS["long_context_nolima_1m_2026"]["hf"] == ["amodaresi/NoLiMa"]
     assert materializer.KNOWN_BENCHMARKS["multimodal_audiomarathon_2026"]["hf"][0] == "AudioMarathon/AudioMarathon"

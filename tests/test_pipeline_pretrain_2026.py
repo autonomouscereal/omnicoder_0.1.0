@@ -542,6 +542,41 @@ def test_weighted_pipeline_dataset_trains_media_target_json(tmp_path) -> None:
     assert "<image_begin> proof_image_token <image_end>" in target_text
 
 
+def test_input_json_media_tokens_remain_unmasked_context(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) for ch in text]
+
+    media_token_text = "<image_begin> cross_modal_glyph <image_end>"
+    record = {
+        "input_json": {
+            "prompt": "describe the input image",
+            "input_modality": "image",
+            "image_tokens": media_token_text,
+            "reference_image": "artifacts/glyph.png",
+        },
+        "target_json": {
+            "output_modality": "text",
+            "answer": "glyph present",
+        },
+    }
+    source = tmp_path / "media_input.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=256, vocab_size=256)
+    ids, labels, _weight = dataset[0]
+    nonpad = ids.ne(0)
+    full_text = "".join(chr(int(token.item())) for token in ids[nonpad])
+    media_start = full_text.index(media_token_text)
+    media_labels = labels[media_start : media_start + len(media_token_text)]
+    valid = labels.ge(0)
+    target_text = "".join(chr(int(ids[index].item())) for index in torch.nonzero(valid, as_tuple=False).flatten())
+
+    assert media_token_text in full_text
+    assert media_labels.eq(-100).all()
+    assert target_text == " glyph present"
+
+
 def test_messages_without_assistant_do_not_suppress_target_json(tmp_path) -> None:
     class TinyTokenizer:
         def encode(self, text: str) -> list[int]:

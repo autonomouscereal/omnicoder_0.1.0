@@ -559,22 +559,54 @@ MEDIA_TARGET_KEYS = {
     "ocr_text",
 }
 
+MEDIA_INPUT_KEYS = {
+    "input_modality",
+    "source_modality",
+    "media_tokens",
+    "input_media_tokens",
+    "artifact_tokens",
+    "image_tokens",
+    "video_tokens",
+    "audio_tokens",
+    "speech_tokens",
+    "tts_tokens",
+    "music_tokens",
+    "ocr_image_tokens",
+    "image_path",
+    "video_path",
+    "audio_path",
+    "reference_image",
+    "reference_video",
+    "reference_audio",
+}
+
 MEDIA_ROUTE_NAMES = {"image", "video", "music", "tts", "speech", "audio", "ocr"}
 
 
 def _ordered_json_value(value: object) -> object:
     if isinstance(value, dict):
         priority = (
+            "input_modality",
+            "source_modality",
             "output_modality",
             "task",
             "ocr_text",
+            "input_media_tokens",
             "artifact_tokens",
             "media_tokens",
             "image_tokens",
             "video_tokens",
             "audio_tokens",
+            "speech_tokens",
             "tts_tokens",
             "music_tokens",
+            "ocr_image_tokens",
+            "image_path",
+            "video_path",
+            "audio_path",
+            "reference_image",
+            "reference_video",
+            "reference_audio",
             "artifact_path",
             "artifact_uri",
             "codec",
@@ -658,6 +690,17 @@ def _is_media_target_content(value: object) -> bool:
             or '"task":"ocr"' in text
         )
     return False
+
+
+def _input_context_payload(input_json: dict[str, Any], *, emitted_prompt: bool) -> object:
+    consumed = {"messages", "content", "prompt", "text", "instruction"}
+    payload = {str(key): value for key, value in input_json.items() if str(key) not in consumed and value is not None}
+    if not payload:
+        return {}
+    has_media = any(key in payload for key in MEDIA_INPUT_KEYS)
+    if has_media or not emitted_prompt:
+        return payload
+    return {}
 
 
 def _content_output_route(value: object) -> str:
@@ -906,7 +949,10 @@ def _target_json_segments(record: dict[str, Any]) -> list[tuple[str, bool]]:
             if value:
                 _append_role_line_segments(segments, "assistant", value, output_route=output_route)
                 emitted_text = True
-        if any(key in target_json for key in MEDIA_TARGET_KEYS) or not emitted_text:
+        has_media_payload = output_route in MEDIA_ROUTE_NAMES or any(
+            key in target_json for key in MEDIA_TARGET_KEYS if key != "output_modality"
+        )
+        if has_media_payload or not emitted_text:
             _append_role_line_segments(segments, "assistant", target_json, output_route=output_route)
     return segments
 
@@ -916,10 +962,15 @@ def _input_target_json_segments(record: dict[str, Any]) -> list[tuple[str, bool]
     input_json = record.get("input_json")
     if isinstance(input_json, dict):
         segments.extend(_message_segments(input_json.get("messages")))
+        emitted_prompt = bool(segments)
         for key in ("content", "prompt", "text", "instruction"):
             value = input_json.get(key)
             if value:
                 _append_role_line_segments(segments, "user", value)
+                emitted_prompt = True
+        context_payload = _input_context_payload(input_json, emitted_prompt=emitted_prompt)
+        if context_payload:
+            _append_role_line_segments(segments, "user", context_payload)
     target_segments = _target_json_segments(record)
     if segments and target_segments:
         segments.append(("\n", False))
@@ -1819,7 +1870,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target_prefix_weight", type=float, default=float(os.getenv("OMNICODER2026_TARGET_PREFIX_WEIGHT", "1.0") or 1.0))
     parser.add_argument("--target_prefix_tokens", type=int, default=int(os.getenv("OMNICODER2026_TARGET_PREFIX_TOKENS", "0") or 0))
     parser.add_argument("--save_interval", type=int, default=0)
+    parser.add_argument("--skip_final_save", action="store_true")
     parser.add_argument("--require_target_contract", action="store_true")
+    parser.add_argument("--allow_p40_target_contract_eval", action="store_true")
     parser.add_argument("--allow_probe", action="store_true")
     parser.add_argument("--debug_events", action="store_true")
     parser.add_argument("--checkpoint_sync_backend", default=os.getenv("OMNICODER2026_CHECKPOINT_SYNC_BACKEND", "filesystem"), choices=["filesystem", "barrier"])
@@ -2042,9 +2095,10 @@ def main(argv: list[str] | None = None) -> int:
         if int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0:
             save_sharded_checkpoint(Path(args.out).with_name(f"{Path(args.out).stem}.step{start_step + local_step + 1}"), shard, preset=preset, args=args, optimizer=optimizer, global_step=start_step + local_step + 1, last_loss=float(loss_tensor.cpu()))
 
-    save_sharded_checkpoint(args.out, shard, preset=preset, args=args, optimizer=optimizer, global_step=start_step + int(args.steps), last_loss=float(loss_tensor.cpu()))
+    if not bool(args.skip_final_save):
+        save_sharded_checkpoint(args.out, shard, preset=preset, args=args, optimizer=optimizer, global_step=start_step + int(args.steps), last_loss=float(loss_tensor.cpu()))
     if rank == 0:
-        _write_log(args.log_file, {"status": "ok", "out": args.out, "last_loss": float(loss_tensor.cpu()), "global_step": start_step + int(args.steps), "distributed": "pipeline", "world_size": world_size})
+        _write_log(args.log_file, {"status": "ok", "out": args.out, "last_loss": float(loss_tensor.cpu()), "global_step": start_step + int(args.steps), "distributed": "pipeline", "world_size": world_size, "final_save_skipped": bool(args.skip_final_save)})
     dist.destroy_process_group()
     return 0
 
