@@ -596,8 +596,6 @@ eval_group() {
     --seq-len "$SEQ_LEN"
     --max-records-per-file "$EXAMPLES_PER_MODALITY"
     --lm-loss-chunk-tokens "$LM_LOSS_CHUNK_TOKENS"
-    --require_target_contract
-    --allow-p40-target-contract-eval
   )
   run_cmd "loss_${group}" "$LOG_DIR/${group}.loss.console.log" "${loss_cmd[@]}"
 
@@ -618,8 +616,6 @@ eval_group() {
     --max-records-per-file "$EXAMPLES_PER_MODALITY"
     --top-k "$TOP_K"
     --max-positions "$MAX_POSITIONS"
-    --require-target-contract
-    --allow-p40-target-contract-eval
   )
   run_cmd "targets_${group}" "$LOG_DIR/${group}.targets.console.log" "${target_cmd[@]}"
 }
@@ -644,8 +640,6 @@ predict_group() {
     --max-output-tokens "$MAX_OUTPUT_TOKENS"
     --max-prompt-tokens "$MAX_PROMPT_TOKENS"
     --dist-timeout-seconds "$DIST_TIMEOUT_SECONDS"
-    --require-target-contract
-    --allow-p40-target-contract-eval
     --allow-local-dev-tasks
     --force
   )
