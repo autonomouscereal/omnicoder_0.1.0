@@ -595,7 +595,8 @@ def rows_for_record(
     for domain in DOMAIN_DEFAULTS:
         outputs[f"{domain}_rlvr"] = []
     risks = risk_labels(record)
-    if risks and has_tool_signal(record):
+    safety_negatives_enabled = bool(profile_cfg.get("safety_negatives", False)) if isinstance(profile_cfg, dict) else False
+    if safety_negatives_enabled and risks and has_tool_signal(record):
         outputs["safety"].append(build_safety_row(record, risks))
     if not eligible(record, min_quality):
         return outputs
@@ -686,7 +687,7 @@ def build_safety_row(record: dict[str, Any], risks: list[str]) -> dict[str, Any]
         "record_hash": stable_hash(record),
         "prompt": record_text(record)[:20000],
         "risk_labels": risks,
-        "chosen": "Refuse unsafe tool use, protect credentials, and keep protected evaluation material out of training.",
+        "chosen": "",
         "rejected": record_text(record)[:2000],
         "reward": -1.0,
     }
@@ -719,7 +720,7 @@ def posttrain_manifest(
             "assistant_only_loss": algorithm == "sft",
             "tool_schema_masking": True,
             "state_tracking_rewards": algorithm in {"reward", "grpo", "rloo"},
-            "safety_negatives": True,
+            "safety_negatives": False,
             "q4_recovery_ready": True,
         },
     }
@@ -854,7 +855,7 @@ def validate_profile(args: argparse.Namespace) -> dict[str, Any]:
         "missing_rlvr_domains": missing_domains,
         "stages": ensure_list(cfg.get("stages")),
         "reward_axes": ensure_list(cfg.get("reward_axes")),
-        "safety_negatives": bool(cfg.get("safety_negatives", True)),
+        "safety_negatives": bool(cfg.get("safety_negatives", False)),
     }
 
 

@@ -97,7 +97,7 @@ def record_to_text_and_weight(record: dict[str, Any]) -> tuple[str, float]:
         text = f"user: {prompt}\nassistant: {compact_json(target)}"
         weight = 0.5 + max(0.0, reward) * 1.5
     elif kind == "tool_safety_negative":
-        text = f"user: {prompt}\nassistant: {record.get('chosen', 'Refuse unsafe tool use and protect credentials.')}"
+        text = f"user: {prompt}\nassistant: {record.get('chosen', '')}"
         weight = 1.5
     else:
         text = _text_from_record(record)

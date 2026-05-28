@@ -534,7 +534,7 @@ def _pipeline_record_to_text_and_weight(record: dict[str, Any]) -> tuple[str, fl
         text = f"user: {prompt}\nassistant: {_compact_json(target)}"
         weight = 0.5 + max(0.0, reward) * 1.5
     elif kind == "tool_safety_negative":
-        text = f"user: {prompt}\nassistant: {record.get('chosen', 'Refuse unsafe tool use and protect credentials.')}"
+        text = f"user: {prompt}\nassistant: {record.get('chosen', '')}"
         weight = 1.5
     else:
         text = _text_from_record(record)
@@ -1053,6 +1053,53 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         stride = max(1, self.seq_len - 1)
         return max(1, int(math.ceil(float(approx_tokens) / float(stride))))
 
+    @staticmethod
+    def _messages_have_target(messages: object) -> bool:
+        if not isinstance(messages, list):
+            return False
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            if str(message.get("role") or "").lower() != "assistant":
+                continue
+            if _content_to_text(message.get("content")).strip() or message.get("tool_calls"):
+                return True
+        return False
+
+    @classmethod
+    def _jsonl_line_has_possible_target(cls, raw: bytes) -> bool:
+        try:
+            obj = json.loads(raw.decode("utf-8", errors="ignore"))
+        except Exception:
+            return True
+        if not isinstance(obj, dict):
+            return True
+        if any(_token_id_list(obj.get(key)) for key in ("target_token_ids", "completion_token_ids", "assistant_token_ids", "media_token_ids", "artifact_token_ids")):
+            return True
+        target_json = obj.get("target_json")
+        if isinstance(target_json, dict) and bool(target_json):
+            return True
+        if cls._messages_have_target(obj.get("messages")):
+            return True
+        input_json = obj.get("input_json")
+        if isinstance(input_json, dict):
+            if cls._messages_have_target(input_json.get("messages")):
+                return True
+            # input_json-only rows are context unless paired with target_json.
+            return False
+        kind = str(obj.get("training_kind") or "").lower()
+        if kind.endswith("_rlvr") or kind in {"tool_preference", "tool_reward"}:
+            return True
+        if kind == "tool_safety_negative":
+            return bool(_content_to_text(obj.get("chosen")).strip())
+        if {"prompt", "chosen", "rejected"} <= set(obj):
+            return bool(_content_to_text(obj.get("chosen")).strip())
+        if any(_content_to_text(obj.get(key)).strip() for key in ("text", "content", "completion", "answer", "caption", "transcript", "ocr_text")):
+            return True
+        if "messages" in obj:
+            return False
+        return bool(_content_to_text(obj.get("prompt")).strip())
+
     def _index_path(self, path: Path, limit: int | None) -> None:
         if not path.exists():
             return
@@ -1072,6 +1119,8 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
                 if limit is not None and len(self.records) >= limit:
                     break
                 if not raw.strip():
+                    continue
+                if not self._jsonl_line_has_possible_target(raw):
                     continue
                 for chunk_index in range(self._estimate_chunks(len(raw))):
                     if limit is not None and len(self.records) >= limit:
@@ -1100,15 +1149,8 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         ids, labels, weight = record_ids_labels_weight(obj, self.tokenizer)
         return ids, labels, weight, len(ids)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        if not self.records:
-            ids, labels, weight = self.fallback
-            return (
-                torch.tensor(ids[: self.seq_len], dtype=torch.long),
-                torch.tensor(labels[: self.seq_len], dtype=torch.long),
-                torch.tensor(float(weight), dtype=torch.float32),
-            )
-        path, offset, chunk_index, kind = self.records[int(idx) % len(self.records)]
+    def _window_from_entry(self, entry: tuple[Path, int, int, str]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, bool]:
+        path, offset, chunk_index, kind = entry
         raw_ids, raw_labels, weight, _ = self._read_record(path, offset, kind)
         cleaned = [self._sanitize_id(x) for x in raw_ids]
         labels = []
@@ -1140,12 +1182,48 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         target_labels = labels[start:start + self.seq_len]
         if sparse_source and target_labels:
             target_labels[0] = -100
+        has_targets = any(int(label) >= 0 for label in target_labels)
         if len(ids) < self.seq_len:
             ids = ids + [0] * (self.seq_len - len(ids))
             target_labels = target_labels + [-100] * (self.seq_len - len(target_labels))
         return (
             torch.tensor(ids[: self.seq_len], dtype=torch.long),
             torch.tensor(target_labels[: self.seq_len], dtype=torch.long),
+            torch.tensor(float(weight), dtype=torch.float32),
+            bool(has_targets),
+        )
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if not self.records:
+            ids, labels, weight = self.fallback
+            return (
+                torch.tensor(ids[: self.seq_len], dtype=torch.long),
+                torch.tensor(labels[: self.seq_len], dtype=torch.long),
+                torch.tensor(float(weight), dtype=torch.float32),
+            )
+        base_index = int(idx) % len(self.records)
+        blocked_records: set[tuple[Path, int, str]] = set()
+        scan_budget = min(len(self.records), max(64, self.seq_len * 4))
+        last_window: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
+        cursor = base_index
+        for _attempt in range(scan_budget):
+            path, offset, chunk_index, kind = self.records[cursor]
+            key = (path, int(offset), kind)
+            if key in blocked_records:
+                cursor = (cursor + 1) % len(self.records)
+                continue
+            ids, target_labels, weight, has_targets = self._window_from_entry((path, offset, chunk_index, kind))
+            last_window = (ids, target_labels, weight)
+            if has_targets:
+                return ids, target_labels, weight
+            blocked_records.add(key)
+            cursor = (cursor + 1) % len(self.records)
+        if last_window is not None:
+            return last_window
+        ids, labels, weight = self.fallback
+        return (
+            torch.tensor(ids[: self.seq_len], dtype=torch.long),
+            torch.tensor(labels[: self.seq_len], dtype=torch.long),
             torch.tensor(float(weight), dtype=torch.float32),
         )
 

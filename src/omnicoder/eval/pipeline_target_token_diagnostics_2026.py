@@ -14,10 +14,10 @@ import torch.distributed as dist
 import torch.nn.functional as F
 
 from omnicoder.eval.pipeline_checkpoint_batch_predict_2026 import (
-    EXPECTED_SHARDS,
     _build_shard,
     _checkpoint_dir,
     _load_manifest,
+    _torchrun_world_size,
 )
 from omnicoder.eval.sample_loss_2026 import (
     _candidate_data_files,
@@ -525,6 +525,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--init-dtype", "--init_dtype", dest="init_dtype", choices=["auto", "fp32", "fp16", "bf16"], default=os.getenv("OMNICODER2026_PIPELINE_BATCH_INIT_DTYPE", "auto"))
     parser.add_argument("--dist-backend", default=os.getenv("OMNICODER2026_PIPELINE_BATCH_DIST_BACKEND", "auto"))
     parser.add_argument("--dist-timeout-seconds", "--dist_timeout_seconds", dest="dist_timeout_seconds", type=int, default=int(os.getenv("OMNICODER2026_DIST_TIMEOUT_SECONDS", "7200") or 7200))
+    parser.add_argument("--expected-world-size", "--expected_world_size", "--nproc", "--nproc-per-node", "--nproc_per_node", dest="expected_world_size", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_EXPECTED_WORLD_SIZE", "0") or 0))
     parser.add_argument("--seq-len", "--seq_len", dest="seq_len", type=int, default=1024)
     parser.add_argument("--max-records-per-file", "--max_records_per_file", dest="max_records_per_file", type=int, default=0)
     parser.add_argument("--top-k", "--top_k", dest="top_k", type=int, default=8)
@@ -541,9 +542,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     checkpoint = _checkpoint_dir(args.checkpoint)
-    _load_manifest(checkpoint)
-    if int(os.getenv("WORLD_SIZE", "1")) != EXPECTED_SHARDS:
-        raise SystemExit(f"run under torchrun with nproc_per_node={EXPECTED_SHARDS}")
+    manifest = _load_manifest(checkpoint, expected_world_size=int(args.expected_world_size or 0))
+    expected_world_size = _torchrun_world_size(checkpoint, manifest, int(args.expected_world_size or 0))
+    actual_world_size = int(os.getenv("WORLD_SIZE", "1"))
+    if actual_world_size != expected_world_size:
+        raise SystemExit(f"run under torchrun with nproc_per_node={expected_world_size}")
     args.checkpoint = str(checkpoint)
     try:
         result = evaluate(args)

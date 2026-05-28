@@ -172,7 +172,7 @@
         ]
       }
     },
-    "safety_negatives": true,
+    "safety_negatives": false,
     "source_families": [
       "codex_traces",
       "claude_code_traces",

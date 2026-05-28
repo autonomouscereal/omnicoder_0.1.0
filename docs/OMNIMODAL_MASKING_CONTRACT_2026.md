@@ -54,6 +54,27 @@ The generated route/artifact stream is consumed by edge decoders and artifact
 renderers after the shared trunk emits it. Those edge decoders are runtime
 interfaces, not extra reasoning adapters inside the model.
 
+Minimal supervised media bridge row:
+
+```json
+{
+  "input_json": {
+    "prompt": "Describe and edit the source image.",
+    "input_modality": "image",
+    "image_tokens": "<image_begin> ... <image_end>"
+  },
+  "target_json": {
+    "output_modality": "image",
+    "artifact_tokens": "<image_begin> edited ... <image_end>",
+    "caption": "Edited source image"
+  }
+}
+```
+
+In this row, `prompt`, `input_modality`, and `image_tokens` are context
+(`labels = -100`). The assistant caption, `image |` route prefix, and artifact
+tokens are supervised targets (`labels = token_id`).
+
 ## Cross-Modality Transfer Requirement
 
 The mask alone does not guarantee deep omnimodal understanding. Cross-modality
@@ -71,6 +92,23 @@ transfer comes from the mixture design:
 For full training, the data manifest should report per-modality rows and
 cross-modal bridge counts. A run that has media output rows but no media input
 tokens, or vice versa, is not considered an omnimodal-ready run.
+
+The expected manifest proof keys are:
+
+- `source_counts`: row count by source family, for example Qwen text/code/tool,
+  Qwen image generate/edit, LTX video, ACE/music/TTS, OCR, traces, math, and
+  benchmark-derived heldout diagnostics.
+- `modality_counts`: row count by primary training modality: `text`, `code`,
+  `tool`, `math`, `image`, `video`, `music`, `tts`, `audio`, `ocr`, and
+  `bridge`.
+- `bridge_counts`: direct cross-modal row counts such as `image_to_text`,
+  `text_to_image`, `image_text_to_image_edit`, `text_to_video`,
+  `video_to_text`, `text_to_music`, `text_to_tts`, `audio_to_text`, and
+  `ocr_image_to_text`.
+- `target_coverage`: supervised target-token presence for assistant answers,
+  tool outputs, route prefixes, and media artifact tokens.
+- `context_coverage`: masked input-token presence for media/context tokens so
+  the run proves inputs were kept in the shared sequence rather than dropped.
 
 ## Validation Gates
 

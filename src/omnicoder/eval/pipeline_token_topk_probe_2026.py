@@ -12,11 +12,11 @@ import torch
 import torch.distributed as dist
 
 from omnicoder.eval.pipeline_checkpoint_batch_predict_2026 import (
-    EXPECTED_SHARDS,
     _build_shard,
     _broadcast_ids,
     _checkpoint_dir,
     _load_manifest,
+    _torchrun_world_size,
 )
 from omnicoder.tokenization.text_range_2026 import effective_text_token_range, tokenizer_vocab_size
 from omnicoder.training.pipeline_pretrain_2026_dense import autocast_context
@@ -212,7 +212,7 @@ def _run_worker(args: argparse.Namespace) -> dict[str, Any] | None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="No-training top-k/token mapping probe for 3-shard Omnicoder pipeline checkpoints")
+    parser = argparse.ArgumentParser(description="No-training top-k/token mapping probe for sharded Omnicoder pipeline checkpoints")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--prompt", default="Write a tiny Python add function.")
@@ -225,6 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--init-dtype", "--init_dtype", dest="init_dtype", choices=["auto", "fp32", "fp16", "bf16"], default=os.getenv("OMNICODER2026_PIPELINE_BATCH_INIT_DTYPE", "auto"))
     parser.add_argument("--dist-backend", default=os.getenv("OMNICODER2026_PIPELINE_BATCH_DIST_BACKEND", "auto"))
     parser.add_argument("--dist-timeout-seconds", "--dist_timeout_seconds", dest="dist_timeout_seconds", type=int, default=int(os.getenv("OMNICODER2026_DIST_TIMEOUT_SECONDS", "7200") or 7200))
+    parser.add_argument("--expected-world-size", "--expected_world_size", "--nproc", "--nproc-per-node", "--nproc_per_node", dest="expected_world_size", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_EXPECTED_WORLD_SIZE", "0") or 0))
     parser.add_argument("--fake-quant", "--fake_quant", dest="fake_quant", action="store_true")
     parser.add_argument("--fake-quant-chunk-rows", "--fake_quant_chunk_rows", dest="fake_quant_chunk_rows", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_FAKE_QUANT_CHUNK_ROWS", "0") or 0))
     parser.add_argument("--fake-quant-max-full-elements", "--fake_quant_max_full_elements", dest="fake_quant_max_full_elements", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_BATCH_FAKE_QUANT_MAX_FULL_ELEMENTS", "0") or 0))
@@ -236,11 +237,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     checkpoint = _checkpoint_dir(args.checkpoint)
-    _load_manifest(checkpoint)
-    if int(os.getenv("WORLD_SIZE", "1")) not in {1, EXPECTED_SHARDS}:
-        raise SystemExit(f"run under torchrun with nproc_per_node={EXPECTED_SHARDS}")
-    if int(os.getenv("WORLD_SIZE", "1")) == 1:
-        raise SystemExit(f"run under torchrun with nproc_per_node={EXPECTED_SHARDS}")
+    manifest = _load_manifest(checkpoint, expected_world_size=int(args.expected_world_size or 0))
+    expected_world_size = _torchrun_world_size(checkpoint, manifest, int(args.expected_world_size or 0))
+    actual_world_size = int(os.getenv("WORLD_SIZE", "1"))
+    if actual_world_size != expected_world_size:
+        raise SystemExit(f"run under torchrun with nproc_per_node={expected_world_size}")
     args.checkpoint = str(checkpoint)
     try:
         result = _run_worker(args)

@@ -208,6 +208,35 @@ def test_reward_components_include_domain_axes() -> None:
     assert components["risk_penalty"] == 0.0
 
 
+def test_agentic_tool_training_does_not_emit_safety_negatives_by_default() -> None:
+    rows = tooltrain.rows_for_record(
+        {
+            "text": "Run a destructive shell command",
+            "tool_calls": [{"tool": "terminal", "arguments": {"cmd": "rm -rf /"}}],
+            "quality": {"score": 1.0},
+        },
+        min_quality=0.1,
+        profile_cfg={},
+    )
+
+    assert rows["safety"] == []
+
+
+def test_agentic_tool_training_explicit_safety_negative_has_no_refusal_target() -> None:
+    rows = tooltrain.rows_for_record(
+        {
+            "text": "Run a destructive shell command",
+            "tool_calls": [{"tool": "terminal", "arguments": {"cmd": "rm -rf /"}}],
+            "quality": {"score": 1.0},
+        },
+        min_quality=0.1,
+        profile_cfg={"safety_negatives": True},
+    )
+
+    assert len(rows["safety"]) == 1
+    assert rows["safety"][0]["chosen"] == ""
+
+
 def test_build_exports_domain_rlvr_files(tmp_path: Path) -> None:
     rows = tooltrain.build_rows(
         [

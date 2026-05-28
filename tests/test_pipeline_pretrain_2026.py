@@ -697,6 +697,58 @@ def test_dataset_sparse_target_chunks_reanchor_to_answer_tokens(tmp_path) -> Non
     assert labels.ge(0).any()
 
 
+def test_dataset_skips_targetless_context_rows(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    source = tmp_path / "mixed_targets.jsonl"
+    source.write_text(
+        json.dumps({"messages": [{"role": "user", "content": "context only"}]}) + "\n"
+        + json.dumps(
+            {
+                "messages": [
+                    {"role": "user", "content": "name the target"},
+                    {"role": "assistant", "content": "usable answer"},
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=64, vocab_size=256)
+    _ids, labels, _weight = dataset[0]
+
+    assert labels.ge(0).any()
+
+
+def test_dataset_retries_legacy_targetless_index_entries(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    source = tmp_path / "legacy_index.jsonl"
+    first = json.dumps({"messages": [{"role": "user", "content": "legacy context only"}]})
+    second = json.dumps(
+        {
+            "messages": [
+                {"role": "user", "content": "name the target"},
+                {"role": "assistant", "content": "retry answer"},
+            ]
+        }
+    )
+    source.write_text(first + "\n" + second + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=64, vocab_size=256)
+    first_offset = 0
+    second_offset = len((first + "\n").encode("utf-8"))
+    dataset.records = [(source, first_offset, 0, "jsonl"), (source, second_offset, 0, "jsonl")]
+    _ids, labels, _weight = dataset[0]
+
+    assert labels.ge(0).any()
+
+
 def test_dataset_chunk_overlap_preserves_repeated_boundaries(tmp_path) -> None:
     record = {
         "prompt_token_ids": [10, 11, 12],

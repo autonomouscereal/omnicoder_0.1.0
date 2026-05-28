@@ -17,6 +17,13 @@ import torch.distributed as dist
 
 from omnicoder.config_2026 import get_omnicoder2026_preset, preset_to_model_kwargs
 from omnicoder.eval import reportable_prediction_harness_2026 as harness
+from omnicoder.eval.pipeline_checkpoint_manifest_2026 import (
+    PipelineCheckpointManifestError,
+    load_pipeline_manifest,
+    rank_files as manifest_rank_files,
+    read_json as manifest_read_json,
+    resolve_expected_world_size as manifest_resolve_expected_world_size,
+)
 from omnicoder.inference.output_router_2026 import route_for_output, route_manifest
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
@@ -36,7 +43,6 @@ from omnicoder.training.simple_tokenizer import get_text_tokenizer
 
 BACKEND_NAME = "pipeline_checkpoint_batch_predict_2026"
 SUMMARY_SCHEMA = "omnicoder.pipeline_checkpoint_batch_predict_2026.summary.v1"
-EXPECTED_SHARDS = 3
 CONFIG_FIELDS = {field.name for field in fields(OmniCoder2026Config)}
 TEXT_RANGE = DEFAULT_LEDGER.as_config_ranges()["text"]
 
@@ -71,14 +77,25 @@ def repo_root() -> Path:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise BatchPredictError(f"{path} must contain one JSON object")
-    return payload
+    try:
+        return manifest_read_json(path)
+    except PipelineCheckpointManifestError as exc:
+        raise BatchPredictError(str(exc)) from exc
 
 
 def _rank_files(checkpoint: Path) -> list[Path]:
-    return sorted(path for path in checkpoint.glob("rank*.pt") if path.is_file())
+    return manifest_rank_files(checkpoint)
+
+
+def _resolve_expected_world_size(
+    checkpoint: Path,
+    manifest: dict[str, Any],
+    explicit_world_size: int | None = None,
+) -> int:
+    try:
+        return manifest_resolve_expected_world_size(checkpoint, manifest, explicit_world_size)
+    except PipelineCheckpointManifestError as exc:
+        raise BatchPredictError(str(exc)) from exc
 
 
 def _checkpoint_dir(value: str | Path) -> Path:
@@ -93,36 +110,19 @@ def _checkpoint_dir(value: str | Path) -> Path:
     return path
 
 
-def _load_manifest(checkpoint: Path) -> dict[str, Any]:
-    manifest_path = checkpoint / "manifest.json"
-    complete_path = checkpoint / ".complete.json"
-    if not manifest_path.exists():
-        raise BatchPredictError(f"pipeline checkpoint is missing manifest.json: {checkpoint}")
-    if not complete_path.exists():
-        raise BatchPredictError(f"pipeline checkpoint is missing .complete.json: {checkpoint}")
-    manifest = _read_json(manifest_path)
-    rank_files = _rank_files(checkpoint)
-    if len(rank_files) != EXPECTED_SHARDS:
-        raise BatchPredictError(
-            f"batch predictor expects exactly {EXPECTED_SHARDS} pipeline shards, found {len(rank_files)} in {checkpoint}"
-        )
-    world_size = int(manifest.get("world_size") or len(rank_files))
-    if world_size != EXPECTED_SHARDS:
-        raise BatchPredictError(
-            f"batch predictor expects manifest world_size={EXPECTED_SHARDS}, got {world_size}"
-        )
-    expected = [checkpoint / f"rank{rank:05d}.pt" for rank in range(EXPECTED_SHARDS)]
-    missing = [path.name for path in expected if not path.exists()]
-    if missing:
-        raise BatchPredictError(f"pipeline checkpoint rank files are not contiguous; missing: {missing}")
-    marker_missing = [
-        f"rank{rank:05d}.pt.complete.json"
-        for rank in range(EXPECTED_SHARDS)
-        if not (checkpoint / f"rank{rank:05d}.pt.complete.json").exists()
-    ]
-    if marker_missing:
-        raise BatchPredictError(f"pipeline checkpoint is missing rank completion markers: {marker_missing}")
-    return manifest
+def _load_manifest(checkpoint: Path, expected_world_size: int | None = None) -> dict[str, Any]:
+    try:
+        return load_pipeline_manifest(checkpoint, expected_world_size)
+    except PipelineCheckpointManifestError as exc:
+        raise BatchPredictError(str(exc)) from exc
+
+
+def _expected_world_size_for_args(args: argparse.Namespace, checkpoint: Path) -> int:
+    manifest = _read_json(checkpoint / "manifest.json")
+    explicit = int(getattr(args, "nproc_per_node", 0) or 0)
+    if explicit <= 0 and dist.is_initialized():
+        explicit = int(dist.get_world_size())
+    return _resolve_expected_world_size(checkpoint, manifest, explicit)
 
 
 def _checkpoint_train_args(path: Path) -> dict[str, Any]:
@@ -220,11 +220,9 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
     _init_process_group(args)
     rank = int(dist.get_rank())
     world_size = int(dist.get_world_size())
-    if world_size != EXPECTED_SHARDS:
-        raise BatchPredictError(f"batch predictor expects {EXPECTED_SHARDS} distributed ranks, got {world_size}")
     device = rank_device(rank, args.rank_device_map)
     checkpoint = _checkpoint_dir(args.checkpoint)
-    _load_manifest(checkpoint)
+    _load_manifest(checkpoint, expected_world_size=world_size)
     _set_fake_quant_env(int(args.fake_quant_chunk_rows or 0), int(args.fake_quant_max_full_elements or 0))
     train_args = _checkpoint_train_args(checkpoint)
     kwargs, saved_preset_name = _checkpoint_kwargs(checkpoint, args.preset)
@@ -618,6 +616,8 @@ def _summary(
                 skipped += 1
                 reason = str(metadata.get("skip_reason") or "unknown")
                 skipped_by_reason[reason] = skipped_by_reason.get(reason, 0) + 1
+    expected_world_size = _expected_world_size_for_args(args, checkpoint)
+    actual_world_size = int(dist.get_world_size()) if dist.is_initialized() else int(expected_world_size)
     return {
         "status": "ok",
         "schema": SUMMARY_SCHEMA,
@@ -642,9 +642,9 @@ def _summary(
         },
         "prediction_sha256": prediction_sha256,
         "distributed": {
-            "world_size": int(dist.get_world_size()) if dist.is_initialized() else EXPECTED_SHARDS,
+            "world_size": actual_world_size,
             "pipeline_stage": True,
-            "expected_shards": EXPECTED_SHARDS,
+            "expected_shards": expected_world_size,
             "rank_device_map": str(args.rank_device_map or ""),
             "placement_layer_counts": str(args.placement_layer_counts or ""),
         },
@@ -855,17 +855,12 @@ def _worker_main(args: argparse.Namespace) -> int:
 
 
 def _torchrun_world_size(checkpoint: Path, manifest: dict[str, Any], explicit: int) -> int:
-    nproc = int(explicit or 0)
-    if nproc <= 0:
-        nproc = int(manifest.get("world_size") or len(_rank_files(checkpoint)))
-    if nproc != EXPECTED_SHARDS:
-        raise BatchPredictError(f"--nproc-per-node must be {EXPECTED_SHARDS} for this batch predictor, got {nproc}")
-    return nproc
+    return _resolve_expected_world_size(checkpoint, manifest, int(explicit or 0))
 
 
 def _preflight_parent(args: argparse.Namespace) -> tuple[Path, dict[str, Any], int]:
     checkpoint = _checkpoint_dir(args.checkpoint)
-    manifest = _load_manifest(checkpoint)
+    manifest = _load_manifest(checkpoint, expected_world_size=int(args.nproc_per_node or 0))
     nproc = _torchrun_world_size(checkpoint, manifest, int(args.nproc_per_node or 0))
     harness.task_paths(list(args.tasks or []))
     out = harness.resolve_path(args.out)
@@ -917,6 +912,8 @@ def _parent_main(args: argparse.Namespace) -> int:
         str(args.dist_timeout_seconds),
         "--progress-tasks",
         str(args.progress_tasks),
+        "--nproc-per-node",
+        str(nproc),
         "--fake-quant-chunk-rows",
         str(args.fake_quant_chunk_rows),
         "--fake-quant-max-full-elements",
@@ -948,10 +945,10 @@ def _parent_main(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Persistent distributed batch predictions for 3-shard Omnicoder2026 pipeline checkpoints"
+        description="Persistent distributed batch predictions for sharded Omnicoder2026 pipeline checkpoints"
     )
     parser.add_argument("--worker", action="store_true", help="Internal torchrun worker mode")
-    parser.add_argument("--checkpoint", required=True, help="Complete 3-shard pipeline checkpoint directory")
+    parser.add_argument("--checkpoint", required=True, help="Complete sharded pipeline checkpoint directory")
     parser.add_argument("--tasks", action="append", required=True, help="Reportable/public-dev task JSONL file or directory; repeatable")
     parser.add_argument("--out", required=True, help="Prediction JSONL output path")
     parser.add_argument("--summary", default="", help="Optional summary JSON path")
