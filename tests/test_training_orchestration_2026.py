@@ -10,6 +10,9 @@ import pytest
 import omnicoder.training.training_orchestration_2026 as orch
 
 
+QUALITY_META = {"source_date": "2026-05-28", "quality_score": 0.9, "contamination_status": "clean"}
+
+
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(row, ensure_ascii=True) for row in rows) + "\n", encoding="utf-8")
@@ -38,14 +41,16 @@ def _profile(root: Path) -> dict:
                     "ok": True,
                     "content": "The orchestrator collected a long real trace span with tool arguments, observations, state deltas, retry decisions, and final verification evidence.",
                 },
+                **QUALITY_META,
             }
         ],
     )
-    _write_jsonl(root / "data" / "text.jsonl", [{"prompt": "Explain the run.", "answer": "The run trained across real records."}])
-    _write_jsonl(root / "data" / "code.jsonl", [{"content": "def ok():\n    return True\n"}])
-    _write_jsonl(root / "data" / "images.jsonl", [{"image": str(image_path), "text": "A real image sample."}])
-    _write_jsonl(root / "data" / "videos.jsonl", [{"id": "video-sample-1", "video": str(video_path), "caption": "A real video sample."}])
-    _write_jsonl(root / "data" / "music.jsonl", [{"source_id": "music-sample-1", "music": str(music_path), "caption": "A real music sample."}])
+    _write_jsonl(root / "data" / "text.jsonl", [{"prompt": "Explain the run.", "answer": "The run trained across real records.", **QUALITY_META}])
+    _write_jsonl(root / "data" / "code.jsonl", [{"content": "def ok():\n    return True\n", **QUALITY_META}])
+    _write_jsonl(root / "data" / "images.jsonl", [{"image": str(image_path), "text": "A real image sample.", **QUALITY_META}])
+    _write_jsonl(root / "data" / "videos.jsonl", [{"id": "video-sample-1", "video": str(video_path), "caption": "A real video sample.", **QUALITY_META}])
+    _write_jsonl(root / "data" / "audio.jsonl", [{"id": "audio-sample-1", "audio": str(audio_path), "caption": "A real audio sample.", **QUALITY_META}])
+    _write_jsonl(root / "data" / "music.jsonl", [{"source_id": "music-sample-1", "music": str(music_path), "caption": "A real music sample.", **QUALITY_META}])
     return {
         "profile_name": "unit",
         "work_dir": str(root / "weights"),
@@ -56,6 +61,7 @@ def _profile(root: Path) -> dict:
             "code_jsonl": ["data/code.jsonl"],
             "image_jsonl": ["data/images.jsonl"],
             "video_jsonl": ["data/videos.jsonl"],
+            "audio_jsonl": ["data/audio.jsonl"],
             "music_jsonl": ["data/music.jsonl"],
             "audio_roots": ["data/audio"],
             "video_roots": ["data/video"],
@@ -1431,8 +1437,18 @@ def test_run_posttraining_cli_can_start_at_safety_negative_replay(tmp_path, monk
     profile = _profile(tmp_path)
     profile["training_plan"]["distributed_training"] = {"mode": "pipeline_stage", "nproc_per_node": 3}
     train_dir = tmp_path / "posttrain_inputs"
-    _write_jsonl(train_dir / "tool_sft.jsonl", [{"prompt": "sft", "reward": 1.0}])
-    _write_jsonl(train_dir / "tool_safety_negatives.jsonl", [{"prompt": "safe refusal", "reward": 1.0}])
+    _write_jsonl(
+        train_dir / "tool_sft.jsonl",
+        [
+            {
+                "prompt": "sft",
+                "response": "Complete the supervised tool replay successfully.",
+                "reward": 1.0,
+                "modality": "tool",
+            }
+        ],
+    )
+    _write_jsonl(train_dir / "tool_safety_negatives.jsonl", [{"prompt": "capability negative contrast row", "reward": 1.0}])
     profile["reinforcement_learning"] = {
         "enabled": True,
         "offline_reward_replay": {
@@ -1748,7 +1764,7 @@ def test_posttrain_start_algorithm_unknown_fails_before_training(tmp_path, monke
     profile = _profile(tmp_path)
     profile["training_plan"]["distributed_training"] = {"mode": "pipeline_stage", "nproc_per_node": 3}
     train_jsonl = tmp_path / "tool_safety_negatives.jsonl"
-    _write_jsonl(train_jsonl, [{"prompt": "safe refusal", "reward": 1.0}])
+    _write_jsonl(train_jsonl, [{"prompt": "capability negative contrast row", "reward": 1.0}])
     profile["reinforcement_learning"] = {
         "enabled": True,
         "offline_reward_replay": {"inputs": [str(train_jsonl)], "algorithms_represented": ["safety_negative_replay"]},

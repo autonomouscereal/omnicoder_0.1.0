@@ -23,6 +23,7 @@ OUT_DIR="${OMNICODER_OVERFIT_OUT_DIR:-weights/overfit_proof_2026/omnimodal_overf
 
 EXAMPLES_PER_MODALITY="${OMNICODER_OVERFIT_EXAMPLES_PER_MODALITY:-10}"
 GROUPS_RAW="${OMNICODER_OVERFIT_GROUPS:-text,code_tool,image_ocr,video,audio_tts_music,ledger_all,omni_all}"
+VALID_PROOF_GROUPS=(text code_tool image_ocr video audio_tts_music ledger_all omni_all)
 RUN_TRAIN="${OMNICODER_OVERFIT_RUN_TRAIN:-1}"
 RUN_EVAL="${OMNICODER_OVERFIT_RUN_EVAL:-1}"
 RUN_PREDICT="${OMNICODER_OVERFIT_RUN_PREDICT:-0}"
@@ -201,6 +202,21 @@ if (( ${#GROUPS_CLEAN[@]} == 0 )); then
   echo "No overfit proof groups selected." >&2
   exit 2
 fi
+for group in "${GROUPS_CLEAN[@]}"; do
+  valid=0
+  for known in "${VALID_PROOF_GROUPS[@]}"; do
+    if [[ "$group" == "$known" ]]; then
+      valid=1
+      break
+    fi
+  done
+  if (( valid == 0 )); then
+    echo "Unknown overfit proof group: $group" >&2
+    echo "Valid groups: ${VALID_PROOF_GROUPS[*]}" >&2
+    exit 2
+  fi
+done
+GROUPS_SELECTED="$(IFS=,; echo "${GROUPS_CLEAN[*]}")"
 
 write_launch_manifest() {
   local status="$1"
@@ -221,7 +237,7 @@ payload = {
     "backend": ${BACKEND@Q},
     "device_mode": ${DEVICE_MODE@Q},
     "gpu_devices": ${GPU_DEVICES@Q},
-    "groups": ${GROUPS_RAW@Q}.split(","),
+    "groups": ${GROUPS_SELECTED@Q}.split(","),
     "examples_per_modality": int(${EXAMPLES_PER_MODALITY@Q}),
     "nproc_per_node": int(${NPROC_PER_NODE@Q}),
     "rank_device_map": ${RANK_DEVICE_MAP@Q},
@@ -318,6 +334,18 @@ from omnicoder.training.simple_tokenizer import get_text_tokenizer
 SCHEMA = "omnicoder.omnimodal_overfit_proof_2026.v1"
 MODALITY_GROUPS = ("text", "code_tool", "image_ocr", "video", "audio_tts_music", "ledger_all")
 GROUPS = MODALITY_GROUPS + ("omni_all",)
+LEDGER_FAMILY_MODALITY = {
+    "text": "text",
+    "control": "control",
+    "vision_semantic": "image",
+    "vision_residual": "image",
+    "speech_tts": "tts",
+    "audio_music": "audio",
+    "music_control": "music",
+    "time_space": "video",
+    "tool_agent": "tool",
+    "flow": "flow",
+}
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -341,6 +369,10 @@ def span(family: str, seed: int, count: int = 8) -> list[int]:
     lo, hi = DEFAULT_LEDGER.as_config_ranges()[family]
     width = int(hi) - int(lo)
     return [int(lo) + ((int(seed) * 37 + index * 11) % width) for index in range(count)]
+
+
+def ledger_modality(family: str) -> str:
+    return LEDGER_FAMILY_MODALITY.get(str(family), "unknown")
 
 
 def row(group: str, modality: str, prompt: str, target_ids: list[int], family: str, target: str) -> dict[str, Any]:
@@ -397,7 +429,7 @@ def main() -> int:
     ]
     families = list(ranges)
     groups["ledger_all"] = [
-        row("ledger_all", "tool" if family == "tool_agent" else "image" if family.startswith("vision") else "text", f"user: ledger family {family} proof\nassistant:", span(family, i, 8), family, f"{family}_proof")
+        row("ledger_all", ledger_modality(family), f"user: ledger family {family} proof\nassistant:", span(family, i, 8), family, f"{family}_proof")
         for i, family in enumerate(families[:examples])
     ]
     omni_rows = []
@@ -521,12 +553,53 @@ def sample_loss_failures(loss_json):
     return failures
 
 
+def expected_modalities(data):
+    modalities = set()
+    if not data.exists():
+        return []
+    for line in data.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(row, dict):
+            modalities.add(str(row.get("modality") or "unknown"))
+    return sorted(modalities)
+
+
+def modalities_with_tokens(payload, *keys):
+    if not isinstance(payload, dict):
+        return set()
+    modalities = payload.get("modalities")
+    if not isinstance(modalities, dict):
+        return set()
+    found = set()
+    for name, bucket in modalities.items():
+        if not isinstance(bucket, dict):
+            continue
+        count = 0
+        for key in keys:
+            value = bucket.get(key)
+            if value not in (None, ""):
+                try:
+                    count = int(value)
+                except Exception:
+                    count = 0
+                break
+        if count > 0:
+            found.add(str(name))
+    return found
+
+
 summary = {
     "schema": "omnicoder.omnimodal_overfit_proof_2026.summary.v1",
     "run": str(run),
     "status": "passed",
     "groups": {},
     "max_reload_sample_loss": max_reload_sample_loss,
+    "selected_groups": groups,
 }
 for group in groups:
     data = run / "data" / f"{group}.jsonl"
@@ -545,6 +618,8 @@ for group in groups:
     }
     if data.exists():
         item["rows"] = sum(1 for line in data.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
+        item["expected_modalities"] = expected_modalities(data)
+    expected = set(item.get("expected_modalities") or [])
     if loss.exists():
         try:
             loss_json = json.loads(loss.read_text(encoding="utf-8"))
@@ -554,6 +629,10 @@ for group in groups:
                 item["sample_loss_failures"] = failures
                 for failure in failures:
                     add_failure(item, str(failure.get("reason") or "sample_loss_failed"))
+            missing = sorted(expected - modalities_with_tokens(loss_json, "tokens"))
+            if missing:
+                item["missing_sample_loss_modalities"] = missing
+                add_failure(item, "missing_sample_loss_modalities")
         except Exception as exc:
             item["loss_error"] = repr(exc)
             add_failure(item, "invalid_sample_loss")
@@ -572,6 +651,10 @@ for group in groups:
             )
             if target_count <= 0:
                 add_failure(item, "no_target_tokens")
+            missing = sorted(expected - modalities_with_tokens(item["target_json"], "target_tokens", "target_token_count"))
+            if missing:
+                item["missing_target_diagnostic_modalities"] = missing
+                add_failure(item, "missing_target_diagnostic_modalities")
         except Exception as exc:
             item["target_error"] = repr(exc)
             add_failure(item, "invalid_target_diagnostics")
@@ -770,6 +853,7 @@ summarize_run() {
     summary
     --run "$CONTAINER_OUT_DIR"
     --out "$CONTAINER_OUT_DIR/omnimodal_overfit_summary.json"
+    --groups "$GROUPS_SELECTED"
     --max-reload-sample-loss "$MAX_RELOAD_SAMPLE_LOSS"
   )
   if run_cmd summary "$LOG_DIR/summary.log" "${cmd[@]}"; then

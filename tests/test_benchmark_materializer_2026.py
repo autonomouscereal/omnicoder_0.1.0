@@ -119,6 +119,8 @@ def test_materializer_writes_local_public_dev_rows_without_network(tmp_path: Pat
     assert manifest["records"][0]["local_only"] is True
     assert manifest["records"][0]["training_bucket"] == "eval_holdout"
     assert manifest["records"][0]["training_allowed"] is False
+    assert manifest["records"][0]["reportability_scope"] == "validation_only_public_dev"
+    assert manifest["by_reportability_scope"] == {"validation_only_public_dev": 1}
 
 
 def test_materializer_writes_run_scoped_authorized_rows(tmp_path: Path) -> None:
@@ -165,6 +167,8 @@ def test_materializer_writes_run_scoped_authorized_rows(tmp_path: Path) -> None:
     assert rows[0]["snapshot_id"] == "mmmu-pro-authorized-2026-current"
     assert rows[0]["snapshot_authorization"] == "official_or_authorized_current_release"
     assert manifest["records"][0]["reportable"] is True
+    assert manifest["records"][0]["reportability_scope"] == "official_or_authorized_snapshot"
+    assert manifest["by_reportability_scope"] == {"official_or_authorized_snapshot": 1}
 
 
 def test_reportable_mode_requires_authorized_source_override(tmp_path: Path, monkeypatch) -> None:

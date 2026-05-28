@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -3047,6 +3048,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     cache_root = resolve_path(str(args.cache_root).format(run_id=run_id), repo_root())
     selected = selected_benchmark_ids(profile, args)
     manifests: list[dict[str, Any]] = []
+    by_reportability_scope: Counter[str] = Counter()
     total_rows = 0
     for benchmark_id in selected:
         spec = dict(KNOWN_BENCHMARKS.get(benchmark_id) or {})
@@ -3055,6 +3057,8 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
             spec = {"source": record.get("source") or "profile_only", "kind": record.get("adapter_kind") or record.get("axis") or "unknown"}
         snapshot = snapshot_for(profile, benchmark_id)
         policy = benchmark_eval_policy(args.mode, snapshot)
+        reportability_scope = str(policy["reportability_scope"])
+        by_reportability_scope[reportability_scope] += 1
         override = overrides.get(benchmark_id)
         if needs_reportable_source_override(args.mode, snapshot, override):
             rows_raw = []
@@ -3110,6 +3114,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                 "training_allowed": policy["training_allowed"],
                 "use_policy": policy["use_policy"],
                 "source_bucket": policy["source_bucket"],
+                "reportability_scope": reportability_scope,
                 "has_snapshot_descriptor": bool(snapshot),
                 "errors": errors[:12],
             }
@@ -3128,6 +3133,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "rows": total_rows,
         "out_root": str(out_root),
         "cache_root": str(cache_root),
+        "by_reportability_scope": dict(sorted(by_reportability_scope.items())),
         "records": manifests,
     }
     manifest_path = resolve_path(str(args.manifest_out).format(run_id=run_id), repo_root()) if args.manifest_out else out_root / "manifests" / "benchmark_materialization_manifest.json"

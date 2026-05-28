@@ -137,15 +137,25 @@ def test_external_train_rewrite_skips_rejected_or_quarantined_train_rows(tmp_pat
                 "synthetic_train_blocked": True,
                 "target": "blocked synthetic answer",
             },
+            {
+                "record_id": "low-quality-1",
+                "dataset_family": "math_reasoning",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "quality_score": 0.1,
+                "target": "low quality answer",
+            },
         ],
     )
 
     report = rewrite.rewrite_external_train_bucket(accepted, jsonl_dir, tmp_path / "rewrite.json")
 
     assert report["accepted_rows"] == 1
-    assert report["skipped_rows"] == 3
+    assert report["skipped_rows"] == 4
     assert report["skipped_rows_by_reason"] == {
         "dataset_integrity_rejected": 1,
+        "low_quality_score": 1,
         "synthetic_train_blocked": 1,
         "train_quarantine_reasons": 1,
     }

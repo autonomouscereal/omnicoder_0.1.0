@@ -83,6 +83,95 @@ def test_dataset_index_tracks_train_eval_research_block_buckets(tmp_path: Path) 
     ]
 
 
+def test_dataset_index_separates_reportable_and_diagnostic_benchmark_rows(tmp_path: Path) -> None:
+    data = tmp_path / "mixed.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "train-1",
+                "source_id": "fineweb_edu",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "target": "Useful training target with enough words.",
+            },
+            {
+                "record_id": "hellaswag-reportable-1",
+                "source_id": "hellaswag_authorized",
+                "modality": "text",
+                "training_bucket": "eval_holdout",
+                "use_policy": "reportable_eval_only",
+                "benchmark_id": "reasoning_hellaswag_full_2026",
+                "reportable": True,
+                "benchmark_eval_only": True,
+                "reportability_scope": "official_or_authorized_snapshot",
+                "target": "Authorized answer key held out for scoring only.",
+            },
+            {
+                "record_id": "hellaswag-public-dev-1",
+                "source_id": "hellaswag_public_dev",
+                "modality": "text",
+                "training_bucket": "eval_holdout",
+                "use_policy": "validation_only",
+                "benchmark_id": "reasoning_hellaswag_full_2026",
+                "benchmark_eval_only": True,
+                "local_only": True,
+                "public_dev": True,
+                "reportability_scope": "validation_only_public_dev",
+                "target": "Public development answer key for regression diagnostics only.",
+            },
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "passed"
+    assert payload["by_index_bucket"] == {
+        "benchmark_diagnostic_eval": 1,
+        "benchmark_reportable_eval": 1,
+        "train": 1,
+    }
+    assert payload["counts"]["benchmark_rows"] == 2
+    assert payload["counts"]["benchmark_reportable_eval_rows"] == 1
+    assert payload["counts"]["benchmark_diagnostic_eval_rows"] == 1
+    assert payload["counts"]["benchmark_rows_in_train_bucket"] == 0
+    assert payload["by_index_bucket_training_bucket"] == [
+        {"index_bucket": "benchmark_diagnostic_eval", "training_bucket": "eval_holdout", "rows": 1},
+        {"index_bucket": "benchmark_reportable_eval", "training_bucket": "eval_holdout", "rows": 1},
+        {"index_bucket": "train", "training_bucket": "train", "rows": 1},
+    ]
+
+
+def test_dataset_index_fails_benchmark_rows_in_train_index_bucket(tmp_path: Path) -> None:
+    data = tmp_path / "mixed.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "hellaswag-train-leak-1",
+                "source_id": "hellaswag_public_dev",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "benchmark_id": "reasoning_hellaswag_full_2026",
+                "benchmark_eval_only": True,
+                "local_only": True,
+                "reportability_scope": "validation_only_public_dev",
+                "target": "Benchmark answer key must remain outside training rows.",
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert "benchmark_rows_in_train_bucket" in payload["fail_reasons"]
+    assert payload["counts"]["benchmark_rows_in_train_bucket"] == 1
+    assert payload["by_index_bucket"] == {"benchmark_diagnostic_eval": 1}
+    assert payload["benchmark_train_bucket_examples"][0]["index_bucket"] == "benchmark_diagnostic_eval"
+
+
 def test_dataset_index_rejects_eval_only_policy_in_train_bucket(tmp_path: Path) -> None:
     data = tmp_path / "mixed.jsonl"
     _write_jsonl(
@@ -343,6 +432,78 @@ def test_dataset_index_fails_rejected_or_quarantined_train_rows(tmp_path: Path) 
         "synthetic_train_blocked",
         "train_quarantine_reasons",
     }
+
+
+def test_dataset_index_rejects_rejected_or_quarantine_input_files(tmp_path: Path) -> None:
+    data = tmp_path / "rejected" / "bad.jsonl"
+    data.parent.mkdir()
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "looks-clean-but-retained-rejected-file",
+                "source_id": "src",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "quality_score": 0.99,
+                "target": "This row is syntactically clean but lives under a rejected path.",
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert "rejected_or_quarantine_input_files" in payload["fail_reasons"]
+    assert payload["counts"]["rejected_or_quarantine_input_files"] == 1
+
+
+def test_dataset_index_rejects_nested_rejected_low_quality_and_integrity_rows(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "low-quality",
+                "source_id": "src",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "quality_score": 0.1,
+                "target": "This row is coherent enough but below the final quality floor.",
+            },
+            {
+                "record_id": "nested-rejected",
+                "source_id": "src",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "quality_score": 0.95,
+                "target": "This row carries a previous curation rejection.",
+                "curation_policy_2026": {"accepted": False, "reasons": ["dataset_integrity:poison_wrong_answer_rule"]},
+            },
+            {
+                "record_id": "watermark",
+                "source_id": "src",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "quality_score": 0.95,
+                "target": "Generated by Gemini with SynthID watermark and content provenance.",
+            },
+        ],
+    )
+
+    payload = indexer.build_index([data], scan_dataset_integrity=True, min_quality_score=0.55)
+
+    assert payload["status"] == "failed"
+    assert "low_quality_rows" in payload["fail_reasons"]
+    assert "nested_rejected_rows" in payload["fail_reasons"]
+    assert "dataset_integrity_rejected_rows" in payload["fail_reasons"]
+    assert payload["counts"]["low_quality_rows"] == 1
+    assert payload["counts"]["nested_rejected_rows"] == 1
+    assert payload["counts"]["dataset_integrity_rejected_rows"] >= 1
 
 
 def test_dataset_index_counts_structured_target_json_content(tmp_path: Path) -> None:

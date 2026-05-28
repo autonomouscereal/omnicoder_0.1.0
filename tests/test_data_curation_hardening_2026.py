@@ -264,6 +264,41 @@ def test_training_splits_drop_missing_quality_date_and_nonclean_contamination() 
     assert split["test"] == []
 
 
+def test_training_splits_drop_low_quality_and_nested_rejected_rows() -> None:
+    base = {
+        "modality": "text",
+        "payload_sha256": "payload",
+        "source_date": "2026-05-28",
+        "contamination": {"status": "clean"},
+    }
+    rows = [
+        {"record_id": "clean", **base, "quality": {"score": 0.9}},
+        {"record_id": "low-quality", **base, "quality": {"score": 0.2}},
+        {
+            "record_id": "rejected-policy",
+            **base,
+            "quality": {"score": 0.9},
+            "curation_policy_2026": {"accepted": False, "reasons": ["dataset_integrity:poison_wrong_answer_rule"]},
+        },
+        {
+            "record_id": "rejected-integrity",
+            **base,
+            "quality": {"score": 0.9},
+            "dataset_integrity_2026": {"accepted": False, "reasons": ["ai_watermark_synthid"]},
+        },
+    ]
+
+    split = orch.assign_deterministic_splits(
+        rows,
+        "text",
+        {"eval_holdout_ratio": 0.0, "test_holdout_ratio": 0.0, "min_final_quality_score": 0.55},
+    )
+
+    assert [row["record_id"] for row in split["train"]] == ["clean"]
+    assert split["eval"] == []
+    assert split["test"] == []
+
+
 def test_curated_trace_rejects_unknown_contamination() -> None:
     row = curated_builder.curated_trace_to_training_row(
         {"input_json": {"content": "Use the tool."}, "target_json": {"content": "Tool result verified."}},

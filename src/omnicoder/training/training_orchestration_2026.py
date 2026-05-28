@@ -564,7 +564,7 @@ def split_order_key(row: dict[str, Any], modality: str) -> str:
 
 
 def assign_deterministic_splits(rows: list[dict[str, Any]], modality: str, plan: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    eligible_rows = [row for row in rows if not split_quarantine_reasons(row)]
+    eligible_rows = [row for row in rows if not split_quarantine_reasons(row, plan)]
     split_plan = plan.get("split") if isinstance(plan.get("split"), dict) else {}
     eval_ratio = float(split_plan.get("eval_ratio", plan.get("eval_holdout_ratio", 0.10)))
     test_ratio = float(split_plan.get("test_ratio", plan.get("test_holdout_ratio", 0.10)))
@@ -621,25 +621,125 @@ def mark_integrity_verified_candidates(rows: Iterable[dict[str, Any]], preflight
     return verified
 
 
-def split_quarantine_reasons(row: dict[str, Any]) -> list[str]:
+def minimum_final_quality_score(plan: dict[str, Any] | None = None) -> float:
+    if not isinstance(plan, dict):
+        return 0.55
+    for key in ("min_final_quality_score", "min_quality_score", "minimum_quality_score"):
+        value = plan.get(key)
+        if value not in (None, ""):
+            try:
+                return max(0.0, min(1.0, float(value)))
+            except (TypeError, ValueError):
+                pass
+    return 0.55
+
+
+def row_quality_value(row: dict[str, Any]) -> float | None:
+    for key in ("quality_score", "score", "reward"):
+        if row.get(key) not in (None, ""):
+            try:
+                return max(0.0, min(1.0, float(row[key])))
+            except (TypeError, ValueError):
+                return None
+    quality = row.get("quality") if isinstance(row.get("quality"), dict) else {}
+    for key in ("score", "quality_score", "overall", "value"):
+        if quality.get(key) not in (None, ""):
+            try:
+                return max(0.0, min(1.0, float(quality[key])))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def nested_rejection_reasons(row: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    for key in ("curation_policy_2026", "dataset_integrity_2026"):
+        payload = row.get(key)
+        if isinstance(payload, dict) and payload.get("accepted") is False:
+            nested = payload.get("reasons") if isinstance(payload.get("reasons"), list) else []
+            if nested:
+                reasons.extend(f"{key}:{reason}" for reason in nested[:8])
+            else:
+                reasons.append(f"{key}:accepted_false")
+    quality = row.get("quality") if isinstance(row.get("quality"), dict) else {}
+    quality_label = str(quality.get("label") or row.get("quality_label") or "").strip().lower()
+    if quality_label and any(marker in quality_label for marker in ("reject", "rejected", "low_quality", "poor_quality", "quarantine")):
+        reasons.append(f"quality_label_{quality_label}")
+    for key in ("rejected", "poisoned", "watermark_detected", "ai_watermark", "train_rejected"):
+        value = row.get(key)
+        if value is True or str(value).strip().lower() in {"1", "true", "yes", "rejected"}:
+            reasons.append(f"{key}_flag")
+    quarantine = row.get("train_quarantine_reasons")
+    if isinstance(quarantine, list) and quarantine:
+        reasons.extend(f"train_quarantine:{reason}" for reason in quarantine[:8])
+    return reasons
+
+
+def split_quarantine_reasons(row: dict[str, Any], plan: dict[str, Any] | None = None) -> list[str]:
     reasons: list[str] = []
     contamination = row.get("contamination") if isinstance(row.get("contamination"), dict) else {}
     status = str(row.get("contamination_status") or contamination.get("status") or "unknown").strip().lower()
     if status not in {"clean", "clear"}:
         reasons.append(f"contamination_{status or 'unknown'}")
-    has_quality = False
-    if isinstance(row.get("quality"), dict):
-        has_quality = row["quality"].get("score") not in (None, "")
-    if row.get("quality_score") not in (None, ""):
-        has_quality = True
-    if not has_quality:
+    quality_value = row_quality_value(row)
+    if quality_value is None:
         reasons.append("missing_quality_score")
+    else:
+        minimum = minimum_final_quality_score(plan)
+        if quality_value < minimum:
+            reasons.append(f"quality_below_min:{quality_value:.6f}<min:{minimum:.6f}")
     source_date = str(row.get("source_date") or "").strip().lower()
     if not source_date or source_date == "unknown":
         reasons.append("missing_source_date")
     elif not (source_date.startswith("2025") or source_date.startswith("2026")):
         reasons.append("source_date_outside_2025_2026")
-    return reasons
+    reasons.extend(nested_rejection_reasons(row))
+    return sorted(set(reasons))
+
+
+def prune_final_manifest_rows(
+    rows_by_modality: dict[str, list[dict[str, Any]]],
+    plan: dict[str, Any],
+    *,
+    max_examples: int = 24,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    pruned: dict[str, list[dict[str, Any]]] = {}
+    counts: Counter[str] = Counter()
+    examples: list[dict[str, Any]] = []
+    kept_total = 0
+    rejected_total = 0
+    for modality, rows in rows_by_modality.items():
+        kept: list[dict[str, Any]] = []
+        for row in rows:
+            reasons = split_quarantine_reasons(row, plan)
+            if reasons:
+                rejected_total += 1
+                counts[modality] += 1
+                for reason in reasons:
+                    counts[f"reason:{str(reason).split(':', 1)[0]}"] += 1
+                if len(examples) < max_examples:
+                    examples.append(
+                        {
+                            "record_id": row.get("record_id"),
+                            "source_id": row.get("source_id"),
+                            "modality": row.get("modality") or modality,
+                            "reasons": reasons,
+                        }
+                    )
+                continue
+            kept.append(row)
+            kept_total += 1
+        pruned[modality] = kept
+    return pruned, {
+        "schema": "omnicoder.final_manifest_prune_2026.v1",
+        "status": "passed",
+        "min_quality_score": minimum_final_quality_score(plan),
+        "kept": kept_total,
+        "pruned": rejected_total,
+        "counts": dict(sorted(counts.items())),
+        "examples": examples,
+        "policy": "Final train/eval/test manifests exclude non-clean contamination, missing or stale dates, rejected policy/integrity rows, explicit reject flags, and rows below the final quality floor.",
+    }
 
 
 def extract_text(record: dict[str, Any]) -> str:
@@ -1146,6 +1246,7 @@ def collect_text_like(
     rows: list[dict[str, Any]] = []
     long_context_parts: list[str] = []
     long_context_sources: list[str] = []
+    long_context_payloads: list[dict[str, Any]] = []
     long_context_chars = 0
     long_target_chars = modality_target_chars(plan, "long_context")
 
@@ -1176,6 +1277,24 @@ def collect_text_like(
                 "packed_total_char_count": len(text),
                 "span_index": span_index,
             }
+            quality_scores = [score for score in (row_quality_value(payload) for payload in long_context_payloads) if score is not None]
+            if quality_scores:
+                source_payload["quality"] = {"score": min(quality_scores), "label": "packed_long_context_source_min_quality"}
+            source_dates = [
+                str(payload.get("source_date") or "")[:10]
+                for payload in long_context_payloads
+                if str(payload.get("source_date") or "").startswith(("2025", "2026"))
+            ]
+            if source_dates:
+                source_payload["source_date"] = min(source_dates)
+            statuses: list[str] = []
+            for payload in long_context_payloads:
+                contamination = payload.get("contamination") if isinstance(payload.get("contamination"), dict) else {}
+                status = str(payload.get("contamination_status") or contamination.get("status") or "").strip().lower()
+                if status:
+                    statuses.append(status)
+            if statuses:
+                source_payload["contamination"] = {"status": "clean" if all(status in {"clean", "clear"} for status in statuses) else statuses[0]}
             rows.append(
                 make_training_record(
                     modality,
@@ -1191,6 +1310,7 @@ def collect_text_like(
                 break
         long_context_parts.clear()
         long_context_sources.clear()
+        long_context_payloads.clear()
         long_context_chars = 0
         return emitted and len(rows) >= limit
 
@@ -1204,6 +1324,7 @@ def collect_text_like(
                 if modality == "long_context":
                     long_context_parts.append(text)
                     long_context_sources.append(str(src))
+                    long_context_payloads.append(record)
                     long_context_chars += len(text)
                     if long_context_chars >= long_target_chars:
                         if flush_long_context_bundle(force=True):
@@ -2285,6 +2406,7 @@ def build_real_corpus(profile: dict[str, Any], out_dir: Path) -> dict[str, Any]:
     require_integrity_preflight(candidate_integrity_preflight)
     for modality, rows in list(rows_by_modality.items()):
         rows_by_modality[modality] = mark_integrity_verified_candidates(rows, candidate_integrity_preflight)
+    rows_by_modality, final_manifest_prune = prune_final_manifest_rows(rows_by_modality, plan)
 
     all_rows: list[dict[str, Any]] = []
     eval_all_rows: list[dict[str, Any]] = []
@@ -2398,6 +2520,7 @@ def build_real_corpus(profile: dict[str, Any], out_dir: Path) -> dict[str, Any]:
         "modalities": counts,
         "split_counts": split_counts,
         "candidate_dataset_integrity_preflight": candidate_integrity_preflight,
+        "final_manifest_prune": final_manifest_prune,
         "split_plan": {
             "eval_ratio": float((plan.get("split") or {}).get("eval_ratio", plan.get("eval_holdout_ratio", 0.10))) if isinstance(plan.get("split"), dict) else float(plan.get("eval_holdout_ratio", 0.10)),
             "test_ratio": float((plan.get("split") or {}).get("test_ratio", plan.get("test_holdout_ratio", 0.10))) if isinstance(plan.get("split"), dict) else float(plan.get("test_holdout_ratio", 0.10)),

@@ -8,8 +8,23 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity
+
 
 SCHEMA = "omnicoder.dataset_index_2026.v1"
+REJECTED_PATH_MARKERS = (
+    "/rejected/",
+    "\\rejected\\",
+    "/quarantine/",
+    "\\quarantine\\",
+    ".rejected.jsonl",
+    "_rejected.jsonl",
+    "rejected_external.jsonl",
+    "dataset_integrity_rejected.jsonl",
+    "policy_audit_rejected.jsonl",
+    "blocked_until_review.jsonl",
+    "_blocked_until_review.jsonl",
+)
 TRAIN_LEAK_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:benchmark(?:[_ -]?(?:id|task|suite|eval|materialized|holdout))?|public[_ -]?dev|reportable|local[_ -]?only|"
     r"answer[_ -]?key|protected[_ -]?eval|benchmark[_ -]?holdout|hella[_ -]?swag|hellaswag|"
@@ -502,6 +517,67 @@ def _row_refs(row: dict[str, Any]) -> list[str]:
     return sorted(set(refs))[:64]
 
 
+def _rejected_path_issue(path: Path) -> str:
+    normalized = str(path).lower()
+    name = path.name.lower()
+    if any(marker in normalized for marker in REJECTED_PATH_MARKERS):
+        return "rejected_or_quarantine_path"
+    if "rejected" in name or "quarantine" in normalized:
+        return "rejected_or_quarantine_path"
+    return ""
+
+
+def _nested_rejected_reasons(row: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    for key in ("curation_policy_2026", "dataset_integrity_2026"):
+        payload = row.get(key)
+        if isinstance(payload, dict) and payload.get("accepted") is False:
+            nested = payload.get("reasons") if isinstance(payload.get("reasons"), list) else []
+            if nested:
+                reasons.extend(f"{key}:{reason}" for reason in nested[:8])
+            else:
+                reasons.append(f"{key}:accepted_false")
+    for key in ("rejected", "poisoned", "watermark_detected", "ai_watermark", "train_rejected"):
+        value = row.get(key)
+        if value is True or str(value).strip().lower() in {"1", "true", "yes", "rejected"}:
+            reasons.append(f"{key}_flag")
+    quarantine = row.get("train_quarantine_reasons")
+    if isinstance(quarantine, list) and quarantine:
+        reasons.extend(f"train_quarantine:{reason}" for reason in quarantine[:8])
+    return sorted(set(reasons))
+
+
+def _row_quality_value(row: dict[str, Any]) -> float | None:
+    for key in ("quality_score", "score", "reward"):
+        if row.get(key) not in (None, ""):
+            try:
+                return max(0.0, min(1.0, float(row[key])))
+            except (TypeError, ValueError):
+                return None
+    quality = row.get("quality") if isinstance(row.get("quality"), dict) else {}
+    for key in ("score", "quality_score", "overall", "value"):
+        if quality.get(key) not in (None, ""):
+            try:
+                return max(0.0, min(1.0, float(quality[key])))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _quality_gate_issue(row: dict[str, Any], min_quality_score: float) -> str:
+    if min_quality_score <= 0:
+        return ""
+    quality = _row_quality_value(row)
+    if quality is None:
+        return "missing_quality_score"
+    if quality < min_quality_score:
+        return f"quality_below_min:{quality:.6f}<min:{min_quality_score:.6f}"
+    label = str((row.get("quality") or {}).get("label") if isinstance(row.get("quality"), dict) else row.get("quality_label") or "").lower()
+    if label and any(marker in label for marker in ("reject", "rejected", "low_quality", "poor_quality", "quarantine")):
+        return f"quality_label:{label}"
+    return ""
+
+
 def _has_media_token_payload(row: dict[str, Any]) -> bool:
     for container in (row, row.get("target_json"), row.get("output_json")):
         if not isinstance(container, dict):
@@ -574,13 +650,22 @@ def iter_jsonl(path: Path) -> Iterable[tuple[int, dict[str, Any], str]]:
             yield line_number, row, line
 
 
-def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_leakage: bool = True) -> dict[str, Any]:
+def build_index(
+    paths: list[Path],
+    *,
+    expected_split: str = "",
+    fail_on_train_leakage: bool = True,
+    scan_dataset_integrity: bool = False,
+    min_quality_score: float = 0.0,
+) -> dict[str, Any]:
     by_modality: Counter[str] = Counter()
     by_source: Counter[str] = Counter()
     by_split: Counter[str] = Counter()
     by_training_bucket: Counter[str] = Counter()
     by_train_eval_research_block: Counter[str] = Counter()
     by_source_training_bucket: Counter[tuple[str, str]] = Counter()
+    by_index_bucket: Counter[str] = Counter()
+    by_index_bucket_training_bucket: Counter[tuple[str, str]] = Counter()
     by_use_policy: Counter[str] = Counter()
     by_license: Counter[str] = Counter()
     by_contamination: Counter[str] = Counter()
@@ -602,12 +687,21 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
     non_training_policy_train_rows: list[dict[str, Any]] = []
     train_metadata_rows: list[dict[str, Any]] = []
     blocked_train_rows: list[dict[str, Any]] = []
+    benchmark_train_bucket_rows: list[dict[str, Any]] = []
+    benchmark_unclassified_rows: list[dict[str, Any]] = []
+    rejected_input_files: list[dict[str, Any]] = []
+    nested_rejected_rows: list[dict[str, Any]] = []
+    low_quality_rows: list[dict[str, Any]] = []
+    dataset_integrity_rows: list[dict[str, Any]] = []
     bad_json = 0
     rows_with_target_tokens = 0
     rows_with_artifact_tokens = 0
     total_rows = 0
 
     for path in paths:
+        path_issue = _rejected_path_issue(path)
+        if path_issue:
+            rejected_input_files.append({"path": str(path), "reason": path_issue})
         file_rows = 0
         file_sha = hashlib.sha256()
         for line_number, row, raw_line in iter_jsonl(path):
@@ -625,17 +719,49 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             contamination = _contamination_status(row, _first(row, "contamination_status", "contamination_class", default="unknown"))
             training_bucket = _training_bucket(path, row, split, use_policy)
             coarse_status = _coarse_status(training_bucket)
+            index_bucket = _benchmark_index_bucket(
+                row,
+                training_bucket=training_bucket,
+                use_policy=use_policy,
+                contamination=contamination,
+            )
             by_modality[modality] += 1
             by_source[source] += 1
             by_split[split] += 1
             by_training_bucket[training_bucket] += 1
             by_train_eval_research_block[coarse_status] += 1
             by_source_training_bucket[(source, training_bucket)] += 1
+            by_index_bucket[index_bucket] += 1
+            by_index_bucket_training_bucket[(index_bucket, training_bucket)] += 1
             by_use_policy[use_policy] += 1
             by_license[license_id] += 1
             by_contamination[contamination] += 1
             matrix[(modality, source, split, use_policy)] += 1
             status_matrix[(modality, source, split, use_policy, training_bucket)] += 1
+            if index_bucket.startswith("benchmark_") and _canonical_training_bucket(training_bucket) == "train":
+                benchmark_train_bucket_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "modality": modality,
+                        "split": split,
+                        "training_bucket": training_bucket,
+                        "index_bucket": index_bucket,
+                    }
+                )
+            if index_bucket == "benchmark_eval_unclassified":
+                benchmark_unclassified_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "modality": modality,
+                        "split": split,
+                        "training_bucket": training_bucket,
+                        "use_policy": use_policy,
+                    }
+                )
             record_id = _record_id(row)
             if record_id:
                 first_seen = seen_ids.get(record_id)
@@ -669,6 +795,51 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
                 )
             target_tokens = _target_token_count(row)
             prompt, target = _row_prompt_target(row)
+            nested_reasons = _nested_rejected_reasons(row)
+            if nested_reasons:
+                nested_rejected_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "modality": modality,
+                        "training_bucket": training_bucket,
+                        "reasons": nested_reasons,
+                    }
+                )
+            quality_issue = _quality_gate_issue(row, float(min_quality_score))
+            if quality_issue:
+                low_quality_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "modality": modality,
+                        "training_bucket": training_bucket,
+                        "reason": quality_issue,
+                    }
+                )
+            if scan_dataset_integrity:
+                integrity = audit_dataset_integrity(
+                    row,
+                    prompt=prompt,
+                    target=target,
+                    modality=modality,
+                    source_path=path,
+                    refs=_row_refs(row),
+                    scan_artifacts=True,
+                )
+                if not integrity.get("accepted", True):
+                    dataset_integrity_rows.append(
+                        {
+                            "path": str(path),
+                            "line": line_number,
+                            "source_id": source,
+                            "modality": modality,
+                            "training_bucket": training_bucket,
+                            "reasons": integrity.get("reasons") or ["unknown"],
+                        }
+                    )
             if target_tokens > 0:
                 rows_with_target_tokens += 1
             if not target and target_tokens <= 0 and not _has_media_payload(row):
@@ -788,6 +959,16 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         fail_reasons.append("train_rows_missing_source_or_policy")
     if blocked_train_rows:
         fail_reasons.append("blocked_or_rejected_train_rows")
+    if benchmark_train_bucket_rows:
+        fail_reasons.append("benchmark_rows_in_train_bucket")
+    if rejected_input_files:
+        fail_reasons.append("rejected_or_quarantine_input_files")
+    if nested_rejected_rows:
+        fail_reasons.append("nested_rejected_rows")
+    if low_quality_rows:
+        fail_reasons.append("low_quality_rows")
+    if dataset_integrity_rows:
+        fail_reasons.append("dataset_integrity_rejected_rows")
     return {
         "schema": SCHEMA,
         "status": "failed" if fail_reasons else "passed",
@@ -807,18 +988,38 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             "non_training_policy_in_train_bucket": len(non_training_policy_train_rows),
             "train_rows_missing_source_or_policy": len(train_metadata_rows),
             "blocked_or_rejected_train_rows": len(blocked_train_rows),
+            "benchmark_rows": sum(rows for bucket, rows in by_index_bucket.items() if bucket.startswith("benchmark_")),
+            "benchmark_reportable_eval_rows": by_index_bucket.get("benchmark_reportable_eval", 0),
+            "benchmark_diagnostic_eval_rows": by_index_bucket.get("benchmark_diagnostic_eval", 0),
+            "benchmark_eval_unclassified_rows": by_index_bucket.get("benchmark_eval_unclassified", 0),
+            "benchmark_rows_in_train_bucket": len(benchmark_train_bucket_rows),
             "url_only_media_rows": len(url_only_media_rows),
+            "rejected_or_quarantine_input_files": len(rejected_input_files),
+            "nested_rejected_rows": len(nested_rejected_rows),
+            "low_quality_rows": len(low_quality_rows),
+            "dataset_integrity_rejected_rows": len(dataset_integrity_rows),
             "rows_with_target_tokens": rows_with_target_tokens,
             "rows_with_artifact_tokens": rows_with_artifact_tokens,
+        },
+        "policy": {
+            "scan_dataset_integrity": bool(scan_dataset_integrity),
+            "min_quality_score": float(min_quality_score),
+            "reject_rejected_or_quarantine_input_files": True,
+            "reject_nested_policy_or_integrity_rejections": True,
         },
         "by_modality": dict(sorted(by_modality.items())),
         "by_source": dict(sorted(by_source.items())),
         "by_split": dict(sorted(by_split.items())),
         "by_training_bucket": dict(sorted(by_training_bucket.items())),
         "by_train_eval_research_block": dict(sorted(by_train_eval_research_block.items())),
+        "by_index_bucket": dict(sorted(by_index_bucket.items())),
         "by_source_training_bucket": [
             {"source_id": source, "training_bucket": bucket, "rows": rows}
             for (source, bucket), rows in sorted(by_source_training_bucket.items())
+        ],
+        "by_index_bucket_training_bucket": [
+            {"index_bucket": index_bucket, "training_bucket": bucket, "rows": rows}
+            for (index_bucket, bucket), rows in sorted(by_index_bucket_training_bucket.items())
         ],
         "by_use_policy": dict(sorted(by_use_policy.items())),
         "by_license": dict(sorted(by_license.items())),
@@ -841,7 +1042,13 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         "non_training_policy_train_examples": non_training_policy_train_rows[:50],
         "train_metadata_examples": train_metadata_rows[:50],
         "blocked_train_examples": blocked_train_rows[:50],
+        "benchmark_train_bucket_examples": benchmark_train_bucket_rows[:50],
+        "benchmark_unclassified_examples": benchmark_unclassified_rows[:50],
         "url_only_media_examples": url_only_media_rows[:50],
+        "rejected_input_file_examples": rejected_input_files[:50],
+        "nested_rejected_examples": nested_rejected_rows[:50],
+        "low_quality_examples": low_quality_rows[:50],
+        "dataset_integrity_examples": dataset_integrity_rows[:50],
     }
 
 
@@ -851,13 +1058,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", required=True)
     parser.add_argument("--expected-split", "--expected_split", dest="expected_split", default="")
     parser.add_argument("--allow-train-leakage-markers", "--allow_train_leakage_markers", dest="allow_train_leakage_markers", action="store_true")
+    parser.add_argument("--skip-dataset-integrity-scan", "--skip_dataset_integrity_scan", dest="skip_dataset_integrity_scan", action="store_true")
+    parser.add_argument("--min-quality-score", "--min_quality_score", dest="min_quality_score", type=float, default=0.55)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     paths = [Path(value) for value in args.input]
-    payload = build_index(paths, expected_split=str(args.expected_split or ""), fail_on_train_leakage=not bool(args.allow_train_leakage_markers))
+    payload = build_index(
+        paths,
+        expected_split=str(args.expected_split or ""),
+        fail_on_train_leakage=not bool(args.allow_train_leakage_markers),
+        scan_dataset_integrity=not bool(args.skip_dataset_integrity_scan),
+        min_quality_score=float(args.min_quality_score),
+    )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")

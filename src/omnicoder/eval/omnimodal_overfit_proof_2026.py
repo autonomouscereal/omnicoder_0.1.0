@@ -19,6 +19,18 @@ SHARED_PROOF_GROUP = "omni_all"
 PROOF_GROUPS = MODALITY_PROOF_GROUPS + (SHARED_PROOF_GROUP,)
 DEFAULT_MAX_RELOAD_SAMPLE_LOSS = 0.05
 _TOKENIZER_CACHE: Any | None = None
+LEDGER_FAMILY_MODALITIES = {
+    "text": "text",
+    "control": "control",
+    "vision_semantic": "image",
+    "vision_residual": "image",
+    "speech_tts": "tts",
+    "audio_music": "audio",
+    "music_control": "music",
+    "time_space": "video",
+    "tool_agent": "tool",
+    "flow": "flow",
+}
 
 
 class _ProofFallbackTokenizer:
@@ -130,6 +142,65 @@ def _sample_loss_failures(loss_json: Any, *, max_loss: float) -> list[dict[str, 
     return failures
 
 
+def _parse_groups(raw: Any) -> list[str]:
+    if raw in (None, ""):
+        return list(PROOF_GROUPS)
+    if isinstance(raw, str):
+        groups = [part.strip() for part in raw.split(",") if part.strip()]
+    else:
+        groups = [str(part).strip() for part in raw if str(part).strip()]
+    unknown = sorted(set(groups) - set(PROOF_GROUPS))
+    if unknown:
+        raise ValueError(f"unknown overfit proof groups: {', '.join(unknown)}")
+    return groups or list(PROOF_GROUPS)
+
+
+def _manifest_group_rows(run_dir: Path) -> dict[str, int]:
+    path = run_dir / "omnimodal_overfit_manifest.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    rows: dict[str, int] = {}
+    for item in payload.get("groups") or []:
+        if not isinstance(item, dict):
+            continue
+        group = str(item.get("group") or "")
+        if group not in PROOF_GROUPS:
+            continue
+        try:
+            rows[group] = int(item.get("rows") or 0)
+        except (TypeError, ValueError):
+            continue
+    return rows
+
+
+def _expected_modalities(rows: list[dict[str, Any]]) -> list[str]:
+    return sorted({str(row.get("modality") or "unknown") for row in rows if isinstance(row, dict)})
+
+
+def _bucket_token_count(bucket: Any, keys: tuple[str, ...]) -> int:
+    if not isinstance(bucket, dict):
+        return 0
+    for key in keys:
+        value = bucket.get(key)
+        if value not in (None, ""):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
+def _modalities_with_tokens(payload: Any, keys: tuple[str, ...]) -> set[str]:
+    if not isinstance(payload, dict):
+        return set()
+    modalities = payload.get("modalities")
+    if not isinstance(modalities, dict):
+        return set()
+    return {str(name) for name, bucket in modalities.items() if _bucket_token_count(bucket, keys) > 0}
+
+
 def _target_token_count(target_json: Any) -> int:
     if not isinstance(target_json, dict):
         return 0
@@ -150,6 +221,10 @@ def _target_token_count(target_json: Any) -> int:
                 except (TypeError, ValueError):
                     return 0
     return 0
+
+
+def _ledger_modality(family: str) -> str:
+    return LEDGER_FAMILY_MODALITIES.get(str(family), "unknown")
 
 
 def _encode(tokenizer: Any, text: str) -> list[int]:
@@ -300,7 +375,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     groups["ledger_all"] = [
         _row(
             group="ledger_all",
-            modality=("text" if family == "control" else "tool" if family == "tool_agent" else "image"),
+            modality=_ledger_modality(family),
             prompt=f"user: ledger family {family} proof\nassistant:",
             target_ids=_span(family, index, 8),
             target_family=family,
@@ -369,22 +444,27 @@ def summary(args: argparse.Namespace) -> dict[str, Any]:
     data_dir = run_dir / "data"
     eval_dir = run_dir / "eval"
     max_reload_sample_loss = float(getattr(args, "max_reload_sample_loss", DEFAULT_MAX_RELOAD_SAMPLE_LOSS))
+    groups = _parse_groups(getattr(args, "groups", ""))
     report: dict[str, Any] = {
         "schema": SCHEMA,
         "run": str(run_dir),
         "groups": {},
         "status": "passed",
         "max_reload_sample_loss": max_reload_sample_loss,
+        "selected_groups": groups,
     }
-    for group in PROOF_GROUPS:
+    for group in groups:
         data_path = data_dir / f"{group}.jsonl"
         loss_path = eval_dir / f"{group}.loss.json"
         target_path = eval_dir / f"{group}.targets.json"
         group_report: dict[str, Any] = {"data": str(data_path), "loss": str(loss_path), "targets": str(target_path)}
+        expected_modalities: list[str] = []
         if data_path.exists():
             rows = _read_jsonl(data_path)
             group_report["rows"] = len(rows)
             group_report["target_families"] = dict(sorted(Counter(str(row.get("target_ledger_family") or "unknown") for row in rows).items()))
+            expected_modalities = _expected_modalities(rows)
+            group_report["expected_modalities"] = expected_modalities
         if loss_path.exists():
             try:
                 loss_json = json.loads(loss_path.read_text(encoding="utf-8"))
@@ -394,6 +474,11 @@ def summary(args: argparse.Namespace) -> dict[str, Any]:
                     group_report["sample_loss_failures"] = sample_loss_failures
                     for failure in sample_loss_failures:
                         _add_failure(group_report, str(failure.get("reason") or "sample_loss_failed"))
+                loss_modalities = _modalities_with_tokens(loss_json, ("tokens",))
+                missing_loss_modalities = sorted(set(expected_modalities) - loss_modalities)
+                if missing_loss_modalities:
+                    group_report["missing_sample_loss_modalities"] = missing_loss_modalities
+                    _add_failure(group_report, "missing_sample_loss_modalities")
             except Exception as exc:
                 group_report["loss_error"] = repr(exc)
                 _add_failure(group_report, "invalid_sample_loss")
@@ -405,6 +490,11 @@ def summary(args: argparse.Namespace) -> dict[str, Any]:
                 group_report["target_json"] = target_json
                 if _target_token_count(target_json) <= 0:
                     _add_failure(group_report, "no_target_tokens")
+                target_modalities = _modalities_with_tokens(target_json, ("target_tokens", "target_token_count"))
+                missing_target_modalities = sorted(set(expected_modalities) - target_modalities)
+                if missing_target_modalities:
+                    group_report["missing_target_diagnostic_modalities"] = missing_target_modalities
+                    _add_failure(group_report, "missing_target_diagnostic_modalities")
             except Exception as exc:
                 group_report["target_error"] = repr(exc)
                 _add_failure(group_report, "invalid_target_diagnostics")
@@ -418,9 +508,13 @@ def summary(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def train_plan(args: argparse.Namespace) -> dict[str, Any]:
-    run = str(Path(args.run))
+    run_path = Path(args.run)
+    run = str(run_path)
+    groups = _parse_groups(getattr(args, "groups", ""))
+    manifest_rows = _manifest_group_rows(run_path)
     commands = []
-    for group in PROOF_GROUPS:
+    for group in groups:
+        max_records = int(manifest_rows.get(group) or (len(MODALITY_PROOF_GROUPS) * 10 if group == SHARED_PROOF_GROUP else 10))
         commands.append(
             " ".join(
                 [
@@ -432,14 +526,14 @@ def train_plan(args: argparse.Namespace) -> dict[str, Any]:
                     f'--train_diagnostics_file "{run}/logs/{group}.diag.rank{{rank}}.jsonl"',
                     "--preset ledger_probe --allow_probe --placement_layer_counts \"${PLACEMENT:-4}\"",
                     "--rank_device_map \"${RANK_MAP:-}\" --pipeline_schedule gpipe --pipeline_microbatches 1",
-                    "--batch_size 1 --seq_len 128 --steps 600 --lr 8e-4 --max_records 10",
+                    f"--batch_size 1 --seq_len 128 --steps 600 --lr 8e-4 --max_records {max_records}",
                     "--precision \"${PREC:-fp32}\" --init_dtype \"${INIT:-fp32}\"",
                     "--optimizer_in_backward_update lowmem_adafactor --lm_loss_chunk_tokens 64",
                     "--target_boundary_weight 2 --target_prefix_weight 2 --target_prefix_tokens 2 --no_shuffle",
                 ]
             )
         )
-    payload = {"schema": SCHEMA, "run": run, "commands": commands}
+    payload = {"schema": SCHEMA, "run": run, "commands": commands, "selected_groups": groups}
     if args.out:
         _write_json(Path(args.out), payload)
     return payload
@@ -454,9 +548,11 @@ def build_parser() -> argparse.ArgumentParser:
     plan = sub.add_parser("train-plan")
     plan.add_argument("--run", required=True)
     plan.add_argument("--out", default="")
+    plan.add_argument("--groups", default="")
     summ = sub.add_parser("summary")
     summ.add_argument("--run", required=True)
     summ.add_argument("--out", default="")
+    summ.add_argument("--groups", default="")
     summ.add_argument(
         "--max-reload-sample-loss",
         "--max_reload_sample_loss",

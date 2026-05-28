@@ -82,6 +82,23 @@ def _nested_first(row: dict[str, Any], *paths: tuple[str, ...]) -> str:
     return ""
 
 
+def _quality_value(row: dict[str, Any]) -> float | None:
+    for key in ("quality_score", "score", "reward"):
+        if row.get(key) not in (None, ""):
+            try:
+                return max(0.0, min(1.0, float(row[key])))
+            except (TypeError, ValueError):
+                return None
+    quality = row.get("quality") if isinstance(row.get("quality"), dict) else {}
+    for key in ("score", "quality_score", "overall", "value"):
+        if quality.get(key) not in (None, ""):
+            try:
+                return max(0.0, min(1.0, float(quality[key])))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def train_block_reason(row: dict[str, Any]) -> str:
     if str(row.get("training_bucket") or "train").strip().lower() != "train":
         return "non_train_bucket"
@@ -92,6 +109,9 @@ def train_block_reason(row: dict[str, Any]) -> str:
         return "synthetic_train_blocked"
     if row.get("train_quarantine_reasons") not in (None, "", [], {}):
         return "train_quarantine_reasons"
+    quality = _quality_value(row)
+    if quality is not None and quality < 0.55:
+        return "low_quality_score"
     policy = str(row.get("use_policy") or row.get("policy") or "train").strip().lower()
     if policy and policy not in TRAINABLE_POLICIES:
         return f"use_policy:{policy}"
