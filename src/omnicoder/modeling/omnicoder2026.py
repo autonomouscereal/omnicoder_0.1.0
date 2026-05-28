@@ -69,19 +69,27 @@ class OmniCoder2026Config:
     kda_kernel_size: int = 4
     kda_state_dtype: str = "fp16"
 
-    # mHC/attention-residual hooks. The lightweight implementation keeps the
-    # hook trainable without forcing expensive Sinkhorn depth routing in probes.
+    # Residual attention hooks. block_attnres is the active native-1M path:
+    # it attends each residual update to compressed causal block summaries of
+    # the residual stream instead of retaining full per-layer hidden history.
     hc_mult: int = 4
     hc_sinkhorn_iters: int = 20
-    residual_mode: str = "mhc_lite"
+    residual_mode: str = "block_attnres"
+    block_attnres_block_size: int = 128
+    block_attnres_max_blocks: int = 1024
+    block_attnres_rank: int = 256
+    block_attnres_chunk_tokens: int = 2048
 
     dropout: float = 0.0
     rms_norm_eps: float = 1e-6
     initializer_std: float = 0.02
     layer_pattern: tuple[BlockKind, ...] = DEFAULT_LAYER_PATTERN
     tie_embeddings: bool = True
-    mtp_heads: int = 0
+    mtp_heads: int = 2
     flow_latent_dim: int = 1024
+    native_media_feature_dim: int = 3072
+    native_media_position_dim: int = 4
+    native_media_type_vocab: int = 16
     fake_quant: bool = False
     fake_quant_group_size: int = 128
     token_ranges: dict[str, tuple[int, int]] = field(default_factory=DEFAULT_LEDGER.as_config_ranges)
@@ -125,6 +133,8 @@ class OmniCoder2026Config:
             o_groups=2,
             index_head_dim=32,
             flow_latent_dim=256,
+            block_attnres_rank=32,
+            block_attnres_chunk_tokens=512,
             fake_quant_group_size=64,
             layer_pattern=("kda", "kda", "csa", "hca"),
         )
@@ -172,7 +182,7 @@ class OmniCoder2026Config:
             n_heads=32,
             head_dim=128,
             num_key_value_heads=1,
-            mlp_dim=16_384,
+            mlp_dim=15_360,
             local_window=128,
             csa_block_size=4096,
             csa_top_k_blocks=512,
@@ -182,6 +192,10 @@ class OmniCoder2026Config:
             o_lora_rank=1024,
             o_groups=8,
             flow_latent_dim=1024,
+            residual_mode="block_attnres",
+            block_attnres_rank=256,
+            block_attnres_chunk_tokens=2048,
+            mtp_heads=2,
         )
 
     @classmethod
@@ -685,6 +699,128 @@ class MHCResidual(nn.Module):
         return x + scale * gate * update
 
 
+class BlockAttentionResidual(nn.Module):
+    """Memory-bounded residual-attention update.
+
+    Full residual attention over every previous layer/token state is too
+    expensive for the native-1M target. This module keeps the intelligence
+    signal of learned residual selection by attending each update to compressed
+    causal block summaries from the incoming residual stream. It adds no
+    per-token KV cache and its context is bounded by
+    ``block_attnres_max_blocks``.
+    """
+
+    def __init__(self, cfg: OmniCoder2026Config):
+        super().__init__()
+        self.enabled = str(cfg.residual_mode).lower() in {"block_attnres", "attnres", "attention_residual"}
+        self.block_size = max(1, int(cfg.block_attnres_block_size))
+        self.max_blocks = max(1, int(cfg.block_attnres_max_blocks))
+        self.rank = max(1, int(cfg.block_attnres_rank))
+        self.chunk_tokens = max(1, int(cfg.block_attnres_chunk_tokens))
+        self.q = QuantAwareLinear(cfg.d_model, self.rank, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.k = QuantAwareLinear(cfg.d_model, self.rank, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.update_gate = QuantAwareLinear(cfg.d_model, 1, bias=True, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.scale = nn.Parameter(torch.tensor([0.0]))
+
+    def _block_summaries(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        b, t, d = x.shape
+        block = self.block_size
+        pad = (block - (t % block)) % block
+        if pad:
+            x_pad = F.pad(x, (0, 0, 0, pad))
+        else:
+            x_pad = x
+        summaries = x_pad.view(b, -1, block, d).mean(dim=2)
+        positions = torch.arange(summaries.shape[1], device=x.device)
+        if summaries.shape[1] > self.max_blocks:
+            prefix = summaries[:, :1, :]
+            tail = summaries[:, -(self.max_blocks - 1):, :] if self.max_blocks > 1 else summaries[:, :0, :]
+            summaries = torch.cat((prefix, tail), dim=1)
+            tail_positions = positions[-(self.max_blocks - 1):] if self.max_blocks > 1 else positions[:0]
+            positions = torch.cat((positions[:1], tail_positions), dim=0)
+        return summaries, positions
+
+    def forward(self, x: torch.Tensor, update: torch.Tensor) -> torch.Tensor:
+        if update.dtype != x.dtype:
+            update = update.to(dtype=x.dtype)
+        if not self.enabled:
+            return x + update
+        summaries, summary_positions = self._block_summaries(x)
+        q = self.q(update)
+        k = self.k(summaries)
+        block_positions = summary_positions.view(1, 1, -1)
+        residual_chunks: list[torch.Tensor] = []
+        chunk_tokens = max(1, _env_int("OMNICODER2026_BLOCK_ATTNRES_CHUNK_TOKENS", self.chunk_tokens))
+        for start in range(0, x.shape[1], chunk_tokens):
+            end = min(x.shape[1], start + chunk_tokens)
+            q_chunk = q[:, start:end, :]
+            scores = torch.einsum("btd,bsd->bts", q_chunk, k) / math.sqrt(max(1, q.shape[-1]))
+            token_blocks = torch.div(
+                torch.arange(start, end, device=x.device),
+                self.block_size,
+                rounding_mode="floor",
+            ).view(1, -1, 1)
+            scores = scores.masked_fill(block_positions > token_blocks, torch.finfo(scores.dtype).min)
+            weights = torch.softmax(scores.float(), dim=-1).to(dtype=x.dtype)
+            residual_chunks.append(torch.einsum("bts,bsd->btd", weights, summaries))
+        residual_context = torch.cat(residual_chunks, dim=1) if residual_chunks else update.new_zeros(update.shape)
+        gate = torch.sigmoid(self.update_gate(x)).to(dtype=x.dtype)
+        scale = self.scale.to(device=x.device, dtype=x.dtype)
+        return x + update + torch.tanh(scale) * gate * residual_context
+
+
+class NativeContinuousMediaBridge(nn.Module):
+    """Shared SenseNova-style continuous media bridge.
+
+    Edge preprocessing may patchify pixels, stack video frame patches, window
+    waveform/spectrogram samples, or pack OCR document crops. The trunk sees
+    all of them through this one shared feature projection plus type/time/grid
+    metadata. There are no modality-specific learned encoders in this path.
+    """
+
+    def __init__(self, cfg: OmniCoder2026Config):
+        super().__init__()
+        self.feature_dim = int(cfg.native_media_feature_dim)
+        self.position_dim = int(cfg.native_media_position_dim)
+        self.feature_proj = QuantAwareLinear(self.feature_dim, cfg.d_model, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.position_proj = QuantAwareLinear(self.position_dim, cfg.d_model, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.type_embed = nn.Embedding(int(cfg.native_media_type_vocab), cfg.d_model)
+        self.norm = RMSNorm(cfg.d_model, cfg.rms_norm_eps)
+        self.reconstruction_head = nn.Sequential(
+            RMSNorm(cfg.d_model, cfg.rms_norm_eps),
+            QuantAwareLinear(cfg.d_model, self.feature_dim, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size),
+        )
+
+    def _fit_last_dim(self, value: torch.Tensor, size: int) -> torch.Tensor:
+        if value.shape[-1] == size:
+            return value
+        if value.shape[-1] > size:
+            return value[..., :size]
+        return F.pad(value, (0, size - value.shape[-1]))
+
+    def embed(
+        self,
+        features: torch.Tensor,
+        type_ids: torch.Tensor | None = None,
+        positions: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if features.dim() != 3:
+            raise ValueError(f"native media features must be [batch, tokens, channels], got {tuple(features.shape)}")
+        features = self._fit_last_dim(features, self.feature_dim)
+        x = self.feature_proj(features)
+        if type_ids is None:
+            type_ids = torch.zeros(features.shape[:2], dtype=torch.long, device=features.device)
+        x = x + self.type_embed(type_ids.to(features.device).long().remainder(self.type_embed.num_embeddings))
+        if positions is None:
+            positions = torch.zeros((*features.shape[:2], self.position_dim), dtype=features.dtype, device=features.device)
+        positions = self._fit_last_dim(positions.to(features.device, dtype=features.dtype), self.position_dim)
+        x = x + self.position_proj(positions)
+        return self.norm(x)
+
+    def reconstruct(self, hidden: torch.Tensor) -> torch.Tensor:
+        return self.reconstruction_head(hidden)
+
+
 class OmniCoder2026Block(nn.Module):
     def __init__(self, cfg: OmniCoder2026Config, kind: BlockKind):
         super().__init__()
@@ -701,8 +837,9 @@ class OmniCoder2026Block(nn.Module):
         else:
             raise ValueError(f"Unknown block kind: {kind}")
         self.ffn = SwiGLU(cfg)
-        self.attn_residual = MHCResidual(cfg)
-        self.ffn_residual = MHCResidual(cfg)
+        residual_cls = BlockAttentionResidual if str(cfg.residual_mode).lower() in {"block_attnres", "attnres", "attention_residual"} else MHCResidual
+        self.attn_residual = residual_cls(cfg)
+        self.ffn_residual = residual_cls(cfg)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.attn_residual(x, self.mixer(self.attn_norm(x)))
@@ -758,6 +895,7 @@ class OmniCoder2026(nn.Module):
                 RMSNorm(cfg.d_model, cfg.rms_norm_eps),
                 QuantAwareLinear(cfg.d_model, cfg.flow_latent_dim, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size),
             )
+            self.native_media_bridge = NativeContinuousMediaBridge(cfg)
             self.grounding_head = QuantAwareLinear(cfg.d_model, 8, bias=True, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
             self.sync_head = QuantAwareLinear(cfg.d_model, 1, bias=True, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
         reset_omnicoder2026_parameters(self, cfg)
@@ -1008,6 +1146,7 @@ class OmniCoder2026(nn.Module):
         self.norm.to(head_device)
         self.mtp_heads.to(head_device)
         self.flow_head.to(head_device)
+        self.native_media_bridge.to(embed_device)
         self.grounding_head.to(head_device)
         self.sync_head.to(head_device)
         self._checkpoint_blocks = bool(checkpoint_blocks)
@@ -1036,6 +1175,11 @@ class OmniCoder2026(nn.Module):
         labels: torch.Tensor | None = None,
         flow_targets: torch.Tensor | None = None,
         flow_mask: torch.Tensor | None = None,
+        native_media_features: torch.Tensor | None = None,
+        native_media_type_ids: torch.Tensor | None = None,
+        native_media_positions: torch.Tensor | None = None,
+        native_media_targets: torch.Tensor | None = None,
+        native_media_mask: torch.Tensor | None = None,
         return_mtp: bool = False,
         return_aux: bool = False,
         return_logits: bool = True,
@@ -1047,6 +1191,21 @@ class OmniCoder2026(nn.Module):
         if input_ids.device != embed_device:
             input_ids = input_ids.to(embed_device, non_blocking=True)
         x = self.embed(input_ids)
+        native_media_token_count = 0
+        if native_media_features is not None:
+            media_device = self._module_device(self.native_media_bridge)
+            if native_media_features.device != media_device:
+                native_media_features = native_media_features.to(media_device, non_blocking=True)
+            if native_media_type_ids is not None and native_media_type_ids.device != media_device:
+                native_media_type_ids = native_media_type_ids.to(media_device, non_blocking=True)
+            if native_media_positions is not None and native_media_positions.device != media_device:
+                native_media_positions = native_media_positions.to(media_device, non_blocking=True)
+            media_x = self.native_media_bridge.embed(native_media_features, native_media_type_ids, native_media_positions)
+            native_media_token_count = int(media_x.shape[1])
+            if native_media_token_count > x.shape[1]:
+                raise ValueError("native media feature tokens cannot exceed input_ids length in aligned mode")
+            x = x.clone()
+            x[:, :native_media_token_count, :] = x[:, :native_media_token_count, :] + media_x.to(device=x.device, dtype=x.dtype)
         for block in self.blocks:
             block_device = self._module_device(block)
             if x.device != block_device:
@@ -1089,6 +1248,39 @@ class OmniCoder2026(nn.Module):
                     flow_loss = flow_loss_raw.mean()
                 result["flow_loss"] = flow_loss
                 result["loss"] = flow_loss if loss is None else loss + flow_loss
+        if native_media_features is not None and (native_media_targets is not None or return_aux):
+            media_device = self._module_device(self.native_media_bridge)
+            media_hidden = hidden[:, :native_media_token_count, :]
+            if media_hidden.device != media_device:
+                media_hidden = media_hidden.to(media_device, non_blocking=True)
+            native_media_recon = self.native_media_bridge.reconstruct(media_hidden)
+            result["native_media_reconstruction"] = native_media_recon
+            if native_media_targets is not None:
+                if native_media_targets.device != native_media_recon.device:
+                    native_media_targets = native_media_targets.to(native_media_recon.device, non_blocking=True)
+                if native_media_targets.shape[1] < native_media_token_count:
+                    raise ValueError(
+                        f"native media targets must cover {native_media_token_count} aligned tokens, "
+                        f"got {native_media_targets.shape[1]}"
+                    )
+                native_media_targets = native_media_targets[:, :native_media_token_count, :]
+                native_media_targets = self.native_media_bridge._fit_last_dim(
+                    native_media_targets.to(dtype=native_media_recon.dtype),
+                    native_media_recon.shape[-1],
+                )
+                media_loss_raw = F.mse_loss(native_media_recon, native_media_targets, reduction="none").mean(dim=-1)
+                if native_media_mask is not None:
+                    if native_media_mask.device != native_media_recon.device:
+                        native_media_mask = native_media_mask.to(native_media_recon.device, non_blocking=True)
+                    active = native_media_mask[:, :native_media_token_count].to(dtype=media_loss_raw.dtype)
+                    native_media_loss = (media_loss_raw * active).sum() / active.sum().clamp_min(1.0)
+                else:
+                    native_media_loss = media_loss_raw.mean()
+                result["native_media_loss"] = native_media_loss
+                base_loss = result.get("loss")
+                if base_loss is not None and native_media_loss.device != base_loss.device:
+                    native_media_loss = native_media_loss.to(base_loss.device, non_blocking=True)
+                result["loss"] = native_media_loss if base_loss is None else base_loss + native_media_loss
         if return_aux:
             result["grounding"] = self.grounding_head(hidden)
             result["sync"] = self.sync_head(hidden).squeeze(-1)
@@ -1099,7 +1291,7 @@ class OmniCoder2026(nn.Module):
         pattern = [("kda" if k == "delta" else "csa" if k == "csa_hca" else k) for k in cfg.layer_pattern]
         expanded = [pattern[i % len(pattern)] for i in range(cfg.n_layers)]
         return {
-            "architecture": "omnicoder2026_dense_kda_csa_hca_mhc_one_trunk",
+            "architecture": "omnicoder2026_dense_kda_csa_hca_attnres_one_trunk",
             "native_context": int(cfg.max_seq_len),
             "layers": int(cfg.n_layers),
             "pattern": pattern,
@@ -1140,8 +1332,24 @@ class OmniCoder2026(nn.Module):
                 "hc_mult": int(cfg.hc_mult),
                 "sinkhorn_iters_for_full_kernel": int(cfg.hc_sinkhorn_iters),
             },
-            "generation_modes": ["autoregressive_tokens", "continuous_latent_flow", "codec_token_speech_audio_video"],
-            "omni_heads": ["shared_lm_head", "flow_head", "grounding_head", "sync_head"],
+            "attention_residuals": {
+                "mode": cfg.residual_mode,
+                "block_size": int(cfg.block_attnres_block_size),
+                "max_blocks": int(cfg.block_attnres_max_blocks),
+                "rank": int(cfg.block_attnres_rank),
+                "chunk_tokens": int(cfg.block_attnres_chunk_tokens),
+                "memory_rule": "compressed causal residual block summaries; no full depth-token history",
+            },
+            "native_continuous_media": {
+                "mode": "shared_sensenova_style_patch_segment_flow",
+                "feature_dim": int(cfg.native_media_feature_dim),
+                "position_dim": int(cfg.native_media_position_dim),
+                "type_vocab": int(cfg.native_media_type_vocab),
+                "trunk_rule": "all image/video/audio/music/TTS/OCR patches enter through one shared projection plus type/time metadata",
+                "no_in_trunk_modality_adapters": True,
+            },
+            "generation_modes": ["autoregressive_tokens", "continuous_latent_flow", "native_continuous_patch_segment_flow", "codec_bridge_tokens"],
+            "omni_heads": ["shared_lm_head", "mtp_heads", "flow_head", "native_media_reconstruction_head", "grounding_head", "sync_head"],
             "token_ranges": {k: [int(v[0]), int(v[1])] for k, v in cfg.token_ranges.items()},
             "quantization": {
                 "weights": cfg.weight_quant_target,

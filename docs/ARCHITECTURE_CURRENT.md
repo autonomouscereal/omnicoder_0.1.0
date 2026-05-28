@@ -1,112 +1,344 @@
 # OmniCoder Current Architecture
 
-This document summarizes the current 2026 architecture contract. The canonical
-deep design note is `docs/Omnicoder2026Redesign.md`.
+This document describes the current implemented architecture contract for
+OmniCoder 2026. It is intentionally separate from the README so the README can
+stay public-facing while this file carries the technical design details.
 
-## Shape
+The deeper research narrative lives in `docs/Omnicoder2026Redesign.md`.
 
-OmniCoder 2026 is a dense, one-trunk omnimodal decoder architecture. The model
-is trained over a shared token space that includes text, code, tool traces,
-canonical JSON records, route prefixes, and typed media artifact tokens.
+## Design Goals
+
+OmniCoder 2026 is being built around these priorities:
+
+1. Maximize model quality and reasoning capability.
+2. Preserve practical speed and memory behavior for 24GB-class local hardware.
+3. Keep a single dense trunk for text, code, tools, long context, and media.
+4. Train media and text through shared representations instead of isolated
+   per-modality mini-models.
+5. Export to q4/GGUF-style local runtimes where possible, while retaining a
+   native runtime path for features standard runtimes do not support yet.
+
+The current design favors intelligence over speed when the tradeoff is real.
+Speed features are kept when they reduce memory or latency without removing the
+shared modeling capacity needed for agentic and omnimodal behavior.
+
+## High-Level Flow
 
 ```text
-inputs and training records
-  text, code, tool calls, OCR, image/video/music/TTS specs, traces
+raw sources
+  text, code, tools, traces, images, video, OCR, speech, audio, music
         |
         v
-canonical ledger/token representation
-  assistant targets, media artifact targets, route markers, provenance
+curation and canonicalization
+  quality gates, contamination gates, modality tags, target coverage
+        |
+        v
+typed ledger and native media packets
+  text tokens, tool tokens, route tokens, media artifact tokens,
+  direct continuous patch/segment features
         |
         v
 dense OmniCoder 2026 trunk
-  local/global/compressed attention, long-context state, q4-aware modules
+  KDA recurrent layers, CSA/HCA sparse latent attention,
+  block residual attention, shared FFN depth
         |
         v
-shared token head
-  text tokens, tool JSON, route-prefixed media artifact token streams
+shared outputs
+  LM tokens, MTP logits, flow/head signals, native media reconstruction
         |
         v
 edge systems
-  artifact decoders, tool runners, benchmark harnesses, GGUF/runtime bridges
+  output router, media decoders/renderers, tools, benchmarks,
+  native runtime, GGUF bridge
 ```
 
-There are no permanent modality adapters in the trunk contract. Codecs,
-artifact renderers, and runtime bridges live at the edges so the core model can
-learn a unified internal representation.
+The trunk is shared. Media codecs, renderers, OCR engines, audio/video
+container handling, and deployment bridges sit outside the trunk.
 
-## Core Model
+## 20B-Class Target
 
-The active implementation path is `src/omnicoder/modeling/omnicoder2026.py` and
-the dense pipeline trainer in
-`src/omnicoder/training/pipeline_pretrain_2026_dense.py`.
+The primary training target is `omnicoder2026_20b_1m`, defined in
+`src/omnicoder/config_2026.py` and implemented in
+`src/omnicoder/modeling/omnicoder2026.py`.
 
-The design emphasizes:
+| Field | Current value |
+|---|---:|
+| Architecture | Dense one-trunk decoder |
+| Layers | 64 |
+| Hidden width | 4096 |
+| Query heads | 32 |
+| Head dim | 128 |
+| KV heads on sparse attention paths | 1 |
+| MLP | SwiGLU |
+| MLP hidden | 15360 |
+| Typed ledger vocab | 330000 |
+| Native context target | 1048576 tokens |
+| Layer cycle | `kda, kda, kda, csa, kda, kda, kda, hca` |
+| Residual mode | `block_attnres` |
+| MTP heads | 2 |
+| Native media feature dim | 3072 |
+| Native media position dim | 4 |
+| Native media type vocab | 16 |
 
-- Dense depth over sparse expert routing.
-- q4-aware training and checkpoint validation.
-- Long-context attention and compressed state for the 1M-context target.
-- Shared token prediction for text, code, tools, and media artifact streams.
-- Route-aware outputs that can be parsed by standard inference and export
-  tooling.
+Expanded across 64 layers, the layer cycle gives:
 
-## Modalities
+- 48 KDA recurrent-linear layers.
+- 8 CSA compressed sparse attention layers.
+- 8 HCA heavily compressed attention layers.
 
-Media is represented as supervised route/artifact output, not as separate
-in-trunk encoders:
+The model is intentionally dense. There is no active MoE router or fused expert
+dispatch in the current 20B target.
 
-- `image | {...}`
-- `video | {...}`
-- `music | {...}`
-- `tts | {...}`
-- `ocr | {...}`
+The MLP hidden width was reduced from the earlier 16384 budget to 15360 so the
+model can pay for block residual attention, MTP heads, and native media
+supervision while staying in the 20B-ish/q4 memory envelope.
 
-The route prefix is ordinary model text. The JSON/artifact tokens after the
-prefix are also learned targets. At inference time,
-`src/omnicoder/inference/output_router_2026.py` parses the generated route and
-hands media artifact streams to edge decoders or artifact backends.
+## Long Context
 
-## Training Contract
+Native 1M context is not implemented as full dense attention. The current
+runtime target combines several memory-bounded mechanisms:
 
-Training records are JSONL-first and must preserve assistant/media target
-coverage. The current dense path supports:
+- KDA/Gated-Delta-style recurrent-linear layers for the dominant long-range
+  state path.
+- CSA layers for compressed sparse global recall.
+- HCA layers for cheaper coarse long-range trail memory.
+- Local causal attention where exact short-range mixing matters.
+- Partial RoPE on trailing head dimensions.
+- Chunked prefill, chunked loss, and sparse/global gathers.
+- Block residual attention over compressed residual-stream summaries.
 
-- message-style SFT records,
-- `input_json` + `target_json` records,
-- explicit token-id records,
-- media artifact token records,
-- tool/action traces,
-- long-context trace chunks.
+This is the core reason the native 1M path is not the same as the GGUF bridge.
+Standard local runtimes can carry the q4 short-context compatibility path, but
+full native 1M behavior requires the OmniCoder KDA/CSA/HCA state scheduling
+unless those runtime features are implemented upstream.
 
-Sparse assistant/media labels are not thinned by selected CE. Chunking uses
-one-token overlap so target tokens at chunk boundaries still have causal
-context.
+## Residual Attention
 
-## Evaluation
+The current implemented residual-attention path is `BlockAttentionResidual`.
+It is the active default through `residual_mode="block_attnres"`.
 
-Evaluation is split into diagnostics and reportable scoring:
+Configuration in the 20B target:
 
-- Target-token diagnostics prove the model can learn the actual supervised
-  assistant/media tokens.
-- Pipeline sample loss checks heldout loss with the same sparse-target
-  semantics as training.
-- Batch prediction harnesses produce local-dev or authorized benchmark
-  predictions.
-- Release gates prevent canaries or private fixtures from being reported as
-  public benchmark scores.
+- Block size: 128 tokens.
+- Maximum summary blocks: 1024.
+- Low-rank attention rank: 256.
+- Chunk size: 2048 tokens.
 
-## Runtime
+Mechanism:
 
-The primary deployment target is a q4 GGUF-compatible artifact for llama.cpp
-and LM Studio style runtimes. ONNX/Core ML/ExecuTorch/MLC paths remain useful
-secondary bridges, but they are not the main release target for the 2026 model.
+1. Each layer keeps the normal residual update path.
+2. The incoming residual stream is summarized into causal blocks.
+3. The current update forms low-rank queries.
+4. Queries attend to causally visible summary blocks.
+5. The residual-context signal is gated and added back to the layer output.
+6. The learned scale starts near zero so the path begins close to identity.
 
-## Current Limits
+This is not a full depth-token attention-logit accumulator. A full residual
+attention cache over every token and every layer would be too expensive for the
+1M-context/24GB contract. The implemented path is the current hardware-aware
+variant: it keeps a residual selection signal while bounding memory by summary
+blocks instead of by sequence length times depth.
 
-This repo has architecture and training infrastructure, not a release-quality
-public checkpoint. Real claims still require:
+## Omnimodal Representation
 
-- full-scale curated training,
-- scored benchmark artifacts,
-- 8K -> 1M context curriculum validation,
-- media decoder quality evaluation,
-- q4/GGUF runtime validation on target hardware.
+OmniCoder has two media training contracts that share the same trunk.
+
+### Route And Artifact Tokens
+
+Media can be represented as ordinary model output tokens:
+
+- `image | ...`
+- `video | ...`
+- `music | ...`
+- `tts | ...`
+- `ocr | ...`
+
+The route prefix, structured artifact descriptor, and media token stream are
+all supervised through the shared LM head. The output router then hands the
+generated route and artifact payload to edge systems.
+
+This path is useful for deployable artifact generation and for keeping
+standard text/tool runtimes understandable.
+
+### Native Continuous Media
+
+The SenseNova-U1-inspired path is a direct patch/segment lane for media:
+
+- Image: patch features with spatial metadata.
+- Video: frame/patch features with time and grid metadata.
+- Audio: waveform or spectrogram window features.
+- Music: audio/music windows with shared time-frequency metadata.
+- TTS/speech: speech windows plus speaker/prosody metadata where available.
+- OCR: document/page/crop segments with layout metadata.
+
+The implementation is split between:
+
+- `src/omnicoder/tokenization/native_media_2026.py`
+- `src/omnicoder/tokenization/native_segments_2026.py`
+- `NativeContinuousMediaBridge` in `src/omnicoder/modeling/omnicoder2026.py`
+
+The bridge uses one shared feature projection, one shared position projection,
+and a media-type embedding. It does not add separate learned image, video,
+audio, music, TTS, or OCR adapters inside the trunk.
+
+Native media features are added to aligned trunk positions. The model can emit:
+
+- normal shared-token outputs through the LM head,
+- flow/grounding/sync auxiliary outputs,
+- `native_media_reconstruction` plus `native_media_loss` when continuous media
+  targets are supplied.
+
+This proves a trainable path for media features. It does not by itself prove
+release-quality raw media generation; that still requires full data scale,
+decoded artifact evaluation, and modality-specific quality gates.
+
+## Shared-Trunk Training
+
+The target-mask contract is designed to avoid building separate modality
+models inside one checkpoint.
+
+The model sees the full prompt/context sequence across modalities. The mask
+only decides where supervised loss is charged:
+
+- User/system/developer/tool-observation prompt spans are usually context only.
+- Assistant answer tokens are supervised.
+- Tool-call tokens are supervised when they are the intended model action.
+- Media route and artifact tokens are supervised.
+- Native continuous media targets use the shared media reconstruction loss.
+- Benchmark inputs and protected eval material stay out of trainable targets.
+
+So masking does not hide modalities from each other. Text can condition media,
+media can condition text, tool traces can condition both, and long-context
+records can condition all later targets. The mask prevents the trainer from
+rewarding prompt copying or benchmark leakage.
+
+## Auxiliary Heads
+
+The model has these output surfaces:
+
+- Shared tied LM head for text, code, tools, route tokens, and media artifact
+  tokens.
+- MTP heads for future speculative/multi-token decoding validation.
+- Flow head for media/refinement supervision.
+- Grounding head for spatial or modality grounding signals.
+- Sync head for temporal/audio-video alignment signals.
+- Native media reconstruction head for direct continuous media targets.
+
+MTP is wired, but production speedup claims require training, acceptance
+testing, and quality checks against the base decoder. It should be treated as a
+validation feature until those gates pass.
+
+## Speed And Memory Choices
+
+Current speed/memory features:
+
+- Dense depth-first trunk instead of MoE routing.
+- KDA recurrent-linear layers to reduce KV growth.
+- CSA/HCA sparse global memory instead of full attention at 1M.
+- Single-KV compressed attention paths.
+- Low-rank projections in sparse/global attention components.
+- Chunked loss to avoid full sequence-by-vocab materialization.
+- Activation checkpointing in the dense pipeline trainer.
+- Low-memory optimizer-in-backward Adafactor path.
+- Weighted pipeline placement for fast-card training layouts.
+- Q4 fake-quant and QAT hooks for recovery validation.
+- MTP heads for future speculative decoding experiments.
+
+Not currently claimed as implemented production paths:
+
+- Samba/Mamba-style state-space blocks.
+- YaRN as the main 1M solution.
+- DFlash or other 2026 inference kernels.
+- Full TurboQuant integration as a complete paper-faithful runtime.
+- Stock llama.cpp full native 1M support for KDA/CSA/HCA state.
+
+The q4/TurboQuant lane currently means q4-aware fake quant, recovery training,
+and export/runtime validation hooks. It is not a claim that final TurboQuant
+runtime speedups have already been integrated and benchmarked.
+
+## Data Gates
+
+The training stack now treats data quality as part of the architecture contract.
+Rows intended for training must preserve enough metadata to answer:
+
+- Where did this row come from?
+- What modality and target family does it train?
+- Is it train, eval, benchmark, quarantine, or research-only material?
+- Did quality scoring pass?
+- Did contamination and benchmark-holdout scans pass?
+- Does it contain nontrivial assistant/media target coverage?
+
+Rows with missing quality metadata, unknown/suspect contamination, fixture or
+example paths, protected benchmark markers, placeholder text, one-token junk,
+or degenerate prompt-copy targets are rejected or quarantined.
+
+## Evaluation Gates
+
+Evaluation is split into diagnostic and reportable lanes.
+
+Diagnostic gates:
+
+- Import and model-construction checks.
+- Target-token diagnostics.
+- Heldout sample loss with non-null loss/perplexity.
+- Batch decode probes.
+- Media route and artifact parsing.
+- Native media reconstruction checks.
+
+Reportable gates:
+
+- Authorized benchmark snapshots.
+- Model-generated predictions.
+- Official or benchmark-native scorer output.
+- Immutable manifests.
+- Contamination and leakage reports.
+- Release-gate metadata that prevents canaries from being reported as scores.
+
+The benchmark suite is allowed to fail closed when official scorers or
+authorized snapshots are not present.
+
+## Runtime And Export
+
+There are two runtime tracks:
+
+1. Native OmniCoder runtime for full KDA/CSA/HCA, block residual attention,
+   native media features, and the 1M context curriculum.
+2. GGUF/qwen-compatible bridge for local adoption through llama.cpp and LM
+   Studio style tools.
+
+The project target is an easy q4 GGUF-style deployment. The current technical
+reality is that full native 1M and media reconstruction paths need custom
+runtime support unless standard runtimes add equivalent primitives.
+
+## What Is Implemented Versus Proven
+
+Implemented:
+
+- Dense 20B-ish one-trunk config.
+- KDA/CSA/HCA layer cycle.
+- Block residual attention module.
+- Native continuous media bridge.
+- MTP heads.
+- q4-aware training hooks.
+- Assistant/media target masking.
+- Data curation fail-closed gates.
+- Diagnostic/reportable benchmark separation.
+
+Proven only at engineering/probe scale so far:
+
+- Model construction.
+- Target coverage diagnostics.
+- Scratch trainability of selected modality paths.
+- Curation and benchmark plumbing behavior.
+
+Not proven yet:
+
+- Frontier-quality text, coding, agentic, image, video, TTS, audio, or music
+  output.
+- Completed 8K -> 1M context curriculum.
+- Reportable public benchmark quality.
+- Single-card q4 latency/memory on final exported weights.
+- Release-ready decoded media quality.
+
+Those are training, evaluation, and runtime validation goals, not current
+release claims.

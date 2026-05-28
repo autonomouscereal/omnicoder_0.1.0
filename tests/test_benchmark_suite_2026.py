@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import socket
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from omnicoder.eval import benchmark_suite_2026 as runner
+from omnicoder.eval import official_harness_adapters_2026 as official_adapters
 
 
 def _write_profile(path: Path, profile: dict[str, Any]) -> Path:
@@ -547,6 +549,83 @@ def test_run_smoke_writes_result_jsonl_without_network_database_or_subprocess(
     assert result["command_result"] is None
     assert isinstance(result["manifest_hash"], str) and len(result["manifest_hash"]) == 64
     assert isinstance(result["result_hash"], str) and len(result["result_hash"]) == 64
+
+
+def test_smoke_command_result_is_diagnostic_only_even_when_command_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profile = _minimal_profile()
+    profile["benchmarks"][0]["command"] = [sys.executable, "-c", "print('ok')"]
+    profile_path = _write_profile(tmp_path / "profile.json", profile)
+
+    monkeypatch.setattr(
+        runner,
+        "run_command",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "exit_code": 0,
+            "elapsed_seconds": 0.001,
+            "stdout": "ok\n",
+            "stderr": "",
+        },
+    )
+
+    assert (
+        runner.main(
+            [
+                "--profile",
+                str(profile_path),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "run-smoke",
+                "--adapter",
+                "local_alpha",
+                "--mode",
+                "command",
+            ]
+        )
+        == 0
+    )
+
+    result = _jsonl_rows(tmp_path / "out" / "results.jsonl")[0]
+    assert result["status"] == "passed"
+    assert result["score"] == 1.0
+    assert result["diagnostic_only"] is True
+    assert result["official_score"] is False
+    assert result["reportability_scope"] == "diagnostic_only"
+    assert result["score_json"]["reportable_score"] is False
+    assert runner.row_reportable_score(result) is False
+
+
+def test_official_harness_manifest_marks_required_adapters_and_audio_placeholders() -> None:
+    manifest = official_adapters.build_manifest()
+    adapters = {row["adapter_id"]: row for row in manifest["adapters"]}
+
+    for adapter_id in [
+        "lm_eval",
+        "helm",
+        "swe_bench",
+        "terminal_bench",
+        "bfcl",
+        "mmmu",
+        "ruler",
+        "longbench",
+        "nolima",
+        "vbench",
+    ]:
+        assert adapters[adapter_id]["claim_scope"] == "official_harness"
+        assert adapters[adapter_id]["requires_official_snapshot"] is True
+        assert adapters[adapter_id]["heavy_run"] is True
+        assert adapters[adapter_id]["official_score"] is False
+
+    for adapter_id in ["fad", "clap", "mos"]:
+        assert adapters[adapter_id]["claim_scope"] == "official_metric_unavailable"
+        assert adapters[adapter_id]["placeholder_until_installed"] is True
+        assert adapters[adapter_id]["official_score"] is False
+        assert adapters[adapter_id]["availability"]["status"] in {
+            "unavailable_until_official_package_installed",
+            "available_not_executed",
+        }
 
 
 def test_run_smoke_returns_failure_for_missing_configured_adapter(tmp_path: Path) -> None:

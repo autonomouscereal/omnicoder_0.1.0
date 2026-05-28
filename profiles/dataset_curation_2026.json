@@ -29887,8 +29887,8 @@
       {
         "name": "DeepSeek V4 Distill 8000x",
         "family": "long_context",
-        "hf_id": "Jackrong/DeepSeek-V4-Distill-8000x",
-        "url": "https://huggingface.co/datasets/Jackrong/DeepSeek-V4-Distill-8000x",
+        "source_dataset_ref": "Jackrong/DeepSeek-V4-Distill-8000x",
+        "source_url_ref": "https://huggingface.co/datasets/Jackrong/DeepSeek-V4-Distill-8000x",
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "twenty_seventh_wave_agentic_longcontext_video_mcp_2026_05_25",

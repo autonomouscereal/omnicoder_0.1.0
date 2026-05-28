@@ -30,13 +30,35 @@ def _read_jsonl(path: str):
 
 
 def _compute_fad(gen_dir: str, ref_dir: str) -> float:
-    try:
-        from pesq import pesq  # type: ignore
-        # Placeholder; proper FAD requires VGGish/embedding-based metrics
-    except Exception:
-        print("[fad] Please install an FAD implementation (e.g., torch-fidelity-audio or implement VGGish embeddings). Placeholder only.")
-        return -1.0
+    del gen_dir, ref_dir
+    _metric_unavailable(
+        "FAD",
+        "Install and wire an official Frechet Audio Distance implementation with fixed embedding model, "
+        "dataset snapshot hash, and scorer version before publishing scores.",
+    )
     return -1.0
+
+
+def _compute_clap(jsonl_path: str) -> float:
+    del jsonl_path
+    _metric_unavailable(
+        "CLAPScore",
+        "Install and wire an official CLAP/CLAPScore evaluator before publishing audio-text alignment scores.",
+    )
+    return -1.0
+
+
+def _compute_mos(jsonl_path: str) -> float:
+    del jsonl_path
+    _metric_unavailable(
+        "MOS",
+        "Wire an official MOSNet implementation or human MOS protocol before publishing speech/music quality scores.",
+    )
+    return -1.0
+
+
+def _metric_unavailable(metric: str, reason: str) -> None:
+    print(f"[{metric.lower()}] unavailable_for_official_scoring: {reason}")
 
 
 def _compute_wer(jsonl_path: str) -> float:
@@ -66,8 +88,13 @@ def _compute_wer(jsonl_path: str) -> float:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Audio evaluation: FAD (placeholder) and WER")
-    ap.add_argument("--mode", choices=["fad", "wer"], required=True)
+    ap = argparse.ArgumentParser(
+        description=(
+            "Audio evaluation: WER when jiwer is installed; FAD/CLAPScore/MOS fail closed "
+            "until official metric packages or human protocols are wired."
+        )
+    )
+    ap.add_argument("--mode", choices=["fad", "wer", "clap", "mos"], required=True)
     ap.add_argument("--gen_dir", type=str, default="")
     ap.add_argument("--ref_dir", type=str, default="")
     ap.add_argument("--jsonl", type=str, default="")
@@ -84,6 +111,22 @@ def main() -> None:
             print("WER not computed (missing dependency or invalid JSONL)")
         return
 
+    if args.mode == "clap":
+        score = _compute_clap(args.jsonl)
+        if score >= 0:
+            print(f"CLAPScore: {score:.3f}")
+        else:
+            print("CLAPScore not computed (official scorer unavailable).")
+        return
+
+    if args.mode == "mos":
+        score = _compute_mos(args.jsonl)
+        if score >= 0:
+            print(f"MOS: {score:.3f}")
+        else:
+            print("MOS not computed (official scorer unavailable).")
+        return
+
     # FAD
     if not args.gen_dir or not args.ref_dir:
         print("--gen_dir and --ref_dir are required for FAD mode")
@@ -92,7 +135,7 @@ def main() -> None:
     if score >= 0:
         print(f"FAD: {score:.3f}")
     else:
-        print("FAD not computed (missing dependency).")
+        print("FAD not computed (official scorer unavailable).")
 
 
 if __name__ == "__main__":

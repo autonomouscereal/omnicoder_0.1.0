@@ -1,0 +1,94 @@
+{
+  "schema": "omnicoder.official_harness_adapters_2026.v1",
+  "diagnostic_policy": "Custom canaries, smokes, proxy metrics, and internal contract scorers are never official scores.",
+  "official_scores_require": [
+    "official harness package installed",
+    "authorized or official task snapshot manifest",
+    "model-generated predictions or artifacts",
+    "official scorer output artifact",
+    "scorer version and task snapshot hash"
+  ],
+  "adapters": [
+    {
+      "adapter_id": "lm_eval",
+      "benchmarks": ["HellaSwag", "ARC", "MMLU", "GSM8K", "IFEval"],
+      "entry_point": "python -m lm_eval",
+      "package_refs": ["lm-eval"]
+    },
+    {
+      "adapter_id": "helm",
+      "benchmarks": ["HELM scenarios/operators"],
+      "entry_point": "helm-run",
+      "package_refs": ["crfm-helm"]
+    },
+    {
+      "adapter_id": "swe_bench",
+      "benchmarks": ["SWE-bench Verified", "SWE-bench Live", "SWE-bench Multimodal"],
+      "entry_point": "python -m swebench.harness.run_evaluation",
+      "package_refs": ["swebench"]
+    },
+    {
+      "adapter_id": "terminal_bench",
+      "benchmarks": ["Terminal-Bench"],
+      "entry_point": "tb run",
+      "package_refs": ["terminal-bench"]
+    },
+    {
+      "adapter_id": "bfcl",
+      "benchmarks": ["BFCL"],
+      "entry_point": "python -m bfcl_eval",
+      "package_refs": ["bfcl_eval"]
+    },
+    {
+      "adapter_id": "mmmu",
+      "benchmarks": ["MMMU", "MMMU-Pro"],
+      "entry_point": "python -m mmmu_eval",
+      "package_refs": ["MMMU official evaluation"]
+    },
+    {
+      "adapter_id": "ruler",
+      "benchmarks": ["RULER"],
+      "entry_point": "python -m ruler",
+      "package_refs": ["RULER official evaluation"]
+    },
+    {
+      "adapter_id": "longbench",
+      "benchmarks": ["LongBench", "LongBench v2"],
+      "entry_point": "python -m longbench",
+      "package_refs": ["LongBench official evaluation"]
+    },
+    {
+      "adapter_id": "nolima",
+      "benchmarks": ["NoLiMa"],
+      "entry_point": "python -m nolima",
+      "package_refs": ["NoLiMa official evaluation"]
+    },
+    {
+      "adapter_id": "vbench",
+      "benchmarks": ["VBench", "VBench-2.0", "VBench I2V"],
+      "entry_point": "python -m vbench",
+      "package_refs": ["vbench"]
+    },
+    {
+      "adapter_id": "fad",
+      "benchmarks": ["FAD"],
+      "entry_point": "",
+      "placeholder_until_installed": true,
+      "package_refs": ["operator-provided official FAD implementation"]
+    },
+    {
+      "adapter_id": "clap",
+      "benchmarks": ["CLAPScore"],
+      "entry_point": "",
+      "placeholder_until_installed": true,
+      "package_refs": ["operator-provided CLAPScore implementation"]
+    },
+    {
+      "adapter_id": "mos",
+      "benchmarks": ["MOS", "MOSNet", "human MOS panel"],
+      "entry_point": "",
+      "placeholder_until_installed": true,
+      "package_refs": ["operator-provided MOS/MOSNet implementation or human MOS protocol"]
+    }
+  ]
+}

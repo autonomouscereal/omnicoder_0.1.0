@@ -370,6 +370,12 @@ def test_final_stage_ignores_masked_prompt_labels() -> None:
     assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
     loss.backward()
     assert hidden.grad is not None
+    diagnostics = final.last_lm_loss_diagnostics
+    assert diagnostics["valid_target_tokens"] == 3
+    assert diagnostics["optimized_target_tokens"] == 3
+    assert diagnostics["target_counts_by_token_family"]["text"] == 3
+    assert diagnostics["target_counts_by_modality"]["text"] == 3
+    assert diagnostics["ce_by_token_family"]["text"] is not None
 
 
 def test_final_stage_boundary_weight_upweights_target_starts() -> None:
@@ -704,6 +710,18 @@ def test_target_token_id_zero_is_preserved_when_masked() -> None:
 
     assert ids == [7, 0, 8]
     assert labels == [-100, 0, 8]
+
+
+def test_pipeline_trainer_rejects_native_continuous_media_rows_without_tokenized_targets() -> None:
+    record = {
+        "prompt": "Generate an image from native patches.",
+        "native_media_features": [[0.1, 0.2, 0.3]],
+        "native_media_targets": [[0.1, 0.2, 0.3]],
+        "modality": "image",
+    }
+
+    with pytest.raises(ValueError, match="native continuous media rows require"):
+        pipeline.record_ids_labels_weight(record, tokenizer=None)
 
 
 def test_dataset_chunk_overlap_preserves_boundary_target_prediction(tmp_path) -> None:

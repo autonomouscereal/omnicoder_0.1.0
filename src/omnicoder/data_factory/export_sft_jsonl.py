@@ -8,6 +8,34 @@ from typing import Any, Iterable
 from omnicoder.data_factory import curation_layers_2026
 from omnicoder.data_factory.postgres import transaction
 
+NONTRAIN_CONTAMINATION_STATUSES = {
+    "benchmark_leak",
+    "benchmark_marker",
+    "contaminated",
+    "dirty",
+    "eval_holdout",
+    "pending",
+    "protected_eval",
+    "public_dev_eval",
+    "quarantine",
+    "rejected",
+    "suspect",
+    "unknown",
+}
+EVAL_OR_QUARANTINE_MARKERS = {
+    "benchmark",
+    "benchmark_marker",
+    "canary",
+    "eval",
+    "eval_holdout",
+    "fixture",
+    "hidden_eval",
+    "protected_eval",
+    "public_dev",
+    "quarantine",
+    "smoke",
+}
+
 
 def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
     with path.open("r", encoding="utf-8", errors="ignore") as handle:
@@ -58,6 +86,87 @@ def _trace_id(record: dict[str, Any]) -> str:
         if value:
             return str(value)
     return json.dumps(lineage or record, ensure_ascii=True, sort_keys=True, default=str)[:128]
+
+
+def _quality_score(record: dict[str, Any]) -> float | None:
+    candidates: list[Any] = []
+    quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
+    if quality:
+        candidates.extend([quality.get("score"), quality.get("overall"), quality.get("quality")])
+    candidates.extend([record.get("quality_score"), record.get("score"), record.get("reward")])
+    for value in candidates:
+        if value in (None, ""):
+            continue
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _contamination_status(record: dict[str, Any]) -> str:
+    contamination = record.get("contamination") if isinstance(record.get("contamination"), dict) else {}
+    for value in (
+        contamination.get("status"),
+        record.get("contamination_status"),
+        record.get("decontamination_status"),
+        record.get("protected_benchmark_scan"),
+        record.get("benchmark_contamination_status"),
+    ):
+        if value not in (None, "", [], {}):
+            return str(value).strip().lower()
+    return "unknown"
+
+
+def _metadata_text(record: dict[str, Any]) -> str:
+    selected = {
+        key: record.get(key)
+        for key in (
+            "bucket",
+            "split",
+            "split_name",
+            "source_id",
+            "dataset_name",
+            "dataset_family",
+            "task_id",
+            "training_bucket",
+        )
+        if record.get(key) not in (None, "", [], {})
+    }
+    for key in ("lineage", "metadata", "curation", "quality", "contamination"):
+        value = record.get(key)
+        if isinstance(value, dict):
+            selected[key] = value
+    return json.dumps(selected, ensure_ascii=True, sort_keys=True, default=str).lower()
+
+
+def _rejection_reasons(record: dict[str, Any], min_quality: float, allow_contaminated: bool) -> list[str]:
+    reasons: list[str] = []
+    secret_redaction = record.get("secret_redaction") if isinstance(record.get("secret_redaction"), dict) else {}
+    if secret_redaction.get("has_secret"):
+        reasons.append("secret")
+    score = _quality_score(record)
+    if score is None:
+        reasons.append("missing_quality")
+    elif score < min_quality:
+        reasons.append("below_min_quality")
+    quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
+    if str(quality.get("label") or "").lower() == "reject":
+        reasons.append("quality_reject")
+    details = quality.get("details") if isinstance(quality.get("details"), dict) else {}
+    if float(details.get("secret_penalty") or 0.0) > 0.0:
+        reasons.append("secret_penalty")
+    status = _contamination_status(record)
+    if status in NONTRAIN_CONTAMINATION_STATUSES and not (allow_contaminated and status == "contaminated"):
+        reasons.append(f"contamination:{status}")
+    metadata = _metadata_text(record)
+    for marker in EVAL_OR_QUARANTINE_MARKERS:
+        if marker in metadata:
+            reasons.append(f"eval_or_quarantine:{marker}")
+            break
+    if not _messages_from(record):
+        reasons.append("empty_messages")
+    return sorted(set(reasons))
 
 
 def _message_events_from(record: dict[str, Any]) -> list[dict[str, str]]:
@@ -156,22 +265,7 @@ def _record_order(record: dict[str, Any], fallback: int) -> tuple[str, int]:
 
 
 def eligible(record: dict[str, Any], min_quality: float, allow_contaminated: bool) -> bool:
-    secret_redaction = record.get("secret_redaction") if isinstance(record.get("secret_redaction"), dict) else {}
-    if secret_redaction.get("has_secret"):
-        return False
-    quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
-    if quality:
-        if float(quality.get("score") or 0.0) < min_quality:
-            return False
-        if str(quality.get("label") or "").lower() == "reject":
-            return False
-        details = quality.get("details") if isinstance(quality.get("details"), dict) else {}
-        if float(details.get("secret_penalty") or 0.0) > 0.0:
-            return False
-    contamination = record.get("contamination") if isinstance(record.get("contamination"), dict) else {}
-    if not allow_contaminated and contamination.get("status") == "contaminated":
-        return False
-    return bool(_messages_from(record))
+    return not _rejection_reasons(record, min_quality, allow_contaminated)
 
 
 def contains_secret_payload(value: Any) -> bool:
@@ -221,8 +315,6 @@ def export_offline(input_path: Path, out_path: Path, min_quality: float, allow_c
 def export_trace_conversations(input_path: Path, out_path: Path, min_quality: float, allow_contaminated: bool, limit: int = 0) -> int:
     grouped: dict[str, dict[str, Any]] = {}
     for fallback_index, record in enumerate(_jsonl(input_path), 1):
-        if not eligible(record, min_quality, allow_contaminated):
-            continue
         trace_id = _trace_id(record)
         group = grouped.setdefault(
             trace_id,
@@ -237,8 +329,15 @@ def export_trace_conversations(input_path: Path, out_path: Path, min_quality: fl
                     "lineages": [],
                     "quality_scores": [],
                 },
+                "rejected": False,
+                "rejection_reasons": [],
             },
         )
+        reasons = _rejection_reasons(record, min_quality, allow_contaminated)
+        if reasons:
+            group["rejected"] = True
+            group["rejection_reasons"].extend(reasons)
+            continue
         group_events = group.setdefault("events", [])
         max_events = 0
         try:
@@ -260,6 +359,8 @@ def export_trace_conversations(input_path: Path, out_path: Path, min_quality: fl
     count = 0
     with out_path.open("w", encoding="utf-8") as handle:
         for group in grouped.values():
+            if group.get("rejected"):
+                continue
             ordered_messages: list[dict[str, str]] = []
             events = group.pop("events", [])
             if events:
@@ -292,7 +393,7 @@ def export_postgres(out_path: Path, split: str, bucket: str | None, min_quality:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     query = """
         SELECT te.training_example_id, te.bucket, te.input_json, te.target_json, te.source_date, te.lineage,
-               COALESCE(MAX(qs.score_value), 1.0) AS quality_score
+               MAX(qs.score_value) AS quality_score
         FROM training_examples te
         LEFT JOIN quality_scores qs
           ON qs.target_type='training_example'
@@ -301,7 +402,8 @@ def export_postgres(out_path: Path, split: str, bucket: str | None, min_quality:
         WHERE te.split_name=%s
           AND (%s IS NULL OR te.bucket=%s)
         GROUP BY te.training_example_id
-        HAVING COALESCE(MAX(qs.score_value), 1.0) >= %s
+        HAVING MAX(qs.score_value) IS NOT NULL
+           AND MAX(qs.score_value) >= %s
         ORDER BY te.training_example_id
     """
     if limit:

@@ -498,9 +498,12 @@ def curate_record(record: dict[str, Any], args: argparse.Namespace, protected_ha
     if not inferred_modality:
         families = media.get("media_families") if isinstance(media.get("media_families"), list) else []
         inferred_modality = policy_normalize_modality(families[0]) if families else "text"
+    policy_prompt = (
+        f"Review this internal 2026 {inferred_modality or 'text'} trace for cleaned, decontaminated training suitability."
+    )
     policy_audit = audit_training_record(
         record,
-        prompt=secret["redacted_text"],
+        prompt=policy_prompt,
         target=secret["redacted_text"],
         modality=inferred_modality or "text",
         source_path=provenance.get("path"),

@@ -499,10 +499,39 @@ def training_bucket_for_record(entry: dict[str, Any], record: dict[str, Any]) ->
     if bucket == "train" and bool(record.get("synthetic_seed")):
         return "research_internal"
     if bucket == "train":
-        status = contamination_status_for_record(entry, record)
-        if status not in {"clean", "clear"}:
+        reasons = train_quarantine_reasons(entry, record)
+        if reasons:
             return "research_internal"
     return bucket
+
+
+def has_quality_score_for_record(entry: dict[str, Any], record: dict[str, Any]) -> bool:
+    for source in (record, entry):
+        if not isinstance(source, dict):
+            continue
+        quality = source.get("quality")
+        if isinstance(quality, dict):
+            for key in ("score", "overall", "quality"):
+                if quality.get(key) not in (None, ""):
+                    return True
+        if any(source.get(key) not in (None, "") for key in ("quality_score", "score", "reward", "human_score")):
+            return True
+    return False
+
+
+def train_quarantine_reasons(entry: dict[str, Any], record: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    status = contamination_status_for_record(entry, record)
+    if status not in {"clean", "clear"}:
+        reasons.append(f"contamination_{status or 'unknown'}")
+    source_date = source_date_for_record(entry, record)
+    if source_date == "unknown":
+        reasons.append("missing_source_date")
+    elif source_year_from_date(source_date) not in {"2025", "2026"}:
+        reasons.append("source_date_outside_2025_2026")
+    if not has_quality_score_for_record(entry, record):
+        reasons.append("missing_quality_score")
+    return reasons
 
 
 def contamination_status_for_record(entry: dict[str, Any], record: dict[str, Any]) -> str:
@@ -541,7 +570,7 @@ def source_date_for_record(entry: dict[str, Any], record: dict[str, Any]) -> str
             normalized = normalized_source_date(value)
             if normalized != "unknown":
                 return normalized
-    return "2026-05-24"
+    return "unknown"
 
 
 def source_year_from_date(source_date: Any) -> str:
@@ -557,7 +586,7 @@ def quality_score_for_record(entry: dict[str, Any], record: dict[str, Any]) -> f
         quality = source.get("quality")
         if isinstance(quality, dict):
             candidates.extend([quality.get("score"), quality.get("overall"), quality.get("quality")])
-        candidates.append(source.get("quality_score"))
+        candidates.extend([source.get("quality_score"), source.get("score"), source.get("reward"), source.get("human_score")])
     for value in candidates:
         if value in (None, ""):
             continue
@@ -565,7 +594,7 @@ def quality_score_for_record(entry: dict[str, Any], record: dict[str, Any]) -> f
             return max(0.0, min(1.0, float(value)))
         except (TypeError, ValueError):
             continue
-    return 0.82
+    return 0.0
 
 
 def quality_score_bucket(score: Any) -> str:
@@ -1074,7 +1103,7 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     target = field_conversation_text(record, target_fields, ASSISTANT_ROLE_ALIASES, reverse=True) or preference_pair_text(record) or fallback_target(entry, record)
     if not prompt:
         prompt = fallback_prompt(entry, record)
-    if not target:
+    if not target and bool(entry.get("self_supervised_prompt_as_target")):
         target = field_text(record, field_map.get("prompt") or ["instruction", "question", "prompt", "problem"])
     if not target or len(target.strip()) < int(entry.get("min_target_chars") or 1):
         return None
@@ -1138,6 +1167,9 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     row["use_policy"] = str(entry.get("use_policy") or "blocked_until_review")
     row["training_bucket"] = training_bucket_for_record(entry, record)
     row["contamination_status"] = contamination_status
+    quarantine_reasons = train_quarantine_reasons(entry, record) if source_use_bucket(entry) == "train" else []
+    if quarantine_reasons:
+        row["train_quarantine_reasons"] = quarantine_reasons
     row["synthetic_seed_only"] = bool(record.get("synthetic_seed"))
     row["media_refs"] = [
         compact_json_value(value, field_name="media")

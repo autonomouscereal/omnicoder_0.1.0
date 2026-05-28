@@ -34,12 +34,33 @@ def _training_profile(root: Path) -> dict:
     }
 
 
+def _reviewed_train_record(**extra: object) -> dict:
+    row = {
+        "prompt": "Use the provided context to solve the task and return a complete grounded response.",
+        "answer": "This reviewed train row has enough assistant target content to pass the strict 2026 quality and target-length gates.",
+        "source_date": "2026-05-25",
+        "quality_score": 0.9,
+        "contamination_status": "clean",
+    }
+    row.update(extra)
+    return row
+
+
 def test_dataset_expansion_materializes_license_tiered_rows(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
     _write_jsonl(
         root / "data" / "math.jsonl",
-        [{"problem": "Solve 2+2.", "answer": "4", "uuid": "m1", "contamination_status": "clean"}],
+        [
+            {
+                "problem": "Solve 2+2.",
+                "answer": "4",
+                "uuid": "m1",
+                "contamination_status": "clean",
+                "source_date": "2026-02-14",
+                "quality_score": 0.95,
+            }
+        ],
     )
     profile = {
         "external_dataset_registry_2026": {
@@ -327,7 +348,19 @@ def test_external_long_context_rows_preserve_large_targets(tmp_path: Path, monke
     training["training_plan"]["long_context_target_chars"] = 12000
     training["training_plan"]["long_context_text_token_limit"] = 12000
     _write_json(root / "profiles" / "training_orchestration_2026.json", training)
-    _write_jsonl(root / "data" / "long_context.jsonl", [{"prompt": "retain anchors", "answer": "Z" * 13000, "id": "lc-1", "contamination_status": "clean"}])
+    _write_jsonl(
+        root / "data" / "long_context.jsonl",
+        [
+            {
+                "prompt": "retain anchors",
+                "answer": "Z" * 13000,
+                "id": "lc-1",
+                "contamination_status": "clean",
+                "source_date": "2026-05-24",
+                "quality_score": 0.96,
+            }
+        ],
+    )
     profile = {
         "external_dataset_registry_2026": {
             "training_profile": "profiles/training_orchestration_2026.json",
@@ -414,7 +447,19 @@ def test_dataset_expansion_downloads_remote_tsv_rows(tmp_path: Path, monkeypatch
 def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
-    _write_jsonl(root / "data" / "math.jsonl", [{"problem": "Solve 1+1.", "answer": "2", "uuid": "m1", "contamination_status": "clean"}])
+    _write_jsonl(
+        root / "data" / "math.jsonl",
+        [
+            {
+                "problem": "Solve 1+1.",
+                "answer": "2",
+                "uuid": "m1",
+                "contamination_status": "clean",
+                "source_date": "2026-05-24",
+                "quality_score": 0.94,
+            }
+        ],
+    )
     profile = {
         "external_dataset_registry_2026": {
             "training_profile": "profiles/training_orchestration_2026.json",
@@ -466,8 +511,32 @@ def test_dataset_expansion_reports_required_real_family_minima(tmp_path: Path, m
 def test_dataset_expansion_can_materialize_filtered_registry_wave_without_global_minima(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
-    _write_jsonl(root / "data" / "wave_math.jsonl", [{"problem": "Solve 3+5.", "answer": "8", "uuid": "wave-m", "contamination_status": "clean"}])
-    _write_jsonl(root / "data" / "old_code.jsonl", [{"prompt": "Patch bug.", "answer": "done", "uuid": "old-c", "contamination_status": "clean"}])
+    _write_jsonl(
+        root / "data" / "wave_math.jsonl",
+        [
+            {
+                "problem": "Solve 3+5.",
+                "answer": "8",
+                "uuid": "wave-m",
+                "contamination_status": "clean",
+                "source_date": "2026-05-28",
+                "quality_score": 0.95,
+            }
+        ],
+    )
+    _write_jsonl(
+        root / "data" / "old_code.jsonl",
+        [
+            {
+                "prompt": "Patch bug.",
+                "answer": "done",
+                "uuid": "old-c",
+                "contamination_status": "clean",
+                "source_date": "2026-05-28",
+                "quality_score": 0.95,
+            }
+        ],
+    )
     profile = {
         "external_dataset_registry_2026": {
             "training_profile": "profiles/training_orchestration_2026.json",
@@ -537,7 +606,19 @@ def test_dataset_expansion_can_materialize_filtered_registry_wave_without_global
 def test_dataset_expansion_family_files_are_train_safe_and_bucket_partitioned(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
-    _write_jsonl(root / "data" / "tool_train.jsonl", [{"prompt": "Call the weather tool.", "answer": "Use the tool.", "id": "t1", "contamination_status": "clean"}])
+    _write_jsonl(
+        root / "data" / "tool_train.jsonl",
+        [
+            {
+                "prompt": "Call the weather tool.",
+                "answer": "Use the tool.",
+                "id": "t1",
+                "contamination_status": "clean",
+                "source_date": "2026-05-28",
+                "quality_score": 0.95,
+            }
+        ],
+    )
     profile = {
         "external_dataset_registry_2026": {
             "training_profile": "profiles/training_orchestration_2026.json",
@@ -605,6 +686,8 @@ def test_dataset_expansion_preserves_structured_tool_media_and_declared_modality
                 "results": [{"status": "ok"}],
                 "labels": [{"check": "preserve_identity", "label": "pass"}],
                 "score": 0.87,
+                "quality_score": 0.92,
+                "source_date": "2026-05-28",
                 "contamination_status": "clean",
             }
         ],
@@ -1696,7 +1779,7 @@ def test_repo_dataset_registry_covers_fifteenth_wave_agentic_coding_audio_source
 
     for name in ("AgentWorldModel-1K", "WebGym Tasks", "AudioMCQ StrongAC Gemini CoT"):
         assert expansion.source_use_bucket(by_name[name]) == "train"
-        assert expansion.training_bucket_for_record(by_name[name], {}) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], _reviewed_train_record()) == "train"
         assert expansion.contamination_status_for_record(by_name[name], {}) == "clean"
 
     for name in set(expected_policy) - {"AgentWorldModel-1K", "WebGym Tasks", "AudioMCQ StrongAC Gemini CoT"}:
@@ -1740,8 +1823,8 @@ def test_repo_dataset_registry_covers_sixteenth_wave_multimodal_and_agentic_sour
 
     assert expansion.source_use_bucket(by_name["PD12M Public Domain 12M"]) == "train"
     assert expansion.source_use_bucket(by_name["Meta Omnilingual ASR Corpus"]) == "train"
-    assert expansion.training_bucket_for_record(by_name["PD12M Public Domain 12M"], {"caption": "public domain image caption"}) == "train"
-    assert expansion.training_bucket_for_record(by_name["Meta Omnilingual ASR Corpus"], {"text": "public ASR transcript"}) == "train"
+    assert expansion.training_bucket_for_record(by_name["PD12M Public Domain 12M"], _reviewed_train_record(caption="public domain image caption")) == "train"
+    assert expansion.training_bucket_for_record(by_name["Meta Omnilingual ASR Corpus"], _reviewed_train_record(text="public ASR transcript")) == "train"
     for name in set(expected_policy) - {"PD12M Public Domain 12M", "Meta Omnilingual ASR Corpus"}:
         assert expansion.source_use_bucket(by_name[name]) != "train"
 
@@ -1804,7 +1887,7 @@ def test_repo_dataset_registry_covers_eighteenth_wave_live_media_agent_sources()
     assert expansion.source_use_bucket(by_name["Raon OpenTTS Pool Commercial Core"]) == "train"
     assert expansion.training_bucket_for_record(
         by_name["Raon OpenTTS Pool Commercial Core"],
-        {"text": "spoken training text", "audio": "sample.opus"},
+        _reviewed_train_record(text="spoken training text", audio="sample.opus"),
     ) == "train"
     for name in set(expected_policy) - {"Raon OpenTTS Pool Commercial Core"}:
         assert expansion.source_use_bucket(by_name[name]) == "research_internal"
@@ -1869,7 +1952,7 @@ def test_repo_dataset_registry_covers_nineteenth_wave_trainable_reward_eval_sour
         assert by_name[name]["contamination_status"] == "clean"
         assert by_name[name]["protected_benchmark_scan"] == "clean"
         assert expansion.source_use_bucket(by_name[name]) == "train"
-        assert expansion.training_bucket_for_record(by_name[name], {"prompt": "p", "answer": "a"}) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], _reviewed_train_record()) == "train"
 
     assert expansion.source_use_bucket(by_name["ChartVerse SFT 1.8M"]) == "research_internal"
     assert expansion.source_use_bucket(by_name["DatapointAI TTS Human Preferences Large"]) == "research_internal"
@@ -1909,7 +1992,7 @@ def test_repo_dataset_registry_covers_twentieth_wave_multimodal_agentic_reasonin
         assert by_name[name]["contamination_status"] == "clean"
         assert by_name[name]["protected_benchmark_scan"] == "clean"
         assert expansion.source_use_bucket(by_name[name]) == "train"
-        assert expansion.training_bucket_for_record(by_name[name], {"prompt": "p", "answer": "a"}) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], _reviewed_train_record()) == "train"
 
     assert by_name["Creative Professionals Agentic Tasks 1M"]["synthetic_train_seed_policy"] == "teacher_distill_before_train"
     assert expansion.source_use_bucket(by_name["Creative Professionals Agentic Tasks 1M"]) == "research_internal"
@@ -2046,7 +2129,7 @@ def test_repo_dataset_registry_covers_twenty_third_wave_agentic_code_math_multim
         assert by_name[name]["contamination_status"] == "clean"
         assert by_name[name]["protected_benchmark_scan"] == "clean"
         assert expansion.source_use_bucket(by_name[name]) == "train"
-        assert expansion.training_bucket_for_record(by_name[name], {"prompt": "p", "answer": "a"}) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], _reviewed_train_record()) == "train"
 
     assert by_name["Agentic Coding Tessa"]["hf_id"] == "smirki/Agentic-Coding-Tessa"
     assert by_name["Agentic Coding Tessa"]["field_map"]["trajectory"] == ["conversations"]
@@ -2372,7 +2455,7 @@ def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -
         assert by_name[name]["protected_benchmark_scan"] == "clean"
         assert by_name[name]["source_review_status"] == "public_train_reviewed_2026_05_25"
         assert expansion.source_use_bucket(by_name[name]) == "train"
-        assert expansion.training_bucket_for_record(by_name[name], {"prompt": "p", "answer": "a"}) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], _reviewed_train_record()) == "train"
 
 
 def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> None:

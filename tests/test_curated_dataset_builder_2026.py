@@ -49,7 +49,10 @@ def _fixture_root(tmp_path: Path) -> Path:
             {
                 "type": "message",
                 "role": "assistant",
-                "content": "anchor fact " * 260,
+                "content": " ".join(
+                    f"anchor_{index} fact_{index * 3} retrieval_{index * 5} dependency_{index * 7} evidence_{index * 11} verification_{index * 13}"
+                    for index in range(260)
+                ),
                 "timestamp": "2026-05-23T00:03:00Z",
                 "session_id": "trace-long",
             },
@@ -71,7 +74,16 @@ def _fixture_root(tmp_path: Path) -> Path:
     ):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(payload)
-        _write_json(path.with_suffix(path.suffix + ".json"), {"prompt": f"Curated prompt for {path.stem}", "caption": f"Curated caption for {path.stem}"})
+        _write_json(
+            path.with_suffix(path.suffix + ".json"),
+            {
+                "prompt": f"Curated prompt for {path.stem}",
+                "caption": f"Curated caption for {path.stem}",
+                "quality_score": 0.9,
+                "source_date": "2026-05-23",
+                "contamination_status": "clean",
+            },
+        )
     return root
 
 

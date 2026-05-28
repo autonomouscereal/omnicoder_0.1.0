@@ -47,6 +47,7 @@ MEDIA_SUFFIXES = {
     "audio": set(training_orchestration_2026.MEDIA_SUFFIXES["audio"]),
     "music": set(training_orchestration_2026.MEDIA_SUFFIXES["music"]),
 }
+CLEAN_CONTAMINATION_STATUSES = {"clean", "clear"}
 
 
 def now_iso() -> str:
@@ -432,7 +433,7 @@ def curated_trace_to_training_row(
         return None
     if secret.get("has_secret"):
         return None
-    if contamination.get("status") == "contaminated":
+    if str(contamination.get("status") or "unknown").strip().lower() not in CLEAN_CONTAMINATION_STATUSES:
         return None
     if split_assignment.get("split") == "rejected":
         return None
@@ -444,6 +445,7 @@ def curated_trace_to_training_row(
     source_payload = {
         **record,
         "source_id": curated.get("curated_id") or (record.get("lineage") or {}).get("record_hash"),
+        "source_date": str(record.get("source_date") or record.get("timestamp") or (curated.get("provenance") or {}).get("source_date") or "unknown")[:10],
         "quality": {"score": quality_score, "label": quality.get("label") or "candidate", "details": quality},
         "contamination": contamination,
         "builder_curation": {
@@ -599,7 +601,7 @@ def collect_file_rows(profile: dict[str, Any], root: Path, plan: dict[str, Any],
                             "source_id": stable_hash({"path": str(path), "modality": modality, "span_index": span_index}),
                             "source_date": str(profile.get("source_date") or "2026-05-23"),
                             "quality": {"score": 0.78, "label": "accepted_local_file"},
-                            "contamination": {"status": "unknown", "note": "local_supplemental_file_needs_downstream_scan"},
+                            "contamination": {"status": "quarantine", "note": "local_supplemental_file_requires_explicit_clean_scan_before_training"},
                             "span_index": span_index,
                             "span_char_count": len(span),
                         },
@@ -686,6 +688,11 @@ def collect_media_rows(profile: dict[str, Any], root: Path, plan: dict[str, Any]
             if len(rows_by_modality[modality]) >= modality_limit(plan, modality):
                 continue
             metadata = sidecar_metadata(path)
+            contamination_status = str(metadata.get("contamination_status") or "").strip().lower()
+            if contamination_status not in CLEAN_CONTAMINATION_STATUSES:
+                continue
+            if metadata.get("quality_score") in (None, "") or metadata.get("source_date") in (None, ""):
+                continue
             try:
                 media_meta = training_orchestration_2026.media_metadata(path, modality, plan, {})
             except Exception:
@@ -695,9 +702,9 @@ def collect_media_rows(profile: dict[str, Any], root: Path, plan: dict[str, Any]
             source_payload = {
                 **metadata,
                 "source_id": stable_hash({"path": str(path), "sha256": media_meta.get("sha256"), "modality": modality}),
-                "source_date": str(profile.get("source_date") or "2026-05-23"),
+                "source_date": str(metadata.get("source_date") or profile.get("source_date") or "unknown"),
                 "quality": {"score": float(metadata.get("quality_score") or 0.82), "label": metadata.get("quality_label") or "accepted_real_media"},
-                "contamination": {"status": metadata.get("contamination_status") or "unknown"},
+                "contamination": {"status": contamination_status},
             }
             rows_by_modality[modality].append(
                 training_orchestration_2026.make_training_record(

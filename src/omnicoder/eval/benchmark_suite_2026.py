@@ -386,6 +386,9 @@ def make_manifest_rows(
             "task_format": record.get("task_format"),
             "modalities": record["modalities"],
             "mode": adapter_mode,
+            "diagnostic_only": True,
+            "official_score": False,
+            "reportability_scope": "diagnostic_only",
             "smoke": record.get("smoke"),
             "source": record.get("source"),
             "metrics": record.get("metrics", []),
@@ -447,13 +450,12 @@ def smoke_result(manifest: dict[str, Any], timeout_seconds: int) -> dict[str, An
     mode = manifest["mode"]
     score: float | None = None
     reportable_score = False
-    contract_only = mode == "smoke"
+    diagnostic_only = True
+    contract_only = True
     if mode == "command":
         command_info = run_command(manifest.get("command"), timeout_seconds)
         status = "passed" if command_info.get("ok") else "failed"
         score = 1.0 if status == "passed" else 0.0
-        reportable_score = status == "passed"
-        contract_only = False
     elif mode == "smoke":
         status = "passed"
     else:
@@ -477,11 +479,17 @@ def smoke_result(manifest: dict[str, Any], timeout_seconds: int) -> dict[str, An
         "finished_at": utc_now(),
         "mode": mode,
         "status": status,
+        "diagnostic_only": diagnostic_only,
+        "official_score": False,
+        "reportability_scope": "diagnostic_only",
         "score": score,
         "score_json": {
             "canonical_score": score,
             "reportable_score": reportable_score,
             "contract_only": contract_only,
+            "diagnostic_only": diagnostic_only,
+            "official_score": False,
+            "reportability_scope": "diagnostic_only",
         },
         "metrics": {
             "downloaded_bytes": 0,
@@ -489,11 +497,14 @@ def smoke_result(manifest: dict[str, Any], timeout_seconds: int) -> dict[str, An
             "timeout_seconds": timeout_seconds,
             "contract_only": contract_only,
             "reportable_score": reportable_score,
+            "diagnostic_only": diagnostic_only,
+            "official_score": False,
         },
         "metrics_json": {
             "downloaded_bytes": 0,
             "timeout_seconds": timeout_seconds,
             "contract_only": contract_only,
+            "diagnostic_only": diagnostic_only,
         },
         "artifact_refs": [],
         "input_sha256": stable_hash(
@@ -1018,15 +1029,22 @@ def reportable_result(
         "mode": "reportable",
         "status": status,
         "reason": reason,
+        "diagnostic_only": False,
+        "official_score": False,
+        "reportability_scope": "authorized_contract_oracle" if reportable_score else "local_or_incomplete",
         "model": model,
         "score": round(score, 6) if score is not None else None,
         "score_json": {
             "canonical_score": round(score, 6) if score is not None else None,
             "reportable_score": reportable_score,
             "contract_only": False,
+            "diagnostic_only": False,
+            "official_score": False,
+            "scorer_kind": "authorized_contract_oracle",
             "task_count": len(task_scores),
             "min_tasks": min_tasks,
             "reportable_scope": "official_or_authorized" if reportable_score else "local_or_incomplete",
+            "reportability_scope": "authorized_contract_oracle" if reportable_score else "local_or_incomplete",
         },
         "metrics": {
             "task_count": len(task_scores),
@@ -1059,8 +1077,29 @@ def row_score_json(row: dict[str, Any]) -> dict[str, Any]:
     return score_json if isinstance(score_json, dict) else {}
 
 
+def row_is_diagnostic_only(row: dict[str, Any]) -> bool:
+    score_json = row_score_json(row)
+    if boolish(row.get("diagnostic_only") or score_json.get("diagnostic_only")):
+        return True
+    mode = str(row.get("mode") or "").lower()
+    phase = str(row.get("phase") or "").lower()
+    scope = str(row.get("reportability_scope") or score_json.get("reportability_scope") or "").lower()
+    if scope == "diagnostic_only":
+        return True
+    return mode in {"smoke", "dry-run", "command"} and phase != "reportable_scoring"
+
+
 def row_reportable_score(row: dict[str, Any]) -> bool:
-    return boolish(row_score_json(row).get("reportable_score", False))
+    return boolish(row_score_json(row).get("reportable_score", False)) and not row_is_diagnostic_only(row)
+
+
+def row_official_score(row: dict[str, Any]) -> bool:
+    score_json = row_score_json(row)
+    return (
+        boolish(row.get("official_score") or score_json.get("official_score"))
+        and row_reportable_score(row)
+        and not row_is_diagnostic_only(row)
+    )
 
 
 def row_contract_only(row: dict[str, Any]) -> bool:
@@ -1256,6 +1295,7 @@ def cmd_run_reportable(args: argparse.Namespace) -> int:
         "results": str(results_path),
         "ran": len(results),
         "reportable": reportable,
+        "official": sum(1 for row in results if row_official_score(row)),
         "failed": failed,
         "skipped": skipped,
         "local_only": local_only,
@@ -1284,6 +1324,8 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     by_status: dict[str, int] = {}
     by_benchmark: dict[str, dict[str, Any]] = {}
     reportable_results = 0
+    official_results = 0
+    diagnostic_only_results = 0
     for row in rows:
         status = str(row.get("status", "unknown"))
         benchmark = str(row.get("benchmark_id") or row.get("adapter_id") or "unknown")
@@ -1295,6 +1337,10 @@ def cmd_summarize(args: argparse.Namespace) -> int:
         )
         if reportable:
             reportable_results += 1
+        if row_official_score(row):
+            official_results += 1
+        if row_is_diagnostic_only(row):
+            diagnostic_only_results += 1
         by_status[status] = by_status.get(status, 0) + 1
         by_benchmark[benchmark] = {
             "latest_status": status,
@@ -1309,6 +1355,8 @@ def cmd_summarize(args: argparse.Namespace) -> int:
         "results": str(results_path),
         "total_results": len(rows),
         "reportable_results": reportable_results,
+        "official_results": official_results,
+        "diagnostic_only_results": diagnostic_only_results,
         "contract_only_results": sum(1 for row in rows if row_contract_only(row)),
         "by_status": by_status,
         "by_benchmark": by_benchmark,

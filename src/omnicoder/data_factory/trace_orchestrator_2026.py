@@ -577,8 +577,15 @@ def run_curation(input_path: Path, out_path: Path, rejected_path: Path, profile:
 def ensure_protected(profile: dict[str, Any], root: Path, fallback_path: Path) -> Path:
     contamination_cfg = profile.get("contamination") if isinstance(profile.get("contamination"), dict) else {}
     protected = resolve_path(contamination_cfg.get("protected_path"), root)
-    if protected is not None and protected.exists():
+    if protected is not None and protected.exists() and protected.stat().st_size > 0:
         return protected
+    allow_empty = bool(contamination_cfg.get("allow_empty_protected") or contamination_cfg.get("allow_empty_protected_smoke"))
+    if not allow_empty:
+        missing = protected if protected is not None else contamination_cfg.get("protected_path")
+        raise FileNotFoundError(
+            "protected contamination/eval holdout JSONL is missing or empty; "
+            f"refusing to continue without explicit contamination.allow_empty_protected=true: {missing}"
+        )
     fallback_path.parent.mkdir(parents=True, exist_ok=True)
     fallback_path.write_text("", encoding="utf-8")
     return fallback_path
@@ -597,11 +604,25 @@ def run_contamination(input_path: Path, protected_path: Path, out_path: Path, pr
     ngram = int(cfg.get("ngram", 5))
     records = contamination.scan(input_path, protected_path, out_path, threshold, ngram)
     contaminated = 0
+    suspect = 0
+    unknown = 0
     for record in iter_jsonl(out_path):
         status = (record.get("contamination") or {}).get("status") if isinstance(record.get("contamination"), dict) else None
         if status == "contaminated":
             contaminated += 1
-    return {"records": records, "contaminated": contaminated, "protected": str(protected_path), "threshold": threshold, "ngram": ngram}
+        elif status == "suspect":
+            suspect += 1
+        elif status in (None, "", "unknown"):
+            unknown += 1
+    return {
+        "records": records,
+        "contaminated": contaminated,
+        "suspect": suspect,
+        "unknown": unknown,
+        "protected": str(protected_path),
+        "threshold": threshold,
+        "ngram": ngram,
+    }
 
 
 def run_sft_export(input_path: Path, out_path: Path, profile: dict[str, Any]) -> dict[str, Any]:

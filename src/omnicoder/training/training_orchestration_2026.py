@@ -563,12 +563,13 @@ def split_order_key(row: dict[str, Any], modality: str) -> str:
 
 
 def assign_deterministic_splits(rows: list[dict[str, Any]], modality: str, plan: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    eligible_rows = [row for row in rows if not split_quarantine_reasons(row)]
     split_plan = plan.get("split") if isinstance(plan.get("split"), dict) else {}
     eval_ratio = float(split_plan.get("eval_ratio", plan.get("eval_holdout_ratio", 0.10)))
     test_ratio = float(split_plan.get("test_ratio", plan.get("test_holdout_ratio", 0.10)))
     min_train = int(split_plan.get("min_train_records", plan.get("min_train_records_per_modality", 1)))
-    counts = split_bucket_counts(len(rows), eval_ratio, test_ratio, min_train_records=min_train)
-    ordered = sorted(rows, key=lambda row: split_order_key(row, modality))
+    counts = split_bucket_counts(len(eligible_rows), eval_ratio, test_ratio, min_train_records=min_train)
+    ordered = sorted(eligible_rows, key=lambda row: split_order_key(row, modality))
     split_rows: dict[str, list[dict[str, Any]]] = {"train": [], "eval": [], "test": []}
     boundaries = {
         "test": counts["test"],
@@ -584,7 +585,7 @@ def assign_deterministic_splits(rows: list[dict[str, Any]], modality: str, plan:
         item = dict(row)
         item["split"] = split_name
         item["split_key"] = split_order_key(row, modality)
-        item["quality_score"] = float(item.get("quality", {}).get("score") or 1.0) if isinstance(item.get("quality"), dict) else 1.0
+        item["quality_score"] = float(item.get("quality", {}).get("score") or item.get("quality_score") or 0.0) if isinstance(item.get("quality"), dict) else float(item.get("quality_score") or 0.0)
         item["contamination_status"] = (
             str(item.get("contamination", {}).get("status") or "unknown")
             if isinstance(item.get("contamination"), dict)
@@ -592,6 +593,27 @@ def assign_deterministic_splits(rows: list[dict[str, Any]], modality: str, plan:
         )
         split_rows[split_name].append(item)
     return split_rows
+
+
+def split_quarantine_reasons(row: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    contamination = row.get("contamination") if isinstance(row.get("contamination"), dict) else {}
+    status = str(row.get("contamination_status") or contamination.get("status") or "unknown").strip().lower()
+    if status not in {"clean", "clear"}:
+        reasons.append(f"contamination_{status or 'unknown'}")
+    has_quality = False
+    if isinstance(row.get("quality"), dict):
+        has_quality = row["quality"].get("score") not in (None, "")
+    if row.get("quality_score") not in (None, ""):
+        has_quality = True
+    if not has_quality:
+        reasons.append("missing_quality_score")
+    source_date = str(row.get("source_date") or "").strip().lower()
+    if not source_date or source_date == "unknown":
+        reasons.append("missing_source_date")
+    elif not (source_date.startswith("2025") or source_date.startswith("2026")):
+        reasons.append("source_date_outside_2025_2026")
+    return reasons
 
 
 def extract_text(record: dict[str, Any]) -> str:
@@ -1013,7 +1035,7 @@ def make_training_record(
     target_token_ids = text_to_ledger_ids(target, token_limit)
     token_ids.extend(prompt_token_ids)
     token_ids.extend(target_token_ids)
-    source_date = "2026-05-23"
+    source_date = "unknown"
     if isinstance(source_payload, dict) and source_payload.get("source_date"):
         source_date = str(source_payload.get("source_date"))[:10]
     source_hint = None
@@ -1028,8 +1050,8 @@ def make_training_record(
         if source_hint is not None
         else stable_hash({"source_uri": source_uri, "modality": modality, "source_payload": source_payload or {}})
     )
-    quality_value = 1.0
-    quality_label = "accepted_real_source" if not artifact_refs else "accepted_real_media_with_metadata"
+    quality_value = 0.0
+    quality_label = "missing_quality_requires_review"
     contamination: dict[str, Any] = {"status": "unknown", "note": "real_orchestration_export_requires_downstream_protected_scan"}
     if isinstance(source_payload, dict):
         raw_quality = source_payload.get("quality_score")
@@ -1042,8 +1064,10 @@ def make_training_record(
         try:
             if raw_quality is not None:
                 quality_value = max(0.0, min(1.0, float(raw_quality)))
+                if quality_label == "missing_quality_requires_review":
+                    quality_label = "accepted_real_source" if not artifact_refs else "accepted_real_media_with_metadata"
         except (TypeError, ValueError):
-            quality_value = 1.0
+            quality_value = 0.0
         raw_contamination = source_payload.get("contamination") or source_payload.get("contamination_status")
         if isinstance(raw_contamination, dict):
             contamination = dict(raw_contamination)

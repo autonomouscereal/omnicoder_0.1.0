@@ -10,7 +10,7 @@ DEFAULT_LAYER_PATTERN: tuple[BlockKind, ...] = ("kda", "kda", "kda", "csa", "kda
 @dataclass
 class Omnicoder2026Preset:
     name: str
-    architecture: str = "omnicoder2026_dense_kda_csa_hca_mhc_one_trunk"
+    architecture: str = "omnicoder2026_dense_kda_csa_hca_attnres_one_trunk"
     vocab_size: int = 330_000
     n_layers: int = 48
     d_model: int = 4096
@@ -36,11 +36,18 @@ class Omnicoder2026Preset:
     kda_kernel_size: int = 4
     hc_mult: int = 4
     hc_sinkhorn_iters: int = 20
-    residual_mode: str = "mhc_lite"
+    residual_mode: str = "block_attnres"
+    block_attnres_block_size: int = 128
+    block_attnres_max_blocks: int = 1024
+    block_attnres_rank: int = 256
+    block_attnres_chunk_tokens: int = 2048
     layer_pattern: tuple[BlockKind, ...] = DEFAULT_LAYER_PATTERN
     tie_embeddings: bool = True
-    mtp_heads: int = 0
+    mtp_heads: int = 2
     flow_latent_dim: int = 1024
+    native_media_feature_dim: int = 3072
+    native_media_position_dim: int = 4
+    native_media_type_vocab: int = 16
     fake_quant: bool = False
     fake_quant_group_size: int = 128
     gguf_bridge_architecture: str = "qwen3-compatible-short-context-bridge"
@@ -73,6 +80,8 @@ def get_omnicoder2026_preset(name: str) -> Omnicoder2026Preset:
             o_groups=2,
             index_head_dim=32,
             flow_latent_dim=256,
+            block_attnres_rank=32,
+            block_attnres_chunk_tokens=512,
             fake_quant_group_size=64,
             layer_pattern=("kda", "kda", "csa", "hca"),
             notes=("Small native-1M construction/training probe; not a capability target.",),
@@ -100,6 +109,8 @@ def get_omnicoder2026_preset(name: str) -> Omnicoder2026Preset:
             o_groups=2,
             index_head_dim=32,
             flow_latent_dim=256,
+            block_attnres_rank=32,
+            block_attnres_chunk_tokens=512,
             fake_quant_group_size=64,
             layer_pattern=("kda", "kda", "csa", "hca"),
             notes=(
@@ -121,7 +132,9 @@ def get_omnicoder2026_preset(name: str) -> Omnicoder2026Preset:
             n_heads=32,
             head_dim=128,
             num_key_value_heads=1,
-            mlp_dim=16384,
+            mlp_dim=15360,
+            residual_mode="block_attnres",
+            mtp_heads=2,
             q_lora_rank=1024,
             o_lora_rank=1024,
             o_groups=8,
@@ -130,6 +143,8 @@ def get_omnicoder2026_preset(name: str) -> Omnicoder2026Preset:
             hca_block_size=131072,
             latent_dim=512,
             flow_latent_dim=1024,
+            block_attnres_rank=256,
+            block_attnres_chunk_tokens=2048,
             notes=(
                 "Primary single-24GB Q4 target: dense 20B-class KDA plus CSA/HCA sparse latent global layers.",
                 "Native 1M depends on recurrent state plus compressed sparse/heavily-compressed latent KV, not full GQA KV.",
@@ -216,10 +231,17 @@ def preset_to_model_kwargs(preset: Omnicoder2026Preset) -> dict:
         "hc_mult": preset.hc_mult,
         "hc_sinkhorn_iters": preset.hc_sinkhorn_iters,
         "residual_mode": preset.residual_mode,
+        "block_attnres_block_size": preset.block_attnres_block_size,
+        "block_attnres_max_blocks": preset.block_attnres_max_blocks,
+        "block_attnres_rank": preset.block_attnres_rank,
+        "block_attnres_chunk_tokens": preset.block_attnres_chunk_tokens,
         "layer_pattern": preset.layer_pattern,
         "tie_embeddings": preset.tie_embeddings,
         "mtp_heads": preset.mtp_heads,
         "flow_latent_dim": preset.flow_latent_dim,
+        "native_media_feature_dim": preset.native_media_feature_dim,
+        "native_media_position_dim": preset.native_media_position_dim,
+        "native_media_type_vocab": preset.native_media_type_vocab,
         "fake_quant": preset.fake_quant,
         "fake_quant_group_size": preset.fake_quant_group_size,
     }

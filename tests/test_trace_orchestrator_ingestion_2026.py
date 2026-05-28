@@ -20,6 +20,13 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(row, ensure_ascii=True) for row in rows) + "\n", encoding="utf-8")
 
 
+def _add_protected_holdout(root: Path, profile: dict) -> dict:
+    protected = root / "data" / "eval" / "protected_holdout.jsonl"
+    _write_jsonl(protected, [{"task_id": "protected-unrelated", "prompt": "Do not leak this unrelated eval row."}])
+    profile["contamination"] = {"protected_path": str(protected)}
+    return profile
+
+
 def test_trace_orchestrator_enriches_tool_math_code_domains(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     source = root / "data" / "raw" / "local_agent.jsonl"
@@ -45,7 +52,7 @@ def test_trace_orchestrator_enriches_tool_math_code_domains(tmp_path: Path, monk
         "trace_inputs": {"sources": [{"path": str(source), "harness": "local_agent"}], "patterns": ["*.jsonl"]},
         "data": {"bucket": "agentic_trace_sft_2026", "split": "train"},
     }
-    _write_json(root / "profile.json", profile)
+    _write_json(root / "profile.json", _add_protected_holdout(root, profile))
     monkeypatch.setattr(traces, "repo_root", lambda: root)
 
     manifest = traces.run_pipeline(root / "profile.json")
@@ -81,7 +88,7 @@ def test_trace_orchestrator_collects_comfyui_media_directory(tmp_path: Path, mon
         "trace_inputs": {"sources": [{"path": str(media_dir), "harness": "comfyui"}], "patterns": ["*.jsonl"]},
         "data": {"bucket": "comfyui_multimodal_trace_2026", "split": "train"},
     }
-    _write_json(root / "profile.json", profile)
+    _write_json(root / "profile.json", _add_protected_holdout(root, profile))
     monkeypatch.setattr(traces, "repo_root", lambda: root)
 
     manifest = traces.run_pipeline(root / "profile.json")
@@ -131,7 +138,7 @@ def test_trace_orchestrator_collects_comfyui_manifest_directory(tmp_path: Path, 
         "trace_inputs": {"sources": [{"path": str(manifest_dir), "harness": "comfyui"}], "patterns": ["*.jsonl"]},
         "data": {"bucket": "comfyui_multimodal_trace_2026", "split": "train"},
     }
-    _write_json(root / "profile.json", profile)
+    _write_json(root / "profile.json", _add_protected_holdout(root, profile))
     monkeypatch.setattr(traces, "repo_root", lambda: root)
 
     manifest = traces.run_pipeline(root / "profile.json")
@@ -164,7 +171,7 @@ def test_agent_memory_export_uses_server_or_workstation_script_candidates(tmp_pa
             },
         }
     }
-    _write_json(root / "profile.json", profile)
+    _write_json(root / "profile.json", _add_protected_holdout(root, profile))
     monkeypatch.setattr(builder, "repo_root", lambda: root)
 
     result = builder.export_agent_memory_only(root / "profile.json", root / "weights" / "curated")
@@ -191,7 +198,7 @@ def test_builder_prefers_raw_postgres_agent_memory_export(tmp_path: Path, monkey
             },
         },
     }
-    _write_json(root / "profile.json", profile)
+    _write_json(root / "profile.json", _add_protected_holdout(root, profile))
     monkeypatch.setattr(builder, "repo_root", lambda: root)
 
     def fake_export(cfg, out_path):
@@ -225,7 +232,7 @@ def test_trace_orchestrator_assigns_source_step_indices(tmp_path: Path, monkeypa
         "trace_inputs": {"sources": [{"path": str(source), "harness": "local_agent"}], "patterns": ["*.jsonl"]},
         "data": {"bucket": "agentic_trace_sft_2026", "split": "train"},
     }
-    _write_json(root / "profile.json", profile)
+    _write_json(root / "profile.json", _add_protected_holdout(root, profile))
     monkeypatch.setattr(traces, "repo_root", lambda: root)
 
     manifest = traces.run_pipeline(root / "profile.json")
@@ -293,12 +300,14 @@ def test_export_sft_rejects_secret_redaction_flag(tmp_path: Path) -> None:
                 "input_json": {"messages": [{"role": "user", "content": "hello"}]},
                 "target_json": {"content": "safe"},
                 "quality": {"score": 1.0},
+                "contamination_status": "clean",
                 "secret_redaction": {"has_secret": True},
             },
             {
                 "input_json": {"messages": [{"role": "user", "content": "hello"}]},
                 "target_json": {"content": "safe answer"},
                 "quality": {"score": 1.0},
+                "contamination_status": "clean",
                 "secret_redaction": {"has_secret": False},
             },
         ],

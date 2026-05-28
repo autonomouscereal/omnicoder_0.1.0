@@ -211,7 +211,17 @@ def test_posttraining_exports_preference_pairs_from_common_aliases(tmp_path):
 
 
 def test_deterministic_splits_are_repeatable():
-    rows = [{"record_id": f"row-{index}", "modality": "text", "payload_sha256": f"sha-{index}"} for index in range(20)]
+    rows = [
+        {
+            "record_id": f"row-{index}",
+            "modality": "text",
+            "payload_sha256": f"sha-{index}",
+            "source_date": "2026-05-28",
+            "quality": {"score": 0.9},
+            "contamination": {"status": "clean"},
+        }
+        for index in range(20)
+    ]
     plan = {"eval_holdout_ratio": 0.10, "test_holdout_ratio": 0.10}
     first = orch.assign_deterministic_splits(rows, "text", plan)
     second = orch.assign_deterministic_splits(list(reversed(rows)), "text", plan)

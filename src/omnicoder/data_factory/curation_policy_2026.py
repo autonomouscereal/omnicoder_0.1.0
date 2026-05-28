@@ -61,11 +61,23 @@ EVAL_HOLDOUT_MARKERS = (
     "blocked_until_review",
     "protected_eval",
 )
-KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", "long_context", "math", "ocr"}
-MEDIA_MODALITIES = {"image", "video", "audio", "music", "ocr"}
-GENERATION_MEDIA_MODALITIES = {"image", "video", "audio", "music"}
+KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", "tts", "long_context", "math", "ocr"}
+MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts", "ocr"}
+GENERATION_MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts"}
 WORD_RE = re.compile(r"[A-Za-z0-9_]+")
 SCALAR_TARGET_RE = re.compile(r"(?i)^[+-]?(?:\d+(?:\.\d+)?|[a-z]|true|false|yes|no|null|none|nan)$")
+BARE_MEDIA_PATH_TARGET_RE = re.compile(
+    r"""(?ix)
+    ^\s*
+    (?:
+        file://|https?://|s3://|hf://|/|\.{1,2}[\\/]|[a-z]:[\\/]
+    )?
+    [\w .~:/\\%+-]+
+    \.
+    (?:png|jpe?g|webp|gif|bmp|tiff|mp4|mov|mkv|webm|avi|wav|mp3|flac|ogg|m4a|aac|mid|midi)
+    \s*$
+    """
+)
 TARGET_MEDIA_PAYLOAD_KEYS = (
     "artifact_path",
     "artifact_uri",
@@ -232,9 +244,6 @@ def message_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
             break
     if not target:
         target = target_from_nested
-    if prompt and not target and (row.get("dataset_family") or row.get("training_bucket")):
-        target = prompt
-        prompt = f"Learn this high-quality {normalize_modality(row.get('modality') or row.get('dataset_family')) or 'text'} training example."
     return prompt, target
 
 
@@ -317,7 +326,17 @@ def scalar_or_degenerate_media_target(row: dict[str, Any], *, target: str, modal
         return False
     if SCALAR_TARGET_RE.fullmatch(text):
         return True
-    return modality in {"audio", "music", "video"} and len(text) < 16
+    if BARE_MEDIA_PATH_TARGET_RE.fullmatch(text):
+        return True
+    return modality in {"audio", "music", "tts", "video"} and len(text) < 16
+
+
+def target_copies_prompt(*, prompt: str, target: str, has_target_media_payload: bool = False) -> bool:
+    if has_target_media_payload:
+        return False
+    prompt_norm = " ".join(prompt.split()).casefold()
+    target_norm = " ".join(target.split()).casefold()
+    return bool(prompt_norm and target_norm and prompt_norm == target_norm)
 
 
 def normalize_modality(value: Any) -> str:
@@ -336,6 +355,8 @@ def normalize_modality(value: Any) -> str:
         return "video"
     if any(marker in text for marker in ("music", "song", "melody", "ace_step", "acestep", "midi")):
         return "music"
+    if any(marker in text for marker in ("tts", "speech_synthesis", "text_to_speech", "voice_clone")):
+        return "tts"
     if any(marker in text for marker in ("audio", "speech", "tts", "asr", "voice", "sound")):
         return "audio"
     if any(marker in text for marker in ("code", "coding", "swe", "terminal_bench", "livecodebench", "program")):
@@ -408,6 +429,7 @@ def quality_audit(
     cfg = config or CurationPolicyConfig()
     prompt = text_value(prompt, limit=65536)
     target = text_value(target, limit=65536)
+    has_target_media_payload = modality in MEDIA_MODALITIES and target_json_has_media_payload(row)
     text = f"{prompt}\n{target}".strip()
     tokens = WORD_RE.findall(text.lower())
     token_count = len(tokens)
@@ -432,7 +454,7 @@ def quality_audit(
     placeholder_penalty = 0.35 if PLACEHOLDER_RE.search(text) else 0.0
     secret_penalty = 0.55 if SECRET_VALUE_RE.search(text) else 0.0
     artifact_score, artifact_reasons = artifact_quality(refs or [], modality, require_media_artifacts=cfg.require_media_artifacts)
-    source_quality = 1.0 if existing_quality is None else max(0.0, min(1.0, float(existing_quality)))
+    source_quality = 0.0 if existing_quality is None else max(0.0, min(1.0, float(existing_quality)))
     score = (
         0.18
         + 0.21 * length_score
@@ -451,8 +473,10 @@ def quality_audit(
         reasons.append("missing_prompt")
     if not target:
         reasons.append("missing_target")
-    if len(target.strip()) < cfg.min_target_chars:
+    if len(target.strip()) < cfg.min_target_chars and not has_target_media_payload:
         reasons.append("target_too_short")
+    if target_copies_prompt(prompt=prompt, target=target, has_target_media_payload=has_target_media_payload):
+        reasons.append("target_copies_prompt")
     if scalar_or_degenerate_media_target(row, target=target, modality=modality):
         reasons.append("media_target_too_short_or_scalar")
     if secret_penalty:
@@ -470,10 +494,20 @@ def quality_audit(
         "missing_target",
         "secret_marker",
         "below_min_quality",
+        "target_too_short",
+        "target_copies_prompt",
         "media_artifact_ref_not_found",
         "missing_media_artifact_ref",
         "media_target_too_short_or_scalar",
     }
+    if cfg.reject_placeholder_junk:
+        hard_reject_reasons.update(
+            {
+                "placeholder_or_stub",
+                "low_diversity_repetition",
+                "control_character_noise",
+            }
+        )
     label = "reject" if reasons and any(r in hard_reject_reasons for r in reasons) else "candidate"
     if label != "reject" and score >= 0.78:
         label = "high"

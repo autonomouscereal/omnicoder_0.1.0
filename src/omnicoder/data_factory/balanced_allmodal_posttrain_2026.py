@@ -30,8 +30,8 @@ from omnicoder.data_factory.curation_policy_2026 import (
 )
 
 
-KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", "long_context", "math", "ocr"}
-MODALITY_PRIORITY = ("image", "video", "audio", "music", "ocr", "code", "math", "tool", "long_context", "text")
+KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", "tts", "long_context", "math", "ocr"}
+MODALITY_PRIORITY = ("image", "video", "audio", "music", "tts", "ocr", "code", "math", "tool", "long_context", "text")
 PROFILE_JSONL_KEYS: tuple[tuple[str, str], ...] = (
     ("text_jsonl", "text"),
     ("code_jsonl", "code"),
@@ -41,7 +41,21 @@ PROFILE_JSONL_KEYS: tuple[tuple[str, str], ...] = (
     ("audio_jsonl", "audio"),
     ("music_jsonl", "music"),
 )
-BAD_CONTAMINATION_MARKERS = ("contaminated", "benchmark_leak", "quarantine", "rejected")
+BAD_CONTAMINATION_MARKERS = (
+    "benchmark_leak",
+    "benchmark_marker",
+    "contaminated",
+    "dirty",
+    "eval_holdout",
+    "pending",
+    "protected_eval",
+    "public_dev_eval",
+    "quarantine",
+    "rejected",
+    "suspect",
+    "unknown",
+)
+FIXTURE_PATH_MARKERS = ("\\examples\\", "/examples/", "\\smoke\\", "/smoke/", "\\fixtures\\", "/fixtures/")
 REFUSAL_BOILERPLATE_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
@@ -109,6 +123,8 @@ def normalize_modality(value: Any) -> str:
         return "video"
     if any(marker in text for marker in ("music", "song", "melody", "ace_step", "acestep", "midi")):
         return "music"
+    if any(marker in text for marker in ("tts", "speech_synthesis", "text_to_speech", "voice_clone")):
+        return "tts"
     if any(marker in text for marker in ("audio", "speech", "tts", "asr", "voice", "sound")):
         return "audio"
     if any(marker in text for marker in ("code", "coding", "swe", "terminal_bench", "livecodebench", "program")):
@@ -177,12 +193,27 @@ def quality_value(row: dict[str, Any]) -> float:
                 return max(0.0, min(1.0, float(value)))
             except Exception:
                 continue
-    return 1.0
+    return 0.0
+
+
+def has_quality_value(row: dict[str, Any]) -> bool:
+    for key in ("quality_score", "score", "reward"):
+        if row.get(key) not in (None, ""):
+            return True
+    if isinstance(row.get("quality"), dict):
+        return any(row["quality"].get(key) not in (None, "") for key in ("score", "quality_score", "value"))
+    return False
 
 
 def contamination_rejected(row: dict[str, Any]) -> bool:
-    status = text_value(row.get("contamination_status") or row.get("decontamination_status")).lower()
+    nested = row.get("contamination") if isinstance(row.get("contamination"), dict) else {}
+    status = text_value(row.get("contamination_status") or row.get("decontamination_status") or nested.get("status") or "unknown").lower()
     return any(marker in status for marker in BAD_CONTAMINATION_MARKERS)
+
+
+def fixture_path_rejected(source_path: Path) -> bool:
+    text = str(source_path).replace("/", "\\").lower()
+    return any(marker.replace("/", "\\") in text for marker in FIXTURE_PATH_MARKERS) or source_path.name.lower().startswith(("smoke_", "sample_", "fixture_"))
 
 
 def refusal_boilerplate_rejected(row: dict[str, Any], prompt: str, target: str, source_path: Path) -> bool:
@@ -410,10 +441,12 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
     required = required_modalities(profile, args.require_modalities)
     caps = parse_caps(args.cap, profile, args.max_records_per_modality)
     source_floors = parse_source_floors(args.source_floor)
+    allow_fixture_data = bool(getattr(args, "allow_fixture_data", False))
+    allow_source_floor_cap_overrun = bool(getattr(args, "allow_source_floor_cap_overrun", False))
     policy_config = CurationPolicyConfig(
         reject_refusal_boilerplate=bool(args.reject_refusal_boilerplate),
-        reject_eval_holdout=bool(args.reject_eval_holdout),
-        min_quality_score=float(args.min_quality_score or 0.0),
+        reject_eval_holdout=not bool(getattr(args, "allow_eval_holdout", False)),
+        min_quality_score=float(args.min_quality_score if args.min_quality_score is not None else 0.55),
         require_media_artifacts=bool(args.require_media_artifacts),
         reject_dataset_integrity_issues=not bool(args.allow_dataset_integrity_issues),
         scan_integrity_artifacts=not bool(args.skip_integrity_artifact_scan),
@@ -430,6 +463,9 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
     source_reports: list[dict[str, Any]] = []
     skipped = Counter()
     for source_path, source_hint in sources:
+        if fixture_path_rejected(source_path) and not allow_fixture_data:
+            source_reports.append({"path": str(source_path), "hint": source_hint, "status": "fixture_refused"})
+            continue
         if not source_path.exists() or not source_path.is_file() or source_path.stat().st_size <= 0:
             source_reports.append({"path": str(source_path), "hint": source_hint, "status": "missing_or_empty"})
             continue
@@ -448,7 +484,9 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
             if modality not in KNOWN_MODALITIES:
                 skipped["unknown_modality"] += 1
                 continue
-            if len(buckets[modality]) >= caps.get(modality, 0) and source_floor_counts[source_path.name] >= source_floor:
+            if len(buckets[modality]) >= caps.get(modality, 0) and (
+                source_floor_counts[source_path.name] >= source_floor or not allow_source_floor_cap_overrun
+            ):
                 skipped[f"{modality}_cap"] += 1
                 continue
             prompt, target = message_prompt_target(row)
@@ -458,6 +496,9 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
                 skipped["missing_prompt_or_target"] += 1
                 continue
             refs = artifact_refs(row)
+            if not has_quality_value(row):
+                skipped["missing_quality"] += 1
+                continue
             existing_quality = quality_value(row)
             audit = audit_training_record(
                 row,
@@ -558,7 +599,7 @@ def build_balanced_exports(args: argparse.Namespace) -> dict[str, Any]:
         "schema_mode": args.schema,
         "strip_token_ids": bool(args.strip_token_ids),
         "reject_refusal_boilerplate": bool(args.reject_refusal_boilerplate),
-        "reject_eval_holdout": bool(args.reject_eval_holdout),
+        "reject_eval_holdout": not bool(getattr(args, "allow_eval_holdout", False)),
         "reject_dataset_integrity_issues": not bool(args.allow_dataset_integrity_issues),
         "scan_integrity_artifacts": not bool(args.skip_integrity_artifact_scan),
         "max_integrity_artifact_bytes": int(args.max_integrity_artifact_bytes),
@@ -607,11 +648,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-missing-required", action="store_true")
     parser.add_argument("--strip-token-ids", action="store_true", help="Compatibility flag; generated rows never copy source token_ids.")
     parser.add_argument("--reject-refusal-boilerplate", action="store_true", help="Reject rows that contain explicit refusal/alignment-negative boilerplate.")
-    parser.add_argument("--reject-eval-holdout", action="store_true", help="Reject rows tagged as eval/public-dev/protected benchmark material.")
+    parser.add_argument("--reject-eval-holdout", action="store_true", help="Deprecated compatibility flag; eval/public-dev/protected benchmark rows are rejected by default.")
+    parser.add_argument("--allow-eval-holdout", action="store_true", help="Explicitly allow eval/public-dev/protected benchmark rows for a non-training diagnostic export.")
     parser.add_argument("--allow-dataset-integrity-issues", action="store_true", help="Permit rows flagged by dataset_integrity_2026; default is hard reject.")
+    parser.add_argument("--allow-fixture-data", action="store_true", help="Explicitly allow examples/smoke/fixture paths for non-training diagnostics.")
+    parser.add_argument("--allow-source-floor-cap-overrun", action="store_true", help="Allow a source floor to exceed a modality cap; default keeps caps strict.")
     parser.add_argument("--skip-integrity-artifact-scan", action="store_true", help="Skip local media byte marker scans; text/metadata integrity checks still run.")
     parser.add_argument("--max-integrity-artifact-bytes", type=int, default=64 * 1024 * 1024)
-    parser.add_argument("--min-quality-score", type=float, default=0.0, help="Reject rows below the curation_policy_2026 score floor.")
+    parser.add_argument("--min-quality-score", type=float, default=0.55, help="Reject rows below the curation_policy_2026 score floor.")
     parser.add_argument("--require-media-artifacts", action="store_true", help="Require existing artifact refs for image/video/audio/music rows.")
     parser.add_argument("--schema", default="messages", choices=["messages"], help="Output schema for optimizer replay rows.")
     parser.add_argument("--max-prompt-chars", type=int, default=24000)
