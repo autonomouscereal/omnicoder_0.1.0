@@ -45,6 +45,9 @@ NON_TRAINING_CONTAMINATION_CLASSES = {
     "public_dev_eval",
     "suspect",
 }
+CLEAN_CONTAMINATION_STATUSES = {"", "clean", "clear", "passed", "ok", "none", "unknown"}
+REPORTABLE_SCOPE_MARKERS = ("official", "authorized", "reportable")
+DIAGNOSTIC_SCOPE_MARKERS = ("canary", "diagnostic", "local", "public_dev", "validation_only")
 ID_KEYS = ("record_id", "id", "uid", "uuid", "example_id", "sample_id", "row_id")
 MODALITY_KEYS = ("modality", "target_modality", "input_modality", "output_modality", "declared_target_modality", "media_family")
 TEXT_TARGET_KEYS = ("content", "text", "target", "response", "completion", "answer", "expected_answer", "output")
@@ -314,6 +317,47 @@ def _bool_flag(value: Any) -> bool | None:
     return None
 
 
+def _is_benchmark_row(row: dict[str, Any], *, use_policy: str, contamination: str) -> bool:
+    if row.get("benchmark_id") not in (None, "", [], {}):
+        return True
+    for key in ("benchmark_eval_only", "reportable_task", "reportable_score"):
+        if _bool_flag(row.get(key)) is True:
+            return True
+    policy = str(use_policy or "").strip().lower()
+    contamination_class = str(contamination or "").strip().lower()
+    return policy in {"benchmark_eval_only", "benchmark_holdout", "diagnostic_only", "reportable_eval_only"} or contamination_class in {
+        "benchmark_holdout",
+        "protected_eval",
+        "public_dev_eval",
+    }
+
+
+def _benchmark_index_bucket(row: dict[str, Any], *, training_bucket: str, use_policy: str, contamination: str) -> str:
+    if not _is_benchmark_row(row, use_policy=use_policy, contamination=contamination):
+        coarse = _coarse_status(training_bucket)
+        return {
+            "train": "train",
+            "eval": "non_benchmark_eval",
+            "research": "research_internal",
+            "block": "blocked_until_review",
+        }.get(coarse, "unknown")
+    scope = str(row.get("reportability_scope") or "").strip().lower()
+    source_bucket = str(row.get("source_bucket") or "").strip().lower()
+    policy = str(use_policy or "").strip().lower()
+    if _bool_flag(row.get("reportable")) is True or policy == "reportable_eval_only" or source_bucket == "reportable_eval":
+        return "benchmark_reportable_eval"
+    if any(marker in scope for marker in REPORTABLE_SCOPE_MARKERS):
+        return "benchmark_reportable_eval"
+    for key in ("diagnostic_only", "local_only", "public_dev", "canary"):
+        if _bool_flag(row.get(key)) is True:
+            return "benchmark_diagnostic_eval"
+    if policy in {"validation_only", "diagnostic_only"} or source_bucket == "public_dev_validation":
+        return "benchmark_diagnostic_eval"
+    if any(marker in scope for marker in DIAGNOSTIC_SCOPE_MARKERS):
+        return "benchmark_diagnostic_eval"
+    return "benchmark_eval_unclassified"
+
+
 def _nested_first(row: dict[str, Any], *paths: tuple[str, ...]) -> str:
     for path in paths:
         value: Any = row
@@ -369,6 +413,23 @@ def _train_metadata_issue(*, training_bucket: str, source: str, use_policy: str)
         return "missing_source_id"
     if str(use_policy or "").strip().lower() in {"", "unknown", "none", "null"}:
         return "missing_use_policy"
+    return ""
+
+
+def _blocked_train_row_issue(row: dict[str, Any], *, training_bucket: str, contamination: str) -> str:
+    bucket = _canonical_training_bucket(training_bucket)
+    if bucket != "train":
+        return ""
+    integrity = row.get("dataset_integrity_2026")
+    if isinstance(integrity, dict) and integrity.get("accepted") is False:
+        return "dataset_integrity_rejected"
+    if row.get("synthetic_train_blocked") is True:
+        return "synthetic_train_blocked"
+    if row.get("train_quarantine_reasons") not in (None, "", [], {}):
+        return "train_quarantine_reasons"
+    contamination_status = str(contamination or "").strip().lower()
+    if contamination_status and contamination_status not in CLEAN_CONTAMINATION_STATUSES:
+        return f"contamination_status:{contamination_status}"
     return ""
 
 
@@ -540,6 +601,7 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
     split_mismatch_rows: list[dict[str, Any]] = []
     non_training_policy_train_rows: list[dict[str, Any]] = []
     train_metadata_rows: list[dict[str, Any]] = []
+    blocked_train_rows: list[dict[str, Any]] = []
     bad_json = 0
     rows_with_target_tokens = 0
     rows_with_artifact_tokens = 0
@@ -668,6 +730,19 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
                         "reason": metadata_issue,
                     }
                 )
+            blocked_issue = _blocked_train_row_issue(row, training_bucket=training_bucket, contamination=contamination)
+            if blocked_issue:
+                blocked_train_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "modality": modality,
+                        "split": split,
+                        "training_bucket": training_bucket,
+                        "reason": blocked_issue,
+                    }
+                )
             if isinstance(row.get("artifact_token_ids"), list) and row["artifact_token_ids"]:
                 rows_with_artifact_tokens += 1
             payload_hash = _sha256_text(_json_blob(row))
@@ -711,6 +786,8 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         fail_reasons.append("non_training_policy_in_train_bucket")
     if train_metadata_rows:
         fail_reasons.append("train_rows_missing_source_or_policy")
+    if blocked_train_rows:
+        fail_reasons.append("blocked_or_rejected_train_rows")
     return {
         "schema": SCHEMA,
         "status": "failed" if fail_reasons else "passed",
@@ -729,6 +806,7 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             "train_eval_leakage_markers": len(train_leak_rows),
             "non_training_policy_in_train_bucket": len(non_training_policy_train_rows),
             "train_rows_missing_source_or_policy": len(train_metadata_rows),
+            "blocked_or_rejected_train_rows": len(blocked_train_rows),
             "url_only_media_rows": len(url_only_media_rows),
             "rows_with_target_tokens": rows_with_target_tokens,
             "rows_with_artifact_tokens": rows_with_artifact_tokens,
@@ -762,6 +840,7 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         "train_leak_examples": train_leak_rows[:50],
         "non_training_policy_train_examples": non_training_policy_train_rows[:50],
         "train_metadata_examples": train_metadata_rows[:50],
+        "blocked_train_examples": blocked_train_rows[:50],
         "url_only_media_examples": url_only_media_rows[:50],
     }
 

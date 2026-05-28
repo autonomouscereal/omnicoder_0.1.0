@@ -9,6 +9,8 @@ from typing import Any, Iterable
 
 
 SCHEMA = "omnicoder.external_train_rewrite_2026.v1"
+TRAINABLE_POLICIES = {"train", "internal_train", "distill_train", "train_ok"}
+CLEAN_CONTAMINATION_STATUSES = {"", "clean", "clear", "passed", "ok", "none", "unknown"}
 
 NONTRAIN_EXACT_NAMES = {
     "blocked_until_review.jsonl",
@@ -67,6 +69,45 @@ def _payload_hash(row: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest()
 
 
+def _nested_first(row: dict[str, Any], *paths: tuple[str, ...]) -> str:
+    for path in paths:
+        value: Any = row
+        for key in path:
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(key)
+        if value not in (None, "", [], {}):
+            return str(value)
+    return ""
+
+
+def train_block_reason(row: dict[str, Any]) -> str:
+    if str(row.get("training_bucket") or "train").strip().lower() != "train":
+        return "non_train_bucket"
+    integrity = row.get("dataset_integrity_2026")
+    if isinstance(integrity, dict) and integrity.get("accepted") is False:
+        return "dataset_integrity_rejected"
+    if row.get("synthetic_train_blocked") is True:
+        return "synthetic_train_blocked"
+    if row.get("train_quarantine_reasons") not in (None, "", [], {}):
+        return "train_quarantine_reasons"
+    policy = str(row.get("use_policy") or row.get("policy") or "train").strip().lower()
+    if policy and policy not in TRAINABLE_POLICIES:
+        return f"use_policy:{policy}"
+    contamination = _nested_first(
+        row,
+        ("contamination", "status"),
+        ("contamination", "label"),
+        ("curation", "contamination_status"),
+        ("metadata", "contamination_status"),
+        ("metadata", "contamination_class"),
+    ).strip().lower()
+    if contamination and contamination not in CLEAN_CONTAMINATION_STATUSES:
+        return f"contamination:{contamination}"
+    return ""
+
+
 def is_train_bucket_file(path: Path) -> bool:
     if path.suffix.lower() != ".jsonl":
         return False
@@ -78,22 +119,29 @@ def is_train_bucket_file(path: Path) -> bool:
     return True
 
 
-def clean_train_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+def clean_train_rows(rows: Iterable[dict[str, Any]], skipped: Counter[str] | None = None) -> list[dict[str, Any]]:
     cleaned: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     seen_payloads: set[str] = set()
     for row in rows:
-        if str(row.get("training_bucket") or "train") != "train":
+        reason = train_block_reason(row)
+        if reason:
+            if skipped is not None:
+                skipped[reason] += 1
             continue
         row = dict(row)
         row["training_bucket"] = "train"
         record_id = _record_id(row)
         if record_id:
             if record_id in seen_ids:
+                if skipped is not None:
+                    skipped["duplicate_record_id"] += 1
                 continue
             seen_ids.add(record_id)
         payload_hash = _payload_hash(row)
         if payload_hash in seen_payloads:
+            if skipped is not None:
+                skipped["duplicate_payload"] += 1
             continue
         seen_payloads.add(payload_hash)
         cleaned.append(row)
@@ -119,7 +167,8 @@ def rewrite_external_train_bucket(
     source_manifest: Path | None = None,
 ) -> dict[str, Any]:
     jsonl_dir.mkdir(parents=True, exist_ok=True)
-    accepted_rows = clean_train_rows(iter_jsonl(accepted_jsonl))
+    skipped: Counter[str] = Counter()
+    accepted_rows = clean_train_rows(iter_jsonl(accepted_jsonl), skipped)
     planned: dict[Path, list[dict[str, Any]]] = defaultdict(list)
     for row in accepted_rows:
         for path in target_paths_for_row(jsonl_dir, row):
@@ -148,6 +197,8 @@ def rewrite_external_train_bucket(
         "accepted_jsonl": str(accepted_jsonl),
         "jsonl_dir": str(jsonl_dir),
         "accepted_rows": len(accepted_rows),
+        "skipped_rows": sum(skipped.values()),
+        "skipped_rows_by_reason": dict(sorted(skipped.items())),
         "files_written": dict(sorted(files_written.items())),
         "files_truncated": files_truncated,
         "by_family": dict(sorted(by_family.items())),

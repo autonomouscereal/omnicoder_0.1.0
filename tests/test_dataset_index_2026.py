@@ -298,6 +298,53 @@ def test_dataset_index_fails_train_rows_with_benchmark_eval_only_marker_fields(t
     assert payload["counts"]["train_eval_leakage_markers"] == 1
 
 
+def test_dataset_index_fails_rejected_or_quarantined_train_rows(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "rejected-1",
+                "source_id": "source_a",
+                "modality": "text",
+                "split": "train",
+                "use_policy": "train",
+                "target": "Useful answer with enough words.",
+                "dataset_integrity_2026": {"accepted": False, "reasons": ["ai_watermark_synthid"]},
+            },
+            {
+                "record_id": "quarantine-1",
+                "source_id": "source_b",
+                "modality": "text",
+                "split": "train",
+                "use_policy": "train",
+                "target": "Useful answer with enough words.",
+                "train_quarantine_reasons": ["missing_quality_score"],
+            },
+            {
+                "record_id": "synthetic-blocked-1",
+                "source_id": "source_c",
+                "modality": "text",
+                "split": "train",
+                "use_policy": "train",
+                "target": "Useful answer with enough words.",
+                "synthetic_train_blocked": True,
+            },
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert "blocked_or_rejected_train_rows" in payload["fail_reasons"]
+    assert payload["counts"]["blocked_or_rejected_train_rows"] == 3
+    assert {row["reason"] for row in payload["blocked_train_examples"]} == {
+        "dataset_integrity_rejected",
+        "synthetic_train_blocked",
+        "train_quarantine_reasons",
+    }
+
+
 def test_dataset_index_counts_structured_target_json_content(tmp_path: Path) -> None:
     data = tmp_path / "train.jsonl"
     _write_jsonl(

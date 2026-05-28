@@ -95,6 +95,63 @@ def test_external_train_rewrite_skips_nontrain_accepted_rows(tmp_path: Path) -> 
     assert not (jsonl_dir / "benchmarks.jsonl").exists()
 
 
+def test_external_train_rewrite_skips_rejected_or_quarantined_train_rows(tmp_path: Path) -> None:
+    jsonl_dir = tmp_path / "jsonl"
+    accepted = tmp_path / "accepted.jsonl"
+    _write_jsonl(
+        accepted,
+        [
+            {
+                "record_id": "clean-1",
+                "dataset_family": "math_reasoning",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "contamination_status": "clean",
+                "target": "clean answer",
+            },
+            {
+                "record_id": "rejected-1",
+                "dataset_family": "math_reasoning",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "dataset_integrity_2026": {"accepted": False, "reasons": ["ai_watermark_synthid"]},
+                "target": "bad answer",
+            },
+            {
+                "record_id": "quarantine-1",
+                "dataset_family": "math_reasoning",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "train_quarantine_reasons": ["missing_quality_score"],
+                "target": "quarantined answer",
+            },
+            {
+                "record_id": "blocked-synthetic-1",
+                "dataset_family": "math_reasoning",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "synthetic_train_blocked": True,
+                "target": "blocked synthetic answer",
+            },
+        ],
+    )
+
+    report = rewrite.rewrite_external_train_bucket(accepted, jsonl_dir, tmp_path / "rewrite.json")
+
+    assert report["accepted_rows"] == 1
+    assert report["skipped_rows"] == 3
+    assert report["skipped_rows_by_reason"] == {
+        "dataset_integrity_rejected": 1,
+        "synthetic_train_blocked": 1,
+        "train_quarantine_reasons": 1,
+    }
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["clean-1"]
+
+
 def test_external_train_rewrite_dedupes_duplicate_ids(tmp_path: Path) -> None:
     jsonl_dir = tmp_path / "jsonl"
     accepted = tmp_path / "accepted.jsonl"

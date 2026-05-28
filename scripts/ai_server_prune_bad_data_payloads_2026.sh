@@ -9,6 +9,7 @@ APPLY="${OMNICODER_PRUNE_APPLY:-0}"
 USE_DOCKER_ROOT="${OMNICODER_PRUNE_USE_DOCKER_ROOT:-0}"
 DOCKER_IMAGE="${OMNICODER_DOCKER_IMAGE:-omnicoder:cuda-posttrain-2026}"
 ACTIVE_EXTERNAL_RUN="${OMNICODER_PRUNE_ACTIVE_EXTERNAL_RUN:-}"
+ACTIVE_RUNS="${OMNICODER_PRUNE_ACTIVE_RUNS:-}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 MANIFEST="${OMNICODER_PRUNE_MANIFEST:-$WEIGHTS_ROOT/data_curation_agent_2026/bad_payload_prune_manifest_${STAMP}.tsv}"
 
@@ -51,8 +52,26 @@ else
   : > "$filtered"
 fi
 
-if [[ -n "$ACTIVE_EXTERNAL_RUN" ]]; then
-  awk -v active="$ACTIVE_EXTERNAL_RUN" 'index($0, active) != 1 {print}' "$filtered" > "$filtered.active"
+active_roots="$ACTIVE_EXTERNAL_RUN"
+if [[ -n "$ACTIVE_RUNS" ]]; then
+  active_roots="${active_roots}${active_roots:+:}${ACTIVE_RUNS}"
+fi
+if [[ -n "$active_roots" ]]; then
+  awk -v active_roots="$active_roots" '
+    BEGIN {
+      n = split(active_roots, roots, ":")
+    }
+    {
+      keep = 1
+      for (i = 1; i <= n; i++) {
+        if (roots[i] != "" && index($0, roots[i]) == 1) {
+          keep = 0
+          break
+        }
+      }
+      if (keep) print
+    }
+  ' "$filtered" > "$filtered.active"
   mv "$filtered.active" "$filtered"
 fi
 
