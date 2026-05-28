@@ -7,6 +7,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity, row_prompt_target
+
 
 SCHEMA = "omnicoder.external_train_rewrite_2026.v1"
 TRAINABLE_POLICIES = {"train", "internal_train", "distill_train", "train_ok"}
@@ -99,7 +101,24 @@ def _quality_value(row: dict[str, Any]) -> float | None:
     return None
 
 
-def train_block_reason(row: dict[str, Any]) -> str:
+def current_integrity_block_reason(row: dict[str, Any]) -> str:
+    prompt, target = row_prompt_target(row)
+    audit = audit_dataset_integrity(
+        row,
+        prompt=prompt,
+        target=target,
+        modality=str(row.get("modality") or row.get("target_modality") or row.get("declared_target_modality") or ""),
+        refs=[],
+        scan_artifacts=False,
+    )
+    row["dataset_integrity_2026_current"] = audit
+    if audit.get("accepted") is not False:
+        return ""
+    reasons = [str(reason) for reason in audit.get("reasons") or ["unknown"]]
+    return "dataset_integrity_current:" + ",".join(sorted(reasons)[:8])
+
+
+def train_block_reason(row: dict[str, Any], *, recheck_integrity: bool = True) -> str:
     if str(row.get("training_bucket") or "train").strip().lower() != "train":
         return "non_train_bucket"
     integrity = row.get("dataset_integrity_2026")
@@ -125,6 +144,10 @@ def train_block_reason(row: dict[str, Any]) -> str:
     ).strip().lower()
     if contamination and contamination not in CLEAN_CONTAMINATION_STATUSES:
         return f"contamination:{contamination}"
+    if recheck_integrity:
+        reason = current_integrity_block_reason(row)
+        if reason:
+            return reason
     return ""
 
 

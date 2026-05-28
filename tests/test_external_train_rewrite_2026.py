@@ -162,6 +162,47 @@ def test_external_train_rewrite_skips_rejected_or_quarantined_train_rows(tmp_pat
     assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["clean-1"]
 
 
+def test_external_train_rewrite_rechecks_stale_accepted_rows_with_current_integrity_policy(tmp_path: Path) -> None:
+    jsonl_dir = tmp_path / "jsonl"
+    accepted = tmp_path / "accepted.jsonl"
+    _write_jsonl(
+        accepted,
+        [
+            {
+                "record_id": "clean-substantive-1",
+                "dataset_family": "math_reasoning",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "contamination_status": "clean",
+                "quality_score": 0.92,
+                "prompt": "Solve the equation and verify both roots.",
+                "target": "The solution expands the polynomial, isolates the two candidate roots, substitutes both roots back into the original equation, and reports only the verified values.",
+                "dataset_integrity_2026": {"accepted": True, "reasons": []},
+            },
+            {
+                "record_id": "stale-tool-ok",
+                "dataset_family": "agentic_tool_reasoning",
+                "modality": "tool",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "contamination_status": "clean",
+                "quality_score": 0.9,
+                "prompt": "Call the status tool.",
+                "target": "OK",
+                "dataset_integrity_2026": {"accepted": True, "reasons": []},
+            },
+        ],
+    )
+
+    report = rewrite.rewrite_external_train_bucket(accepted, jsonl_dir, tmp_path / "rewrite.json")
+
+    assert report["accepted_rows"] == 1
+    assert report["skipped_rows"] == 1
+    assert report["skipped_rows_by_reason"] == {"dataset_integrity_current:target_len_le_1": 1}
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["clean-substantive-1"]
+
+
 def test_external_train_rewrite_dedupes_duplicate_ids(tmp_path: Path) -> None:
     jsonl_dir = tmp_path / "jsonl"
     accepted = tmp_path / "accepted.jsonl"

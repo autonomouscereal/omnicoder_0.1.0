@@ -450,6 +450,19 @@ def _row_has_media_target_payload(row: dict[str, Any]) -> bool:
     return False
 
 
+def _row_has_structured_tool_payload(row: dict[str, Any]) -> bool:
+    for container in (row, row.get("target_json"), row.get("output_json"), row.get("teacher_output")):
+        if not isinstance(container, dict):
+            continue
+        for key in ("tool_calls", "tool_results", "function_call", "actions", "observations", "trajectory"):
+            if container.get(key) not in (None, "", [], {}):
+                return True
+    for key in ("tool_calls", "tool_results", "trajectory", "verifier_labels"):
+        if row.get(key) not in (None, "", [], {}):
+            return True
+    return False
+
+
 def _modality_metadata(row: dict[str, Any], explicit: str = "") -> str:
     explicit_text = text_value(explicit, limit=256)
     if explicit_text and explicit_text.lower() not in {"unknown", "none", "null"}:
@@ -465,8 +478,6 @@ def _modality_metadata(row: dict[str, Any], explicit: str = "") -> str:
 
 
 def _one_token_target_issue(target: str, row: dict[str, Any], modality: str = "") -> str:
-    if _is_code_tool_modality(modality):
-        return ""
     if isinstance(row.get("target_token_ids"), list) and len(row["target_token_ids"]) > 1:
         return ""
     if isinstance(row.get("assistant_token_ids"), list) and len(row["assistant_token_ids"]) > 1:
@@ -474,6 +485,8 @@ def _one_token_target_issue(target: str, row: dict[str, Any], modality: str = ""
     if isinstance(row.get("artifact_token_ids"), list) and len(row["artifact_token_ids"]) > 1:
         return ""
     if _row_has_media_target_payload(row):
+        return ""
+    if _row_has_structured_tool_payload(row):
         return ""
     if len(WORD_RE.findall(target)) <= 1:
         return "target_len_le_1"
@@ -486,6 +499,8 @@ def _text_word_count(text: str) -> int:
 
 def _record_length_issue(prompt: str, target: str, row: dict[str, Any]) -> str:
     if _row_has_media_target_payload(row):
+        return ""
+    if _row_has_structured_tool_payload(row):
         return ""
     if _text_word_count(f"{prompt}\n{target}") <= 1:
         return "record_len_le_1"

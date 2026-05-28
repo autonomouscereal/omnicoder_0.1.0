@@ -8,7 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
-from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity
+from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity, row_prompt_target as integrity_row_prompt_target
 
 
 SCHEMA = "omnicoder.dataset_index_2026.v1"
@@ -601,8 +601,25 @@ def _has_media_payload(row: dict[str, Any]) -> bool:
     return False
 
 
+def _has_structured_tool_payload(row: dict[str, Any]) -> bool:
+    for container in (row, row.get("target_json"), row.get("output_json"), row.get("teacher_output")):
+        if not isinstance(container, dict):
+            continue
+        for key in ("tool_calls", "tool_results", "function_call", "actions", "observations", "trajectory"):
+            if container.get(key) not in (None, "", [], {}):
+                return True
+    for key in ("tool_calls", "tool_results", "trajectory", "verifier_labels"):
+        if row.get(key) not in (None, "", [], {}):
+            return True
+    return False
+
+
+def _has_structured_target_payload(row: dict[str, Any]) -> bool:
+    return _has_media_payload(row) or _has_structured_tool_payload(row)
+
+
 def _prompt_target_leakage_issue(prompt: str, target: str, row: dict[str, Any]) -> str:
-    if _has_media_payload(row):
+    if _has_structured_target_payload(row):
         return ""
     norm_prompt = " ".join(prompt.split()).casefold()
     norm_target = " ".join(target.split()).casefold()
@@ -794,7 +811,7 @@ def build_index(
                     }
                 )
             target_tokens = _target_token_count(row)
-            prompt, target = _row_prompt_target(row)
+            prompt, target = integrity_row_prompt_target(row)
             nested_reasons = _nested_rejected_reasons(row)
             if nested_reasons:
                 nested_rejected_rows.append(
@@ -842,9 +859,9 @@ def build_index(
                     )
             if target_tokens > 0:
                 rows_with_target_tokens += 1
-            if not target and target_tokens <= 0 and not _has_media_payload(row):
+            if not target and target_tokens <= 0 and not _has_structured_target_payload(row):
                 empty_target_rows.append({"path": str(path), "line": line_number, "source_id": source, "modality": modality, "training_bucket": training_bucket})
-            if target_tokens <= 1 and not _has_media_payload(row):
+            if target_tokens <= 1 and not _has_structured_target_payload(row):
                 one_token_junk_rows.append({"path": str(path), "line": line_number, "source_id": source, "modality": modality, "training_bucket": training_bucket, "target_tokens": target_tokens})
             leakage = _prompt_target_leakage_issue(prompt, target, row)
             if leakage:

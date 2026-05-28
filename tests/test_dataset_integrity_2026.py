@@ -228,7 +228,7 @@ def test_dataset_integrity_allows_substantive_science_math_code_and_tool_rows() 
         },
         {
             "prompt": "Call the status tool.",
-            "response": "OK",
+            "response": "The status tool returned successfully with code 200 and the service state was reported as healthy.",
             "modality": "tool",
         },
     ]
@@ -236,6 +236,33 @@ def test_dataset_integrity_allows_substantive_science_math_code_and_tool_rows() 
     for row in rows:
         audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], modality=row["modality"], refs=[])
         assert audit["accepted"] is True, row["modality"]
+
+
+def test_dataset_integrity_rejects_one_token_tool_rows_without_structured_payload() -> None:
+    row = {
+        "prompt": "Call the status tool.",
+        "response": "OK",
+        "modality": "tool",
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], modality=row["modality"], refs=[])
+
+    assert audit["accepted"] is False
+    assert "target_len_le_1" in audit["reasons"]
+
+
+def test_dataset_integrity_allows_structured_tool_payload_with_short_text() -> None:
+    row = {
+        "prompt": "Call the status tool.",
+        "response": "OK",
+        "modality": "tool",
+        "tool_calls": [{"name": "status", "arguments": {"service": "api"}}],
+        "tool_results": [{"status": "ok", "latency_ms": 32}],
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], modality=row["modality"], refs=[])
+
+    assert audit["accepted"] is True
 
 
 def test_dataset_integrity_allows_common_pile_target_only_text_without_self_overlap() -> None:

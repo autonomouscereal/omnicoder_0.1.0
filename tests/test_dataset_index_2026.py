@@ -554,6 +554,71 @@ def test_dataset_index_counts_target_json_when_input_messages_are_prompt_only(tm
     assert payload["counts"]["one_token_junk_rows"] == 0
 
 
+def test_dataset_index_does_not_flag_text_pretraining_self_supervision_as_prompt_leakage(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    target = (
+        "The curated passage explains how an educational corpus keeps provenance, license, and quality fields "
+        "alongside the training text so downstream dataset audits can reproduce every filtering decision."
+    )
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "pretrain-self-supervised-1",
+                "source_id": "fineweb_edu",
+                "modality": "text",
+                "split": "train",
+                "use_policy": "train",
+                "dataset_family": "text_pretraining",
+                "training_kind": "text_pretraining",
+                "text": target,
+                "target_json": {"content": target},
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data], expected_split="train")
+
+    assert payload["status"] == "passed"
+    assert payload["counts"]["prompt_target_leakage"] == 0
+    assert payload["counts"]["one_token_junk_rows"] == 0
+
+
+def test_dataset_index_allows_short_text_only_when_structured_tool_payload_exists(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "structured-tool-1",
+                "source_id": "tool_traces",
+                "modality": "tool",
+                "split": "train",
+                "use_policy": "train",
+                "prompt": "Call the status tool.",
+                "target": "OK",
+                "tool_calls": [{"name": "status", "arguments": {"service": "api"}}],
+                "tool_results": [{"status": "ok", "latency_ms": 32}],
+            },
+            {
+                "record_id": "junk-tool-1",
+                "source_id": "tool_traces",
+                "modality": "tool",
+                "split": "train",
+                "use_policy": "train",
+                "prompt": "Call the status tool.",
+                "target": "OK",
+            },
+        ],
+    )
+
+    payload = indexer.build_index([data], expected_split="train")
+
+    assert payload["status"] == "failed"
+    assert payload["counts"]["one_token_junk_rows"] == 1
+    assert payload["one_token_junk_examples"][0]["source_id"] == "tool_traces"
+
+
 def test_dataset_index_fails_duplicate_ids_missing_modality_one_token_and_split_mismatch(tmp_path: Path) -> None:
     data = tmp_path / "train.jsonl"
     _write_jsonl(
