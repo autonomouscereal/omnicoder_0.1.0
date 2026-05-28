@@ -40,6 +40,15 @@ def _compare_metric(domain: str, a: float, b: float) -> bool:
         return a < b
     return a > b
 
+
+def _truthy_env(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _legacy_autofetch_allowed() -> bool:
+    return _truthy_env("OMNICODER_ALLOW_LEGACY_AUTOFETCH_TRAIN")
+
+
 def _ingest_bench(root: Path, bench_json: Path, ckpt_path: Path | None, reg: dict) -> dict:
     """Update MODEL_REGISTRY.json with metrics from a bench JSON and associated checkpoint path."""
     try:
@@ -349,7 +358,9 @@ def main() -> None:
 		if bool(args.smoke_one_step) or (float(args.smoke_minutes) > 0):
 			# Ensure datasets are available before smoke stages by running in-process autofetch
 			try:
-				if os.getenv("OMNICODER_AUTOFETCH", "1") == "1":
+				if _truthy_env("OMNICODER_AUTOFETCH", "0"):
+					if not _legacy_autofetch_allowed():
+						raise RuntimeError("legacy autofetch is disabled; set OMNICODER_ALLOW_LEGACY_AUTOFETCH_TRAIN=1 only for explicit local diagnostic runs")
 					from omnicoder.tools.autofetch_datasets import autofetch_all  # type: ignore
 					_limit = int(os.getenv("OMNICODER_FETCH_LIMIT", "1000000"))
 					fetched = autofetch_all(_limit)
@@ -748,9 +759,12 @@ def main() -> None:
 	except Exception:
 		print("[warn] dataset bootstrap skipped")
 
-	# Best-effort: auto-fetch public datasets across modalities for richer training by default.
+	# Legacy direct autofetch is opt-in only; production training should consume
+	# curated external sidecar outputs that passed integrity/index gates.
 	try:
-		if os.getenv("OMNICODER_AUTOFETCH", "1") == "1":
+		if _truthy_env("OMNICODER_AUTOFETCH", "0"):
+			if not _legacy_autofetch_allowed():
+				raise RuntimeError("legacy autofetch is disabled for training; use curated external dataset sidecars or set OMNICODER_ALLOW_LEGACY_AUTOFETCH_TRAIN=1 for explicit local diagnostics")
 			print("[datasets] autofetch_datasets (in-process) ...")
 			from omnicoder.tools.autofetch_datasets import autofetch_all  # type: ignore
 			_limit = int(os.getenv("OMNICODER_FETCH_LIMIT", env.get("OMNICODER_FETCH_LIMIT", "1000000")))

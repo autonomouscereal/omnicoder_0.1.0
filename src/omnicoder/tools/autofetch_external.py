@@ -95,6 +95,25 @@ def _sha256_file(p: Path) -> str:
     return h.hexdigest()
 
 
+def _truthy_env(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _verify_or_delete_sha256(key: str, dest: Path, sha256: str) -> str:
+    cur = _sha256_file(dest)
+    if cur.lower() == sha256.lower():
+        return cur
+    try:
+        dest.unlink()
+    except FileNotFoundError:
+        pass
+    message = f"sha256 mismatch for {key}: got {cur}, expected {sha256}; deleted {dest}"
+    if _truthy_env("OMNICODER_ALLOW_CHECKSUM_MISMATCH"):
+        print(f"[warn] {message}")
+        return cur
+    raise RuntimeError(message)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Fetch non-HF external datasets listed in profiles/datasets.json:external_sources")
     ap.add_argument("--profiles", type=str, default="profiles/datasets.json")
@@ -132,6 +151,8 @@ def main() -> None:
                                 _extract(dest, dest.parent)
                                 marker.write_text(cur, encoding='utf-8')
                         continue
+                    print(f"[warn] {key}: existing file sha256 mismatch; deleting before redownload")
+                    dest.unlink()
                 elif size_bytes > 0 and dest.stat().st_size >= size_bytes:
                     print(f"[skip] {key}: file present and size >= expected")
                     out_summary[key] = str(dest)
@@ -151,11 +172,9 @@ def main() -> None:
         # Verify after download
         if sha256:
             try:
-                cur = _sha256_file(dest)
-                if cur.lower() != sha256.lower():
-                    print(f"[warn] sha256 mismatch for {key}: got {cur}")
+                cur = _verify_or_delete_sha256(key, dest, sha256)
             except Exception as e:
-                print(f"[warn] sha256 compute failed for {key}: {e}")
+                raise SystemExit(f"[fatal] sha256 verification failed for {key}: {e}") from e
         if extr:
             try:
                 # Extract alongside destination path
