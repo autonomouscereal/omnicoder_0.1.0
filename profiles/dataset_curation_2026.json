@@ -17332,7 +17332,7 @@
         "name": "DocVQA 2026",
         "registry_wave": "sixth_wave_formal_code_media_2026_05_24",
         "splits": [
-          "validation"
+          "val"
         ],
         "target_modality": "image",
         "url": "https://huggingface.co/datasets/VLR-CVC/DocVQA-2026",

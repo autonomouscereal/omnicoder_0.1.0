@@ -1538,6 +1538,7 @@ def test_repo_dataset_registry_covers_fifth_and_sixth_wave_sources() -> None:
     assert by_name["OpenResearcher RLVR Format"]["license_tier"] == "gated_unknown_review"
     assert by_name["VideoPhy2 Train"]["target_modality"] == "video"
     assert by_name["TritonBench"]["distillation_prompts"][0]["instruction"].startswith("Generate a Triton kernel")
+    assert by_name["DocVQA 2026"]["splits"] == ["val"]
     assert expansion.source_use_bucket(by_name["HINT-Lab MATH-RLVR Gated"]) == "blocked_until_review"
 
 
