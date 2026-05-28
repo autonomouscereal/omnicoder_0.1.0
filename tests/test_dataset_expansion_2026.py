@@ -2434,7 +2434,9 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
 
     expected_policy = {
         "FineWeb-Edu": "train",
+        "FinePhrase": "train",
         "Common Corpus": "train",
+        "Common Pile v0.1": "train",
         "MathX-5M": "train",
         "MathX-20M": "train",
         "NVIDIA Nemotron Post-Training Dataset v1": "research_internal",
@@ -2457,16 +2459,17 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
         "FUNSD": "research_internal",
     }
     for name, policy in expected_policy.items():
-        assert by_name[name]["registry_wave"] == wave
+        assert wave in expansion.entry_registry_waves(by_name[name])
         assert by_name[name]["use_policy"] == policy
 
-    for name in ["FineWeb-Edu", "Common Corpus", "MathX-5M", "MathX-20M", "OpenCoder Clean Code Corpus"]:
+    for name in ["FineWeb-Edu", "FinePhrase", "Common Corpus", "Common Pile v0.1", "MathX-5M", "MathX-20M", "OpenCoder Clean Code Corpus"]:
         assert by_name[name]["contamination_status"] == "clean"
         assert by_name[name]["protected_benchmark_scan"] == "clean"
         assert by_name[name]["quality_score"] > 0
         assert expansion.source_use_bucket(by_name[name]) == "train"
         assert expansion.training_bucket_for_record(by_name[name], _reviewed_train_record()) == "train"
 
+    assert by_name["Common Pile v0.1"]["hf_id"] == "common-pile/comma_v0.1_training_dataset"
     assert by_name["DataComp-1B Metadata"]["gated"] is True
     assert "opt-out" in by_name["DataComp-1B Metadata"]["license_tier"]
     assert expansion.source_use_bucket(by_name["DataComp-1B Metadata"]) == "blocked_until_review"
@@ -2486,6 +2489,58 @@ def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_s
     assert by_name["SWE-bench Verified Official"]["splits"] == ["test"]
     assert expansion.source_use_bucket(by_name["SWE-bench Verified Official"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["WebArena Official"]) == "eval_holdout"
+
+
+def test_dataset_expansion_honors_explicit_zero_max_records_and_skips_blocked_by_default(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "blocked_should_not_download",
+                    "family": "image_generation_editing",
+                    "target_modality": "image",
+                    "use_policy": "blocked_until_review",
+                    "license_tier": "manual_rights_blocked_until_review",
+                    "hf_id": "blocked/not-used",
+                    "max_records": 128,
+                    "field_map": {"prompt": ["caption"], "target": ["caption"]},
+                },
+                {
+                    "name": "explicit_zero_should_not_download",
+                    "family": "video_generation",
+                    "target_modality": "video",
+                    "use_policy": "research_internal",
+                    "license_tier": "manual_review",
+                    "hf_id": "zero/not-used",
+                    "max_records": 0,
+                    "field_map": {"prompt": ["caption"], "target": ["caption"]},
+                },
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+    calls: list[str] = []
+
+    def fake_hf(entry: dict, limit: int, streaming: bool):
+        calls.append(entry["name"])
+        return [{"caption": "bad"}], {"status": "ok", "source": "huggingface", "records": 1}
+
+    monkeypatch.setattr(expansion, "rows_from_huggingface", fake_hf)
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": True, "no_streaming": False, "max_records_per_dataset": 2048})(),
+    )
+    assert calls == []
+    assert manifest["records"]["blocked_until_review"] == 0
+    assert manifest["records"]["research_internal"] == 0
+    statuses = {dataset["name"]: dataset for dataset in manifest["datasets"]}
+    assert statuses["blocked_should_not_download"]["reason"] == "blocked_until_review_not_materialized"
+    assert statuses["explicit_zero_should_not_download"]["reason"] == "explicit_max_records_zero"
 
 
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:

@@ -10,7 +10,14 @@ from typing import Any, Iterable
 
 
 SCHEMA = "omnicoder.dataset_index_2026.v1"
-TRAIN_LEAK_RE = re.compile(r"\b(?:public[_ -]?dev|reportable|answer[_ -]?key|protected[_ -]?eval|benchmark[_ -]?holdout|fixture|smoke|canary)\b", re.IGNORECASE)
+TRAIN_LEAK_RE = re.compile(
+    r"\b(?:public[_ -]?dev|reportable|answer[_ -]?key|protected[_ -]?eval|benchmark[_ -]?holdout|hella[_ -]?swag|hellaswag|"
+    r"arc[_ -]?agi[23]?|arc-agi[23]?|swe[_ -]?bench|terminal[_ -]?bench|mmmu(?:[_ -]?pro)?|fixture|smoke|canary)\b",
+    re.IGNORECASE,
+)
+ID_KEYS = ("record_id", "id", "uid", "uuid", "example_id", "sample_id", "row_id")
+MODALITY_KEYS = ("modality", "target_modality", "input_modality", "output_modality", "declared_target_modality", "media_family")
+TEXT_TARGET_KEYS = ("content", "text", "target", "response", "completion", "answer", "expected_answer", "output")
 
 
 def _json_blob(value: Any) -> str:
@@ -37,6 +44,45 @@ def _first(row: dict[str, Any], *keys: str, default: str = "unknown") -> str:
     return default
 
 
+def _record_id(row: dict[str, Any]) -> str:
+    meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    for container in (row, meta):
+        for key in ID_KEYS:
+            value = container.get(key)
+            if value not in (None, "", [], {}):
+                return str(value)
+    return ""
+
+
+def _modality(row: dict[str, Any]) -> str:
+    modality = _first(row, "modality", "target_modality", default="unknown")
+    if modality.strip().lower() not in {"", "unknown", "none", "null"}:
+        return modality
+    for container in (row.get("input_json"), row.get("target_json"), row.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in MODALITY_KEYS:
+            value = container.get(key)
+            if value not in (None, "", [], {}):
+                return str(value)
+    return "unknown"
+
+
+def _canonical_split(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    return {
+        "training": "train",
+        "validation": "eval",
+        "valid": "eval",
+        "dev": "eval",
+    }.get(normalized, normalized)
+
+
+def _declared_split(row: dict[str, Any]) -> str:
+    value = row.get("split")
+    return "" if value in (None, "", [], {}) else str(value)
+
+
 def _infer_split(path: Path, row: dict[str, Any], expected_split: str = "") -> str:
     if row.get("split") not in (None, "", [], {}):
         return str(row["split"])
@@ -58,9 +104,32 @@ def _target_token_count(row: dict[str, Any]) -> int:
         if isinstance(value, list):
             return len(value)
     target = row.get("target") or row.get("response") or row.get("completion") or row.get("answer") or ""
+    if not isinstance(target, str) or not target:
+        for container in (row.get("target_json"), row.get("output_json"), row.get("teacher_output")):
+            if not isinstance(container, dict):
+                continue
+            for key in TEXT_TARGET_KEYS:
+                value = container.get(key)
+                if isinstance(value, str) and value.strip():
+                    target = value
+                    break
+            if isinstance(target, str) and target:
+                break
     if isinstance(target, str):
         return len(re.findall(r"\S+", target))
     return 0
+
+
+def _has_media_payload(row: dict[str, Any]) -> bool:
+    if isinstance(row.get("artifact_token_ids"), list) and row["artifact_token_ids"]:
+        return True
+    for container in (row, row.get("target_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in ("artifact_refs", "artifacts", "artifact_tokens", "media_tokens"):
+            if container.get(key) not in (None, "", [], {}):
+                return True
+    return False
 
 
 def iter_jsonl(path: Path) -> Iterable[tuple[int, dict[str, Any], str]]:
@@ -87,7 +156,13 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
     files: list[dict[str, Any]] = []
     duplicate_payloads = 0
     payload_hashes: set[str] = set()
+    duplicate_ids = 0
+    seen_ids: dict[str, dict[str, Any]] = {}
+    duplicate_id_rows: list[dict[str, Any]] = []
     train_leak_rows: list[dict[str, Any]] = []
+    missing_modality_rows: list[dict[str, Any]] = []
+    one_token_junk_rows: list[dict[str, Any]] = []
+    split_mismatch_rows: list[dict[str, Any]] = []
     bad_json = 0
     rows_with_target_tokens = 0
     rows_with_artifact_tokens = 0
@@ -104,7 +179,7 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
                 bad_json += 1
                 continue
             split = _infer_split(path, row, expected_split=expected_split)
-            modality = _first(row, "modality", "target_modality", default="unknown")
+            modality = _modality(row)
             source = _first(row, "source_id", "dataset_name", "source", "source_uri", default="unknown")
             use_policy = _first(row, "use_policy", "policy", default="unknown")
             license_id = _first(row, "license", "license_id", default="unknown")
@@ -116,8 +191,42 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             by_license[license_id] += 1
             by_contamination[contamination] += 1
             matrix[(modality, source, split, use_policy)] += 1
-            if _target_token_count(row) > 0:
+            record_id = _record_id(row)
+            if record_id:
+                first_seen = seen_ids.get(record_id)
+                if first_seen is None:
+                    seen_ids[record_id] = {"path": str(path), "line": line_number}
+                else:
+                    duplicate_ids += 1
+                    duplicate_id_rows.append(
+                        {
+                            "record_id": record_id,
+                            "path": str(path),
+                            "line": line_number,
+                            "first_path": first_seen["path"],
+                            "first_line": first_seen["line"],
+                            "source_id": source,
+                            "modality": modality,
+                        }
+                    )
+            if modality.strip().lower() in {"", "unknown", "none", "null"}:
+                missing_modality_rows.append({"path": str(path), "line": line_number, "source_id": source})
+            declared_split = _declared_split(row)
+            if expected_split and declared_split and _canonical_split(declared_split) != _canonical_split(expected_split):
+                split_mismatch_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "declared_split": declared_split,
+                        "expected_split": expected_split,
+                    }
+                )
+            target_tokens = _target_token_count(row)
+            if target_tokens > 0:
                 rows_with_target_tokens += 1
+            if target_tokens <= 1 and not _has_media_payload(row):
+                one_token_junk_rows.append({"path": str(path), "line": line_number, "source_id": source, "modality": modality, "target_tokens": target_tokens})
             if isinstance(row.get("artifact_token_ids"), list) and row["artifact_token_ids"]:
                 rows_with_artifact_tokens += 1
             payload_hash = _sha256_text(_json_blob(row))
@@ -141,6 +250,14 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         fail_reasons.append("bad_json")
     if duplicate_payloads:
         fail_reasons.append("duplicate_payloads")
+    if duplicate_ids:
+        fail_reasons.append("duplicate_ids")
+    if missing_modality_rows:
+        fail_reasons.append("missing_modality_metadata")
+    if one_token_junk_rows:
+        fail_reasons.append("one_token_junk_rows")
+    if split_mismatch_rows:
+        fail_reasons.append("split_mismatch")
     if fail_on_train_leakage and train_leak_rows:
         fail_reasons.append("train_eval_leakage_markers")
     return {
@@ -151,7 +268,11 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         "files": files,
         "counts": {
             "bad_json": bad_json,
+            "duplicate_ids": duplicate_ids,
             "duplicate_payloads": duplicate_payloads,
+            "missing_modality_metadata": len(missing_modality_rows),
+            "one_token_junk_rows": len(one_token_junk_rows),
+            "split_mismatch": len(split_mismatch_rows),
             "train_eval_leakage_markers": len(train_leak_rows),
             "rows_with_target_tokens": rows_with_target_tokens,
             "rows_with_artifact_tokens": rows_with_artifact_tokens,
@@ -166,6 +287,10 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             {"modality": modality, "source_id": source, "split": split, "use_policy": policy, "rows": rows}
             for (modality, source, split, policy), rows in sorted(matrix.items())
         ],
+        "duplicate_id_examples": duplicate_id_rows[:50],
+        "missing_modality_examples": missing_modality_rows[:50],
+        "one_token_junk_examples": one_token_junk_rows[:50],
+        "split_mismatch_examples": split_mismatch_rows[:50],
         "train_leak_examples": train_leak_rows[:50],
     }
 

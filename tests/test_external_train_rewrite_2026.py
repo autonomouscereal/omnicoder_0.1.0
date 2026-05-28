@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from omnicoder.data_factory import external_train_rewrite_2026 as rewrite
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def test_external_train_rewrite_replaces_stale_train_files_and_preserves_nontrain(tmp_path: Path) -> None:
+    jsonl_dir = tmp_path / "jsonl"
+    accepted = tmp_path / "integrity" / "dataset_integrity_accepted.jsonl"
+    manifest = tmp_path / "manifests" / "external_dataset_manifest.json"
+    _write_jsonl(
+        accepted,
+        [
+            {
+                "record_id": "fineweb-1",
+                "dataset_family": "educational_text",
+                "modality": "text",
+                "training_bucket": "train",
+                "target": "Useful educational target text.",
+            },
+            {
+                "record_id": "opencoder-1",
+                "dataset_family": "code_generation",
+                "modality": "code",
+                "training_bucket": "train",
+                "target": "def add(a, b): return a + b",
+            },
+        ],
+    )
+    _write_jsonl(jsonl_dir / "train_all_external.jsonl", [{"record_id": "old-junk", "modality": "text"}])
+    _write_jsonl(jsonl_dir / "image_generation_editing.jsonl", [{"record_id": "blocked-old", "modality": "image"}])
+    _write_jsonl(jsonl_dir / "image_generation_editing_all.jsonl", [{"record_id": "nontrain-preserved", "modality": "image"}])
+    _write_jsonl(jsonl_dir / "blocked_until_review.jsonl", [{"record_id": "blocked-preserved", "modality": "video"}])
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "records": {"train": 99, "research_internal": 3, "eval_holdout": 2, "blocked_until_review": 1},
+                "training_paths": {"train_all_external": str(jsonl_dir / "train_all_external.jsonl")},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = rewrite.rewrite_external_train_bucket(
+        accepted,
+        jsonl_dir,
+        tmp_path / "integrity" / "train_bucket_integrity_rewrite.json",
+        source_manifest=manifest,
+    )
+
+    assert report["accepted_rows"] == 2
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["fineweb-1", "opencoder-1"]
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train.jsonl")] == ["fineweb-1", "opencoder-1"]
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "educational_text.jsonl")] == ["fineweb-1"]
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "code_generation.jsonl")] == ["opencoder-1"]
+    assert _read_jsonl(jsonl_dir / "image_generation_editing_all.jsonl") == [{"record_id": "nontrain-preserved", "modality": "image"}]
+    assert _read_jsonl(jsonl_dir / "blocked_until_review.jsonl") == [{"record_id": "blocked-preserved", "modality": "video"}]
+    assert _read_jsonl(jsonl_dir / "image_generation_editing.jsonl") == []
+    assert "image_generation_editing.jsonl" in report["files_truncated"]
+
+    updated = json.loads(manifest.read_text(encoding="utf-8"))
+    assert updated["records"]["train"] == 2
+    assert updated["records"]["total_training_rows"] == 8
+    assert updated["clean_train_families"] == {"code_generation": 1, "educational_text": 1}
+    assert updated["integrity_rewrite"]["status"] == "rewritten_clean"
+
+
+def test_external_train_rewrite_skips_nontrain_accepted_rows(tmp_path: Path) -> None:
+    jsonl_dir = tmp_path / "jsonl"
+    accepted = tmp_path / "accepted.jsonl"
+    _write_jsonl(
+        accepted,
+        [
+            {"record_id": "train-1", "dataset_family": "math_reasoning", "modality": "text", "training_bucket": "train", "target": "good answer"},
+            {"record_id": "eval-1", "dataset_family": "benchmarks", "modality": "text", "training_bucket": "eval_holdout", "target": "answer key"},
+        ],
+    )
+
+    report = rewrite.rewrite_external_train_bucket(accepted, jsonl_dir, tmp_path / "rewrite.json")
+
+    assert report["accepted_rows"] == 1
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["train-1"]
+    assert not (jsonl_dir / "benchmarks.jsonl").exists()

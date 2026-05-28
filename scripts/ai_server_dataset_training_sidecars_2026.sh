@@ -297,7 +297,6 @@ PY
   "$PYTHON_BIN" - <<'PY'
 import json
 import os
-import shutil
 from pathlib import Path
 run_id = os.environ["RUN_ID"]
 run_dir = Path("weights/external_datasets_2026/runs") / run_id
@@ -305,30 +304,20 @@ manifest = run_dir / "integrity" / "dataset_integrity_manifest.json"
 data = json.loads(manifest.read_text(encoding="utf-8"))
 rejected = int(data.get("rejected") or 0)
 accepted = int(data.get("accepted") or 0)
-train_path = run_dir / "jsonl" / "train_all_external.jsonl"
 accepted_path = Path(data.get("accepted_jsonl") or "")
 rejected_path = Path(data.get("rejected_jsonl") or "")
-if rejected > 0:
-    if accepted <= 0 or not accepted_path.exists():
-        raise SystemExit(f"external train bucket integrity scan rejected every row; refusing train promotion: {json.dumps(data.get('counts', {}), sort_keys=True)}")
-    backup_path = train_path.with_suffix(".pre_integrity_rewrite.bad.jsonl")
-    if train_path.exists():
-        train_path.replace(backup_path)
-    shutil.copyfile(accepted_path, train_path)
-    if rejected_path.exists():
-        rejected_path.unlink()
-    if backup_path.exists():
-        backup_path.unlink()
-    rewrite = {
-        "status": "rewritten_clean",
-        "accepted_rows": accepted,
-        "deleted_rejected_rows": rejected,
-        "train_path": str(train_path),
-        "counts": data.get("counts", {}),
-    }
-    (run_dir / "integrity" / "train_bucket_integrity_rewrite.json").write_text(json.dumps(rewrite, indent=2, sort_keys=True), encoding="utf-8")
-    print(json.dumps(rewrite, sort_keys=True))
+if accepted <= 0 or not accepted_path.exists():
+    raise SystemExit(f"external train bucket integrity scan accepted no rows; refusing train promotion: {json.dumps(data.get('counts', {}), sort_keys=True)}")
+if rejected > 0 and rejected_path.exists():
+    rejected_path.unlink()
+print(json.dumps({"status": "integrity_checked", "accepted_rows": accepted, "deleted_rejected_rows": rejected, "counts": data.get("counts", {})}, sort_keys=True))
 PY
+  "$PYTHON_BIN" -m omnicoder.data_factory.external_train_rewrite_2026 \
+    --accepted "$out/integrity/dataset_integrity_accepted.jsonl" \
+    --jsonl-dir "$out/jsonl" \
+    --source-manifest "$out/manifests/external_dataset_manifest.json" \
+    --out "$out/integrity/train_bucket_integrity_rewrite.json" \
+    | tee "$out/integrity/train_bucket_integrity_rewrite.stdout.json"
   log "index external train bucket"
   "$PYTHON_BIN" -m omnicoder.data_factory.dataset_index_2026 \
     --input "$out/jsonl/train_all_external.jsonl" \

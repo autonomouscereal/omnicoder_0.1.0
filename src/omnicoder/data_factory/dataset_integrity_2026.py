@@ -67,6 +67,11 @@ EVAL_LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("eval_leak_answer_key", r"\banswer[_ -]?key\b"),
         ("eval_leak_protected_eval", r"\bprotected[_ -]?eval\b"),
         ("eval_leak_benchmark_holdout", r"\bbenchmark[_ -]?holdout\b"),
+        ("eval_leak_hellaswag", r"\bhella[_ -]?swag\b|\bhellaswag\b"),
+        ("eval_leak_arc_agi", r"\barc[_ -]?agi[23]?\b|\barc-agi[23]?\b"),
+        ("eval_leak_swe_bench", r"\bswe[_ -]?bench\b"),
+        ("eval_leak_terminal_bench", r"\bterminal[_ -]?bench\b"),
+        ("eval_leak_mmmu", r"\bmmmu(?:[_ -]?pro)?\b"),
         ("eval_leak_fixture", r"\b(?:fixture|smoke|canary)\b"),
     )
 )
@@ -103,6 +108,15 @@ SUSPICIOUS_METADATA_KEYS = (
     "synthetic_provenance",
     "watermark",
 )
+MODALITY_KEYS = (
+    "modality",
+    "target_modality",
+    "input_modality",
+    "output_modality",
+    "declared_target_modality",
+    "media_family",
+)
+TEXT_TARGET_KEYS = ("content", "text", "target", "response", "completion", "answer", "expected_answer", "output")
 ARTIFACT_MARKER_BYTES: tuple[tuple[str, bytes], ...] = tuple(
     (reason, marker.lower())
     for reason, marker in (
@@ -207,6 +221,20 @@ def _row_has_media_target_payload(row: dict[str, Any]) -> bool:
     return False
 
 
+def _modality_metadata(row: dict[str, Any], explicit: str = "") -> str:
+    explicit_text = text_value(explicit, limit=256)
+    if explicit_text and explicit_text.lower() not in {"unknown", "none", "null"}:
+        return explicit_text
+    for container in (row, row.get("metadata"), row.get("input_json"), row.get("target_json"), row.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in MODALITY_KEYS:
+            value = text_value(container.get(key), limit=256)
+            if value and value.lower() not in {"unknown", "none", "null"}:
+                return value
+    return ""
+
+
 def _one_token_target_issue(target: str, row: dict[str, Any]) -> str:
     if isinstance(row.get("target_token_ids"), list) and len(row["target_token_ids"]) > 1:
         return ""
@@ -291,6 +319,10 @@ def audit_dataset_integrity(
     lowered = combined.lower()
     reasons: list[str] = []
     issues: list[dict[str, Any]] = []
+    resolved_modality = _modality_metadata(row, modality)
+    if not resolved_modality:
+        reasons.append("missing_modality_metadata")
+        issues.append({"reason": "missing_modality_metadata", "kind": "schema"})
 
     hidden = HIDDEN_UNICODE_RE.findall(combined)
     if hidden:
@@ -360,7 +392,7 @@ def audit_dataset_integrity(
         "issues": issues,
         "artifact_reports": artifact_reports,
         "signals": {
-            "modality": modality,
+            "modality": resolved_modality,
             "text_sha256": stable_hash({"prompt": prompt, "target": target}),
             "metadata_sha256": stable_hash(metadata[:65536]),
             "hidden_unicode_count": len(hidden),
@@ -390,6 +422,16 @@ def _messages_prompt_target(messages: list[Any]) -> tuple[str, str]:
     return "\n".join(prompt_parts), target
 
 
+def _target_from_container(container: Any) -> str:
+    if not isinstance(container, dict):
+        return ""
+    for key in TEXT_TARGET_KEYS:
+        value = text_value(container.get(key))
+        if value:
+            return value
+    return ""
+
+
 def row_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
     messages = row.get("messages")
     if isinstance(messages, list):
@@ -415,6 +457,13 @@ def row_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
         target = text_value(row.get(key))
         if target:
             break
+    if not target:
+        output_json = row.get("output_json") if isinstance(row.get("output_json"), dict) else {}
+        teacher_output = row.get("teacher_output")
+        for container in (target_json, output_json, teacher_output):
+            target = _target_from_container(container)
+            if target:
+                break
     if not target:
         target = text_value(target_json or row.get("output_json") or row.get("teacher_output"))
     return prompt, target
@@ -541,6 +590,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
             "reject_ai_watermark_or_provenance_markers": True,
             "reject_eval_leakage": True,
             "reject_refusal_boilerplate": True,
+            "reject_missing_modality_metadata": True,
             "reject_hidden_unicode": True,
             "reject_one_token_targets": True,
             "reject_prompt_copy": True,

@@ -217,13 +217,26 @@ def requested_values(raw: Any) -> set[str]:
     return values
 
 
+def entry_registry_waves(entry: dict[str, Any]) -> set[str]:
+    waves: set[str] = set()
+    primary = str(entry.get("registry_wave") or "").strip()
+    if primary:
+        waves.add(primary)
+    extra = entry.get("registry_waves")
+    if isinstance(extra, str):
+        waves.update(requested_values(extra))
+    elif isinstance(extra, list):
+        waves.update(requested_values(extra))
+    return waves
+
+
 def select_entries(entries: list[dict[str, Any]], args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     include_waves = requested_values(getattr(args, "include_wave", None))
     include_families = requested_values(getattr(args, "include_family", None))
     include_names = requested_values(getattr(args, "include_name", None))
     selected: list[dict[str, Any]] = []
     for entry in entries:
-        if include_waves and str(entry.get("registry_wave") or "") not in include_waves:
+        if include_waves and not (entry_registry_waves(entry) & include_waves):
             continue
         if include_families and str(entry.get("family") or "") not in include_families:
             continue
@@ -1063,8 +1076,23 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
     }
 
 
+def entry_record_limit(entry: dict[str, Any], args: argparse.Namespace) -> tuple[int, bool]:
+    if "max_records" in entry and entry.get("max_records") not in (None, ""):
+        return max(0, int(entry.get("max_records") or 0)), True
+    return max(0, int(getattr(args, "max_records_per_dataset", 0) or 0)), False
+
+
 def materialize_source_rows(entry: dict[str, Any], root: Path, args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    limit = int(entry.get("max_records") or args.max_records_per_dataset or 0)
+    if source_use_bucket(entry) == "blocked_until_review" and not bool(getattr(args, "materialize_blocked_review", False)):
+        return [], {
+            "status": "skipped",
+            "reason": "blocked_until_review_not_materialized",
+            "bucket": "blocked_until_review",
+            "source": "policy_gate",
+        }
+    limit, explicit_limit = entry_record_limit(entry, args)
+    if explicit_limit and limit <= 0:
+        return [], {"status": "skipped", "reason": "explicit_max_records_zero", "source": "policy_gate"}
     local_rows, local_status = rows_from_local_jsonl(entry, root, limit)
     if local_rows:
         return local_rows, local_status
@@ -1382,6 +1410,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--download", action="store_true", help="Attempt Hugging Face streaming downloads when local JSONL rows are absent")
     parser.add_argument("--no-streaming", action="store_true", help="Use regular load_dataset instead of streaming")
     parser.add_argument("--max-records-per-dataset", type=int, default=0)
+    parser.add_argument(
+        "--materialize-blocked-review",
+        action="store_true",
+        help="Materialize blocked_until_review rows into blocked JSONLs for manual audit. Default skips them completely.",
+    )
     parser.add_argument("--enforce-requirements", action="store_true", help="Return nonzero if registry required real-family minima are not met")
     parser.add_argument("--include-wave", action="append", default=[], help="Only materialize entries with this registry_wave. May be repeated or comma-separated.")
     parser.add_argument("--include-family", action="append", default=[], help="Only materialize entries from this family. May be repeated or comma-separated.")

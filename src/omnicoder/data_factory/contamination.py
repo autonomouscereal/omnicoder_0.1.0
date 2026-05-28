@@ -10,21 +10,83 @@ from omnicoder.data_factory.postgres import transaction
 
 
 WORD_RE = re.compile(r"[A-Za-z0-9_]+")
+TEXT_KEYS = (
+    "answer",
+    "caption",
+    "choices",
+    "completion",
+    "content",
+    "ctx",
+    "ctx_a",
+    "ctx_b",
+    "endings",
+    "expected_answer",
+    "instruction",
+    "prompt",
+    "question",
+    "response",
+    "target",
+    "text",
+)
 BENCHMARK_MARKERS = (
     "arc-agi",
     "arcagi",
     "bfcl",
+    "benchmark_id",
+    "benchmark_name",
+    "benchmark_task_2026",
+    "commonsense_completion_mcq",
+    "data/eval",
+    "eval_holdout",
     "gpqa",
     "gsm8k",
+    "hellaswag",
+    "hella_swag",
     "human_eval",
     "humaneval",
+    "local_public_dev",
     "livecodebench",
     "mmlu",
     "mmmu",
+    "protected_eval",
+    "public-dev",
+    "public dev",
+    "public_dev",
+    "public_dev_eval",
+    "publicdev",
+    "reportable",
+    "reportable_2026",
+    "reportable_score",
+    "reportable_task",
+    "reasoning_hellaswag_full_2026",
+    "rowan/hellaswag",
     "swe-bench",
     "terminal-bench",
     "terminal_bench",
     "truthfulqa",
+)
+BENCHMARK_FIELD_MARKER_KEYS = {
+    "adapter_id",
+    "benchmark",
+    "benchmark_id",
+    "benchmark_name",
+    "benchmark_suite",
+    "contamination_class",
+    "reportable_task",
+    "task_benchmark",
+}
+TRUE_VALUE_MARKER_KEYS = {"reportable", "reportable_score", "reportable_task"}
+PATH_MARKER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (name, re.compile(pattern, re.IGNORECASE))
+    for name, pattern in (
+        ("data_eval_path", r"(?:^|[\s\\/])data[\\/]eval(?:[\\/]|$)"),
+        ("eval_reportable_path", r"(?:^|[\s\\/])(?:eval[\\/])?reportable_2026(?:[\\/]|$)"),
+        ("local_public_dev_path", r"(?:^|[\s\\/])local_2026[\\/][^\n]*public[_ \-]?dev"),
+        ("public_dev_file", r"\b[^\s\\/]+public[_ \-]?dev\.(?:jsonl|json|parquet|csv)\b"),
+        ("authorized_reportable_file", r"\b[^\s\\/]+authorized\.(?:jsonl|json|parquet|csv)\b"),
+        ("benchmark_materialization_path", r"\bbenchmark[_ \-]?materialization\b"),
+        ("protected_eval_path", r"\bprotected[_ \-]?eval\b"),
+    )
 )
 
 
@@ -41,20 +103,64 @@ def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
                 yield item
 
 
+def _normalize_marker(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+
+
+def _append_text(parts: list[str], value: Any) -> None:
+    if isinstance(value, str):
+        if value.strip():
+            parts.append(value)
+    elif isinstance(value, list):
+        for item in value[:64]:
+            _append_text(parts, item)
+    elif isinstance(value, dict):
+        messages = value.get("messages")
+        if isinstance(messages, list):
+            for message in messages[:64]:
+                if isinstance(message, dict):
+                    _append_text(parts, message.get("content"))
+        for key in TEXT_KEYS:
+            if key in value:
+                _append_text(parts, value.get(key))
+
+
 def _text(record: dict[str, Any]) -> str:
     parts: list[str] = []
     for container in (record.get("input_json"), record.get("target_json"), record):
         if isinstance(container, dict):
-            messages = container.get("messages")
-            if isinstance(messages, list):
-                for message in messages:
-                    if isinstance(message, dict) and isinstance(message.get("content"), str):
-                        parts.append(message["content"])
-            for key in ("content", "text", "answer", "caption"):
-                value = container.get(key)
-                if isinstance(value, str):
-                    parts.append(value)
+            _append_text(parts, container)
     return "\n".join(parts)
+
+
+def _marker_text(record: dict[str, Any]) -> str:
+    parts = [_text(record)]
+
+    def visit(value: Any, key_name: str = "", depth: int = 0) -> None:
+        if depth > 8 or len(parts) > 4096:
+            return
+        if isinstance(value, dict):
+            for key, item in list(value.items())[:256]:
+                normalized_key = _normalize_marker(str(key))
+                if normalized_key in BENCHMARK_FIELD_MARKER_KEYS and item not in (None, "", [], {}):
+                    parts.append(normalized_key)
+                if item is True and normalized_key in TRUE_VALUE_MARKER_KEYS:
+                    parts.append(normalized_key)
+                if item is True and normalized_key == "local_only":
+                    parts.append("public_dev_eval")
+                visit(item, normalized_key, depth + 1)
+        elif isinstance(value, list):
+            for item in value[:128]:
+                visit(item, key_name, depth + 1)
+        elif isinstance(value, str):
+            text = value.strip()
+            if text:
+                parts.append(text[:4096])
+        elif isinstance(value, (int, float)) and key_name in {"id", "ind", "source_index", "task_id"}:
+            parts.append(str(value))
+
+    visit(record)
+    return "\n".join(part for part in parts if part)
 
 
 def fingerprint(text: str, ngram: int) -> set[str]:
@@ -70,9 +176,20 @@ def _jaccard(left: set[str], right: set[str]) -> float:
     return len(left & right) / len(left | right)
 
 
-def _marker_match(text: str) -> dict[str, Any]:
+def _marker_match(record_or_text: dict[str, Any] | str) -> dict[str, Any]:
+    text = _marker_text(record_or_text) if isinstance(record_or_text, dict) else record_or_text
     lower = text.lower()
-    markers = [marker for marker in BENCHMARK_MARKERS if marker in lower]
+    normalized = _normalize_marker(text)
+    markers: list[str] = []
+    for marker in BENCHMARK_MARKERS:
+        marker_lower = marker.lower()
+        marker_normalized = _normalize_marker(marker)
+        if marker_lower in lower or (marker_normalized and marker_normalized in normalized):
+            markers.append(marker_normalized or marker_lower)
+    for marker, pattern in PATH_MARKER_PATTERNS:
+        if pattern.search(text):
+            markers.append(marker)
+    markers = list(dict.fromkeys(markers))
     return {
         "score": min(0.95, 0.2 + 0.16 * len(markers)) if markers else 0.0,
         "benchmark_name": ",".join(markers[:8]) if markers else None,
@@ -128,7 +245,7 @@ def scan(candidates_path: Path, protected_path: Path, out_path: Path, threshold:
                         "protected_index": protected_record["index"],
                         "match_type": f"{ngram}gram_jaccard",
                     }
-            marker = _marker_match(_text(record))
+            marker = _marker_match(record)
             if marker["score"] > best["score"]:
                 best = marker
             status = "contaminated" if best["score"] >= threshold else "clean"

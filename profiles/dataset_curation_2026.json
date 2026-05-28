@@ -22762,7 +22762,7 @@
           ]
         },
         "gated": false,
-        "hf_id": "common-pile",
+        "hf_id": "common-pile/comma_v0.1_training_dataset",
         "last_verified": "2026-05-25",
         "license": "public domain and openly licensed source mixture",
         "license_tier": "open_license_mixture",
@@ -22770,15 +22770,19 @@
         "protected_benchmark_scan": "clean",
         "quality_score": 0.94,
         "source_review_status": "public_train_reviewed_2026_05_28",
-        "max_records": 8192,
+        "max_records": 65536,
         "name": "Common Pile v0.1",
         "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
+        "registry_waves": [
+          "tenth_wave_curated_benchmarks_2026_05_25",
+          "twenty_ninth_wave_gold_dataset_hardening_2026_05_28"
+        ],
         "source_year": 2025,
         "splits": [
           "train"
         ],
         "target_modality": "text",
-        "url": "https://huggingface.co/common-pile",
+        "url": "https://huggingface.co/datasets/common-pile/comma_v0.1_training_dataset",
         "use_policy": "train"
       },
       {
@@ -25929,6 +25933,10 @@
         "source_year": 2026,
         "last_verified": "2026-05-25",
         "registry_wave": "nineteenth_wave_trainable_reward_eval_2026_05_25",
+        "registry_waves": [
+          "nineteenth_wave_trainable_reward_eval_2026_05_25",
+          "twenty_ninth_wave_gold_dataset_hardening_2026_05_28"
+        ],
         "configs": [
           "all",
           "faq",
@@ -25939,13 +25947,14 @@
         "splits": [
           "train"
         ],
-        "max_records": 4096,
+        "max_records": 32768,
         "target_modality": "text",
         "use_policy": "train",
         "license": "ODC-BY",
         "license_tier": "attribution",
         "contamination_status": "clean",
         "protected_benchmark_scan": "clean",
+        "quality_score": 0.94,
         "source_review_status": "public_train_reviewed_2026_05_25",
         "materialization_note": "Sample from topic configs for high-quality phrase/question reformulation and long-tail educational text; keep URL provenance fields.",
         "curriculum_axes": [
