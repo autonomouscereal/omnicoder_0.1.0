@@ -736,7 +736,6 @@
       "data/mm_instructions.jsonl",
       "data/reasoning/gsm8k.jsonl",
       "data/qa/arc_easy.jsonl",
-      "data/qa/hellaswag.jsonl",
       "data/long_context/helmet_longproc_2026.jsonl",
       "data/reasoning/arc_agi3_authorized_dev.jsonl",
       "data/reasoning/gpqa_live_authorized.jsonl"

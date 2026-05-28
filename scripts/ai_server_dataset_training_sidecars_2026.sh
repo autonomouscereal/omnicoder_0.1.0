@@ -264,7 +264,8 @@ external_expansion() {
     read -ra names <<< "$DATASET_INCLUDE_NAMES"
     IFS="$old_ifs"
     for name in "${names[@]}"; do
-      name="${name//[[:space:]]/}"
+      name="${name#"${name%%[![:space:]]*}"}"
+      name="${name%"${name##*[![:space:]]}"}"
       [[ -n "$name" ]] && selection_args+=(--include-name "$name")
     done
     log "external dataset expansion is filtered to registry dataset name(s): $DATASET_INCLUDE_NAMES"

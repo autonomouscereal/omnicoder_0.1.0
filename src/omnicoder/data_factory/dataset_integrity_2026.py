@@ -108,10 +108,12 @@ LOW_VALUE_TEXT_SOURCE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
 EVAL_LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (reason, re.compile(pattern, re.IGNORECASE))
     for reason, pattern in (
-        ("eval_leak_public_dev", r"\bpublic[_ -]?dev\b"),
-        ("eval_leak_reportable", r"\breportable\b"),
+        ("eval_leak_benchmark_marker", r"(?<![A-Za-z0-9])benchmark(?:[_ -]?(?:id|task|suite|eval|materialized|holdout))?(?=$|[^A-Za-z0-9])"),
+        ("eval_leak_public_dev", r"(?<![A-Za-z0-9])public[_ -]?dev(?=$|[^A-Za-z0-9])"),
+        ("eval_leak_reportable", r"(?<![A-Za-z0-9])reportable(?=$|[^A-Za-z0-9])"),
+        ("eval_leak_local_only", r"(?<![A-Za-z0-9])local[_ -]?only(?=$|[^A-Za-z0-9])"),
         ("eval_leak_answer_key", r"\banswer[_ -]?key\b"),
-        ("eval_leak_protected_eval", r"\bprotected[_ -]?eval\b"),
+        ("eval_leak_protected_eval", r"(?<![A-Za-z0-9])protected[_ -]?eval(?=$|[^A-Za-z0-9])"),
         ("eval_leak_benchmark_holdout", r"\bbenchmark[_ -]?holdout\b"),
         ("eval_leak_hellaswag", r"\bhella[_ -]?swag\b|\bhellaswag\b"),
         ("eval_leak_arc_agi", r"\barc[_ -]?agi[23]?\b|\barc-agi[23]?\b"),

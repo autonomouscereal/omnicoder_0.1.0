@@ -11,11 +11,12 @@ from typing import Any, Iterable
 
 SCHEMA = "omnicoder.dataset_index_2026.v1"
 TRAIN_LEAK_RE = re.compile(
-    r"\b(?:public[_ -]?dev|reportable|answer[_ -]?key|protected[_ -]?eval|benchmark[_ -]?holdout|hella[_ -]?swag|hellaswag|"
+    r"(?<![A-Za-z0-9])(?:benchmark(?:[_ -]?(?:id|task|suite|eval|materialized|holdout))?|public[_ -]?dev|reportable|local[_ -]?only|"
+    r"answer[_ -]?key|protected[_ -]?eval|benchmark[_ -]?holdout|hella[_ -]?swag|hellaswag|"
     r"arc[_ -]?agi[23]?|arc-agi[23]?|swe[_ -]?bench|terminal[_ -]?bench|mmmu(?:[_ -]?pro)?|mmlu(?:[_ -]?pro)?|"
     r"human[_ -]?eval|humaneval|mbpp|gsm8k|gpqa(?:[_ -]?diamond)?|bfcl|berkeley[_ -]?function[_ -]?calling|"
     r"live[_ -]?code[_ -]?bench|livecodebench|tau[_ -]?bench|web[_ -]?arena|webarena|browsergym|osworld|"
-    r"frontier[_ -]?math|frontiermath|fixture|smoke|canary)\b",
+    r"frontier[_ -]?math|frontiermath|fixture|smoke|canary)(?=$|[^A-Za-z0-9])",
     re.IGNORECASE,
 )
 NON_TRAINING_USE_POLICIES = {
@@ -38,8 +39,11 @@ NON_TRAINING_USE_POLICIES = {
 NON_TRAINING_CONTAMINATION_CLASSES = {
     "benchmark_holdout",
     "eval_holdout",
+    "contaminated",
+    "dirty",
     "protected_eval",
     "public_dev_eval",
+    "suspect",
 }
 ID_KEYS = ("record_id", "id", "uid", "uuid", "example_id", "sample_id", "row_id")
 MODALITY_KEYS = ("modality", "target_modality", "input_modality", "output_modality", "declared_target_modality", "media_family")
@@ -310,6 +314,31 @@ def _bool_flag(value: Any) -> bool | None:
     return None
 
 
+def _nested_first(row: dict[str, Any], *paths: tuple[str, ...]) -> str:
+    for path in paths:
+        value: Any = row
+        for key in path:
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(key)
+        if value not in (None, "", [], {}):
+            return str(value)
+    return ""
+
+
+def _contamination_status(row: dict[str, Any], fallback: str) -> str:
+    nested = _nested_first(
+        row,
+        ("contamination", "status"),
+        ("contamination", "label"),
+        ("curation", "contamination_status"),
+        ("metadata", "contamination_status"),
+        ("metadata", "contamination_class"),
+    )
+    return nested or fallback
+
+
 def _non_training_train_bucket_issue(row: dict[str, Any], *, training_bucket: str, use_policy: str, contamination: str) -> str:
     bucket = _canonical_training_bucket(training_bucket)
     if bucket != "train":
@@ -322,7 +351,9 @@ def _non_training_train_bucket_issue(row: dict[str, Any], *, training_bucket: st
         return f"contamination_class:{contamination_class}"
     if row.get("reportable") is True:
         return "reportable_true"
-    for key in ("eval_only", "evaluation_only", "validation_only", "diagnostic_only"):
+    if row.get("benchmark_id") not in (None, "", [], {}):
+        return "benchmark_id_present"
+    for key in ("eval_only", "evaluation_only", "validation_only", "diagnostic_only", "local_only", "reportable_score", "reportable_task"):
         if _bool_flag(row.get(key)) is True:
             return f"{key}:true"
     if _bool_flag(row.get("training_allowed")) is False:
@@ -529,7 +560,7 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             source = _first(row, "source_id", "dataset_name", "source", "source_uri", default="unknown")
             use_policy = _first(row, "use_policy", "policy", default="unknown")
             license_id = _first(row, "license", "license_id", default="unknown")
-            contamination = _first(row, "contamination_status", "contamination_class", default="unknown")
+            contamination = _contamination_status(row, _first(row, "contamination_status", "contamination_class", default="unknown"))
             training_bucket = _training_bucket(path, row, split, use_policy)
             coarse_status = _coarse_status(training_bucket)
             by_modality[modality] += 1

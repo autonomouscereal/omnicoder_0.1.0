@@ -46,6 +46,30 @@ def test_dataset_integrity_rejects_prompt_copy_one_token_and_eval_leakage() -> N
     assert "eval_leak_arc_agi" in audit["reasons"]
 
 
+def test_dataset_integrity_rejects_benchmark_eval_only_markers() -> None:
+    row = {
+        "source_id": "benchmark_eval_dump",
+        "prompt": "Summarize the source.",
+        "response": "This is a normal-looking answer with enough words to pass target length checks.",
+        "modality": "text",
+        "metadata": {
+            "benchmark_id": "reasoning_public-dev_suite",
+            "reportable": False,
+            "local_only": True,
+            "protected_eval": True,
+        },
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], refs=[])
+
+    assert audit["accepted"] is False
+    assert "eval_leak_benchmark_marker" in audit["reasons"]
+    assert "eval_leak_public_dev" in audit["reasons"]
+    assert "eval_leak_reportable" in audit["reasons"]
+    assert "eval_leak_local_only" in audit["reasons"]
+    assert "eval_leak_protected_eval" in audit["reasons"]
+
+
 def test_dataset_integrity_allows_media_artifact_token_targets() -> None:
     prompt = "Generate an image artifact."
     row = {

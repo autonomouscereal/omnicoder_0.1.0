@@ -104,10 +104,15 @@ def test_materializer_writes_local_public_dev_rows_without_network(tmp_path: Pat
     assert rows[0]["reportable"] is False
     assert rows[0]["local_only"] is True
     assert rows[0]["training_bucket"] == "eval_holdout"
+    assert rows[0]["split"] == "eval_holdout"
     assert rows[0]["use_policy"] == "validation_only"
     assert rows[0]["source_bucket"] == "public_dev_validation"
+    assert rows[0]["eval_only"] is True
+    assert rows[0]["benchmark_eval_only"] is True
     assert rows[0]["training_allowed"] is False
     assert rows[0]["evaluation_only"] is True
+    assert rows[0]["public_dev"] is True
+    assert rows[0]["protected_eval"] is False
     assert rows[0]["reportability_scope"] == "validation_only_public_dev"
     assert rows[0]["benchmark_id"] == "multimodal_mmmu_pro_2026"
     assert manifest["rows"] == 1
@@ -148,10 +153,15 @@ def test_materializer_writes_run_scoped_authorized_rows(tmp_path: Path) -> None:
     assert rows[0]["reportable"] is True
     assert rows[0]["local_only"] is False
     assert rows[0]["training_bucket"] == "eval_holdout"
+    assert rows[0]["split"] == "eval_holdout"
     assert rows[0]["use_policy"] == "reportable_eval_only"
     assert rows[0]["source_bucket"] == "reportable_eval"
+    assert rows[0]["eval_only"] is True
+    assert rows[0]["benchmark_eval_only"] is True
     assert rows[0]["training_allowed"] is False
     assert rows[0]["evaluation_only"] is True
+    assert rows[0]["public_dev"] is False
+    assert rows[0]["protected_eval"] is True
     assert rows[0]["snapshot_id"] == "mmmu-pro-authorized-2026-current"
     assert rows[0]["snapshot_authorization"] == "official_or_authorized_current_release"
     assert manifest["records"][0]["reportable"] is True

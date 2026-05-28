@@ -1557,11 +1557,16 @@ def needs_reportable_source_override(mode: str, snapshot: dict[str, Any], overri
 def benchmark_eval_policy(mode: str, snapshot: dict[str, Any]) -> dict[str, Any]:
     reportable = bool(mode == "reportable" and snapshot)
     return {
+        "split": "eval_holdout",
         "training_bucket": "eval_holdout",
         "use_policy": "reportable_eval_only" if reportable else "validation_only",
         "source_bucket": "reportable_eval" if reportable else "public_dev_validation",
+        "eval_only": True,
+        "benchmark_eval_only": True,
         "evaluation_only": True,
         "training_allowed": False,
+        "protected_eval": reportable,
+        "public_dev": not reportable,
         "reportability_scope": "official_or_authorized_snapshot" if reportable else "validation_only_public_dev",
     }
 

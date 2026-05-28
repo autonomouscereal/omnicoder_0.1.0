@@ -142,6 +142,54 @@ def test_dataset_index_rejects_eval_policy_aliases_for_explicit_train_bucket(tmp
     }
 
 
+def test_dataset_index_rejects_benchmark_flags_in_train_bucket(tmp_path: Path) -> None:
+    data = tmp_path / "mixed.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "public-dev-local-only",
+                "source_id": "hellaswag_public_dev",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "local_only": True,
+                "contamination_class": "public_dev_eval",
+                "target": "Public dev answer.",
+            },
+            {
+                "record_id": "benchmark-id",
+                "source_id": "mmlu_pro_public",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "benchmark_id": "reasoning_hellaswag_full_2026",
+                "target": "Benchmark answer.",
+            },
+            {
+                "record_id": "nested-contamination",
+                "source_id": "reportable_eval",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "contamination": {"status": "contaminated"},
+                "target": "Reportable eval answer.",
+            },
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert "non_training_policy_in_train_bucket" in payload["fail_reasons"]
+    assert payload["counts"]["non_training_policy_in_train_bucket"] == 3
+    assert {row["reason"] for row in payload["non_training_policy_train_examples"]} == {
+        "benchmark_id_present",
+        "contamination_class:contaminated",
+        "contamination_class:public_dev_eval",
+    }
+
+
 def test_dataset_index_rejects_train_rows_missing_source_or_policy(tmp_path: Path) -> None:
     data = tmp_path / "train.jsonl"
     _write_jsonl(
@@ -214,6 +262,31 @@ def test_dataset_index_fails_train_eval_leakage_marker(tmp_path: Path) -> None:
                 "modality": "text",
                 "split": "train",
                 "target": "answer_key leaked from HellaSwag ARC-AGI3 SWE-bench Terminal-Bench MMMU-Pro",
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert "train_eval_leakage_markers" in payload["fail_reasons"]
+    assert payload["counts"]["train_eval_leakage_markers"] == 1
+
+
+def test_dataset_index_fails_train_rows_with_benchmark_eval_only_marker_fields(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "benchmark-leak",
+                "source_id": "ordinary_source",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "target": "This training target has enough useful words to avoid unrelated target length failures.",
+                "benchmark_id": "public-dev-local-only-eval",
+                "local_only": True,
             }
         ],
     )
