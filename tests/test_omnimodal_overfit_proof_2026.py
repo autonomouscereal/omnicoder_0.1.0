@@ -27,6 +27,22 @@ def _write_eval_artifacts(out: Path, *, high_group: str | None = None, high_moda
         (eval_dir / f"{group}.targets.json").write_text(json.dumps({"target_tokens": 8}), encoding="utf-8")
 
 
+def _write_eval_artifacts_with_pipeline_target_schema(out: Path) -> None:
+    _write_eval_artifacts(out)
+    eval_dir = out / "eval"
+    for group in proof.PROOF_GROUPS:
+        (eval_dir / f"{group}.targets.json").write_text(
+            json.dumps(
+                {
+                    "schema": "omnicoder.pipeline_target_token_diagnostics_2026.v1",
+                    "status": "ok",
+                    "overall": {"records": 2, "target_tokens": 8},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+
 def test_materialize_overfit_proof_covers_all_token_families(tmp_path: Path) -> None:
     out = tmp_path / "proof"
 
@@ -63,6 +79,18 @@ def test_summary_passes_with_low_reload_sample_loss(tmp_path: Path) -> None:
     out = tmp_path / "proof"
     proof.main(["materialize", "--out", str(out), "--examples-per-modality", "2"])
     _write_eval_artifacts(out)
+
+    result = proof.summary(type("Args", (), {"run": str(out), "out": "", "max_reload_sample_loss": 0.05})())
+
+    assert result["status"] == "passed"
+    summary = json.loads((out / "omnimodal_overfit_summary.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "passed"
+
+
+def test_summary_accepts_pipeline_target_diagnostics_schema(tmp_path: Path) -> None:
+    out = tmp_path / "proof"
+    proof.main(["materialize", "--out", str(out), "--examples-per-modality", "2"])
+    _write_eval_artifacts_with_pipeline_target_schema(out)
 
     result = proof.summary(type("Args", (), {"run": str(out), "out": "", "max_reload_sample_loss": 0.05})())
 

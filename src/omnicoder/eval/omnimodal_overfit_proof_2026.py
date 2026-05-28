@@ -127,6 +127,28 @@ def _sample_loss_failures(loss_json: Any, *, max_loss: float) -> list[dict[str, 
     return failures
 
 
+def _target_token_count(target_json: Any) -> int:
+    if not isinstance(target_json, dict):
+        return 0
+    for key in ("target_tokens", "target_token_count"):
+        value = target_json.get(key)
+        if value not in (None, ""):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+    overall = target_json.get("overall")
+    if isinstance(overall, dict):
+        for key in ("target_tokens", "target_token_count"):
+            value = overall.get(key)
+            if value not in (None, ""):
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return 0
+    return 0
+
+
 def _encode(tokenizer: Any, text: str) -> list[int]:
     ids: list[int] = []
     for raw in tokenizer.encode(text):
@@ -367,7 +389,7 @@ def summary(args: argparse.Namespace) -> dict[str, Any]:
             try:
                 target_json = json.loads(target_path.read_text(encoding="utf-8"))
                 group_report["target_json"] = target_json
-                if int(target_json.get("target_tokens") or target_json.get("target_token_count") or 0) <= 0:
+                if _target_token_count(target_json) <= 0:
                     _add_failure(group_report, "no_target_tokens")
             except Exception as exc:
                 group_report["target_error"] = repr(exc)
