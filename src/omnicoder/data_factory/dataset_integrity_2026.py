@@ -93,6 +93,12 @@ LOW_VALUE_TEXT_SOURCE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
             r"\b(?:abstract unavailable|abstract not provided|summary not available|no summary available|full text unavailable|content unavailable|not available for this record)\b",
         ),
         (
+            "low_value_remote_source_boilerplate",
+            r"\b(?:404 not found|403 forbidden|access denied|not authorized|requires authentication|login required|rate limit exceeded|too many requests|bad gateway|service unavailable)\b"
+            r"|\b(?:dataset|repository|resource|file|page|record|content)\s+(?:viewer\s+)?(?:is\s+|has\s+been\s+)?(?:unavailable|not found|missing|private|gated|disabled|removed)\b"
+            r"|\b(?:this\s+)?(?:dataset|repository|resource|file)\s+(?:requires|needs)\s+(?:authentication|login|permission|manual access|access approval)\b",
+        ),
+        (
             "low_value_deleted_or_removed_text",
             r"^\s*(?:\[?(?:deleted|removed|redacted|unavailable)\]?|n/?a|null|none)\s*$"
             r"|\bthis\s+(?:post|comment|content|record|page|item)\s+(?:has\s+been\s+)?(?:deleted|removed|redacted|withheld)\b",
@@ -133,6 +139,24 @@ REFUSAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("refusal_cannot_fulfill", r"\b(?:cannot|can't|can not|unable to) (?:fulfill|complete|do|answer) (?:this|that|the)? ?(?:request|task|question)?\b"),
         ("refusal_policy", r"\b(?:against|violates?) (?:the )?(?:policy|safety policy|guidelines)\b"),
         ("refusal_refuse", r"\b(?:must refuse|have to refuse|refusal|refused|refusing)\b"),
+    )
+)
+
+ALIGNMENT_BOILERPLATE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (reason, re.compile(pattern, re.IGNORECASE | re.DOTALL))
+    for reason, pattern in (
+        (
+            "alignment_boilerplate_helpful_harmless_honest",
+            r"\b(?:helpful,\s*harmless,\s*(?:and\s*)?honest|helpful\s+harmless\s+and\s+honest)\b",
+        ),
+        (
+            "alignment_boilerplate_ai_assistant_self_description",
+            r"\b(?:i am|i'm|as)\s+(?:an?\s+)?(?:ai|artificial intelligence|language model)\s+(?:assistant|system|model)\b.{0,160}\b(?:trained|designed|created|built)\b.{0,160}\b(?:safe|ethical|aligned|helpful|harmless|honest)\b",
+        ),
+        (
+            "alignment_boilerplate_safety_guidelines",
+            r"\b(?:my purpose|my role|i am designed|i'm designed)\b.{0,160}\b(?:follow|adhere to|comply with|prioritize)\b.{0,160}\b(?:safety|alignment|ethical)\s+(?:guidelines|principles|policies|policy)\b",
+        ),
     )
 )
 
@@ -613,6 +637,9 @@ def audit_dataset_integrity(
     for reason in _pattern_hits(combined, REFUSAL_PATTERNS):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "refusal_boilerplate"})
+    for reason in _pattern_hits(combined, ALIGNMENT_BOILERPLATE_PATTERNS):
+        reasons.append(reason)
+        issues.append({"reason": reason, "kind": "alignment_boilerplate"})
     for reason in _pattern_hits(combined, RIGHTS_RESTRICTION_PATTERNS):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "rights_restriction"})
@@ -670,6 +697,7 @@ def audit_dataset_integrity(
             "contains_watermark_terms": any(reason.startswith("ai_watermark") for reason in reasons),
             "contains_prompt_injection_terms": any(reason.startswith("prompt_injection") for reason in reasons),
             "contains_poisoning_terms": any(reason.startswith("poison") for reason in reasons),
+            "contains_alignment_boilerplate_terms": any(reason.startswith("alignment_boilerplate") for reason in reasons),
             "artifact_reports": len(artifact_reports),
         },
     }
@@ -877,6 +905,7 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
             "reject_ai_watermark_or_provenance_markers": True,
             "reject_eval_leakage": True,
             "reject_refusal_boilerplate": True,
+            "reject_alignment_boilerplate": True,
             "reject_missing_modality_metadata": True,
             "reject_hidden_unicode": True,
             "reject_one_token_targets": True,

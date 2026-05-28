@@ -94,6 +94,21 @@ def test_dataset_integrity_rejects_refusal_phrases() -> None:
     assert "refusal_policy" in audit["reasons"]
 
 
+def test_dataset_integrity_rejects_alignment_style_boilerplate() -> None:
+    row = {
+        "prompt": "Write a direct answer.",
+        "response": "I am an AI assistant trained to be helpful, harmless, and honest while following safety guidelines.",
+        "modality": "text",
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], refs=[])
+
+    assert audit["accepted"] is False
+    assert "alignment_boilerplate_helpful_harmless_honest" in audit["reasons"]
+    assert "alignment_boilerplate_ai_assistant_self_description" in audit["reasons"]
+    assert audit["signals"]["contains_alignment_boilerplate_terms"] is True
+
+
 @pytest.mark.parametrize(
     ("target", "expected_reason"),
     [
@@ -118,6 +133,20 @@ def test_dataset_integrity_rejects_low_value_science_and_deleted_text(target: st
 
     assert audit["accepted"] is False
     assert expected_reason in audit["reasons"]
+
+
+def test_dataset_integrity_rejects_remote_source_boilerplate() -> None:
+    row = {
+        "prompt": "",
+        "response": "Dataset viewer is unavailable. This dataset requires authentication and manual access approval.",
+        "modality": "text",
+        "dataset_name": "remote_fetch_2026",
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], refs=[])
+
+    assert audit["accepted"] is False
+    assert "low_value_remote_source_boilerplate" in audit["reasons"]
 
 
 def test_dataset_integrity_rejects_ai_id_provenance_boilerplate() -> None:
