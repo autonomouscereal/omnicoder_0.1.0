@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 from omnicoder.training import training_orchestration_2026
 
 
-SCHEMA_VERSION = "2026-05-24"
+SCHEMA_VERSION = "2026-05-28"
 DEFAULT_PROFILE = "profiles/dataset_curation_2026.json"
 DEFAULT_TRAINING_PROFILE = "profiles/training_orchestration_2026.json"
 DEFAULT_OUT_DIR = "weights/external_datasets_2026/latest"
@@ -49,6 +49,15 @@ UNSAFE_TRAIN_LICENSE_MARKERS = (
     "gated",
     "research",
     "blocked",
+    "manual",
+    "privacy",
+    "copyright",
+    "rights",
+    "source terms",
+    "terms of service",
+    "tos",
+    "opt-out",
+    "opted-out",
 )
 MAX_INLINE_STRING_CHARS = 4096
 MAX_INLINE_LIST_ITEMS = 64
@@ -482,6 +491,11 @@ def source_use_bucket(entry: dict[str, Any]) -> str:
     policy = str(entry.get("use_policy") or entry.get("license_tier") or "").lower()
     license_blob = f"{entry.get('license') or ''} {entry.get('license_tier') or ''}".lower()
     if policy in TRAINABLE_POLICIES:
+        if any(
+            str(entry.get(key) or "").lower().startswith(("blocked", "research_internal", "manual_review"))
+            for key in ("source_review_status", "review_status", "status")
+        ):
+            return "blocked_until_review"
         if any(marker in license_blob for marker in UNSAFE_TRAIN_LICENSE_MARKERS):
             return "research_internal"
         return "train"
@@ -1167,6 +1181,7 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     row["use_policy"] = str(entry.get("use_policy") or "blocked_until_review")
     row["training_bucket"] = training_bucket_for_record(entry, record)
     row["contamination_status"] = contamination_status
+    row["quality_score"] = quality_score
     quarantine_reasons = train_quarantine_reasons(entry, record) if source_use_bucket(entry) == "train" else []
     if quarantine_reasons:
         row["train_quarantine_reasons"] = quarantine_reasons

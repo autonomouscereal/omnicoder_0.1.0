@@ -59,6 +59,17 @@ LOW_VALUE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("low_value_placeholder", r"\b(?:lorem ipsum|placeholder|dummy output|mock output|stubbed response|todo|fixme|tbd)\b"),
     )
 )
+EVAL_LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (reason, re.compile(pattern, re.IGNORECASE))
+    for reason, pattern in (
+        ("eval_leak_public_dev", r"\bpublic[_ -]?dev\b"),
+        ("eval_leak_reportable", r"\breportable\b"),
+        ("eval_leak_answer_key", r"\banswer[_ -]?key\b"),
+        ("eval_leak_protected_eval", r"\bprotected[_ -]?eval\b"),
+        ("eval_leak_benchmark_holdout", r"\bbenchmark[_ -]?holdout\b"),
+        ("eval_leak_fixture", r"\b(?:fixture|smoke|canary)\b"),
+    )
+)
 
 RIGHTS_RESTRICTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (reason, re.compile(pattern, re.IGNORECASE))
@@ -178,6 +189,29 @@ def _repetition_issue(text: str) -> str:
     return ""
 
 
+def _row_has_media_target_payload(row: dict[str, Any]) -> bool:
+    for container in (row, row.get("target_json")):
+        if not isinstance(container, dict):
+            continue
+        if any(container.get(key) not in (None, "", [], {}) for key in ("artifact_refs", "artifacts", "artifact_tokens", "media_tokens")):
+            return True
+    return False
+
+
+def _one_token_target_issue(target: str, row: dict[str, Any]) -> str:
+    if isinstance(row.get("target_token_ids"), list) and len(row["target_token_ids"]) > 1:
+        return ""
+    if isinstance(row.get("assistant_token_ids"), list) and len(row["assistant_token_ids"]) > 1:
+        return ""
+    if isinstance(row.get("artifact_token_ids"), list) and len(row["artifact_token_ids"]) > 1:
+        return ""
+    if _row_has_media_target_payload(row):
+        return ""
+    if len(WORD_RE.findall(target)) <= 1:
+        return "target_len_le_1"
+    return ""
+
+
 def _artifact_path(ref: str) -> Path | None:
     if not ref or ref.startswith(("http://", "https://", "s3://", "hf://")):
         return None
@@ -271,6 +305,9 @@ def audit_dataset_integrity(
     for reason in _pattern_hits(combined, LOW_VALUE_PATTERNS):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "low_value"})
+    for reason in _pattern_hits(combined, EVAL_LEAK_PATTERNS):
+        reasons.append(reason)
+        issues.append({"reason": reason, "kind": "eval_leakage"})
     for reason in _pattern_hits(combined, RIGHTS_RESTRICTION_PATTERNS):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "rights_restriction"})
@@ -282,6 +319,15 @@ def audit_dataset_integrity(
     if repetition:
         reasons.append(repetition)
         issues.append({"reason": repetition, "kind": "low_value"})
+    tiny_target = _one_token_target_issue(target, row)
+    if tiny_target:
+        reasons.append(tiny_target)
+        issues.append({"reason": tiny_target, "kind": "target_coverage"})
+    norm_prompt = " ".join(prompt.split()).casefold()
+    norm_target = " ".join(target.split()).casefold()
+    if norm_prompt and norm_prompt == norm_target and not _row_has_media_target_payload(row):
+        reasons.append("prompt_copy")
+        issues.append({"reason": "prompt_copy", "kind": "target_coverage"})
 
     artifact_reports: list[dict[str, Any]] = []
     if scan_artifacts:
@@ -481,7 +527,10 @@ def run_audit(args: argparse.Namespace) -> dict[str, Any]:
             "reject_prompt_injection": True,
             "reject_poisoning": True,
             "reject_ai_watermark_or_provenance_markers": True,
+            "reject_eval_leakage": True,
             "reject_hidden_unicode": True,
+            "reject_one_token_targets": True,
+            "reject_prompt_copy": True,
             "reject_rights_restrictions": True,
             "reject_low_value_scrape_noise": True,
         },

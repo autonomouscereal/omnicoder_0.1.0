@@ -71,7 +71,7 @@
     "min_year": 2025,
     "module": "omnicoder.data_factory.curated_dataset_builder_2026",
     "out_dir": "weights/curated_datasets_2026/latest",
-    "per_trace_source_limit": 0,
+    "per_trace_source_limit": 50000,
     "quarantine_dir": "weights/curated_datasets_2026/latest/quarantine",
     "reject_secret_rows": true,
     "reject_unknown_trace_dates": true,
@@ -99,8 +99,7 @@
         "/home/cereal/SOC_TESTING",
         "/home/cereal/.hermes",
         "/home/cereal/.agents/skills",
-        "/home/cereal/.claude",
-        "/home/cereal/omnicoder_2026_work/weights/training_orchestration_2026"
+        "/home/cereal/.claude"
       ],
       "media_roots": [
         "/home/cereal/comfyui/output",
@@ -125,7 +124,7 @@
       ]
     },
     "trace_bucket": "agentic_trace_sft_2026",
-    "trace_limit": 0,
+    "trace_limit": 250000,
     "training_profile": "profiles/training_orchestration_2026.json"
   },
   "cleaning_layers_2026": [
@@ -175,8 +174,8 @@
   },
   "data": {
     "bucket": "agentic_trace_sft_2026",
-    "limit": 0,
-    "per_file_limit": 0,
+    "limit": 250000,
+    "per_file_limit": 50000,
     "split": "train"
   },
   "dataset_blends_2026": {
@@ -22724,6 +22723,10 @@
         "last_verified": "2026-05-25",
         "license": "ODC-By 1.0",
         "license_tier": "attribution",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.9,
+        "source_review_status": "public_train_reviewed_2026_05_28",
         "max_records": 8192,
         "name": "FineWeb2",
         "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
@@ -22763,6 +22766,10 @@
         "last_verified": "2026-05-25",
         "license": "public domain and openly licensed source mixture",
         "license_tier": "open_license_mixture",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.94,
+        "source_review_status": "public_train_reviewed_2026_05_28",
         "max_records": 8192,
         "name": "Common Pile v0.1",
         "registry_wave": "tenth_wave_curated_benchmarks_2026_05_25",
@@ -25775,7 +25782,8 @@
         "license_tier": "attribution",
         "contamination_status": "clean",
         "protected_benchmark_scan": "clean",
-        "source_review_status": "public_train_reviewed_2026_05_25",
+        "quality_score": 0.94,
+        "source_review_status": "public_train_reviewed_2026_05_28",
         "materialization_note": "Prioritize code SFT rows with unit-test and LLM-judgement metadata for verifier-aware code training.",
         "curriculum_axes": [
           "code_sft",
@@ -31043,10 +31051,946 @@
             "file"
           ]
         }
+      },
+      {
+        "name": "FineWeb-Edu",
+        "family": "text_pretraining",
+        "hf_id": "HuggingFaceFW/fineweb-edu",
+        "url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 65536,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "ODC-BY-1.0",
+        "license_tier": "attribution",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.95,
+        "source_review_status": "public_train_reviewed_2026_05_28",
+        "materialization_note": "Use the educational-score filtered subset only; do not include raw FineWeb or unfiltered Common Crawl rows.",
+        "curriculum_axes": [
+          "educational_text",
+          "reasoning_pretraining",
+          "high_quality_web_filter",
+          "dedupe"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "url",
+            "dump"
+          ],
+          "prompt": [
+            "url",
+            "dump",
+            "date",
+            "language"
+          ],
+          "target": [
+            "text",
+            "content"
+          ]
+        }
+      },
+      {
+        "name": "Common Corpus",
+        "family": "text_pretraining",
+        "hf_id": "PleIAs/common_corpus",
+        "url": "https://huggingface.co/datasets/PleIAs/common_corpus",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 65536,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "public domain and permissively licensed source mixture",
+        "license_tier": "open_license_mixture",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.96,
+        "source_review_status": "public_train_reviewed_2026_05_28",
+        "materialization_note": "Train only on rows with permissive/open license metadata; keep collection/license fields in the prompt side for provenance.",
+        "curriculum_axes": [
+          "open_license_pretraining",
+          "public_domain",
+          "multilingual_text",
+          "ocr_corrected_text"
+        ],
+        "field_map": {
+          "id": [
+            "identifier",
+            "title",
+            "collection"
+          ],
+          "prompt": [
+            "collection",
+            "license",
+            "language",
+            "title",
+            "creator",
+            "date"
+          ],
+          "target": [
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "MathX-5M",
+        "family": "math_reasoning",
+        "hf_id": "Modotte/MathX-5M",
+        "url": "https://huggingface.co/datasets/Modotte/MathX-5M",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 65536,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.94,
+        "source_review_status": "public_train_reviewed_2026_05_28",
+        "materialization_note": "Math reasoning SFT rows; keep expected answer and generated solution together for target coverage.",
+        "synthetic_provenance_audit_required": true,
+        "curriculum_axes": [
+          "math_reasoning",
+          "chain_of_thought",
+          "answer_verification",
+          "formal_logic"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "problem"
+          ],
+          "prompt": [
+            "problem",
+            "question"
+          ],
+          "target": [
+            "generated_solution",
+            "solution",
+            "expected_answer",
+            "answer"
+          ]
+        }
+      },
+      {
+        "name": "MathX-20M",
+        "family": "math_reasoning",
+        "hf_id": "Modotte/MathX-20M",
+        "url": "https://huggingface.co/datasets/Modotte/MathX-20M",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 131072,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.93,
+        "source_review_status": "public_train_reviewed_2026_05_28",
+        "materialization_note": "Larger MathX slice; dedupe against MathX-5M and protected math evals before promotion.",
+        "synthetic_provenance_audit_required": true,
+        "curriculum_axes": [
+          "math_reasoning",
+          "large_scale_sft",
+          "answer_verification",
+          "dedupe_required"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "problem"
+          ],
+          "prompt": [
+            "problem",
+            "question"
+          ],
+          "target": [
+            "generated_solution",
+            "solution",
+            "expected_answer",
+            "answer"
+          ]
+        }
+      },
+      {
+        "name": "NVIDIA Nemotron Post-Training Dataset v1",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "nvidia/Nemotron-Post-Training-Dataset-v1",
+        "url": "https://huggingface.co/datasets/nvidia/Nemotron-Post-Training-Dataset-v1",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 32768,
+        "target_modality": "tool",
+        "use_policy": "research_internal",
+        "license": "NVIDIA dataset terms require release-specific review",
+        "license_tier": "manual_terms_review",
+        "source_review_status": "research_internal_until_exact_license_and_component_mix_verified_2026_05_28",
+        "materialization_note": "High-value SFT/RL blend, but keep out of train until exact license, component provenance, and benchmark overlap review clear.",
+        "curriculum_axes": [
+          "posttraining",
+          "sft",
+          "rlvr",
+          "agentic_reasoning"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "instruction",
+            "messages",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "completion",
+            "response",
+            "messages"
+          ]
+        }
+      },
+      {
+        "name": "NVIDIA Nemotron Post-Training Dataset v2",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "nvidia/Nemotron-Post-Training-Dataset-v2",
+        "url": "https://huggingface.co/datasets/nvidia/Nemotron-Post-Training-Dataset-v2",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 32768,
+        "target_modality": "tool",
+        "use_policy": "research_internal",
+        "license": "NVIDIA dataset terms require release-specific review",
+        "license_tier": "manual_terms_review",
+        "source_review_status": "research_internal_until_exact_license_and_component_mix_verified_2026_05_28",
+        "materialization_note": "Prefer v2 after license review; do not mix with protected eval answer traces.",
+        "curriculum_axes": [
+          "posttraining",
+          "sft",
+          "rlvr",
+          "agentic_reasoning"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "uuid",
+            "sample_id"
+          ],
+          "prompt": [
+            "prompt",
+            "instruction",
+            "messages",
+            "question"
+          ],
+          "target": [
+            "answer",
+            "solution",
+            "completion",
+            "response",
+            "messages"
+          ]
+        }
+      },
+      {
+        "name": "DataComp-1B Metadata",
+        "family": "image_generation_editing",
+        "hf_id": "mlfoundations/datacomp_1b",
+        "url": "https://huggingface.co/datasets/mlfoundations/datacomp_1b",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "target_modality": "image",
+        "use_policy": "blocked_until_review",
+        "license": "CC-BY-4.0 metadata; individual images retain their own copyrights and opt-out flags",
+        "license_tier": "copyright_privacy_opt-out_blocked_until_review",
+        "gated": true,
+        "source_review_status": "blocked_until_url_rights_privacy_and_optout_filtering_exist_2026_05_28",
+        "materialization_note": "Do not train directly from URL metadata. Use only after local authorized image fetch, PII/face/document filtering, opt-out removal, C2PA/SynthID scan, and artifact hashing.",
+        "curriculum_axes": [
+          "image_text_pairs",
+          "datacomp",
+          "privacy_review",
+          "optout_filter_required"
+        ],
+        "field_map": {
+          "id": [
+            "uid",
+            "key",
+            "url"
+          ],
+          "prompt": [
+            "caption",
+            "text"
+          ],
+          "target": [
+            "caption",
+            "text"
+          ],
+          "media": [
+            "url",
+            "image"
+          ]
+        }
+      },
+      {
+        "name": "OpenCoder Clean Code Corpus",
+        "family": "coding_agentic",
+        "hf_id": "OpenCoder-LLM/opc-fineweb-code-corpus",
+        "url": "https://huggingface.co/collections/MegaTronX/opencoder-dataset",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 65536,
+        "target_modality": "code",
+        "use_policy": "train",
+        "license": "permissive code source mix",
+        "license_tier": "permissive",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.92,
+        "source_review_status": "public_train_reviewed_2026_05_28",
+        "materialization_note": "Prefer OpenCoder cleaned corpus over raw The Stack v2; keep exact repo license metadata when present and dedupe against benchmark repositories.",
+        "curriculum_axes": [
+          "code_pretraining",
+          "cleaned_stack_v2",
+          "syntax_filter",
+          "dedupe"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "repo_name",
+            "path"
+          ],
+          "prompt": [
+            "repo_name",
+            "path",
+            "language"
+          ],
+          "target": [
+            "content",
+            "code",
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "ToolBench Official SFT",
+        "family": "agentic_tool_reasoning",
+        "hf_id": "tuandunghcmut/toolbench-v1",
+        "url": "https://huggingface.co/datasets/tuandunghcmut/toolbench-v1",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "configs": [
+          "data",
+          "benchmark"
+        ],
+        "splits": [
+          "train"
+        ],
+        "max_records": 16384,
+        "target_modality": "tool",
+        "use_policy": "research_internal",
+        "license": "unknown/blank Hugging Face dataset card license; original ToolBench generated from third-party APIs",
+        "license_tier": "manual_terms_review",
+        "source_review_status": "research_internal_until_official_license_and_api_terms_verified_2026_05_28",
+        "materialization_note": "High-value tool-use SFT candidate. Keep internal until exact license, API terms, and benchmark query overlap are reviewed.",
+        "curriculum_axes": [
+          "tool_use",
+          "api_calling",
+          "multi_step_agent",
+          "trajectory"
+        ],
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "prompt": [
+            "conversations",
+            "tools",
+            "query"
+          ],
+          "target": [
+            "conversations",
+            "answer",
+            "tool_calls"
+          ],
+          "trajectory": [
+            "conversations"
+          ]
+        }
+      },
+      {
+        "name": "SWE-bench Verified Official",
+        "family": "coding_agentic",
+        "hf_id": "SWE-bench/SWE-bench_Verified",
+        "url": "https://www.swebench.com/SWE-bench/guides/datasets/",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "test"
+        ],
+        "max_records": 500,
+        "target_modality": "code",
+        "use_policy": "eval_only",
+        "license": "MIT plus upstream repository terms",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "official_eval_holdout_2026_05_28",
+        "materialization_note": "Never train on official Verified instances or successful benchmark trajectories; use only for reportable/eval gates.",
+        "curriculum_axes": [
+          "swe_bench_verified",
+          "coding_eval",
+          "agentic_repair",
+          "protected_benchmark"
+        ],
+        "field_map": {
+          "id": [
+            "instance_id"
+          ],
+          "prompt": [
+            "problem_statement",
+            "repo",
+            "base_commit"
+          ],
+          "target": [
+            "patch",
+            "test_patch"
+          ]
+        }
+      },
+      {
+        "name": "WebArena Official",
+        "family": "terminal_browser_agents",
+        "url": "https://webarena.dev/",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "test"
+        ],
+        "max_records": 812,
+        "target_modality": "tool",
+        "use_policy": "eval_only",
+        "license": "MIT benchmark with site/task assets",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "official_eval_holdout_2026_05_28",
+        "materialization_note": "Use as browser-agent eval only. Train synthetic non-overlap browser tasks separately.",
+        "curriculum_axes": [
+          "browser_agent",
+          "web_navigation",
+          "stateful_tool_eval",
+          "protected_benchmark"
+        ],
+        "field_map": {
+          "id": [
+            "task_id",
+            "id"
+          ],
+          "prompt": [
+            "intent",
+            "sites",
+            "task"
+          ],
+          "target": [
+            "eval",
+            "answer",
+            "success_criteria"
+          ]
+        }
+      },
+      {
+        "name": "FSD50K",
+        "family": "audio_music_speech",
+        "url": "https://annotator.freesound.org/fsd/",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train",
+          "validation"
+        ],
+        "max_records": 51200,
+        "target_modality": "audio",
+        "use_policy": "research_internal",
+        "license": "Creative Commons clip-level license mix",
+        "license_tier": "manual_clip_license_filter_required",
+        "source_review_status": "research_internal_until_clip_license_filter_excludes_nc_nd_and_missing_rights_2026_05_28",
+        "materialization_note": "High-value human-labeled audio. Promote only rows whose clip-level Freesound license permits training and derivatives.",
+        "curriculum_axes": [
+          "audio_event",
+          "audioset_ontology",
+          "human_labeled_audio",
+          "clip_license_filter"
+        ],
+        "field_map": {
+          "id": [
+            "fname",
+            "id",
+            "freesound_id"
+          ],
+          "prompt": [
+            "labels",
+            "description",
+            "tags"
+          ],
+          "target": [
+            "labels",
+            "description",
+            "tags"
+          ],
+          "media": [
+            "audio",
+            "path",
+            "fname"
+          ]
+        }
+      },
+      {
+        "name": "MusicCaps",
+        "family": "music_generation",
+        "hf_id": "google/MusicCaps",
+        "url": "https://huggingface.co/datasets/google/MusicCaps",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 5521,
+        "target_modality": "music",
+        "use_policy": "research_internal",
+        "license": "metadata/caption dataset; underlying YouTube audio rights not bundled",
+        "license_tier": "manual_audio_rights_review",
+        "source_review_status": "research_internal_captions_only_until_audio_rights_verified_2026_05_28",
+        "materialization_note": "Use captions/aspect labels for teacher prompt planning; do not use downloaded YouTube audio unless independently authorized.",
+        "curriculum_axes": [
+          "music_captioning",
+          "music_prompting",
+          "audioset_labels",
+          "caption_only_distillation"
+        ],
+        "field_map": {
+          "id": [
+            "ytid"
+          ],
+          "prompt": [
+            "aspect_list",
+            "audioset_positive_labels"
+          ],
+          "target": [
+            "caption",
+            "aspect_list"
+          ],
+          "media": [
+            "ytid"
+          ]
+        }
+      },
+      {
+        "name": "GTZAN Music Genre",
+        "family": "music_generation",
+        "url": "https://www.tensorflow.org/datasets/catalog/gtzan",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1000,
+        "target_modality": "music",
+        "use_policy": "eval_only",
+        "license": "legacy dataset with known duplicates and unclear modern redistribution rights",
+        "license_tier": "manual_rights_eval_holdout",
+        "source_review_status": "diagnostic_eval_only_due_to_legacy_quality_and_rights_2026_05_28",
+        "materialization_note": "Use only as a tiny genre diagnostic, not as primary generative music training data.",
+        "curriculum_axes": [
+          "music_genre",
+          "diagnostic_eval",
+          "legacy_dataset"
+        ],
+        "field_map": {
+          "id": [
+            "file_name",
+            "filename"
+          ],
+          "prompt": [
+            "genre",
+            "label"
+          ],
+          "target": [
+            "genre",
+            "label"
+          ],
+          "media": [
+            "audio",
+            "file_name",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "Kinetics-700",
+        "family": "video_generation",
+        "url": "https://deepmind.google/discover/blog/the-kinetics-human-action-video-dataset/",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train",
+          "validation"
+        ],
+        "max_records": 0,
+        "target_modality": "video",
+        "use_policy": "blocked_until_review",
+        "license": "YouTube video source rights require manual review",
+        "license_tier": "manual_video_rights_blocked_until_review",
+        "gated": true,
+        "source_review_status": "blocked_until_video_rights_and_download_availability_verified_2026_05_28",
+        "materialization_note": "Do not train from YouTube-derived clips without rights review; may use labels for non-overlap eval planning only.",
+        "curriculum_axes": [
+          "video_action",
+          "temporal_understanding",
+          "rights_review"
+        ]
+      },
+      {
+        "name": "ActivityNet",
+        "family": "video_generation",
+        "url": "https://activity-net.org/download.html",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "validation"
+        ],
+        "max_records": 4926,
+        "target_modality": "video",
+        "use_policy": "eval_only",
+        "license": "CC-BY-4.0 annotations; videos require source availability/rights check",
+        "license_tier": "permissive_eval_holdout",
+        "source_review_status": "official_eval_holdout_2026_05_28",
+        "materialization_note": "Use validation annotations as video-understanding eval; train only on authorized local video derivatives.",
+        "curriculum_axes": [
+          "video_understanding",
+          "temporal_detection",
+          "activity_eval"
+        ],
+        "field_map": {
+          "id": [
+            "video_id",
+            "id"
+          ],
+          "prompt": [
+            "annotations",
+            "taxonomy",
+            "label"
+          ],
+          "target": [
+            "annotations",
+            "label",
+            "segment"
+          ],
+          "media": [
+            "url",
+            "video"
+          ]
+        }
+      },
+      {
+        "name": "WebVid-10M",
+        "family": "video_generation",
+        "url": "https://m-bain.github.io/webvid-dataset/",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "target_modality": "video",
+        "use_policy": "blocked_until_review",
+        "license": "web video URL/caption source with clip rights requiring review",
+        "license_tier": "manual_video_rights_blocked_until_review",
+        "gated": true,
+        "source_review_status": "blocked_until_clip_rights_watermark_and_pii_scan_exist_2026_05_28",
+        "materialization_note": "Do not train raw WebVid links; use only after authorized clip fetch, watermark/provenance scan, and protected benchmark overlap checks.",
+        "curriculum_axes": [
+          "text_to_video",
+          "video_caption",
+          "rights_review",
+          "watermark_scan_required"
+        ]
+      },
+      {
+        "name": "SA-1B Segment Anything",
+        "family": "image_generation_editing",
+        "url": "https://ai.meta.com/datasets/segment-anything-downloads/",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "target_modality": "image",
+        "use_policy": "research_internal",
+        "license": "custom SA-1B research terms",
+        "license_tier": "custom_research_terms",
+        "gated": true,
+        "source_review_status": "research_internal_until_custom_terms_allow_training_release_2026_05_28",
+        "materialization_note": "Useful for segmentation/mask supervision, but custom terms require manual approval before any release-training promotion.",
+        "curriculum_axes": [
+          "image_segmentation",
+          "mask_supervision",
+          "promptable_vision",
+          "custom_terms"
+        ],
+        "field_map": {
+          "id": [
+            "image_id",
+            "id"
+          ],
+          "prompt": [
+            "bbox",
+            "point_coords",
+            "predicted_iou"
+          ],
+          "target": [
+            "segmentation",
+            "area",
+            "stability_score"
+          ],
+          "media": [
+            "image",
+            "image_path"
+          ]
+        }
+      },
+      {
+        "name": "ImageNet ILSVRC",
+        "family": "image_generation_editing",
+        "url": "https://www.image-net.org/challenges/LSVRC/",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "validation"
+        ],
+        "max_records": 50000,
+        "target_modality": "image",
+        "use_policy": "eval_only",
+        "license": "ImageNet/ILSVRC access terms and original image copyrights",
+        "license_tier": "manual_rights_eval_holdout",
+        "gated": true,
+        "source_review_status": "official_eval_holdout_manual_access_2026_05_28",
+        "materialization_note": "Use only as a gated eval/reference benchmark unless a locally authorized training copy and class-policy review exists.",
+        "curriculum_axes": [
+          "image_classification",
+          "vision_eval",
+          "manual_access"
+        ],
+        "field_map": {
+          "id": [
+            "image_id",
+            "file_name"
+          ],
+          "prompt": [
+            "class",
+            "synset",
+            "label"
+          ],
+          "target": [
+            "class",
+            "synset",
+            "label"
+          ],
+          "media": [
+            "image",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "DocVQA Official",
+        "family": "omnimodal_understanding",
+        "url": "https://site.docvqa.org/datasets/doccvqa",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "validation"
+        ],
+        "max_records": 5000,
+        "target_modality": "image",
+        "use_policy": "eval_only",
+        "license": "DocVQA challenge terms require portal login",
+        "license_tier": "permissive_eval_holdout",
+        "gated": true,
+        "source_review_status": "official_eval_holdout_manual_access_2026_05_28",
+        "materialization_note": "Use as OCR/document VQA eval; never train official validation/test answers.",
+        "curriculum_axes": [
+          "ocr",
+          "document_vqa",
+          "layout_reasoning",
+          "protected_benchmark"
+        ],
+        "field_map": {
+          "id": [
+            "questionId",
+            "id"
+          ],
+          "prompt": [
+            "question",
+            "image",
+            "ocr_tokens"
+          ],
+          "target": [
+            "answers",
+            "answer"
+          ],
+          "media": [
+            "image",
+            "image_path"
+          ]
+        }
+      },
+      {
+        "name": "IIT-CDIP",
+        "family": "omnimodal_understanding",
+        "url": "https://catalog.data.gov/dataset/complex-document-information-processing-cdip-dataset",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 0,
+        "target_modality": "image",
+        "use_policy": "research_internal",
+        "license": "public legal/tobacco document collection; de-identification and sensitive-data review required",
+        "license_tier": "manual_privacy_rights_review",
+        "gated": true,
+        "source_review_status": "research_internal_until_deid_privacy_and_rights_filtering_exist_2026_05_28",
+        "materialization_note": "High OCR/document-layout value, but scan/de-identify PII and sensitive forms before training promotion.",
+        "curriculum_axes": [
+          "ocr",
+          "document_layout",
+          "scanned_documents",
+          "privacy_review"
+        ],
+        "field_map": {
+          "id": [
+            "doc_id",
+            "id"
+          ],
+          "prompt": [
+            "ocr",
+            "metadata",
+            "document_type"
+          ],
+          "target": [
+            "ocr",
+            "text",
+            "document_type"
+          ],
+          "media": [
+            "image",
+            "tiff",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "FUNSD",
+        "family": "omnimodal_understanding",
+        "url": "https://github.com/crcresearch/FUNSD",
+        "source_year": 2026,
+        "last_verified": "2026-05-28",
+        "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
+        "splits": [
+          "train"
+        ],
+        "max_records": 199,
+        "target_modality": "image",
+        "use_policy": "research_internal",
+        "license": "public form understanding dataset; redistribution/training policy requires manual review",
+        "license_tier": "manual_rights_review",
+        "source_review_status": "research_internal_until_distribution_and_training_policy_review_2026_05_28",
+        "materialization_note": "Small OCR/form-understanding seed. Use internal trainability proof rows first; release training promotion requires data-redistribution review.",
+        "curriculum_axes": [
+          "ocr",
+          "form_understanding",
+          "layout_reasoning",
+          "entity_linking"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "file_name"
+          ],
+          "prompt": [
+            "words",
+            "boxes",
+            "form"
+          ],
+          "target": [
+            "entities",
+            "relations",
+            "labels",
+            "form"
+          ],
+          "media": [
+            "image",
+            "image_path"
+          ]
+        }
       }
     ],
     "enabled": true,
-    "last_updated": "2026-05-25",
+    "last_updated": "2026-05-28",
     "out_dir": "weights/external_datasets_2026/latest",
     "policy": "download when license and split policy permit; otherwise create internal distillation seeds and keep official eval rows quarantined",
     "required_real_family_min_records": {
@@ -31081,6 +32025,10 @@
       "terminal_browser_agents": {
         "bucket": "any",
         "min_real": 128
+      },
+      "text_pretraining": {
+        "bucket": "train",
+        "min_real": 2048
       },
       "video_generation": {
         "bucket": "any",
@@ -31190,7 +32138,15 @@
     "exclude_substrings": [
       "\\.git\\",
       "\\__pycache__\\",
-      "\\weights\\data_factory\\trace_orchestrator_2026\\"
+      "\\weights\\data_factory\\trace_orchestrator_2026\\",
+      "/weights/data_factory/trace_orchestrator_2026/",
+      "/weights/training_orchestration_2026/",
+      "/weights/benchmarks_2026/",
+      "public_dev",
+      "scoredjunk",
+      "smoke",
+      "fixture",
+      "canary"
     ],
     "patterns": [
       "*.jsonl"

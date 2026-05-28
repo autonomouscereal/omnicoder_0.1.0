@@ -2425,6 +2425,69 @@ def test_repo_dataset_registry_covers_twenty_eighth_wave_kimi_rlvr_video_music_s
     assert expansion.source_use_bucket(by_name["Suno AI Music Dataset Review"]) == "research_internal"
 
 
+def test_repo_dataset_registry_covers_twenty_ninth_wave_gold_dataset_hardening_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "twenty_ninth_wave_gold_dataset_hardening_2026_05_28"
+
+    expected_policy = {
+        "FineWeb-Edu": "train",
+        "Common Corpus": "train",
+        "MathX-5M": "train",
+        "MathX-20M": "train",
+        "NVIDIA Nemotron Post-Training Dataset v1": "research_internal",
+        "NVIDIA Nemotron Post-Training Dataset v2": "research_internal",
+        "DataComp-1B Metadata": "blocked_until_review",
+        "OpenCoder Clean Code Corpus": "train",
+        "ToolBench Official SFT": "research_internal",
+        "SWE-bench Verified Official": "eval_only",
+        "WebArena Official": "eval_only",
+        "FSD50K": "research_internal",
+        "MusicCaps": "research_internal",
+        "GTZAN Music Genre": "eval_only",
+        "Kinetics-700": "blocked_until_review",
+        "ActivityNet": "eval_only",
+        "WebVid-10M": "blocked_until_review",
+        "SA-1B Segment Anything": "research_internal",
+        "ImageNet ILSVRC": "eval_only",
+        "DocVQA Official": "eval_only",
+        "IIT-CDIP": "research_internal",
+        "FUNSD": "research_internal",
+    }
+    for name, policy in expected_policy.items():
+        assert by_name[name]["registry_wave"] == wave
+        assert by_name[name]["use_policy"] == policy
+
+    for name in ["FineWeb-Edu", "Common Corpus", "MathX-5M", "MathX-20M", "OpenCoder Clean Code Corpus"]:
+        assert by_name[name]["contamination_status"] == "clean"
+        assert by_name[name]["protected_benchmark_scan"] == "clean"
+        assert by_name[name]["quality_score"] > 0
+        assert expansion.source_use_bucket(by_name[name]) == "train"
+        assert expansion.training_bucket_for_record(by_name[name], _reviewed_train_record()) == "train"
+
+    assert by_name["DataComp-1B Metadata"]["gated"] is True
+    assert "opt-out" in by_name["DataComp-1B Metadata"]["license_tier"]
+    assert expansion.source_use_bucket(by_name["DataComp-1B Metadata"]) == "blocked_until_review"
+    assert expansion.source_use_bucket(by_name["NVIDIA Nemotron Post-Training Dataset v1"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["ToolBench Official SFT"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["FUNSD"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["FSD50K"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["MusicCaps"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["GTZAN Music Genre"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["Kinetics-700"]) == "blocked_until_review"
+    assert expansion.source_use_bucket(by_name["ActivityNet"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["WebVid-10M"]) == "blocked_until_review"
+    assert expansion.source_use_bucket(by_name["SA-1B Segment Anything"]) == "research_internal"
+    assert expansion.source_use_bucket(by_name["ImageNet ILSVRC"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["DocVQA Official"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["IIT-CDIP"]) == "research_internal"
+    assert by_name["SWE-bench Verified Official"]["splits"] == ["test"]
+    assert expansion.source_use_bucket(by_name["SWE-bench Verified Official"]) == "eval_holdout"
+    assert expansion.source_use_bucket(by_name["WebArena Official"]) == "eval_holdout"
+
+
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:
     root = Path(__file__).resolve().parents[1]
     profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
@@ -2472,6 +2535,15 @@ def test_registry_fail_closes_review_and_holdout_rows_from_train_bucket() -> Non
         "gated",
         "research",
         "blocked",
+        "manual",
+        "privacy",
+        "copyright",
+        "rights",
+        "source terms",
+        "terms of service",
+        "tos",
+        "opt-out",
+        "opted-out",
     )
 
     for entry in entries:

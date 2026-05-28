@@ -22,6 +22,37 @@ def test_dataset_integrity_rejects_prompt_injection_and_hidden_unicode() -> None
     assert "prompt_injection_reveal_prompt" in audit["reasons"]
 
 
+def test_dataset_integrity_rejects_prompt_copy_one_token_and_eval_leakage() -> None:
+    row = {
+        "source_id": "public_dev_fixture_canary",
+        "prompt": "same",
+        "response": "same",
+        "metadata": {"benchmark": "reportable public_dev answer_key"},
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], refs=[])
+
+    assert audit["accepted"] is False
+    assert "prompt_copy" in audit["reasons"]
+    assert "target_len_le_1" in audit["reasons"]
+    assert "eval_leak_public_dev" in audit["reasons"]
+    assert "eval_leak_answer_key" in audit["reasons"]
+
+
+def test_dataset_integrity_allows_media_artifact_token_targets() -> None:
+    prompt = "Generate an image artifact."
+    row = {
+        "prompt": prompt,
+        "target_json": {"content": prompt, "artifact_tokens": "<image_semantic_1><image_residual_2>"},
+        "artifact_token_ids": [150001, 150002, 150003],
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=prompt, modality="image", refs=[], scan_artifacts=False)
+
+    assert "target_len_le_1" not in audit["reasons"]
+    assert "prompt_copy" not in audit["reasons"]
+
+
 def test_dataset_integrity_rejects_ai_watermark_and_content_credentials_metadata() -> None:
     row = {
         "prompt": "Describe this generated media artifact.",

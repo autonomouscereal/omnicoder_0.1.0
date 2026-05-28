@@ -24,6 +24,7 @@ from omnicoder.eval.sample_loss_2026 import (
     _read_jsonl,
     _record_modality,
 )
+from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 from omnicoder.tokenization.text_range_2026 import effective_text_token_range, tokenizer_vocab_size
 from omnicoder.training.pipeline_pretrain_2026_dense import (
     autocast_context,
@@ -69,10 +70,25 @@ def _decode_one(tokenizer: Any, token_id: int) -> str:
         return ""
 
 
-def _topk(logits: torch.Tensor, tokenizer: Any, k: int, text_range: tuple[int, int] | None = None) -> list[dict[str, Any]]:
+def _ledger_range_for_token(token_id: int, fallback_range: tuple[int, int] | None = None) -> tuple[int, int] | None:
+    try:
+        token_range = DEFAULT_LEDGER.lookup(int(token_id))
+        return int(token_range.begin), int(token_range.end)
+    except Exception:
+        return fallback_range
+
+
+def _ledger_family_for_token(token_id: int) -> str:
+    try:
+        return str(DEFAULT_LEDGER.lookup(int(token_id)).name)
+    except Exception:
+        return "unknown"
+
+
+def _topk(logits: torch.Tensor, tokenizer: Any, k: int, token_range: tuple[int, int] | None = None) -> list[dict[str, Any]]:
     scores = logits.float()
-    if text_range is not None:
-        lo, hi = int(text_range[0]), min(int(text_range[1]), int(scores.numel()))
+    if token_range is not None:
+        lo, hi = int(token_range[0]), min(int(token_range[1]), int(scores.numel()))
         masked = scores.new_full(scores.shape, float("-inf"))
         masked[lo:hi] = scores[lo:hi]
         scores = masked
@@ -84,11 +100,11 @@ def _topk(logits: torch.Tensor, tokenizer: Any, k: int, text_range: tuple[int, i
     ]
 
 
-def _token_rank(logits: torch.Tensor, target_id: int, text_range: tuple[int, int] | None = None) -> int:
+def _token_rank(logits: torch.Tensor, target_id: int, token_range: tuple[int, int] | None = None) -> int:
     scores = logits.float()
     target = int(target_id)
-    if text_range is not None:
-        lo, hi = int(text_range[0]), min(int(text_range[1]), int(scores.numel()))
+    if token_range is not None:
+        lo, hi = int(token_range[0]), min(int(token_range[1]), int(scores.numel()))
         if target < lo or target >= hi:
             return int(scores.numel())
         scores = scores[lo:hi]
@@ -233,15 +249,20 @@ def _diagnose_on_final_rank(
     valid_positions = torch.nonzero(shifted_labels[0].ge(0), as_tuple=False).flatten()
     token_losses: list[float] = []
     target_ranks: list[int] = []
+    target_text_ranks: list[int] = []
     rows: list[dict[str, Any]] = []
     for shifted_pos in valid_positions.detach().cpu().tolist():
         pos = int(shifted_pos)
         target_id = int(shifted_labels[0, pos].item())
         row_logits = logits[0, pos, :]
         loss = _ce(row_logits, target_id)
-        rank = _token_rank(row_logits, target_id, text_range)
+        ledger_range = _ledger_range_for_token(target_id, text_range)
+        ledger_family = _ledger_family_for_token(target_id)
+        rank = _token_rank(row_logits, target_id, ledger_range)
+        text_rank = _token_rank(row_logits, target_id, text_range)
         token_losses.append(loss)
         target_ranks.append(rank)
+        target_text_ranks.append(text_rank)
         if len(rows) < int(max_positions):
             rows.append(
                 {
@@ -249,8 +270,11 @@ def _diagnose_on_final_rank(
                     "predict_from_index": pos,
                     "target_token_id": target_id,
                     "target_decoded": _decode_one(tokenizer, target_id),
+                    "target_ledger_family": ledger_family,
                     "loss": loss,
-                    "target_rank_text_range": rank,
+                    "target_rank_ledger_range": rank,
+                    "target_rank_text_range": text_rank,
+                    "top_ledger_tokens": _topk(row_logits, tokenizer, int(top_k), ledger_range),
                     "top_text_tokens": _topk(row_logits, tokenizer, int(top_k), text_range),
                 }
             )
@@ -259,33 +283,43 @@ def _diagnose_on_final_rank(
     if first_target_index is not None:
         first_target_id = int(shifted_labels[0, int(first_target_index) - 1].item())
         full_logits = logits[0, int(first_target_index) - 1, :]
+        first_ledger_range = _ledger_range_for_token(first_target_id, text_range)
+        first_ledger_family = _ledger_family_for_token(first_target_id)
         prefix_report = {
             "status": "missing_prefix_logits",
             "first_target_index": int(first_target_index),
             "target_token_id": first_target_id,
             "target_decoded": _decode_one(tokenizer, first_target_id),
+            "target_ledger_family": first_ledger_family,
         }
         if prefix_logits is not None:
             prefix_vec = prefix_logits[0]
-            full_top = _topk(full_logits, tokenizer, int(top_k), text_range)
-            prefix_top = _topk(prefix_vec, tokenizer, int(top_k), text_range)
+            full_top = _topk(full_logits, tokenizer, int(top_k), first_ledger_range)
+            prefix_top = _topk(prefix_vec, tokenizer, int(top_k), first_ledger_range)
+            full_text_top = _topk(full_logits, tokenizer, int(top_k), text_range)
+            prefix_text_top = _topk(prefix_vec, tokenizer, int(top_k), text_range)
             target_logit_delta = float((full_logits[first_target_id] - prefix_vec[first_target_id]).detach().cpu())
             prefix_report = {
                 "status": "ok",
                 "first_target_index": int(first_target_index),
                 "target_token_id": first_target_id,
                 "target_decoded": _decode_one(tokenizer, first_target_id),
+                "target_ledger_family": first_ledger_family,
                 "full_sequence": {
                     "loss": _ce(full_logits, first_target_id),
+                    "target_rank_ledger_range": _token_rank(full_logits, first_target_id, first_ledger_range),
                     "target_rank_text_range": _token_rank(full_logits, first_target_id, text_range),
-                    "top_text_tokens": full_top,
+                    "top_ledger_tokens": full_top,
+                    "top_text_tokens": full_text_top,
                     "selected_token_id": int(full_top[0]["token_id"]) if full_top else None,
                     "selected_decoded": str(full_top[0]["decoded"]) if full_top else "",
                 },
                 "prefix_only": {
                     "loss": _ce(prefix_vec, first_target_id),
+                    "target_rank_ledger_range": _token_rank(prefix_vec, first_target_id, first_ledger_range),
                     "target_rank_text_range": _token_rank(prefix_vec, first_target_id, text_range),
-                    "top_text_tokens": prefix_top,
+                    "top_ledger_tokens": prefix_top,
+                    "top_text_tokens": prefix_text_top,
                     "selected_token_id": int(prefix_top[0]["token_id"]) if prefix_top else None,
                     "selected_decoded": str(prefix_top[0]["decoded"]) if prefix_top else "",
                 },
@@ -298,14 +332,17 @@ def _diagnose_on_final_rank(
     target_count = len(token_losses)
     mean_loss = float(sum(token_losses) / target_count) if target_count else math.nan
     mean_rank = float(sum(target_ranks) / target_count) if target_count else math.nan
+    mean_text_rank = float(sum(target_text_ranks) / target_count) if target_count else math.nan
     return {
         **record_meta,
         "target_token_count": int(target_count),
         "target_loss_mean": mean_loss,
         "target_loss_max": float(max(token_losses)) if token_losses else math.nan,
         "target_ppl_mean": float(math.exp(min(20.0, mean_loss))) if token_losses else math.nan,
-        "target_rank_mean_text_range": mean_rank,
-        "target_rank_max_text_range": int(max(target_ranks)) if target_ranks else None,
+        "target_rank_mean_ledger_range": mean_rank,
+        "target_rank_max_ledger_range": int(max(target_ranks)) if target_ranks else None,
+        "target_rank_mean_text_range": mean_text_rank,
+        "target_rank_max_text_range": int(max(target_text_ranks)) if target_text_ranks else None,
         "first_target": prefix_report,
         "positions": rows,
     }
@@ -318,6 +355,9 @@ def _bucket_add(bucket: dict[str, Any], record: dict[str, Any]) -> None:
     if target_count:
         bucket["loss_weighted_sum"] = float(bucket.get("loss_weighted_sum") or 0.0) + float(record["target_loss_mean"]) * target_count
         bucket["rank_weighted_sum"] = float(bucket.get("rank_weighted_sum") or 0.0) + float(record["target_rank_mean_text_range"]) * target_count
+        bucket["ledger_rank_weighted_sum"] = float(bucket.get("ledger_rank_weighted_sum") or 0.0) + float(
+            record.get("target_rank_mean_ledger_range") or 0.0
+        ) * target_count
     first = record.get("first_target") if isinstance(record.get("first_target"), dict) else {}
     if first.get("status") == "ok":
         bucket["first_targets"] = int(bucket.get("first_targets") or 0) + 1
@@ -337,12 +377,13 @@ def _bucket_finalize(bucket: dict[str, Any]) -> None:
     if tokens:
         bucket["target_loss_mean"] = float(bucket.get("loss_weighted_sum") or 0.0) / float(tokens)
         bucket["target_rank_mean_text_range"] = float(bucket.get("rank_weighted_sum") or 0.0) / float(tokens)
+        bucket["target_rank_mean_ledger_range"] = float(bucket.get("ledger_rank_weighted_sum") or 0.0) / float(tokens)
         bucket["target_ppl_mean"] = float(math.exp(min(20.0, bucket["target_loss_mean"])))
     if first:
         bucket["first_target_top1_rate"] = float(bucket.get("first_target_top1") or 0) / float(first)
         bucket["first_prefix_loss_mean"] = float(bucket.get("first_prefix_loss_sum") or 0.0) / float(first)
         bucket["first_full_loss_mean"] = float(bucket.get("first_full_loss_sum") or 0.0) / float(first)
-    for key in ("loss_weighted_sum", "rank_weighted_sum", "first_prefix_loss_sum", "first_full_loss_sum"):
+    for key in ("loss_weighted_sum", "rank_weighted_sum", "ledger_rank_weighted_sum", "first_prefix_loss_sum", "first_full_loss_sum"):
         bucket.pop(key, None)
 
 

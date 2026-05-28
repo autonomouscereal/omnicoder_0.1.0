@@ -526,6 +526,20 @@ V2, and BigCodeReward stay research-internal until contamination, model-trace,
 or license review clears them. OmniAction is registered as blocked review-only
 because its noncommercial license cannot feed release-weight training.
 
+The twenty-ninth-wave registry slice is the gold-data hardening pass requested
+before restarting 20B training. It adds reviewed train entries for FineWeb-Edu,
+Common Corpus, MathX-5M, MathX-20M, and OpenCoder's cleaned code corpus, and it
+annotates FinePhrase, FineWeb2, and Common Pile v0.1 with clean review metadata.
+It also registers high-value but gated sources without letting them into the
+train bucket: ToolBench official SFT and FUNSD stay research-internal until
+their dataset/API/form redistribution terms are cleared; DataComp-1B metadata
+remains blocked until image rights, opt-out, privacy, and watermark filters
+exist; FSD50K and MusicCaps stay research-internal until clip/audio rights are
+verified; SA-1B and IIT-CDIP stay research-internal under custom/privacy review;
+Kinetics and WebVid remain blocked until video rights and provenance scans
+exist. SWE-bench Verified, WebArena, ActivityNet, ImageNet/ILSVRC, DocVQA, and
+GTZAN are eval-only/diagnostic holdouts, not training sources.
+
 ## Quality And Safety
 
 The curation layer stores scores instead of only dropping rows. It tracks

@@ -95,6 +95,7 @@ collect_curate() {
   local hermes_out="data/raw/hermes_traces_2026/hermes_ai_${RUN_ID}.jsonl"
   local lmstudio_out="data/raw/lmstudio_traces_2026/lmstudio_ai_${RUN_ID}.jsonl"
   local comfy_out="data/raw/comfyui_outputs_2026/comfyui_${RUN_ID}.jsonl"
+  local run_profile="$out/trace_profile.current_run.json"
   mkdir -p "$out/logs" data/raw/codex_traces_2026 data/raw/claude_traces_2026 data/raw/hermes_traces_2026 data/raw/lmstudio_traces_2026 data/raw/comfyui_outputs_2026 data/raw
   log "export agent-memory PostgreSQL audit"
   local am_export_ok=0
@@ -153,11 +154,69 @@ collect_curate() {
     --namespace train --bucket multimodal_media --split train \
     --source_date 2026-05-24 --license internal --limit 0
   require_nonempty_jsonl "$comfy_out" "comfyui_media_manifests"
+  log "write current-run trace profile"
+  "$PYTHON_BIN" - <<PY
+import json
+import os
+from pathlib import Path
+
+profile_path = Path("$PROFILE")
+if not profile_path.is_absolute():
+    profile_path = Path.cwd() / profile_path
+profile = json.loads(profile_path.read_text(encoding="utf-8"))
+
+sources = [
+    {"harness": "agent_memory", "path": "data/raw/agent_memory_events_2026.jsonl"},
+    {"harness": "codex", "path": "$codex_out"},
+    {"harness": "claude", "path": "$claude_out"},
+]
+optional = [
+    ("hermes", "$hermes_out"),
+    ("lmstudio", "$lmstudio_out"),
+    ("comfyui", "$comfy_out"),
+]
+for harness, raw in optional:
+    path = Path(raw)
+    if path.exists() and path.stat().st_size > 0:
+        sources.append({"harness": harness, "path": raw})
+
+trace_inputs = dict(profile.get("trace_inputs") if isinstance(profile.get("trace_inputs"), dict) else {})
+trace_inputs["sources"] = sources
+trace_inputs.setdefault("patterns", ["*.jsonl"])
+profile["trace_inputs"] = trace_inputs
+
+data = dict(profile.get("data") if isinstance(profile.get("data"), dict) else {})
+data["limit"] = int(os.environ.get("OMNICODER_TRACE_ORCHESTRATOR_LIMIT", data.get("limit") or 250000) or 0)
+data["per_file_limit"] = int(os.environ.get("OMNICODER_TRACE_ORCHESTRATOR_PER_FILE_LIMIT", data.get("per_file_limit") or 50000) or 0)
+profile["data"] = data
+
+builder = dict(profile.get("builder_2026") if isinstance(profile.get("builder_2026"), dict) else {})
+builder["trace_limit"] = int(os.environ.get("OMNICODER_BUILDER_TRACE_LIMIT", builder.get("trace_limit") or 250000) or 0)
+builder["per_trace_source_limit"] = int(os.environ.get("OMNICODER_BUILDER_PER_TRACE_SOURCE_LIMIT", builder.get("per_trace_source_limit") or 50000) or 0)
+supplemental = dict(builder.get("supplemental_sources") if isinstance(builder.get("supplemental_sources"), dict) else {})
+for key in ("long_context_roots", "text_roots"):
+    values = supplemental.get(key)
+    if isinstance(values, list):
+        supplemental[key] = [
+            value
+            for value in values
+            if "/weights/training_orchestration_2026" not in str(value)
+            and "/weights/benchmarks_2026" not in str(value)
+            and "/weights/data_factory" not in str(value)
+        ]
+builder["supplemental_sources"] = supplemental
+profile["builder_2026"] = builder
+
+out = Path("$run_profile")
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(json.dumps(profile, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+print(json.dumps({"status": "ok", "profile": str(out), "sources": sources}, sort_keys=True))
+PY
   log "run trace orchestrator"
-  "$PYTHON_BIN" -m omnicoder.data_factory.trace_orchestrator_2026 --profile "$PROFILE" > "$out/logs/trace_orchestrator.log" 2>&1
+  "$PYTHON_BIN" -m omnicoder.data_factory.trace_orchestrator_2026 --profile "$run_profile" > "$out/logs/trace_orchestrator.log" 2>&1
   log "build run-scoped curated dataset"
   "$PYTHON_BIN" -m omnicoder.data_factory.curated_dataset_builder_2026 \
-    --profile "$PROFILE" \
+    --profile "$run_profile" \
     --out-dir "weights/curated_datasets_2026/runs/${RUN_ID}" \
     build | tee "$out/logs/curated_dataset_builder.json"
   if truthy "$PROMOTE_LATEST"; then
@@ -228,6 +287,23 @@ PY
     EXTERNAL_DATASET_SOURCE="$out"
     log "kept external dataset run-scoped at $out"
   fi
+  log "strict integrity scan for external train bucket"
+  mkdir -p "$out/integrity"
+  "$PYTHON_BIN" -m omnicoder.data_factory.dataset_integrity_2026 \
+    --input "$out/jsonl/train_all_external.jsonl" \
+    --out-dir "$out/integrity" \
+    --write-accepted \
+    | tee "$out/integrity/dataset_integrity.stdout.json"
+  "$PYTHON_BIN" - <<'PY'
+import json
+import os
+from pathlib import Path
+run_id = os.environ["RUN_ID"]
+manifest = Path("weights/external_datasets_2026/runs") / run_id / "integrity" / "dataset_integrity_manifest.json"
+data = json.loads(manifest.read_text(encoding="utf-8"))
+if int(data.get("rejected") or 0) > 0:
+    raise SystemExit(f"external train bucket integrity scan rejected rows; delete/repair before training: {json.dumps(data.get('counts', {}), sort_keys=True)}")
+PY
 }
 
 agentic_tool_training() {
