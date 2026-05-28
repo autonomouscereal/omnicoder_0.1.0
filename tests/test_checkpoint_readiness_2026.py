@@ -201,5 +201,13 @@ def test_media_route_probe_generates_all_core_media_routes() -> None:
     readiness = checkpoint_readiness(_topk(), _sample_loss(), report)
 
     assert readiness["checks"]["media_route_probe"]["status"] == "passed"
-    modalities = {row["output_route"]["output_modality"] for row in report["rows"]}
-    assert {"image", "video", "audio", "music", "speech"} <= modalities
+    routes = {row["modality"]: row["output_route"] for row in report["rows"]}
+    assert {"image", "video", "music", "tts", "ocr"} <= set(routes)
+    assert routes["image"]["requires_artifact_decoder"] is True
+    assert routes["video"]["requires_artifact_decoder"] is True
+    assert routes["music"]["requires_artifact_decoder"] is True
+    assert routes["tts"]["output_modality"] == "speech"
+    assert routes["tts"]["requires_artifact_decoder"] is True
+    assert routes["ocr"]["output_field"] == "prediction"
+    assert routes["ocr"]["output_modality"] == "text"
+    assert routes["ocr"]["requires_artifact_decoder"] is False

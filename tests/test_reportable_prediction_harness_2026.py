@@ -62,6 +62,12 @@ def _reportable_profile(path: Path) -> Path:
     return path
 
 
+def test_prompt_from_task_preserves_explicit_prompt_suffix() -> None:
+    row = {"prompt": "user: Render proof media.\nassistant: "}
+
+    assert harness.prompt_from_task(row).endswith("assistant: ")
+
+
 def test_fixture_mode_writes_run_reportable_predictions_without_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -32,6 +32,7 @@ from omnicoder.training.pipeline_pretrain_2026_dense import (
     autocast_context,
     load_checkpoint_shard,
     rank_device,
+    record_ids_labels_weight,
     shard_spec,
     stage_ranges,
     validate_target_device_placement,
@@ -107,23 +108,33 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
     return shard, device, int(cfg.d_model), int(cfg.vocab_size)
 
 
-def _broadcast_batch(batch: torch.Tensor | None, device: torch.device) -> torch.Tensor | None:
+def _broadcast_batch_labels(
+    batch: torch.Tensor | None,
+    labels: torch.Tensor | None,
+    device: torch.device,
+) -> tuple[torch.Tensor | None, torch.Tensor | None]:
     rank = int(dist.get_rank())
     meta = torch.tensor([1 if batch is not None else 0, int(batch.shape[1]) if batch is not None else 0], dtype=torch.long, device=device)
     dist.broadcast(meta, src=0)
     if int(meta[0].item()) == 0:
-        return None
+        return None, None
     if rank != 0:
         batch = torch.empty((1, int(meta[1].item())), dtype=torch.long, device=device)
+        labels = torch.empty((1, int(meta[1].item())), dtype=torch.long, device=device)
     else:
+        if labels is None:
+            raise RuntimeError("rank 0 must provide labels when batch is present")
         batch = batch.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
     dist.broadcast(batch, src=0)
-    return batch
+    dist.broadcast(labels, src=0)
+    return batch, labels
 
 
 def _pipeline_loss(
     shard: OmniCoder2026PipelineShard,
     batch: torch.Tensor,
+    labels: torch.Tensor,
     *,
     device: torch.device,
     hidden_dtype: torch.dtype,
@@ -161,18 +172,22 @@ def _pipeline_loss(
                 dist.broadcast(count_tensor, src=world_size - 1)
                 return float(loss_tensor.cpu()), int(count_tensor.cpu())
         shifted_hidden = hidden[:, :-1, :]
-        shifted_labels = batch[:, 1:].to(hidden.device, non_blocking=True)
+        labels = labels.to(hidden.device, non_blocking=True)
+        shifted_labels = labels[:, 1:]
+        sparse_target_labels = bool(labels.eq(-100).any())
+        valid_mask = shifted_labels.ge(0) if sparse_target_labels else shifted_labels.ne(0)
+        boundary_mask = valid_mask & ~F.pad(valid_mask[:, :-1], (1, 0), value=False)
         selected_items: list[tuple[int, torch.Tensor]] = []
-        if loss_token_stride > 1 or max_loss_tokens_per_sample > 0:
+        if sparse_target_labels or loss_token_stride > 1 or max_loss_tokens_per_sample > 0:
             for batch_index in range(int(shifted_hidden.shape[0])):
-                positions = torch.nonzero(shifted_labels[batch_index].ne(0), as_tuple=False).flatten()
+                positions = torch.nonzero(valid_mask[batch_index], as_tuple=False).flatten()
                 if positions.numel() == 0:
                     continue
-                if loss_token_stride > 1:
+                if not sparse_target_labels and loss_token_stride > 1:
                     positions = positions[::loss_token_stride]
                     if positions.numel() == 0:
-                        positions = torch.nonzero(shifted_labels[batch_index].ne(0), as_tuple=False).flatten()[-1:]
-                if max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
+                        positions = torch.nonzero(valid_mask[batch_index], as_tuple=False).flatten()[-1:]
+                if not sparse_target_labels and max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
                     pick = torch.linspace(
                         0,
                         positions.numel() - 1,
@@ -181,6 +196,9 @@ def _pipeline_loss(
                         dtype=torch.float32,
                     ).round().long().unique(sorted=True)
                     positions = positions[pick]
+                boundary_positions = torch.nonzero(boundary_mask[batch_index], as_tuple=False).flatten()
+                if boundary_positions.numel() > 0:
+                    positions = torch.unique(torch.cat((positions, boundary_positions)), sorted=True)
                 selected_items.append((batch_index, positions))
         loss_tensor = hidden.new_zeros((), dtype=torch.float32)
         if selected_items:
@@ -198,18 +216,51 @@ def _pipeline_loss(
                 logits = shard.lm_head(flat_hidden[start:end, :]).float()
                 loss_tensor = loss_tensor + F.cross_entropy(logits, flat_labels[start:end], reduction="sum")
         else:
-            count_tensor = torch.tensor(int(shifted_labels.numel()), dtype=torch.long, device=device)
+            count_tensor = valid_mask.long().sum().to(dtype=torch.long)
             for start in range(0, shifted_hidden.shape[1], max(1, int(lm_loss_chunk_tokens))):
                 end = min(shifted_hidden.shape[1], start + int(lm_loss_chunk_tokens))
                 logits = shard.lm_head(shifted_hidden[:, start:end, :]).float()
-                loss_tensor = loss_tensor + F.cross_entropy(
+                token_losses = F.cross_entropy(
                     logits.transpose(1, 2),
                     shifted_labels[:, start:end],
-                    reduction="sum",
-                )
+                    reduction="none",
+                ).float()
+                loss_tensor = loss_tensor + (token_losses * valid_mask[:, start:end].float()).sum()
         dist.broadcast(loss_tensor, src=world_size - 1)
         dist.broadcast(count_tensor, src=world_size - 1)
         return float(loss_tensor.cpu()), int(count_tensor.cpu())
+
+
+def _sanitize_ids_labels(ids: list[int], labels: list[int], vocab_size: int) -> tuple[list[int], list[int]]:
+    cleaned_ids: list[int] = []
+    cleaned_labels: list[int] = []
+    for token, label in zip(ids, labels):
+        token_id = int(token)
+        if token_id < 0 or token_id >= int(vocab_size):
+            token_id = 1
+        cleaned_ids.append(token_id)
+        try:
+            label_id = int(label)
+        except Exception:
+            label_id = -100
+        cleaned_labels.append(token_id if label_id >= 0 else -100)
+    return cleaned_ids, cleaned_labels
+
+
+def _chunks_pair(ids: list[int], labels: list[int], seq_len: int) -> list[tuple[list[int], list[int]]]:
+    width = max(2, int(seq_len))
+    stride = max(1, width - 1)
+    sparse_source = any(int(label) < 0 for label in labels)
+    pairs: list[tuple[list[int], list[int]]] = []
+    for start in range(0, len(ids), stride):
+        chunk_ids = ids[start:start + width]
+        chunk_labels = labels[start:start + width]
+        if sparse_source and chunk_labels:
+            chunk_labels = list(chunk_labels)
+            chunk_labels[0] = -100
+        if len(chunk_ids) >= 2:
+            pairs.append((chunk_ids, chunk_labels))
+    return pairs
 
 
 def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -233,7 +284,12 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
             file_bucket = _new_bucket(str(path))
             for record in _read_jsonl(path, int(args.max_records_per_file)):
                 modality = _record_modality(record, path.stem)
-                ids = _record_ids(record, tokenizer, vocab_size)
+                try:
+                    ids, labels, _weight = record_ids_labels_weight(record, tokenizer)
+                    ids, labels = _sanitize_ids_labels(ids, labels, vocab_size)
+                except Exception:
+                    ids = _record_ids(record, tokenizer, vocab_size)
+                    labels = [token if int(token) != 0 else -100 for token in ids]
                 if len(ids) < 2:
                     continue
                 records_seen += 1
@@ -243,14 +299,16 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
                 modality_bucket["records"] += 1
                 file_modality = file_bucket["modalities"].setdefault(modality, _new_bucket())
                 file_modality["records"] += 1
-                for chunk in _chunks(ids, int(args.seq_len)):
+                for chunk, chunk_labels in _chunks_pair(ids, labels, int(args.seq_len)):
                     batch = torch.tensor([chunk], dtype=torch.long, device=device)
-                    batch = _broadcast_batch(batch, device)
-                    if batch is None:
+                    label_batch = torch.tensor([chunk_labels], dtype=torch.long, device=device)
+                    batch, label_batch = _broadcast_batch_labels(batch, label_batch, device)
+                    if batch is None or label_batch is None:
                         raise RuntimeError("rank 0 unexpectedly received evaluation stop marker")
                     loss_sum, token_count = _pipeline_loss(
                         shard,
                         batch,
+                        label_batch,
                         device=device,
                         hidden_dtype=hidden_dtype,
                         d_model=d_model,
@@ -283,7 +341,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
                     )
             _finalize(file_bucket)
             file_results.append(file_bucket)
-        _broadcast_batch(None, device)
+        _broadcast_batch_labels(None, None, device)
         _finalize(overall)
         for bucket in by_modality.values():
             _finalize(bucket)
@@ -301,12 +359,13 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
             "overall": overall,
         }
     while True:
-        batch = _broadcast_batch(None, device)
-        if batch is None:
+        batch, labels = _broadcast_batch_labels(None, None, device)
+        if batch is None or labels is None:
             break
         _pipeline_loss(
             shard,
             batch,
+            labels,
             device=device,
             hidden_dtype=hidden_dtype,
             d_model=d_model,

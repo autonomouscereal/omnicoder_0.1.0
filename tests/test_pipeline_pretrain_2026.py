@@ -11,7 +11,7 @@ torch = pytest.importorskip("torch")
 import torch.nn.functional as F
 
 import omnicoder.training.pipeline_pretrain_2026_dense as pipeline
-from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
+from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config, SparseLatentAttention
 from omnicoder.training.pipeline_pretrain_2026_dense import (
     OmniCoder2026PipelineShard,
     WeightedTextJsonlDataset,
@@ -122,6 +122,22 @@ def test_stage_ranges_target_contract() -> None:
     assert stage_ranges(6, "1,2,3") == [(0, 1), (1, 3), (3, 6)]
     with pytest.raises(ValueError):
         stage_ranges(6, "2,2,1")
+
+
+def test_sparse_global_attention_masks_current_compressed_block() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    cfg.csa_top_k_blocks = 4
+    attn = SparseLatentAttention(cfg, "csa")
+
+    mask = attn._global_mask(t=8, n_blocks=4, block_size=2, device=torch.device("cpu"))
+
+    assert not mask[0, 0]
+    assert not mask[1, 0]
+    assert mask[2, 0]
+    assert not mask[2, 1]
+    assert mask[4, 0]
+    assert mask[4, 1]
+    assert not mask[4, 2]
 
 
 def test_full_checkpoint_loads_rank_local_shard_from_cpu(tmp_path) -> None:
@@ -320,6 +336,138 @@ def test_final_stage_selected_token_lm_loss_bounds_vocab_projection() -> None:
     assert hidden.grad is not None
 
 
+def test_final_stage_ignores_masked_prompt_labels() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(1, 6, cfg.d_model, requires_grad=True)
+    labels = torch.tensor([[-100, -100, 5, 6, -100, 7]], dtype=torch.long)
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(processed, labels, chunk_tokens=2)
+    valid_positions = torch.tensor([1, 2, 4])
+    logits = final.lm_head(processed[0, valid_positions, :])
+    expected = F.cross_entropy(logits, labels[0, valid_positions + 1], reduction="mean")
+
+    assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+    loss.backward()
+    assert hidden.grad is not None
+
+
+def test_final_stage_boundary_weight_upweights_target_starts() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(1, 6, cfg.d_model, requires_grad=True)
+    labels = torch.tensor([[-100, -100, 5, 6, -100, 7]], dtype=torch.long)
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(processed, labels, chunk_tokens=2, target_boundary_weight=4.0)
+    valid_positions = torch.tensor([1, 2, 4])
+    logits = final.lm_head(processed[0, valid_positions, :])
+    token_losses = F.cross_entropy(logits, labels[0, valid_positions + 1], reduction="none")
+    token_weights = torch.tensor([4.0, 1.0, 4.0])
+    expected = (token_losses * token_weights).sum() / token_weights.sum()
+
+    assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+
+
+def test_final_stage_selected_ce_uses_all_sparse_target_labels() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(1, 8, cfg.d_model, requires_grad=True)
+    labels = torch.tensor([[-100, -100, 5, 6, -100, 7, 8, 9]], dtype=torch.long)
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(
+        processed,
+        labels,
+        chunk_tokens=2,
+        loss_token_stride=3,
+        max_loss_tokens_per_sample=0,
+    )
+    expected_positions = torch.tensor([1, 2, 4, 5, 6])
+    logits = final.lm_head(processed[0, expected_positions, :])
+    expected = F.cross_entropy(logits, labels[0, expected_positions + 1], reduction="mean")
+
+    assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+
+
+def test_final_stage_selected_ce_treats_first_label_sentinel_as_sparse() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(1, 7, cfg.d_model, requires_grad=True)
+    labels = torch.tensor([[-100, 5, 6, 7, 8, 9, 10]], dtype=torch.long)
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(
+        processed,
+        labels,
+        chunk_tokens=2,
+        loss_token_stride=4,
+        max_loss_tokens_per_sample=1,
+    )
+    expected_positions = torch.arange(0, 6)
+    logits = final.lm_head(processed[0, expected_positions, :])
+    expected = F.cross_entropy(logits, labels[0, expected_positions + 1], reduction="mean")
+
+    assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+
+
+def test_final_stage_prefix_weight_upweights_target_anchor_tokens() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(1, 8, cfg.d_model, requires_grad=True)
+    labels = torch.tensor([[-100, -100, 5, 6, -100, 7, 8, 9]], dtype=torch.long)
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(
+        processed,
+        labels,
+        chunk_tokens=2,
+        target_prefix_weight=3.0,
+        target_prefix_tokens=2,
+    )
+    valid_positions = torch.tensor([1, 2, 4, 5, 6])
+    logits = final.lm_head(processed[0, valid_positions, :])
+    token_losses = F.cross_entropy(logits, labels[0, valid_positions + 1], reduction="none")
+    token_weights = torch.tensor([3.0, 3.0, 3.0, 3.0, 1.0])
+    expected = (token_losses * token_weights).sum() / token_weights.sum()
+
+    assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+
+
+def test_final_stage_sparse_media_targets_get_optimizer_update() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    optimizer = torch.optim.SGD(final.parameters(), lr=0.01)
+    hidden = torch.randn(1, 8, cfg.d_model, requires_grad=True)
+    labels = torch.tensor([[-100, -100, 5, 6, -100, 7, 8, 9]], dtype=torch.long)
+    before = final.lm_head.weight.detach().clone()
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(
+        processed,
+        labels,
+        chunk_tokens=2,
+        loss_token_stride=99,
+        max_loss_tokens_per_sample=1,
+        target_boundary_weight=4.0,
+        target_prefix_weight=8.0,
+        target_prefix_tokens=3,
+    )
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert hidden.grad is not None
+    optimizer.step()
+
+    assert not torch.equal(before, final.lm_head.weight.detach())
+
+
 def test_weighted_pipeline_dataset_uses_tool_reward_rows(tmp_path) -> None:
     class TinyTokenizer:
         def encode(self, text: str) -> list[int]:
@@ -332,10 +480,219 @@ def test_weighted_pipeline_dataset_uses_tool_reward_rows(tmp_path) -> None:
     )
 
     dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=8, vocab_size=32)
-    ids, weight = dataset[0]
+    ids, labels, weight = dataset[0]
 
     assert ids.shape == (8,)
+    assert labels.shape == (8,)
     assert float(weight) == pytest.approx(2.0)
+
+
+def test_weighted_pipeline_dataset_masks_user_and_trains_assistant(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    record = {
+        "messages": [
+            {"role": "system", "content": "follow instructions"},
+            {"role": "user", "content": "name the proof phrase"},
+            {"role": "assistant", "content": "target media proof"},
+        ]
+    }
+    source = tmp_path / "messages.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=96, vocab_size=256)
+    ids, labels, weight = dataset[0]
+    valid = labels.ge(0)
+
+    assert ids.shape == labels.shape == (96,)
+    assert float(weight) > 0.0
+    assert valid.sum().item() == len(TinyTokenizer().encode(" target media proof"))
+    assert torch.equal(ids[valid], labels[valid])
+    assert labels[:10].eq(-100).all()
+
+
+def test_weighted_pipeline_dataset_trains_media_target_json(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) for ch in text]
+
+    record = {
+        "input_json": {"prompt": "create a proof image"},
+        "target_json": {
+            "output_modality": "image",
+            "artifact_path": "artifacts/proof_image.png",
+            "artifact_tokens": "<image_begin> proof_image_token <image_end>",
+        },
+    }
+    source = tmp_path / "media.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=160, vocab_size=256)
+    ids, labels, _weight = dataset[0]
+    valid = labels.ge(0)
+
+    assert valid.any()
+    assert torch.equal(ids[valid], labels[valid])
+    assert labels[: len(TinyTokenizer().encode("user: create a proof image"))].eq(-100).all()
+    target_text = "".join(chr(int(token.item())) for token in ids[valid])
+    assert target_text.startswith(" image | ")
+    assert '{"output_modality":"image"' in target_text
+    assert "<image_begin> proof_image_token <image_end>" in target_text
+
+
+def test_messages_without_assistant_do_not_suppress_target_json(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) for ch in text]
+
+    record = {
+        "messages": [{"role": "user", "content": "create a proof image"}],
+        "target_json": {
+            "output_modality": "image",
+            "artifact_tokens": "<image_begin> mixed_schema_target <image_end>",
+        },
+    }
+    source = tmp_path / "mixed_schema.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=160, vocab_size=256)
+    ids, labels, _weight = dataset[0]
+    valid = labels.ge(0)
+    target_text = "".join(chr(int(token.item())) for token in ids[valid])
+
+    assert valid.any()
+    assert target_text.startswith(" image | ")
+    assert "mixed_schema_target" in target_text
+
+
+def test_weighted_pipeline_dataset_prefixes_media_route_from_messages(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) for ch in text]
+
+    record = {
+        "messages": [
+            {"role": "user", "content": "render a proof video"},
+            {
+                "role": "assistant",
+                "content": '{"output_modality":"video","artifact_tokens":"<video_begin> proof <video_end>"}',
+            },
+        ],
+        "modality": "video",
+    }
+    source = tmp_path / "media_messages.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=160, vocab_size=256)
+    ids, labels, _weight = dataset[0]
+    valid = labels.ge(0)
+    target_text = "".join(chr(int(token.item())) for token in ids[valid])
+
+    assert target_text.startswith(" video | ")
+    assert '{"output_modality":"video"' in target_text
+
+
+def test_explicit_token_rows_concatenate_assistant_and_media_targets() -> None:
+    record = {
+        "prompt_token_ids": [10, 11],
+        "assistant_token_ids": [20, 21],
+        "artifact_token_ids": [30, 31],
+    }
+
+    ids, labels, weight = pipeline.record_ids_labels_weight(record, tokenizer=None)
+
+    assert ids == [10, 11, 20, 21, 30, 31]
+    assert labels == [-100, -100, 20, 21, 30, 31]
+    assert weight > 0.0
+
+
+def test_target_token_id_zero_is_preserved_when_masked() -> None:
+    record = {
+        "prompt_token_ids": [7],
+        "assistant_token_ids": [0, 8],
+    }
+
+    ids, labels, _weight = pipeline.record_ids_labels_weight(record, tokenizer=None)
+
+    assert ids == [7, 0, 8]
+    assert labels == [-100, 0, 8]
+
+
+def test_dataset_chunk_overlap_preserves_boundary_target_prediction(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 97 + 2 for ch in text]
+
+    record = {
+        "messages": [
+            {"role": "user", "content": "x" * 9},
+            {"role": "assistant", "content": "target"},
+        ]
+    }
+    source = tmp_path / "boundary.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=12, vocab_size=256)
+    ids, labels, _weight = dataset[1]
+    valid = torch.nonzero(labels.ge(0), as_tuple=False).flatten()
+
+    assert valid.numel() > 0
+    assert int(valid[0].item()) > 0
+
+
+def test_dataset_chunk_overlap_preserves_repeated_boundaries(tmp_path) -> None:
+    record = {
+        "prompt_token_ids": [10, 11, 12],
+        "assistant_token_ids": [13, 14, 15, 16, 17, 18, 19, 20],
+    }
+    source = tmp_path / "explicit_boundary.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), tokenizer=None, seq_len=4, vocab_size=256)
+    ids, labels, _weight = dataset[2]
+    valid = torch.nonzero(labels.ge(0), as_tuple=False).flatten()
+
+    assert ids.tolist() == [16, 17, 18, 19]
+    assert valid.tolist() == [1, 2, 3]
+
+
+def test_weighted_pipeline_dataset_uses_full_prompt_tokenization_at_target_boundary(tmp_path) -> None:
+    class MergeTokenizer:
+        def encode(self, text: str) -> list[int]:
+            ids: list[int] = []
+            index = 0
+            while index < len(text):
+                if text.startswith(".\n", index):
+                    ids.append(900)
+                    index += 2
+                    continue
+                ids.append(ord(text[index]) % 101 + 2)
+                index += 1
+            return ids
+
+    record = {
+        "messages": [
+            {"role": "user", "content": "Render proof image."},
+            {"role": "assistant", "content": '{"output_modality":"image"}'},
+        ]
+    }
+    source = tmp_path / "messages.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    tokenizer = MergeTokenizer()
+    dataset = WeightedTextJsonlDataset(str(source), tokenizer, seq_len=96, vocab_size=1024)
+    ids, labels, _weight = dataset[0]
+    valid = labels.ge(0)
+    expected_prompt = "user: Render proof image.\nassistant:"
+    expected_full = expected_prompt + ' image | {"output_modality":"image"}'
+    expected_full_ids = torch.tensor(tokenizer.encode(expected_full), dtype=torch.long)
+    first_target = int(torch.nonzero(valid, as_tuple=False).flatten()[0].item())
+
+    assert torch.equal(ids[: len(expected_full_ids)], expected_full_ids)
+    assert torch.equal(ids[:first_target], torch.tensor(tokenizer.encode(expected_prompt), dtype=torch.long))
+    assert torch.equal(ids[valid], labels[valid])
 
 
 def test_filesystem_checkpoint_marker_wait_requires_all_rank_markers(tmp_path) -> None:

@@ -9,6 +9,14 @@ from omnicoder.tokenization.text_range_2026 import effective_text_token_range
 
 TEXT_FIELDS = {"prediction", "model_patch", "tool_call", "model_actions", "model_answer", "model_output", "output"}
 MEDIA_FIELDS = {"artifact_path", "generated_artifact", "output_path", "image_path", "video_path", "audio_path", "music_path"}
+MODEL_ROUTE_PREFIXES = {
+    "image": "image",
+    "video": "video",
+    "music": "music",
+    "tts": "speech",
+    "speech": "speech",
+    "ocr": "text",
+}
 
 
 @dataclass(frozen=True)
@@ -76,6 +84,40 @@ def infer_output_modality(row: dict[str, Any], output_field: str) -> str:
     if output_field == "model_patch" or "code" in text or "swe" in text:
         return "code"
     return "text"
+
+
+def parse_model_output_route(text: str) -> tuple[str, str]:
+    """Parse the assistant-boundary route token used for media output training.
+
+    The trunk emits ordinary text tokens such as ``image |`` before structured
+    JSON/artifact tokens. Runtime code can strip that visible route marker and
+    use it to choose the media decoder without adding in-trunk adapters.
+    """
+
+    stripped = str(text or "").lstrip()
+    for prefix, modality in MODEL_ROUTE_PREFIXES.items():
+        for separator in (" | ", "|\n", "|\r\n", "|"):
+            marker = f"{prefix}{separator}"
+            if stripped.lower().startswith(marker):
+                return modality, stripped[len(marker):].lstrip()
+    return "", str(text or "")
+
+
+def route_for_model_output_text(
+    *,
+    text: str,
+    row: dict[str, Any],
+    output_field: str,
+    tokenizer: Any | None,
+    model_vocab_size: int,
+) -> tuple[OutputRoute, str]:
+    modality, cleaned = parse_model_output_route(text)
+    route_row = dict(row)
+    if modality:
+        route_row["output_modality"] = modality
+        if modality in {"image", "video", "music", "speech"}:
+            output_field = "generated_artifact"
+    return route_for_output(row=route_row, output_field=output_field, tokenizer=tokenizer, model_vocab_size=model_vocab_size), cleaned
 
 
 def route_for_output(

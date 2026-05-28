@@ -323,7 +323,7 @@ def prompt_from_task(row: dict[str, Any]) -> str:
     for key in ("prompt", "question", "input", "instruction", "instructions", "issue", "description", "task", "text"):
         value = row.get(key)
         if isinstance(value, str) and value.strip():
-            parts.append(value.strip())
+            parts.append(value if key == "prompt" else value.strip())
     if row.get("choices") not in (None, "", [], {}):
         parts.append("Choices: " + json.dumps(row.get("choices"), ensure_ascii=True, sort_keys=True))
     if not parts:

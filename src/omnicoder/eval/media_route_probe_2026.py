@@ -9,18 +9,23 @@ from omnicoder.inference.output_router_2026 import route_for_output, route_manif
 
 
 SCHEMA = "omnicoder.media_route_probe_2026.v1"
-DEFAULT_MEDIA_MODALITIES = ("image", "video", "audio", "music", "speech")
+DEFAULT_MEDIA_MODALITIES = ("image", "video", "music", "tts", "ocr")
 
 
 def build_media_route_probe(*, model_vocab_size: int = 330000, modalities: tuple[str, ...] = DEFAULT_MEDIA_MODALITIES) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for modality in modalities:
-        field = "artifact_path"
+        field = "prediction" if modality == "ocr" else "artifact_path"
         row = {
             "benchmark_id": f"media_route_probe_{modality}",
-            "output_modality": modality,
             "target_modality": modality,
+            "modality": modality,
         }
+        if modality == "ocr":
+            row["output_modality"] = "text"
+            row["task_format"] = "ocr_text"
+        else:
+            row["output_modality"] = modality
         route = route_for_output(row=row, output_field=field, tokenizer=None, model_vocab_size=int(model_vocab_size))
         rows.append(
             {

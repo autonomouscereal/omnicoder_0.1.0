@@ -391,12 +391,51 @@ def _record_ids(record: dict[str, Any], tokenizer: Any, vocab_size: int) -> list
     return _sanitize_ids(ids, vocab_size)
 
 
+def _record_ids_labels(record: dict[str, Any], tokenizer: Any, vocab_size: int) -> tuple[list[int], list[int]]:
+    try:
+        from omnicoder.training.pipeline_pretrain_2026_dense import record_ids_labels_weight
+
+        ids, labels, _weight = record_ids_labels_weight(record, tokenizer)
+    except Exception:
+        ids = _record_ids(record, tokenizer, vocab_size)
+        labels = list(ids)
+    cleaned_ids: list[int] = []
+    cleaned_labels: list[int] = []
+    for token, label in zip(ids, labels):
+        token_id = int(token)
+        if token_id < 0 or token_id >= int(vocab_size):
+            token_id = 1
+        cleaned_ids.append(token_id)
+        try:
+            label_id = int(label)
+        except Exception:
+            label_id = -100
+        cleaned_labels.append(token_id if label_id >= 0 else -100)
+    if len(cleaned_labels) < len(cleaned_ids):
+        cleaned_labels.extend([-100] * (len(cleaned_ids) - len(cleaned_labels)))
+    return cleaned_ids, cleaned_labels
+
+
 def _chunks(ids: list[int], seq_len: int) -> Iterable[list[int]]:
     width = max(2, int(seq_len))
     for start in range(0, len(ids), width):
         chunk = ids[start:start + width]
         if len(chunk) >= 2:
             yield chunk
+
+
+def _chunks_pair(ids: list[int], labels: list[int], seq_len: int) -> Iterable[tuple[list[int], list[int]]]:
+    width = max(2, int(seq_len))
+    stride = max(1, width - 1)
+    sparse_source = any(int(label) < 0 for label in labels)
+    for start in range(0, len(ids), stride):
+        chunk_ids = ids[start:start + width]
+        chunk_labels = labels[start:start + width]
+        if sparse_source and chunk_labels:
+            chunk_labels = list(chunk_labels)
+            chunk_labels[0] = -100
+        if len(chunk_ids) >= 2:
+            yield chunk_ids, chunk_labels
 
 
 def _new_bucket(path: str | None = None) -> dict[str, Any]:
@@ -557,7 +596,7 @@ def evaluate_files(
             if world_size > 1 and (record_index % world_size) != rank:
                 continue
             modality = _record_modality(record, path.stem)
-            ids = _record_ids(record, tokenizer, vocab_size)
+            ids, labels = _record_ids_labels(record, tokenizer, vocab_size)
             if len(ids) < 2:
                 continue
             file_bucket["records"] += 1
@@ -567,18 +606,22 @@ def evaluate_files(
             file_modality = file_bucket["modalities"].setdefault(modality, _new_bucket())
             file_modality["records"] += 1
 
-            for chunk in _chunks(ids, seq_len):
+            for chunk, chunk_labels in _chunks_pair(ids, labels, seq_len):
                 batch = torch.tensor([chunk], dtype=torch.long, device=device)
+                label_tensor = torch.tensor([chunk_labels], dtype=torch.long, device=device)
                 with _autocast_context(device, precision):
                     logits = model(batch, return_hidden=False)["logits"]
-                labels = batch if batch.device == logits.device else batch.to(logits.device, non_blocking=True)
+                if label_tensor.device != logits.device:
+                    label_tensor = label_tensor.to(logits.device, non_blocking=True)
                 loss_logits = logits[:, :-1, :].float()
                 loss = F.cross_entropy(
                     loss_logits.transpose(1, 2),
-                    labels[:, 1:],
+                    label_tensor[:, 1:],
                     reduction="sum",
                 )
-                token_count = max(0, len(chunk) - 1)
+                token_count = int(label_tensor[:, 1:].ge(0).sum().detach().cpu())
+                if token_count <= 0:
+                    continue
                 loss_value = float(loss.detach().cpu())
                 _add_loss(file_bucket, loss_value, token_count)
                 _add_loss(file_modality, loss_value, token_count)

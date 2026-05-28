@@ -166,6 +166,10 @@ class OmniCoder2026PipelineShard(nn.Module):
         sample_weights: torch.Tensor | None = None,
         loss_token_stride: int = 1,
         max_loss_tokens_per_sample: int = 0,
+        loss_mask: torch.Tensor | None = None,
+        target_boundary_weight: float = 1.0,
+        target_prefix_weight: float = 1.0,
+        target_prefix_tokens: int = 0,
     ) -> torch.Tensor:
         if not self.spec.has_head:
             raise RuntimeError("LM loss can only be computed on the final pipeline stage")
@@ -173,21 +177,69 @@ class OmniCoder2026PipelineShard(nn.Module):
             labels = labels.to(hidden.device, non_blocking=True)
         shifted_hidden = hidden[:, :-1, :]
         shifted_labels = labels[:, 1:]
+        sparse_target_labels = bool(labels.eq(-100).any())
+        target_mask = shifted_labels.ge(0) if sparse_target_labels else shifted_labels.ne(0)
+        if loss_mask is not None:
+            if loss_mask.device != hidden.device:
+                loss_mask = loss_mask.to(hidden.device, non_blocking=True)
+            if tuple(loss_mask.shape) != tuple(labels.shape):
+                raise ValueError(f"loss_mask shape mismatch: mask={tuple(loss_mask.shape)} labels={tuple(labels.shape)}")
+            target_mask = target_mask & loss_mask[:, 1:].to(dtype=torch.bool)
+        boundary_weight = max(1.0, float(target_boundary_weight or 1.0))
+        prev_target_mask = F.pad(target_mask[:, :-1], (1, 0), value=False)
+        boundary_mask = target_mask & ~prev_target_mask
+        prefix_weight = max(1.0, float(target_prefix_weight or 1.0))
+        prefix_tokens = max(0, int(target_prefix_tokens or 0))
+        prefix_mask = torch.zeros_like(target_mask, dtype=torch.bool)
+        if prefix_tokens > 0:
+            for batch_index in range(int(target_mask.shape[0])):
+                positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()
+                if positions.numel() == 0:
+                    continue
+                starts = torch.nonzero(boundary_mask[batch_index], as_tuple=False).flatten()
+                for start in starts.detach().cpu().tolist():
+                    start_pos = int(start)
+                    start_matches = torch.nonzero(positions == start_pos, as_tuple=False).flatten()
+                    if start_matches.numel() == 0:
+                        continue
+                    begin = int(start_matches[0].item())
+                    prefix_positions = positions[begin: begin + prefix_tokens]
+                    if prefix_positions.numel() > 0:
+                        prefix_mask[batch_index, prefix_positions] = True
+
+        def _token_weight(mask: torch.Tensor, boundary: torch.Tensor, prefix: torch.Tensor) -> torch.Tensor:
+            weights = torch.ones_like(mask, dtype=torch.float32)
+            if boundary_weight > 1.0:
+                weights = torch.where(boundary, torch.full_like(weights, boundary_weight), weights)
+            if prefix_weight > 1.0:
+                weights = torch.where(prefix, torch.maximum(weights, torch.full_like(weights, prefix_weight)), weights)
+            return weights
+
+        def _aligned_weights(batch_size: int) -> torch.Tensor | None:
+            if sample_weights is None:
+                return None
+            weights = sample_weights.to(hidden.device, non_blocking=True).to(dtype=torch.float32).reshape(-1)
+            if weights.numel() == batch_size:
+                return weights
+            if weights.numel() > 0:
+                return weights.mean().expand(batch_size)
+            return hidden.new_ones((batch_size,), dtype=torch.float32)
         loss_token_stride = max(1, int(loss_token_stride))
         max_loss_tokens_per_sample = max(0, int(max_loss_tokens_per_sample))
-        if loss_token_stride > 1 or max_loss_tokens_per_sample > 0:
+        if sparse_target_labels or loss_token_stride > 1 or max_loss_tokens_per_sample > 0:
             selected_hidden: list[torch.Tensor] = []
             selected_labels: list[torch.Tensor] = []
             selected_batches: list[torch.Tensor] = []
+            selected_token_weights: list[torch.Tensor] = []
             for batch_index in range(int(shifted_hidden.shape[0])):
-                positions = torch.nonzero(shifted_labels[batch_index].ne(0), as_tuple=False).flatten()
+                positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()
                 if positions.numel() == 0:
                     continue
-                if loss_token_stride > 1:
+                if not sparse_target_labels and loss_token_stride > 1:
                     positions = positions[::loss_token_stride]
                     if positions.numel() == 0:
-                        positions = torch.nonzero(shifted_labels[batch_index].ne(0), as_tuple=False).flatten()[-1:]
-                if max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
+                        positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()[-1:]
+                if not sparse_target_labels and max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
                     pick = torch.linspace(
                         0,
                         positions.numel() - 1,
@@ -196,53 +248,72 @@ class OmniCoder2026PipelineShard(nn.Module):
                         dtype=torch.float32,
                     ).round().long().unique(sorted=True)
                     positions = positions[pick]
+                boundary_positions = torch.nonzero(boundary_mask[batch_index], as_tuple=False).flatten()
+                if boundary_positions.numel() > 0:
+                    positions = torch.unique(torch.cat((positions, boundary_positions)), sorted=True)
+                prefix_positions = torch.nonzero(prefix_mask[batch_index], as_tuple=False).flatten()
+                if prefix_positions.numel() > 0:
+                    positions = torch.unique(torch.cat((positions, prefix_positions)), sorted=True)
                 selected_hidden.append(shifted_hidden[batch_index, positions, :])
                 selected_labels.append(shifted_labels[batch_index, positions])
                 selected_batches.append(torch.full((positions.numel(),), batch_index, dtype=torch.long, device=hidden.device))
+                selected_token_weights.append(
+                    _token_weight(
+                        target_mask[batch_index, positions],
+                        boundary_mask[batch_index, positions],
+                        prefix_mask[batch_index, positions],
+                    )
+                )
             if not selected_hidden:
                 return hidden.sum() * 0.0
             flat_hidden = torch.cat(selected_hidden, dim=0)
             flat_labels = torch.cat(selected_labels, dim=0)
             flat_batches = torch.cat(selected_batches, dim=0)
+            flat_token_weights = torch.cat(selected_token_weights, dim=0) if selected_token_weights else None
             token_losses: list[torch.Tensor] = []
             for start in range(0, flat_hidden.shape[0], max(1, int(chunk_tokens))):
                 end = min(flat_hidden.shape[0], start + int(chunk_tokens))
                 logits = self.lm_head(flat_hidden[start:end, :])
                 token_losses.append(F.cross_entropy(logits, flat_labels[start:end], reduction="none").float())
             losses = torch.cat(token_losses, dim=0)
+            if flat_token_weights is not None:
+                losses = losses * flat_token_weights
             if sample_weights is not None:
-                weights = sample_weights.to(hidden.device, non_blocking=True).to(dtype=torch.float32).reshape(-1)
-                if weights.numel() != shifted_hidden.shape[0]:
-                    raise ValueError(f"sample_weights batch mismatch: weights={weights.numel()} batch={shifted_hidden.shape[0]}")
+                weights = _aligned_weights(int(shifted_hidden.shape[0]))
+                assert weights is not None
                 per_sample_sum = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
                 per_sample_tokens = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
                 per_sample_sum.index_add_(0, flat_batches, losses)
-                per_sample_tokens.index_add_(0, flat_batches, torch.ones_like(losses))
+                per_sample_tokens.index_add_(0, flat_batches, flat_token_weights if flat_token_weights is not None else torch.ones_like(losses))
                 per_sample = per_sample_sum / per_sample_tokens.clamp_min(1.0)
                 return (per_sample * weights).mean().to(dtype=hidden.dtype)
+            if flat_token_weights is not None:
+                return (losses.sum() / flat_token_weights.sum().clamp_min(1.0)).to(dtype=hidden.dtype)
             return losses.mean().to(dtype=hidden.dtype)
         if sample_weights is not None:
-            weights = sample_weights.to(hidden.device, non_blocking=True).to(dtype=torch.float32).reshape(-1)
-            if weights.numel() != shifted_hidden.shape[0]:
-                raise ValueError(f"sample_weights batch mismatch: weights={weights.numel()} batch={shifted_hidden.shape[0]}")
+            weights = _aligned_weights(int(shifted_hidden.shape[0]))
+            assert weights is not None
             per_sample_sum = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
             per_sample_tokens = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
             for start in range(0, shifted_hidden.shape[1], max(1, int(chunk_tokens))):
                 end = min(shifted_hidden.shape[1], start + int(chunk_tokens))
                 logits = self.lm_head(shifted_hidden[:, start:end, :])
                 token_losses = F.cross_entropy(logits.transpose(1, 2), shifted_labels[:, start:end], reduction="none").float()
-                mask = shifted_labels[:, start:end].ne(0).float()
+                mask = target_mask[:, start:end].float()
+                mask = mask * _token_weight(target_mask[:, start:end], boundary_mask[:, start:end], prefix_mask[:, start:end])
                 per_sample_sum = per_sample_sum + (token_losses * mask).sum(dim=1)
                 per_sample_tokens = per_sample_tokens + mask.sum(dim=1)
             per_sample = per_sample_sum / per_sample_tokens.clamp_min(1.0)
             return (per_sample * weights).mean().to(dtype=hidden.dtype)
-        total_tokens = max(1, int(shifted_labels.numel()))
+        total_mask = target_mask.float() * _token_weight(target_mask, boundary_mask, prefix_mask)
+        total_tokens = total_mask.sum().clamp_min(1.0)
         loss_sum = hidden.new_zeros(())
         for start in range(0, shifted_hidden.shape[1], max(1, int(chunk_tokens))):
             end = min(shifted_hidden.shape[1], start + int(chunk_tokens))
             logits = self.lm_head(shifted_hidden[:, start:end, :])
-            loss_sum = loss_sum + F.cross_entropy(logits.transpose(1, 2), shifted_labels[:, start:end], reduction="sum")
-        return loss_sum / float(total_tokens)
+            token_losses = F.cross_entropy(logits.transpose(1, 2), shifted_labels[:, start:end], reduction="none").float()
+            loss_sum = loss_sum + (token_losses * total_mask[:, start:end]).sum()
+        return loss_sum / total_tokens.to(dtype=loss_sum.dtype)
 
     def local_state_dict(self) -> dict[str, torch.Tensor]:
         return {key: value.detach().cpu() for key, value in self.state_dict().items() if not key.endswith("._metadata")}
@@ -471,13 +542,442 @@ def _pipeline_record_to_text_and_weight(record: dict[str, Any]) -> tuple[str, fl
     return text.strip(), max(0.05, min(2.5, float(weight)))
 
 
+MEDIA_TARGET_KEYS = {
+    "artifact_path",
+    "artifact_uri",
+    "artifact_tokens",
+    "output_modality",
+    "codec",
+    "codec_id",
+    "media_tokens",
+    "audio_tokens",
+    "video_tokens",
+    "image_tokens",
+    "tts_tokens",
+    "music_tokens",
+    "ocr_result",
+    "ocr_text",
+}
+
+MEDIA_ROUTE_NAMES = {"image", "video", "music", "tts", "speech", "audio", "ocr"}
+
+
+def _ordered_json_value(value: object) -> object:
+    if isinstance(value, dict):
+        priority = (
+            "output_modality",
+            "task",
+            "ocr_text",
+            "artifact_tokens",
+            "media_tokens",
+            "image_tokens",
+            "video_tokens",
+            "audio_tokens",
+            "tts_tokens",
+            "music_tokens",
+            "artifact_path",
+            "artifact_uri",
+            "codec",
+            "codec_id",
+            "ocr_result",
+        )
+        ordered: dict[str, object] = {}
+        for key in priority:
+            if key in value:
+                ordered[key] = _ordered_json_value(value[key])
+        for key in sorted(str(k) for k in value.keys() if str(k) not in ordered):
+            ordered[key] = _ordered_json_value(value[key])
+        return ordered
+    if isinstance(value, list):
+        return [_ordered_json_value(item) for item in value]
+    return value
+
+
+def _content_to_text(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(_ordered_json_value(value), ensure_ascii=True, separators=(",", ":"))
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _canonical_output_route(value: object) -> str:
+    route = str(value or "").strip().lower()
+    if route == "speech":
+        return "tts"
+    if route == "audio":
+        return "music"
+    return route
+
+
+def _target_json_route(target_json: dict[str, Any]) -> str:
+    task = _canonical_output_route(target_json.get("task"))
+    if task == "ocr" or "ocr_text" in target_json or "ocr_result" in target_json:
+        return "ocr"
+    modality = _canonical_output_route(target_json.get("output_modality"))
+    if modality in MEDIA_ROUTE_NAMES:
+        return modality
+    artifact = str(target_json.get("artifact_tokens") or target_json.get("media_tokens") or "").lower()
+    if "<image_" in artifact:
+        return "image"
+    if "<video_" in artifact:
+        return "video"
+    if "<music_" in artifact:
+        return "music"
+    if "<speech_" in artifact or "<tts_" in artifact:
+        return "tts"
+    return ""
+
+
+def _record_output_route(record: dict[str, Any], target_json: dict[str, Any] | None = None) -> str:
+    top_level = _canonical_output_route(record.get("modality") or record.get("target_modality"))
+    if top_level in MEDIA_ROUTE_NAMES:
+        return top_level
+    if isinstance(target_json, dict):
+        route = _target_json_route(target_json)
+        if route:
+            return route
+    return ""
+
+
+def _is_media_target_content(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(key in value for key in MEDIA_TARGET_KEYS) or _target_json_route(value) in MEDIA_ROUTE_NAMES
+    if isinstance(value, str):
+        text = value.lower()
+        return (
+            '"output_modality"' in text
+            or '"artifact_tokens"' in text
+            or "<image_" in text
+            or "<video_" in text
+            or "<music_" in text
+            or "<speech_" in text
+            or '"ocr_text"' in text
+            or '"task":"ocr"' in text
+        )
+    return False
+
+
+def _content_output_route(value: object) -> str:
+    if isinstance(value, dict):
+        return _target_json_route(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                payload = json.loads(stripped)
+            except Exception:
+                payload = None
+            if isinstance(payload, dict):
+                route = _target_json_route(payload)
+                if route:
+                    return route
+        text = stripped.lower()
+        if "<image_" in text:
+            return "image"
+        if "<video_" in text:
+            return "video"
+        if "<music_" in text:
+            return "music"
+        if "<speech_" in text or "<tts_" in text:
+            return "tts"
+        if '"task":"ocr"' in text or '"ocr_text"' in text:
+            return "ocr"
+    return ""
+
+
+def _assistant_route_prefix(output_route: str) -> str:
+    route = _canonical_output_route(output_route)
+    return f"{route} | " if route in MEDIA_ROUTE_NAMES else ""
+
+
+def _with_assistant_route_prefix(body: str, output_route: str) -> str:
+    prefix = _assistant_route_prefix(output_route)
+    if not prefix:
+        return body
+    stripped = body.lstrip()
+    if stripped.lower().startswith(prefix.lower()):
+        return body
+    return f"{prefix}{stripped}"
+
+
+def _token_id_list(value: object) -> list[int] | None:
+    if not isinstance(value, list) or not value:
+        return None
+    ids: list[int] = []
+    for item in value:
+        try:
+            ids.append(int(item))
+        except Exception:
+            return None
+    return ids
+
+
+def _mask_list(value: object, length: int) -> list[float] | None:
+    if not isinstance(value, list) or not value:
+        return None
+    mask: list[float] = []
+    for item in value[:length]:
+        try:
+            mask.append(1.0 if float(item) > 0.0 else 0.0)
+        except Exception:
+            mask.append(0.0)
+    if len(mask) < length:
+        mask.extend([0.0] * (length - len(mask)))
+    return mask
+
+
+def _labels_to_mask(value: object, length: int) -> list[float] | None:
+    if not isinstance(value, list) or not value:
+        return None
+    mask: list[float] = []
+    for item in value[:length]:
+        try:
+            label = int(item)
+            mask.append(0.0 if label == -100 else 1.0)
+        except Exception:
+            mask.append(0.0)
+    if len(mask) < length:
+        mask.extend([0.0] * (length - len(mask)))
+    return mask
+
+
+def _explicit_token_ids_and_mask(record: dict[str, Any]) -> tuple[list[int], list[float]] | None:
+    prompt_ids: list[int] = []
+    for key in ("prompt_token_ids", "prompt_ids", "input_token_ids"):
+        value = _token_id_list(record.get(key))
+        if value:
+            prompt_ids = value
+            break
+    target_ids: list[int] = []
+    for key in ("target_token_ids", "completion_token_ids", "assistant_token_ids", "media_token_ids", "artifact_token_ids"):
+        value = _token_id_list(record.get(key))
+        if value:
+            target_ids.extend(value)
+    if target_ids:
+        return prompt_ids + target_ids, ([0.0] * len(prompt_ids)) + ([1.0] * len(target_ids))
+    ids = _ids_from_record(record)
+    if not ids:
+        return None
+    ids = [int(x) for x in ids]
+    for key in ("loss_mask", "target_mask", "assistant_loss_mask", "labels_mask"):
+        mask = _mask_list(record.get(key), len(ids))
+        if mask is not None:
+            return ids, mask
+    labels_mask = _labels_to_mask(record.get("labels"), len(ids))
+    if labels_mask is not None:
+        return ids, labels_mask
+    return ids, [1.0] * len(ids)
+
+
+def _tokenizer_encode_with_offsets(tokenizer: Any, text: str) -> tuple[list[int], list[tuple[int, int]] | None]:
+    raw = getattr(tokenizer, "_tok", None)
+    if raw is not None:
+        try:
+            encoding = raw.encode(text)
+            ids = [int(x) for x in encoding.ids]
+            offsets = [(int(start), int(end)) for start, end in encoding.offsets]
+            if len(ids) == len(offsets) and all(0 <= start <= end <= len(text) for start, end in offsets):
+                return ids, offsets
+        except Exception:
+            pass
+        try:
+            encoded = raw(text, add_special_tokens=False, return_offsets_mapping=True)
+            ids = [int(x) for x in getattr(encoded, "input_ids", encoded["input_ids"])]
+            offsets_raw = getattr(encoded, "offset_mapping", encoded["offset_mapping"])
+            offsets = [(int(start), int(end)) for start, end in offsets_raw]
+            if len(ids) == len(offsets) and all(0 <= start <= end <= len(text) for start, end in offsets):
+                return ids, offsets
+        except Exception:
+            pass
+    ids = [int(x) for x in tokenizer.encode(text)]
+    if len(ids) == len(text):
+        return ids, [(index, index + 1) for index in range(len(text))]
+    return ids, None
+
+
+def _encode_segments_with_mask(tokenizer: Any, segments: list[tuple[str, bool]]) -> tuple[list[int], list[float]]:
+    full_text = "".join(text for text, _is_target in segments if text)
+    if full_text:
+        char_mask: list[bool] = []
+        for text, is_target in segments:
+            if not text:
+                continue
+            char_mask.extend([bool(is_target)] * len(text))
+        ids, offsets = _tokenizer_encode_with_offsets(tokenizer, full_text)
+        if offsets is not None and len(offsets) == len(ids):
+            mask: list[float] = []
+            for start, end in offsets:
+                if end <= start:
+                    mask.append(0.0)
+                    continue
+                lo = max(0, int(start))
+                hi = min(len(char_mask), int(end))
+                mask.append(1.0 if any(char_mask[lo:hi]) else 0.0)
+            return ids, mask
+    ids: list[int] = []
+    mask: list[float] = []
+    for text, is_target in segments:
+        if not text:
+            continue
+        part = [int(x) for x in tokenizer.encode(text)]
+        ids.extend(part)
+        mask.extend([1.0 if is_target else 0.0] * len(part))
+    return ids, mask
+
+
+def _append_role_line_segments(
+    segments: list[tuple[str, bool]],
+    role: str,
+    content: object,
+    *,
+    output_route: str = "",
+) -> None:
+    body = _content_to_text(content)
+    if not body:
+        return
+    if segments:
+        segments.append(("\n", False))
+    normalized = str(role or "message").lower()
+    if normalized == "assistant":
+        # Keep the leading space in the target piece so BPE tokenizers learn the
+        # first answer/media token after an inference prompt ending in
+        # "assistant:".
+        segments.append((f"{role}:", False))
+        route = output_route or _content_output_route(content)
+        if route and _is_media_target_content(content):
+            body = _with_assistant_route_prefix(body, route)
+        segments.append((f" {body}", True))
+        return
+    segments.append((f"{role}: {body}", False))
+
+
+def _message_segments(messages: object, *, output_route: str = "") -> list[tuple[str, bool]]:
+    segments: list[tuple[str, bool]] = []
+    if not isinstance(messages, list):
+        return segments
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        _append_role_line_segments(
+            segments,
+            str(message.get("role") or "message"),
+            message.get("content"),
+            output_route=output_route,
+        )
+        tool_calls = message.get("tool_calls")
+        if str(message.get("role") or "").lower() == "assistant" and tool_calls:
+            segments.append((" " + _content_to_text({"tool_calls": tool_calls}), True))
+    return segments
+
+
+def _encode_text_with_assistant_targets(tokenizer: Any, text: str, *, default_target: bool) -> tuple[list[int], list[float]]:
+    segments: list[tuple[str, bool]] = []
+    role_prefixes = ("user:", "system:", "developer:", "tool:", "observation:")
+    for index, line in enumerate(str(text).splitlines()):
+        if index > 0:
+            previous_target = bool(segments[-1][1]) if segments else bool(default_target)
+            segments.append(("\n", previous_target))
+        stripped = line.lstrip()
+        leading = line[: len(line) - len(stripped)]
+        lower = stripped.lower()
+        if lower.startswith("assistant:"):
+            colon = line.lower().find("assistant:") + len("assistant:")
+            segments.append((line[:colon], False))
+            if len(line) > colon:
+                segments.append((line[colon:], True))
+        elif any(lower.startswith(prefix) for prefix in role_prefixes):
+            segments.append((line, False))
+        else:
+            segments.append((leading + stripped, default_target))
+    return _encode_segments_with_mask(tokenizer, segments)
+
+
+def _target_json_segments(record: dict[str, Any]) -> list[tuple[str, bool]]:
+    segments: list[tuple[str, bool]] = []
+    target_json = record.get("target_json")
+    if isinstance(target_json, dict):
+        output_route = _record_output_route(record, target_json)
+        emitted_text = False
+        for key in ("content", "completion", "answer", "caption", "transcript", "ocr_text"):
+            value = target_json.get(key)
+            if value:
+                _append_role_line_segments(segments, "assistant", value, output_route=output_route)
+                emitted_text = True
+        if any(key in target_json for key in MEDIA_TARGET_KEYS) or not emitted_text:
+            _append_role_line_segments(segments, "assistant", target_json, output_route=output_route)
+    return segments
+
+
+def _input_target_json_segments(record: dict[str, Any]) -> list[tuple[str, bool]]:
+    segments: list[tuple[str, bool]] = []
+    input_json = record.get("input_json")
+    if isinstance(input_json, dict):
+        segments.extend(_message_segments(input_json.get("messages")))
+        for key in ("content", "prompt", "text", "instruction"):
+            value = input_json.get(key)
+            if value:
+                _append_role_line_segments(segments, "user", value)
+    target_segments = _target_json_segments(record)
+    if segments and target_segments:
+        segments.append(("\n", False))
+    segments.extend(target_segments)
+    return segments
+
+
+def _record_ids_weight_mask(record: dict[str, Any], tokenizer: Any) -> tuple[list[int], float, list[float]]:
+    _, weight = _pipeline_record_to_text_and_weight(record)
+    explicit = _explicit_token_ids_and_mask(record)
+    if explicit is not None:
+        ids, mask = explicit
+        return ids, weight, mask
+    segments = _message_segments(record.get("messages"), output_route=_record_output_route(record))
+    if segments and not any(bool(is_target) for _text, is_target in segments):
+        target_segments = _target_json_segments(record)
+        if target_segments:
+            segments.append(("\n", False))
+            segments.extend(target_segments)
+    if not segments:
+        segments = _input_target_json_segments(record)
+    if segments:
+        ids, mask = _encode_segments_with_mask(tokenizer, segments)
+        return ids, weight, mask
+    text, weight = _pipeline_record_to_text_and_weight(record)
+    kind = str(record.get("training_kind") or "").lower()
+    dialogue_hint = bool(kind or {"prompt", "chosen", "rejected"} <= set(record) or "assistant:" in text.lower())
+    ids, mask = _encode_text_with_assistant_targets(tokenizer, text, default_target=not dialogue_hint)
+    if not ids:
+        ids = [int(x) for x in tokenizer.encode(text)]
+        mask = [1.0] * len(ids)
+    return ids, weight, mask
+
+
+def _labels_from_ids_mask(ids: list[int], mask: list[float]) -> list[int]:
+    labels: list[int] = []
+    for token, keep in zip(ids, mask):
+        token_id = int(token)
+        labels.append(token_id if float(keep) > 0.0 else -100)
+    if len(labels) < len(ids):
+        labels.extend([-100] * (len(ids) - len(labels)))
+    return labels
+
+
+def record_ids_labels_weight(record: dict[str, Any], tokenizer: Any) -> tuple[list[int], list[int], float]:
+    ids, weight, mask = _record_ids_weight_mask(record, tokenizer)
+    if len(mask) != len(ids):
+        mask = [1.0] * len(ids)
+    return ids, _labels_from_ids_mask(ids, mask), weight
+
+
 class WeightedTextJsonlDataset(torch.utils.data.Dataset):
     def __init__(self, path: str, tokenizer: Any, seq_len: int, max_records: int = 0, vocab_size: int = 0):
         self.tokenizer = tokenizer
         self.seq_len = int(seq_len)
         self.vocab_size = int(vocab_size)
         self.records: list[tuple[Path, int, int, str]] = []
-        self.fallback: tuple[list[int], float] = ([1] * self.seq_len, 0.05)
+        self.fallback: tuple[list[int], list[int], float] = ([1] * self.seq_len, [1] * self.seq_len, 0.05)
         limit = int(max_records) if int(max_records) > 0 else None
         p = Path(path)
         paths = sorted(p.rglob("*.jsonl")) + sorted(p.rglob("*.txt")) if p.is_dir() else [p]
@@ -495,10 +995,12 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         return token
 
     def _estimate_chunks(self, raw_len: int) -> int:
-        # A loose byte/token estimate keeps startup bounded while still sampling
-        # multiple chunks from long agentic traces instead of only prefixes.
-        approx_tokens = max(2, int(math.ceil(float(max(1, raw_len)) / 4.0)))
-        return max(1, int(math.ceil(float(approx_tokens) / float(max(1, self.seq_len)))))
+        # Use bytes as a conservative upper bound for text-token count so late
+        # assistant/media targets in long JSONL rows are indexed, not silently
+        # skipped by an optimistic average-bytes-per-token estimate.
+        approx_tokens = max(2, int(max(1, raw_len)))
+        stride = max(1, self.seq_len - 1)
+        return max(1, int(math.ceil(float(approx_tokens) / float(stride))))
 
     def _index_path(self, path: Path, limit: int | None) -> None:
         if not path.exists():
@@ -528,45 +1030,66 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return max(1, len(self.records))
 
-    def _read_record(self, path: Path, offset: int, kind: str) -> tuple[list[int], float, int]:
+    def _read_record(self, path: Path, offset: int, kind: str) -> tuple[list[int], list[int], float, int]:
         if kind == "txt":
             text = path.read_text(encoding="utf-8", errors="ignore")
             ids = [int(x) for x in self.tokenizer.encode(text)]
-            return ids, 1.0, len(ids)
+            return ids, _labels_from_ids_mask(ids, [1.0] * len(ids)), 1.0, len(ids)
         with path.open("rb") as handle:
             handle.seek(int(offset))
             line = handle.readline().decode("utf-8", errors="ignore")
         if not line.strip():
-            return self.fallback[0], self.fallback[1], len(self.fallback[0])
+            return self.fallback[0], self.fallback[1], self.fallback[2], len(self.fallback[0])
         try:
             obj = json.loads(line)
         except Exception:
             obj = {"text": line}
         if not isinstance(obj, dict):
             obj = {"text": str(obj)}
-        _, weight = _pipeline_record_to_text_and_weight(obj)
-        ids = _ids_from_record(obj)
-        if not ids:
-            text, weight = _pipeline_record_to_text_and_weight(obj)
-            ids = [int(x) for x in self.tokenizer.encode(text)]
-        return ids, weight, len(ids)
+        ids, labels, weight = record_ids_labels_weight(obj, self.tokenizer)
+        return ids, labels, weight, len(ids)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if not self.records:
-            ids, weight = self.fallback
-            return torch.tensor(ids[: self.seq_len], dtype=torch.long), torch.tensor(float(weight), dtype=torch.float32)
+            ids, labels, weight = self.fallback
+            return (
+                torch.tensor(ids[: self.seq_len], dtype=torch.long),
+                torch.tensor(labels[: self.seq_len], dtype=torch.long),
+                torch.tensor(float(weight), dtype=torch.float32),
+            )
         path, offset, chunk_index, kind = self.records[int(idx) % len(self.records)]
-        raw_ids, weight, _ = self._read_record(path, offset, kind)
+        raw_ids, raw_labels, weight, _ = self._read_record(path, offset, kind)
         cleaned = [self._sanitize_id(x) for x in raw_ids]
+        labels = []
+        sparse_source = any(int(label) < 0 for label in raw_labels[: len(cleaned)])
+        for token, label in zip(cleaned, raw_labels[: len(cleaned)]):
+            try:
+                label_id = int(label)
+            except Exception:
+                label_id = -100
+            labels.append(token if label_id >= 0 else -100)
+        if len(labels) < len(cleaned):
+            labels.extend([-100] * (len(cleaned) - len(labels)))
         if len(cleaned) < 2:
-            cleaned, weight = self.fallback
-        start = int(chunk_index) * max(1, self.seq_len)
+            cleaned, labels, weight = self.fallback
+        # Keep true one-token overlap on every chunk. Starts are 0, seq-1,
+        # 2*(seq-1), ... so any boundary target except raw position 0 appears
+        # in at least one chunk with previous-token context.
+        start = int(chunk_index) * max(1, self.seq_len - 1)
         if start >= max(1, len(cleaned) - 1):
             start = max(0, len(cleaned) - self.seq_len)
         ids = cleaned[start:start + self.seq_len]
+        target_labels = labels[start:start + self.seq_len]
+        if sparse_source and target_labels:
+            target_labels[0] = -100
         if len(ids) < self.seq_len:
             ids = ids + [0] * (self.seq_len - len(ids))
-        return torch.tensor(ids[: self.seq_len], dtype=torch.long), torch.tensor(float(weight), dtype=torch.float32)
+            target_labels = target_labels + [-100] * (self.seq_len - len(target_labels))
+        return (
+            torch.tensor(ids[: self.seq_len], dtype=torch.long),
+            torch.tensor(target_labels[: self.seq_len], dtype=torch.long),
+            torch.tensor(float(weight), dtype=torch.float32),
+        )
 
 
 def _validate_resume_payload(
@@ -806,6 +1329,11 @@ def save_sharded_checkpoint(
             "lm_loss_chunk_tokens": int(getattr(args, "lm_loss_chunk_tokens", 0) or 0),
             "loss_token_stride": int(getattr(args, "loss_token_stride", 1) or 1),
             "max_loss_tokens_per_sample": int(getattr(args, "max_loss_tokens_per_sample", 0) or 0),
+            "target_boundary_weight": float(getattr(args, "target_boundary_weight", 1.0) or 1.0),
+            "target_prefix_weight": float(getattr(args, "target_prefix_weight", 1.0) or 1.0),
+            "target_prefix_tokens": int(getattr(args, "target_prefix_tokens", 0) or 0),
+            "gradient_accumulation_steps": int(getattr(args, "gradient_accumulation_steps", 1) or 1),
+            "shuffle": bool(getattr(args, "shuffle", True)),
             "optimizer": str(args.optimizer),
             "optimizer_in_backward": bool(getattr(args, "optimizer_in_backward", False)),
             "optimizer_in_backward_update": str(getattr(args, "optimizer_in_backward_update", "")),
@@ -1261,6 +1789,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--schedule", dest="pipeline_schedule", choices=["1f1b", "gpipe"])
     parser.add_argument("--pipeline_microbatches", type=int, default=2)
     parser.add_argument("--n_microbatches", dest="pipeline_microbatches", type=int)
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=int(os.getenv("OMNICODER2026_GRADIENT_ACCUMULATION_STEPS", "1") or 1))
+    parser.add_argument("--shuffle", dest="shuffle", action="store_true", default=True)
+    parser.add_argument("--no_shuffle", dest="shuffle", action="store_false")
     parser.add_argument("--seq_len", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=2)
     parser.add_argument("--steps", type=int, default=1)
@@ -1284,6 +1815,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lm_loss_chunk_tokens", type=int, default=int(os.getenv("OMNICODER2026_LM_LOSS_CHUNK_TOKENS", "128") or 128))
     parser.add_argument("--loss_token_stride", type=int, default=int(os.getenv("OMNICODER2026_LOSS_TOKEN_STRIDE", "1") or 1))
     parser.add_argument("--max_loss_tokens_per_sample", type=int, default=int(os.getenv("OMNICODER2026_MAX_LOSS_TOKENS_PER_SAMPLE", "0") or 0))
+    parser.add_argument("--target_boundary_weight", type=float, default=float(os.getenv("OMNICODER2026_TARGET_BOUNDARY_WEIGHT", "1.0") or 1.0))
+    parser.add_argument("--target_prefix_weight", type=float, default=float(os.getenv("OMNICODER2026_TARGET_PREFIX_WEIGHT", "1.0") or 1.0))
+    parser.add_argument("--target_prefix_tokens", type=int, default=int(os.getenv("OMNICODER2026_TARGET_PREFIX_TOKENS", "0") or 0))
     parser.add_argument("--save_interval", type=int, default=0)
     parser.add_argument("--require_target_contract", action="store_true")
     parser.add_argument("--allow_probe", action="store_true")
@@ -1320,6 +1854,9 @@ def main(argv: list[str] | None = None) -> int:
     seq_len = int(args.seq_len or preset.train_seq_len)
     pipeline_microbatches = int(args.pipeline_microbatches)
     batch_size = int(args.batch_size)
+    gradient_accumulation_steps = max(1, int(args.gradient_accumulation_steps or 1))
+    if gradient_accumulation_steps > 1 and bool(args.optimizer_in_backward):
+        raise ValueError("--gradient_accumulation_steps > 1 is incompatible with --optimizer_in_backward hooks; omit --optimizer_in_backward for delayed low-memory Adafactor accumulation")
     if pipeline_microbatches < 1:
         raise ValueError("--pipeline_microbatches must be >= 1")
     if batch_size < 1:
@@ -1386,7 +1923,7 @@ def main(argv: list[str] | None = None) -> int:
 
         return output.sum() * 0.0
 
-    current_sample_weights: dict[str, torch.Tensor] = {}
+    current_sample_weights: dict[str, Any] = {"loss_scale": 1.0}
     loss_fn = (
         lambda hidden, labels: shard.chunked_lm_loss(
             hidden,
@@ -1395,7 +1932,11 @@ def main(argv: list[str] | None = None) -> int:
             current_sample_weights.get("weights"),
             int(args.loss_token_stride),
             int(args.max_loss_tokens_per_sample),
+            target_boundary_weight=float(args.target_boundary_weight),
+            target_prefix_weight=float(args.target_prefix_weight),
+            target_prefix_tokens=int(args.target_prefix_tokens),
         )
+        * float(current_sample_weights.get("loss_scale") or 1.0)
     ) if spec.has_head else _unused_nonfinal_loss
     if args.pipeline_schedule == "1f1b" and pipeline_microbatches == 1:
         if rank == 0:
@@ -1413,7 +1954,7 @@ def main(argv: list[str] | None = None) -> int:
     data = WeightedTextJsonlDataset(args.data, tokenizer, seq_len=seq_len, max_records=args.max_records, vocab_size=int(getattr(preset, "vocab_size", 0) or 0)) if rank == 0 else None
     if rank == 0:
         _write_log(args.log_file, {"event": "dataset_index_done", "samples": int(len(data) if data is not None else 0), "data": str(args.data), "seq_len": int(seq_len)})
-    loader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True) if rank == 0 else None
+    loader = DataLoader(data, batch_size=batch_size, shuffle=bool(args.shuffle), drop_last=True) if rank == 0 else None
     it = iter(loader) if loader is not None else None
     def debug_event(message: str) -> None:
         if bool(args.debug_events):
@@ -1421,7 +1962,8 @@ def main(argv: list[str] | None = None) -> int:
 
     for local_step in range(int(args.steps)):
         _reset_cuda_peak_memory(device)
-        optimizer.zero_grad(set_to_none=True)
+        if (local_step % gradient_accumulation_steps) == 0:
+            optimizer.zero_grad(set_to_none=True)
         losses: list[torch.Tensor] = []
         if rank == 0:
             _write_log(args.log_file, {"event": "batch_fetch_start", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1)})
@@ -1431,35 +1973,50 @@ def main(argv: list[str] | None = None) -> int:
             except StopIteration:
                 it = iter(loader)  # type: ignore[arg-type]
                 batch_item = next(it)
-            batch, batch_weights = batch_item
+            batch, batch_labels, batch_weights = batch_item
             batch = batch.to(device, non_blocking=True)
+            batch_labels = batch_labels.to(device, non_blocking=True)
             batch_weights = batch_weights.to(device, non_blocking=True).float()
             debug_event("rank0_fetch_batch_done")
             _write_log(args.log_file, {"event": "batch_fetch_done", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1), "sample_weight_mean": float(batch_weights.detach().mean().cpu())})
         else:
             batch = torch.empty((batch_size, seq_len), dtype=torch.long, device=device)
+            batch_labels = torch.empty((batch_size, seq_len), dtype=torch.long, device=device)
             batch_weights = torch.empty((batch_size,), dtype=torch.float32, device=device)
         debug_event("broadcast_start")
         dist.broadcast(batch, src=0)
+        dist.broadcast(batch_labels, src=0)
         dist.broadcast(batch_weights, src=0)
         current_sample_weights["weights"] = batch_weights
+        current_sample_weights["loss_scale"] = 1.0 / float(gradient_accumulation_steps)
         debug_event("broadcast_done")
         with autocast_context(device, str(args.precision)):
             if rank == 0:
                 _write_log(args.log_file, {"event": "schedule_step_start", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1), "rank": int(rank)})
                 debug_event("schedule_step_rank0_start")
-                schedule.step(batch, target=batch, losses=losses)
+                schedule.step(batch, target=batch_labels, losses=losses)
                 debug_event("schedule_step_rank0_done")
             else:
                 debug_event("schedule_step_nonzero_start")
-                schedule.step(target=batch, losses=losses)
+                schedule.step(target=batch_labels, losses=losses)
                 debug_event("schedule_step_nonzero_done")
         if rank == 0:
             _write_log(args.log_file, {"event": "schedule_step_done", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1), "rank": int(rank)})
-        optimizer.step()
+        should_update = ((local_step + 1) % gradient_accumulation_steps) == 0 or (local_step + 1) == int(args.steps)
+        if should_update:
+            optimizer.step()
         if rank == 0:
-            _write_log(args.log_file, {"event": "optimizer_step_done", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1), "rank": int(rank)})
-        debug_event("optimizer_step_done")
+            _write_log(
+                args.log_file,
+                {
+                    "event": "optimizer_step_done" if should_update else "optimizer_step_deferred",
+                    "local_step": int(local_step + 1),
+                    "global_step": int(start_step + local_step + 1),
+                    "rank": int(rank),
+                    "gradient_accumulation_steps": int(gradient_accumulation_steps),
+                },
+            )
+        debug_event("optimizer_step_done" if should_update else "optimizer_step_deferred")
         global_step = start_step + local_step + 1
         _append_pipeline_telemetry(
             telemetry_path,
@@ -1481,7 +2038,7 @@ def main(argv: list[str] | None = None) -> int:
         loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
         dist.broadcast(loss_tensor, src=world_size - 1)
         if rank == 0:
-            _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": float(loss_tensor.cpu()), "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": float(batch_weights.detach().mean().cpu()), "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample)})
+            _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": float(loss_tensor.cpu()), "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": float(batch_weights.detach().mean().cpu()), "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle)})
         if int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0:
             save_sharded_checkpoint(Path(args.out).with_name(f"{Path(args.out).stem}.step{start_step + local_step + 1}"), shard, preset=preset, args=args, optimizer=optimizer, global_step=start_step + local_step + 1, last_loss=float(loss_tensor.cpu()))
 

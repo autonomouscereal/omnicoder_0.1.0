@@ -565,7 +565,10 @@ class SparseLatentAttention(nn.Module):
     def _global_mask(self, t: int, n_blocks: int, block_size: int, device: torch.device) -> torch.Tensor:
         q_block = torch.div(torch.arange(t, device=device), int(block_size), rounding_mode="floor")
         block_idx = torch.arange(n_blocks, device=device)
-        causal = block_idx.view(1, -1) <= q_block.view(-1, 1)
+        # Compressed summaries are block-level aggregates. The current block can
+        # contain future tokens, so only completed previous blocks are legal in
+        # the global path; the current block is covered by local causal attention.
+        causal = block_idx.view(1, -1) < q_block.view(-1, 1)
         if self.mode == "csa":
             top_k = min(max(1, int(self.cfg.csa_top_k_blocks)), n_blocks)
             if top_k < n_blocks:
@@ -603,7 +606,10 @@ class SparseLatentAttention(nn.Module):
             v_sel = v.index_select(2, selected)
             positions = torch.arange(start, end, device=q.device)
             q_block = torch.div(positions, int(block_size), rounding_mode="floor")
-            mask = selected.view(1, -1) <= q_block.view(-1, 1)
+            # Strictly exclude the query token's current compressed block. That
+            # summary may include future tokens inside the block and would let
+            # teacher-forced loss cheat while autoregressive decode fails.
+            mask = selected.view(1, -1) < q_block.view(-1, 1)
             parts.append(self._sink_attention(q[:, :, start:end, :], k_sel, v_sel, mask))
         return torch.cat(parts, dim=2)
 
