@@ -581,6 +581,66 @@ def _redact_json_value(value: Any) -> Any:
     return redacted
 
 
+def _canonical_prompt_target(prompt: str, target: str) -> tuple[str, str]:
+    prompt_clean = re.sub(r"\s+", " ", str(prompt or "")).strip()
+    target_clean = re.sub(r"\s+", " ", str(target or "")).strip()
+    return prompt_clean, target_clean
+
+
+def _trace_target_text(content: str, target_json: dict[str, Any]) -> str:
+    for key in ("content", "text", "answer", "completion", "output", "result", "summary"):
+        value = target_json.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    tool_output = target_json.get("tool_output")
+    if tool_output not in ({}, [], None, ""):
+        return _json_dumps(_redact_json_value(tool_output))
+    compact_target = {
+        key: _redact_json_value(value)
+        for key, value in target_json.items()
+        if key not in {"action_type", "tool_name"} and value not in ({}, [], None, "")
+    }
+    if compact_target:
+        return _json_dumps(compact_target)
+    return str(content or "").strip()
+
+
+def _trace_prompt_text(
+    *,
+    source_messages: list[Any],
+    input_json: dict[str, Any],
+    event_type: str,
+    tool_name: Any,
+    target_text: str,
+) -> tuple[str, str]:
+    prompt_parts: list[str] = []
+    prompt_role = "user"
+    for message in source_messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "user").lower()
+        if role == "assistant":
+            continue
+        text = str(message.get("content") or "").strip()
+        if not text:
+            continue
+        if role in {"user", "system", "tool"}:
+            prompt_role = role if not prompt_parts else prompt_role
+            prompt_parts.append(f"{role}: {text}")
+    prompt_text = "\n".join(prompt_parts).strip()
+    prompt_clean, target_clean = _canonical_prompt_target(prompt_text, target_text)
+    if not prompt_clean or prompt_clean == target_clean:
+        metadata = {
+            "event_type": event_type,
+            "tool_name": tool_name,
+            "collector": input_json.get("collector") or input_json.get("source") or "curated_trace",
+            "has_tool_input": bool(input_json.get("tool_input")),
+        }
+        prompt_text = "Emit the redacted assistant/tool training target for this audited trace metadata:\n" + _json_dumps(metadata)
+        prompt_role = "user"
+    return prompt_role, prompt_text
+
+
 def curated_to_training_example(record: dict[str, Any], accepted_splits: set[str], min_quality: float) -> dict[str, Any] | None:
     split = str((record.get("split_assignment") or {}).get("split") or "train")
     quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
@@ -598,27 +658,34 @@ def curated_to_training_example(record: dict[str, Any], accepted_splits: set[str
     input_json = source.get("input_json") if isinstance(source.get("input_json"), dict) else {}
     target_json = source.get("target_json") if isinstance(source.get("target_json"), dict) else {}
     source_messages = input_json.get("messages") if isinstance(input_json.get("messages"), list) else []
-    first_role = "user"
-    if source_messages and isinstance(source_messages[0], dict):
-        first_role = str(source_messages[0].get("role") or "user")
-    if first_role not in {"user", "assistant", "system", "tool"}:
-        first_role = "user"
-
     content = str(record.get("normalized_text") or "")
     event_type = str(input_json.get("event_type") or target_json.get("action_type") or "curated_trace")
     tool_name = input_json.get("tool_name") or target_json.get("tool_name")
+    target_content = _trace_target_text(content, target_json)
+    if not target_content.strip():
+        return None
+    first_role, prompt_content = _trace_prompt_text(
+        source_messages=source_messages,
+        input_json=input_json,
+        event_type=event_type,
+        tool_name=tool_name,
+        target_text=target_content,
+    )
+    prompt_clean, target_clean = _canonical_prompt_target(prompt_content, target_content)
+    if not prompt_clean or prompt_clean == target_clean:
+        return None
     return {
         "bucket": str((source.get("metadata") or {}).get("bucket") or "curated_agentic_trace_2026"),
         "split": split,
         "source_date": (record.get("provenance") or {}).get("source_date"),
         "input_json": {
-            "messages": [{"role": first_role, "content": content}],
+            "messages": [{"role": first_role, "content": prompt_content}],
             "event_type": event_type,
             "tool_name": tool_name,
             "tool_input": _redact_json_value(input_json.get("tool_input") or {}),
         },
         "target_json": {
-            "content": content,
+            "content": target_content,
             "action_type": event_type,
             "tool_output": _redact_json_value(target_json.get("tool_output") or {}),
         },

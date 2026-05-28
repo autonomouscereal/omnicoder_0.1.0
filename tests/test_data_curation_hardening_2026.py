@@ -7,6 +7,7 @@ import pytest
 from omnicoder.data_factory import (
     balanced_allmodal_posttrain_2026 as balanced,
     curated_dataset_builder_2026 as curated_builder,
+    curation_layers_2026 as curation_layers,
     curation_policy_2026 as policy,
     dataset_expansion_2026 as expansion,
     export_sft_jsonl,
@@ -258,3 +259,32 @@ def test_curated_trace_rejects_unknown_contamination() -> None:
     )
 
     assert row is None
+
+
+def test_legacy_curated_trace_export_does_not_prompt_copy() -> None:
+    row = curation_layers.curated_to_training_example(
+        {
+            "curated_id": "trace-1",
+            "normalized_text": "Tool call completed and the patch was verified.",
+            "split_assignment": {"split": "train"},
+            "quality": {"score": 0.95, "label": "accept"},
+            "contamination": {"status": "clean"},
+            "secret_redaction": {"has_secret": False},
+            "source": {
+                "input_json": {"event_type": "tool_call", "tool_name": "shell"},
+                "target_json": {},
+                "metadata": {"bucket": "curated_agentic_trace_2026"},
+            },
+            "provenance": {"source_date": "2026-05-28"},
+            "dedupe": {"canonical_sha256": "abc"},
+        },
+        {"train"},
+        0.55,
+    )
+
+    assert row is not None
+    prompt = row["input_json"]["messages"][0]["content"]
+    target = row["target_json"]["content"]
+    assert prompt.strip()
+    assert target.strip()
+    assert prompt != target

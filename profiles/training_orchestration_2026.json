@@ -710,8 +710,7 @@
       "/home/cereal/.agents/skills",
       "/home/cereal/.claude",
       "/home/cereal/.lmstudio/conversations",
-      "/home/cereal/omnicoder_2026_work/weights/data_factory",
-      "/home/cereal/omnicoder_2026_work/weights/training_orchestration_2026"
+      "/home/cereal/omnicoder_2026_work/weights/data_factory"
     ],
     "media_roots": [
       "/home/cereal/comfyui/output"
@@ -772,12 +771,10 @@
       "data/raw/agent_memory_events_2026.jsonl",
       "data/raw/codex_traces_2026/codex_local_2026.jsonl",
       "data/raw/claude_traces_2026/claude_local_2026.jsonl",
-      "weights/data_factory/trace_orchestrator_2026/exports/sft_traces.jsonl",
       "weights/agentic_tool_training_2026/tool_sft.jsonl",
       "weights/agentic_tool_training_2026/tool_reward.jsonl",
       "weights/agentic_tool_training_2026/tool_preference.jsonl",
-      "weights/agentic_tool_training_2026/tool_rlvr.jsonl",
-      "weights/agentic_tool_training_2026/tool_safety_negatives.jsonl"
+      "weights/agentic_tool_training_2026/tool_rlvr.jsonl"
     ],
     "video_jsonl": [
       "weights/curated_datasets_2026/latest/jsonl/train_video.jsonl",

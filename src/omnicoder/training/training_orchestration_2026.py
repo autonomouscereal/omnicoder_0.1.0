@@ -6,6 +6,7 @@ import importlib.util
 import json
 import mimetypes
 import os
+import re
 import signal
 import shutil
 import struct
@@ -3338,6 +3339,23 @@ def append_pretrain_runtime_args(cmd: list[str], cfg: dict[str, Any], args: argp
         cmd.append("--allow_probe")
 
 
+def append_pipeline_train_diagnostics_args(cmd: list[str], cfg: dict[str, Any], args: argparse.Namespace | None, out_dir: Path, stem: str) -> None:
+    if not uses_pipeline_stage_trainer(cfg, args):
+        return
+    diagnostics_dir = out_dir / "diagnostics"
+    diagnostics_dir.mkdir(parents=True, exist_ok=True)
+    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(stem or "train")).strip("_") or "train"
+    cmd.extend(
+        [
+            "--telemetry_file",
+            str(diagnostics_dir / f"{safe_stem}_telemetry.jsonl"),
+            "--train_diagnostics_file",
+            str(diagnostics_dir / f"{safe_stem}_train_diagnostics.jsonl"),
+            "--diagnostics_grad_norm",
+        ]
+    )
+
+
 def pipeline_sample_loss_launcher(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> list[str]:
     distributed = distributed_training_plan(cfg, args)
     return [
@@ -3637,6 +3655,7 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
         ]
         if not pipeline_stage_trainer:
             cmd.extend(["--device", device, "--aux_probe"])
+        append_pipeline_train_diagnostics_args(cmd, cfg, args, out_dir, f"{checkpoint_index:02d}_{modality}")
         append_pretrain_runtime_args(cmd, cfg, args)
         if save_interval > 0:
             cmd.extend(["--save_interval", str(save_interval)])
@@ -3892,6 +3911,7 @@ def run_long_context_curriculum_stage(
         ]
         if not pipeline_stage_trainer:
             cmd.extend(["--device", device, "--aux_probe"])
+        append_pipeline_train_diagnostics_args(cmd, cfg, args, out_dir, f"long_context_{index:02d}_ctx{int(context_len)}")
         append_pretrain_runtime_args(cmd, cfg, args)
         if save_interval > 0:
             cmd.extend(["--save_interval", str(save_interval)])
@@ -4350,6 +4370,7 @@ def run_posttraining_stages(
                     ]
                     if save_interval > 0:
                         replay_cmd.extend(["--save_interval", str(save_interval)])
+                    append_pipeline_train_diagnostics_args(replay_cmd, cfg, args, out_dir, f"posttrain_{index:02d}_{safe_name}_pipeline")
                     append_pretrain_runtime_args(replay_cmd, cfg, args)
                     if bool(arg_value(args, "fake_quant", False) or cfg.get("training_plan", {}).get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled")):
                         replay_cmd.append("--fake_quant")
@@ -4992,6 +5013,7 @@ def run_distillation_curriculum_stage(
     ]
     if not pipeline_stage_trainer:
         train_cmd.extend(["--device", device, "--aux_probe"])
+    append_pipeline_train_diagnostics_args(train_cmd, cfg, args, out_dir, "09_distillation_replay")
     append_pretrain_runtime_args(train_cmd, cfg, args)
     if bool(arg_value(args, "fake_quant", False) or training_plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled")):
         train_cmd.append("--fake_quant")
@@ -5068,6 +5090,7 @@ def run_final_finetune_stage(
     ]
     if not pipeline_stage_trainer:
         cmd.extend(["--device", device, "--aux_probe"])
+    append_pipeline_train_diagnostics_args(cmd, cfg, args, out_dir, "99_final_all_modality_finetune")
     append_pretrain_runtime_args(cmd, cfg, args)
     if bool(arg_value(args, "fake_quant", False) or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled")):
         cmd.append("--fake_quant")
