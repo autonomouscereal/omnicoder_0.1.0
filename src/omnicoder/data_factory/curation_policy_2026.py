@@ -63,7 +63,26 @@ EVAL_HOLDOUT_MARKERS = (
 )
 KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", "long_context", "math", "ocr"}
 MEDIA_MODALITIES = {"image", "video", "audio", "music", "ocr"}
+GENERATION_MEDIA_MODALITIES = {"image", "video", "audio", "music"}
 WORD_RE = re.compile(r"[A-Za-z0-9_]+")
+SCALAR_TARGET_RE = re.compile(r"(?i)^[+-]?(?:\d+(?:\.\d+)?|[a-z]|true|false|yes|no|null|none|nan)$")
+TARGET_MEDIA_PAYLOAD_KEYS = (
+    "artifact_path",
+    "artifact_uri",
+    "artifact_tokens",
+    "media_tokens",
+    "audio_tokens",
+    "video_tokens",
+    "image_tokens",
+    "speech_tokens",
+    "tts_tokens",
+    "music_tokens",
+    "artifact_refs",
+    "artifacts",
+    "artifact_paths",
+    "media_refs",
+    "media_paths",
+)
 
 
 @dataclass(frozen=True)
@@ -266,6 +285,41 @@ def artifact_refs(row: dict[str, Any], *, limit: int = 32) -> list[str]:
     return sorted(set(refs))[:limit]
 
 
+def _has_nonempty_media_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict):
+        return any(_has_nonempty_media_value(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(_has_nonempty_media_value(item) for item in value)
+    return True
+
+
+def target_json_has_media_payload(row: dict[str, Any]) -> bool:
+    target_json = row.get("target_json") if isinstance(row.get("target_json"), dict) else {}
+    if not isinstance(target_json, dict):
+        return False
+    for key in TARGET_MEDIA_PAYLOAD_KEYS:
+        if key in target_json and _has_nonempty_media_value(target_json.get(key)):
+            return True
+    return False
+
+
+def scalar_or_degenerate_media_target(row: dict[str, Any], *, target: str, modality: str) -> bool:
+    if modality not in GENERATION_MEDIA_MODALITIES:
+        return False
+    if target_json_has_media_payload(row):
+        return False
+    text = target.strip()
+    if not text:
+        return False
+    if SCALAR_TARGET_RE.fullmatch(text):
+        return True
+    return modality in {"audio", "music", "video"} and len(text) < 16
+
+
 def normalize_modality(value: Any) -> str:
     text = text_value(value).lower().replace("-", "_").replace(" ", "_")
     if text in KNOWN_MODALITIES:
@@ -399,6 +453,8 @@ def quality_audit(
         reasons.append("missing_target")
     if len(target.strip()) < cfg.min_target_chars:
         reasons.append("target_too_short")
+    if scalar_or_degenerate_media_target(row, target=target, modality=modality):
+        reasons.append("media_target_too_short_or_scalar")
     if secret_penalty:
         reasons.append("secret_marker")
     if placeholder_penalty:
@@ -409,7 +465,16 @@ def quality_audit(
         reasons.append("control_character_noise")
     if score < cfg.min_quality_score:
         reasons.append("below_min_quality")
-    label = "reject" if reasons and any(r in reasons for r in ("missing_prompt", "missing_target", "secret_marker", "below_min_quality", "media_artifact_ref_not_found", "missing_media_artifact_ref")) else "candidate"
+    hard_reject_reasons = {
+        "missing_prompt",
+        "missing_target",
+        "secret_marker",
+        "below_min_quality",
+        "media_artifact_ref_not_found",
+        "missing_media_artifact_ref",
+        "media_target_too_short_or_scalar",
+    }
+    label = "reject" if reasons and any(r in hard_reject_reasons for r in reasons) else "candidate"
     if label != "reject" and score >= 0.78:
         label = "high"
     return {

@@ -75,6 +75,67 @@ def test_curation_policy_hard_rejects_dataset_integrity_issues() -> None:
     assert audit["dataset_integrity_2026"]["accepted"] is False
 
 
+def test_curation_policy_rejects_scalar_music_target_even_with_artifact_ref(tmp_path: Path) -> None:
+    artifact = tmp_path / "song.ogg"
+    artifact.write_bytes(b"real-audio-bytes")
+    row = {
+        "prompt": "Generate this ACE-Step music artifact.",
+        "modality": "music",
+        "artifact_refs": [str(artifact)],
+        "target_json": {"artifact_refs": [], "content": "8", "media_metadata": {}},
+        "quality_score": 0.99,
+    }
+    prompt, target = policy.message_prompt_target(row)
+    refs = policy.artifact_refs(row)
+
+    audit = policy.audit_training_record(
+        row,
+        prompt=prompt,
+        target=target,
+        modality="music",
+        refs=refs,
+        existing_quality=0.99,
+        config=policy.CurationPolicyConfig(
+            min_quality_score=0.0,
+            require_media_artifacts=True,
+            scan_integrity_artifacts=False,
+        ),
+    )
+
+    assert audit["accepted"] is False
+    assert "media_target_too_short_or_scalar" in audit["reasons"]
+    assert "missing_media_artifact_ref" not in audit["reasons"]
+
+
+def test_curation_policy_allows_short_media_label_when_target_artifact_payload_exists(tmp_path: Path) -> None:
+    artifact = tmp_path / "song.ogg"
+    artifact.write_bytes(b"real-audio-bytes")
+    row = {
+        "prompt": "Generate this ACE-Step music artifact.",
+        "modality": "music",
+        "target_json": {"artifact_refs": [str(artifact)], "content": "8", "media_metadata": {}},
+        "quality_score": 0.99,
+    }
+    prompt, target = policy.message_prompt_target(row)
+    refs = policy.artifact_refs(row)
+
+    audit = policy.audit_training_record(
+        row,
+        prompt=prompt,
+        target=target,
+        modality="music",
+        refs=refs,
+        existing_quality=0.99,
+        config=policy.CurationPolicyConfig(
+            min_quality_score=0.0,
+            require_media_artifacts=True,
+            scan_integrity_artifacts=False,
+        ),
+    )
+
+    assert audit["accepted"] is True
+
+
 def test_dataset_integrity_cli_writes_quarantine_manifest(tmp_path: Path) -> None:
     source = tmp_path / "data.jsonl"
     out_dir = tmp_path / "audit"

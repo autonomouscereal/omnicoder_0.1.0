@@ -557,6 +557,11 @@ MEDIA_TARGET_KEYS = {
     "music_tokens",
     "ocr_result",
     "ocr_text",
+    "artifact_refs",
+    "artifacts",
+    "artifact_paths",
+    "media_refs",
+    "media_paths",
 }
 
 MEDIA_INPUT_KEYS = {
@@ -663,6 +668,27 @@ def _target_json_route(target_json: dict[str, Any]) -> str:
     return ""
 
 
+def _has_nonempty_media_value(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict):
+        return any(_has_nonempty_media_value(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(_has_nonempty_media_value(item) for item in value)
+    return True
+
+
+def _target_json_has_media_payload(target_json: dict[str, Any]) -> bool:
+    for key in MEDIA_TARGET_KEYS:
+        if key == "output_modality":
+            continue
+        if key in target_json and _has_nonempty_media_value(target_json.get(key)):
+            return True
+    return False
+
+
 def _record_output_route(record: dict[str, Any], target_json: dict[str, Any] | None = None) -> str:
     top_level = _canonical_output_route(record.get("modality") or record.get("target_modality"))
     if top_level in MEDIA_ROUTE_NAMES:
@@ -676,7 +702,7 @@ def _record_output_route(record: dict[str, Any], target_json: dict[str, Any] | N
 
 def _is_media_target_content(value: object) -> bool:
     if isinstance(value, dict):
-        return any(key in value for key in MEDIA_TARGET_KEYS) or _target_json_route(value) in MEDIA_ROUTE_NAMES
+        return _target_json_has_media_payload(value) or _target_json_route(value) in MEDIA_ROUTE_NAMES
     if isinstance(value, str):
         text = value.lower()
         return (
@@ -953,9 +979,7 @@ def _target_json_segments(record: dict[str, Any]) -> list[tuple[str, bool]]:
             if value:
                 _append_role_line_segments(segments, "assistant", value, output_route=output_route)
                 emitted_text = True
-        has_media_payload = output_route in MEDIA_ROUTE_NAMES or any(
-            key in target_json for key in MEDIA_TARGET_KEYS if key != "output_modality"
-        )
+        has_media_payload = _target_json_has_media_payload(target_json)
         if has_media_payload or not emitted_text:
             _append_role_line_segments(segments, "assistant", target_json, output_route=output_route)
     return segments

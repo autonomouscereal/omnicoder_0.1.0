@@ -620,6 +620,29 @@ def test_messages_without_assistant_do_not_suppress_target_json(tmp_path) -> Non
     assert "mixed_schema_target" in target_text
 
 
+def test_media_modality_alone_does_not_make_empty_target_json_a_media_payload(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) for ch in text]
+
+    record = {
+        "input_json": {"prompt": "generate a proof music artifact"},
+        "modality": "music",
+        "target_json": {"artifact_refs": [], "content": "8", "media_metadata": {}},
+    }
+    source = tmp_path / "scalar_media.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=160, vocab_size=256)
+    ids, labels, _weight = dataset[0]
+    valid = labels.ge(0)
+    target_text = "".join(chr(int(token.item())) for token in ids[valid])
+
+    assert target_text == " 8"
+    assert "artifact_refs" not in target_text
+    assert "music |" not in target_text
+
+
 def test_weighted_pipeline_dataset_prefixes_media_route_from_messages(tmp_path) -> None:
     class TinyTokenizer:
         def encode(self, text: str) -> list[int]:
