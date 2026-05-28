@@ -1701,6 +1701,7 @@ def save_sharded_checkpoint(
             "target_prefix_weight": float(getattr(args, "target_prefix_weight", 1.0) or 1.0),
             "target_prefix_tokens": int(getattr(args, "target_prefix_tokens", 0) or 0),
             "gradient_accumulation_steps": int(getattr(args, "gradient_accumulation_steps", 1) or 1),
+            "skip_final_optimizer_update": bool(getattr(args, "skip_final_optimizer_update", False)),
             "shuffle": bool(getattr(args, "shuffle", True)),
             "optimizer": str(args.optimizer),
             "optimizer_in_backward": bool(getattr(args, "optimizer_in_backward", False)),
@@ -2397,6 +2398,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--steps", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1.0e-6)
     parser.add_argument("--max_records", type=int, default=0)
+    parser.add_argument("--skip_final_optimizer_update", action="store_true")
     parser.add_argument("--precision", default="fp32")
     parser.add_argument("--init_dtype", default="auto")
     parser.add_argument("--optimizer", default="adamw")
@@ -2619,7 +2621,10 @@ def main(argv: list[str] | None = None) -> int:
                 "target contract produced a non-positive training loss; "
                 "check assistant/media target coverage before continuing"
             )
-        should_update = ((local_step + 1) % gradient_accumulation_steps) == 0 or (local_step + 1) == int(args.steps)
+        final_step = (local_step + 1) == int(args.steps)
+        should_update = ((local_step + 1) % gradient_accumulation_steps) == 0 or final_step
+        if bool(getattr(args, "skip_final_optimizer_update", False)) and final_step:
+            should_update = False
         grad_norm_pre_clip = _module_grad_norm(shard, enabled=bool(args.diagnostics_grad_norm) and should_update)
         if should_update:
             optimizer.step()

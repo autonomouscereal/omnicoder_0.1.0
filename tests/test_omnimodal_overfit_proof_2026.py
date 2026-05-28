@@ -186,5 +186,8 @@ def test_train_plan_uses_manifest_row_counts_for_shared_all_modality_group(tmp_p
 
     plan = proof.train_plan(type("Args", (), {"run": str(out), "out": "", "groups": ""})())
 
+    assert "--batch_size 10" in plan["commands"][0]
     assert "--max_records 10" in plan["commands"][0]
+    assert "--batch_size 60" in plan["commands"][-1]
     assert "--max_records 60" in plan["commands"][-1]
+    assert "--skip_final_optimizer_update" in plan["commands"][-1]

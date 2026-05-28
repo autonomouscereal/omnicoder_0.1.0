@@ -38,6 +38,8 @@ SEQ_LEN="${OMNICODER_OVERFIT_SEQ_LEN:-128}"
 BATCH_SIZE="${OMNICODER_OVERFIT_BATCH_SIZE:-1}"
 STEPS="${OMNICODER_OVERFIT_STEPS:-600}"
 LEARNING_RATE="${OMNICODER_OVERFIT_LR:-0.0008}"
+FULL_BATCH_OVERFIT="${OMNICODER_OVERFIT_FULL_BATCH:-1}"
+SKIP_FINAL_OPTIMIZER_UPDATE="${OMNICODER_OVERFIT_SKIP_FINAL_OPTIMIZER_UPDATE:-1}"
 PRECISION="${OMNICODER_OVERFIT_PRECISION:-fp32}"
 INIT_DTYPE="${OMNICODER_OVERFIT_INIT_DTYPE:-fp32}"
 LM_LOSS_CHUNK_TOKENS="${OMNICODER_OVERFIT_LM_LOSS_CHUNK_TOKENS:-64}"
@@ -735,6 +737,10 @@ train_group() {
   local ckpt="$CONTAINER_OUT_DIR/ckpt/${group}"
   local max_records
   max_records="$(group_row_count "$group")"
+  local train_batch_size="$BATCH_SIZE"
+  if truthy "$FULL_BATCH_OVERFIT"; then
+    train_batch_size="$max_records"
+  fi
   local -a cmd=(
     "$PYTHON_BIN" -m torch.distributed.run
     --standalone
@@ -750,7 +756,7 @@ train_group() {
     --rank_device_map "$RANK_DEVICE_MAP"
     --pipeline_schedule gpipe
     --pipeline_microbatches 1
-    --batch_size "$BATCH_SIZE"
+    --batch_size "$train_batch_size"
     --seq_len "$SEQ_LEN"
     --steps "$STEPS"
     --lr "$LEARNING_RATE"
@@ -768,6 +774,9 @@ train_group() {
     --checkpoint_sync_backend filesystem
     --dist_timeout_seconds "$DIST_TIMEOUT_SECONDS"
   )
+  if truthy "$SKIP_FINAL_OPTIMIZER_UPDATE"; then
+    cmd+=(--skip_final_optimizer_update)
+  fi
   run_cmd "train_${group}" "$LOG_DIR/${group}.train.console.log" "${cmd[@]}"
   if ! checkpoint_is_owned_and_complete "$HOST_OUT_DIR/ckpt/$group" "$NPROC_PER_NODE"; then
     echo "Scratch checkpoint did not pass completeness/ownership checks: $HOST_OUT_DIR/ckpt/$group" >&2

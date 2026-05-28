@@ -526,10 +526,11 @@ def train_plan(args: argparse.Namespace) -> dict[str, Any]:
                     f'--train_diagnostics_file "{run}/logs/{group}.diag.rank{{rank}}.jsonl"',
                     "--preset ledger_probe --allow_probe --placement_layer_counts \"${PLACEMENT:-4}\"",
                     "--rank_device_map \"${RANK_MAP:-}\" --pipeline_schedule gpipe --pipeline_microbatches 1",
-                    f"--batch_size 1 --seq_len 128 --steps 600 --lr 8e-4 --max_records {max_records}",
+                    f"--batch_size {max_records} --seq_len 128 --steps 600 --lr 8e-4 --max_records {max_records}",
                     "--precision \"${PREC:-fp32}\" --init_dtype \"${INIT:-fp32}\"",
                     "--optimizer_in_backward_update lowmem_adafactor --lm_loss_chunk_tokens 64",
                     "--target_boundary_weight 2 --target_prefix_weight 2 --target_prefix_tokens 2 --no_shuffle",
+                    "--skip_final_optimizer_update",
                 ]
             )
         )
