@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
 import time
 from collections import Counter
 from pathlib import Path
@@ -12,6 +14,7 @@ from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 
 SCHEMA = "omnicoder.omnimodal_overfit_proof_2026.v1"
 PROOF_GROUPS = ("text", "code_tool", "image_ocr", "video", "audio_tts_music", "ledger_all")
+DEFAULT_MAX_RELOAD_SAMPLE_LOSS = 0.05
 _TOKENIZER_CACHE: Any | None = None
 
 
@@ -57,6 +60,71 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
             if line.strip():
                 rows.append(json.loads(line))
     return rows
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return float(default)
+    return float(raw)
+
+
+def _add_failure(report: dict[str, Any], reason: str) -> None:
+    failures = report.setdefault("failures", [])
+    if reason not in failures:
+        failures.append(reason)
+    report.setdefault("failure", reason)
+
+
+def _bucket_loss(bucket: Any) -> float | None:
+    if not isinstance(bucket, dict):
+        return None
+    for key in ("loss", "avg_loss"):
+        value = bucket.get(key)
+        if value not in (None, ""):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+    tokens = int(bucket.get("tokens") or 0)
+    loss_sum = bucket.get("loss_sum")
+    if tokens > 0 and loss_sum not in (None, ""):
+        return float(loss_sum) / float(tokens)
+    return None
+
+
+def _sample_loss_failures(loss_json: Any, *, max_loss: float) -> list[dict[str, Any]]:
+    if not isinstance(loss_json, dict):
+        return [{"reason": "invalid_sample_loss", "bucket": "root"}]
+    checks: list[tuple[str, Any]] = [("overall", loss_json.get("overall"))]
+    modalities = loss_json.get("modalities")
+    if isinstance(modalities, dict):
+        for name, bucket in sorted(modalities.items()):
+            checks.append((f"modality:{name}", bucket))
+    failures: list[dict[str, Any]] = []
+    for bucket_name, bucket in checks:
+        if not isinstance(bucket, dict):
+            failures.append({"reason": "missing_sample_loss_bucket", "bucket": bucket_name})
+            continue
+        tokens = int(bucket.get("tokens") or 0)
+        loss = _bucket_loss(bucket)
+        if tokens <= 0 or loss is None:
+            failures.append({"reason": "missing_sample_loss", "bucket": bucket_name, "tokens": tokens})
+            continue
+        if not math.isfinite(float(loss)):
+            failures.append({"reason": "nonfinite_sample_loss", "bucket": bucket_name, "loss": loss, "tokens": tokens})
+            continue
+        if float(loss) > float(max_loss):
+            failures.append(
+                {
+                    "reason": "high_sample_loss",
+                    "bucket": bucket_name,
+                    "loss": float(loss),
+                    "max_loss": float(max_loss),
+                    "tokens": tokens,
+                }
+            )
+    return failures
 
 
 def _encode(tokenizer: Any, text: str) -> list[int]:
@@ -264,7 +332,14 @@ def summary(args: argparse.Namespace) -> dict[str, Any]:
     run_dir = Path(args.run)
     data_dir = run_dir / "data"
     eval_dir = run_dir / "eval"
-    report: dict[str, Any] = {"schema": SCHEMA, "run": str(run_dir), "groups": {}, "status": "passed"}
+    max_reload_sample_loss = float(getattr(args, "max_reload_sample_loss", DEFAULT_MAX_RELOAD_SAMPLE_LOSS))
+    report: dict[str, Any] = {
+        "schema": SCHEMA,
+        "run": str(run_dir),
+        "groups": {},
+        "status": "passed",
+        "max_reload_sample_loss": max_reload_sample_loss,
+    }
     for group in PROOF_GROUPS:
         data_path = data_dir / f"{group}.jsonl"
         loss_path = eval_dir / f"{group}.loss.json"
@@ -276,21 +351,29 @@ def summary(args: argparse.Namespace) -> dict[str, Any]:
             group_report["target_families"] = dict(sorted(Counter(str(row.get("target_ledger_family") or "unknown") for row in rows).items()))
         if loss_path.exists():
             try:
-                group_report["loss_json"] = json.loads(loss_path.read_text(encoding="utf-8"))
+                loss_json = json.loads(loss_path.read_text(encoding="utf-8"))
+                group_report["loss_json"] = loss_json
+                sample_loss_failures = _sample_loss_failures(loss_json, max_loss=max_reload_sample_loss)
+                if sample_loss_failures:
+                    group_report["sample_loss_failures"] = sample_loss_failures
+                    for failure in sample_loss_failures:
+                        _add_failure(group_report, str(failure.get("reason") or "sample_loss_failed"))
             except Exception as exc:
                 group_report["loss_error"] = repr(exc)
+                _add_failure(group_report, "invalid_sample_loss")
         else:
-            group_report["failure"] = "missing_sample_loss"
+            _add_failure(group_report, "missing_sample_loss")
         if target_path.exists():
             try:
                 target_json = json.loads(target_path.read_text(encoding="utf-8"))
                 group_report["target_json"] = target_json
                 if int(target_json.get("target_tokens") or target_json.get("target_token_count") or 0) <= 0:
-                    group_report["failure"] = "no_target_tokens"
+                    _add_failure(group_report, "no_target_tokens")
             except Exception as exc:
                 group_report["target_error"] = repr(exc)
+                _add_failure(group_report, "invalid_target_diagnostics")
         else:
-            group_report["failure"] = "missing_target_diagnostics"
+            _add_failure(group_report, "missing_target_diagnostics")
         if group_report.get("failure") or group_report.get("rows", 0) <= 0:
             report["status"] = "failed"
         report["groups"][group] = group_report
@@ -338,6 +421,13 @@ def build_parser() -> argparse.ArgumentParser:
     summ = sub.add_parser("summary")
     summ.add_argument("--run", required=True)
     summ.add_argument("--out", default="")
+    summ.add_argument(
+        "--max-reload-sample-loss",
+        "--max_reload_sample_loss",
+        dest="max_reload_sample_loss",
+        type=float,
+        default=_env_float("OMNICODER_OVERFIT_MAX_RELOAD_SAMPLE_LOSS", DEFAULT_MAX_RELOAD_SAMPLE_LOSS),
+    )
     return parser
 
 

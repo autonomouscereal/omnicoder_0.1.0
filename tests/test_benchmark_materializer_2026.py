@@ -690,6 +690,7 @@ def test_materializer_normalizes_long_context_prompt_aliases() -> None:
 
 def test_materializer_normalizes_hellaswag_completion_rows() -> None:
     spec = materializer.KNOWN_BENCHMARKS["reasoning_hellaswag_full_2026"]
+    assert spec["splits"] == ["validation"]
     task = materializer.normalize_task(
         "reasoning_hellaswag_full_2026",
         {
@@ -711,6 +712,80 @@ def test_materializer_normalizes_hellaswag_completion_rows() -> None:
     assert task["choices"][1] == "pulls out a tray."
     assert task["answer"] == "1"
     assert materializer.is_scorable_task(task, spec)
+
+
+def test_materializer_reportable_hellaswag_attaches_scorer_license_and_file_hash(tmp_path: Path) -> None:
+    benchmark_id = "reasoning_hellaswag_full_2026"
+    profile = tmp_path / "profile.json"
+    source = tmp_path / "hellaswag_authorized.jsonl"
+    _write_json(
+        profile,
+        {
+            "benchmarks": [
+                {
+                    "benchmark_id": benchmark_id,
+                    "adapter_kind": "commonsense_completion_mcq",
+                    "axis": "reasoning",
+                    "source": "https://huggingface.co/datasets/Rowan/hellaswag",
+                    "splits": {"smoke": "authorized HellaSwag fixture"},
+                }
+            ],
+            "reportable_task_roots": {benchmark_id: ["data/eval/reportable_2026/hellaswag_authorized.jsonl"]},
+            "reportable_snapshots": {
+                benchmark_id: {
+                    "snapshot_id": "hellaswag-authorized-2026-current",
+                    "snapshot_authorization": "official_or_authorized_current_release",
+                    "dataset_revision": "hellaswag-authorized-2026-current",
+                    "source": "https://huggingface.co/datasets/Rowan/hellaswag",
+                    "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+                    "license_ref": "authorized-eval-ledger:hellaswag",
+                    "official_scorer_ref": "hellaswag-official-eval-2026",
+                    "task_root": "data/eval/reportable_2026/hellaswag_authorized.jsonl",
+                }
+            },
+        },
+    )
+    _write_jsonl(
+        source,
+        [
+            {
+                "ind": 17,
+                "ctx": "A person opens the oven door and",
+                "endings": ["sits on the couch.", "pulls out a tray.", "drives away.", "prints a receipt."],
+                "label": "1",
+            }
+        ],
+    )
+    out_root = tmp_path / "materialized"
+
+    assert (
+        materializer.main(
+            [
+                "--profile",
+                str(profile),
+                "--out-root",
+                str(out_root),
+                "--run-id",
+                "hellaswag_reportable",
+                "--benchmark",
+                benchmark_id,
+                "--mode",
+                "reportable",
+                "--source-override",
+                f"{benchmark_id}={source}",
+                "materialize",
+            ]
+        )
+        == 0
+    )
+
+    rows = _read_jsonl(out_root / "reportable_2026" / f"{benchmark_id}_authorized.jsonl")
+    assert rows[0]["reportable"] is True
+    assert rows[0]["local_only"] is False
+    assert rows[0]["snapshot_id"] == "hellaswag-authorized-2026-current"
+    assert rows[0]["license_ref"] == "authorized-eval-ledger:hellaswag"
+    assert rows[0]["official_scorer_ref"] == "hellaswag-official-eval-2026"
+    assert len(rows[0]["task_file_sha256"]) == 64
 
 
 def test_materializer_normalizes_countdown_rewardbench_and_oneig_aliases() -> None:

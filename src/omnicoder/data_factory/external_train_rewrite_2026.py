@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -50,6 +51,22 @@ def _safe_stem(value: Any, fallback: str) -> str:
     return text or fallback
 
 
+def _record_id(row: dict[str, Any]) -> str:
+    for container in (row, row.get("metadata"), row.get("lineage"), row.get("source_payload")):
+        if not isinstance(container, dict):
+            continue
+        for key in ("record_id", "id", "uid", "uuid", "example_id", "sample_id", "row_id"):
+            value = container.get(key)
+            if value not in (None, "", [], {}):
+                return str(value)
+    return ""
+
+
+def _payload_hash(row: dict[str, Any]) -> str:
+    payload = json.dumps(row, ensure_ascii=True, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest()
+
+
 def is_train_bucket_file(path: Path) -> bool:
     if path.suffix.lower() != ".jsonl":
         return False
@@ -63,11 +80,22 @@ def is_train_bucket_file(path: Path) -> bool:
 
 def clean_train_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     cleaned: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    seen_payloads: set[str] = set()
     for row in rows:
         if str(row.get("training_bucket") or "train") != "train":
             continue
         row = dict(row)
         row["training_bucket"] = "train"
+        record_id = _record_id(row)
+        if record_id:
+            if record_id in seen_ids:
+                continue
+            seen_ids.add(record_id)
+        payload_hash = _payload_hash(row)
+        if payload_hash in seen_payloads:
+            continue
+        seen_payloads.add(payload_hash)
         cleaned.append(row)
     return cleaned
 

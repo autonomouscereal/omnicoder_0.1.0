@@ -65,6 +65,7 @@ KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", 
 MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts", "ocr"}
 GENERATION_MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts"}
 WORD_RE = re.compile(r"[A-Za-z0-9_]+")
+REMOTE_REF_PREFIXES = ("http://", "https://", "s3://", "hf://")
 SCALAR_TARGET_RE = re.compile(r"(?i)^[+-]?(?:\d+(?:\.\d+)?|[a-z]|true|false|yes|no|null|none|nan)$")
 BARE_MEDIA_PATH_TARGET_RE = re.compile(
     r"""(?ix)
@@ -77,6 +78,16 @@ BARE_MEDIA_PATH_TARGET_RE = re.compile(
     (?:png|jpe?g|webp|gif|bmp|tiff|mp4|mov|mkv|webm|avi|wav|mp3|flac|ogg|m4a|aac|mid|midi)
     \s*$
     """
+)
+TARGET_MEDIA_TOKEN_KEYS = (
+    "artifact_tokens",
+    "media_tokens",
+    "audio_tokens",
+    "video_tokens",
+    "image_tokens",
+    "speech_tokens",
+    "tts_tokens",
+    "music_tokens",
 )
 TARGET_MEDIA_PAYLOAD_KEYS = (
     "artifact_path",
@@ -306,12 +317,45 @@ def _has_nonempty_media_value(value: Any) -> bool:
     return True
 
 
+def _is_remote_ref(ref: str) -> bool:
+    return ref.strip().lower().startswith(REMOTE_REF_PREFIXES)
+
+
+def _media_ref_is_payload(value: Any) -> bool:
+    if value in (None, "", [], {}):
+        return False
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return False
+        if text.startswith("data:") or text == "embedded_media_bytes":
+            return True
+        return not _is_remote_ref(text)
+    if isinstance(value, dict):
+        if value.get("bytes") or value.get("byte_size") or value.get("token_count"):
+            return True
+        for key in ("path", "source_path", "artifact_path", "file", "uri"):
+            ref = text_value(value.get(key), limit=2048)
+            if ref and _media_ref_is_payload(ref):
+                return True
+        url = text_value(value.get("url"), limit=2048)
+        return bool(url and not _is_remote_ref(url))
+    if isinstance(value, (list, tuple, set)):
+        return any(_media_ref_is_payload(item) for item in value)
+    return True
+
+
 def target_json_has_media_payload(row: dict[str, Any]) -> bool:
     target_json = row.get("target_json") if isinstance(row.get("target_json"), dict) else {}
     if not isinstance(target_json, dict):
         return False
-    for key in TARGET_MEDIA_PAYLOAD_KEYS:
+    for key in TARGET_MEDIA_TOKEN_KEYS:
         if key in target_json and _has_nonempty_media_value(target_json.get(key)):
+            return True
+    for key in TARGET_MEDIA_PAYLOAD_KEYS:
+        if key in TARGET_MEDIA_TOKEN_KEYS:
+            continue
+        if key in target_json and _media_ref_is_payload(target_json.get(key)):
             return True
     return False
 
@@ -396,9 +440,10 @@ def artifact_quality(refs: list[str], modality: str, *, require_media_artifacts:
         return 0.45, ["media_artifact_ref_absent"]
     existing = 0
     checked = 0
+    remote_only = 0
     for ref in refs[:8]:
-        if ref.startswith(("http://", "https://", "s3://", "hf://")):
-            existing += 1
+        if _is_remote_ref(ref):
+            remote_only += 1
             checked += 1
             continue
         path = Path(ref)
@@ -409,6 +454,9 @@ def artifact_quality(refs: list[str], modality: str, *, require_media_artifacts:
                     existing += 1
             except OSError:
                 pass
+    if checked and remote_only == checked:
+        reasons.append("media_artifact_url_only")
+        return 0.0, reasons
     if checked and existing == 0:
         reasons.append("media_artifact_ref_not_found")
         return (0.0 if require_media_artifacts else 0.25), reasons
@@ -453,7 +501,11 @@ def quality_audit(
     control_penalty = 0.35 if control_ratio > cfg.max_control_char_ratio else 0.0
     placeholder_penalty = 0.35 if PLACEHOLDER_RE.search(text) else 0.0
     secret_penalty = 0.55 if SECRET_VALUE_RE.search(text) else 0.0
-    artifact_score, artifact_reasons = artifact_quality(refs or [], modality, require_media_artifacts=cfg.require_media_artifacts)
+    artifact_score, artifact_reasons = (
+        (1.0, [])
+        if has_target_media_payload
+        else artifact_quality(refs or [], modality, require_media_artifacts=cfg.require_media_artifacts)
+    )
     source_quality = 0.0 if existing_quality is None else max(0.0, min(1.0, float(existing_quality)))
     score = (
         0.18
@@ -498,6 +550,7 @@ def quality_audit(
         "target_copies_prompt",
         "media_artifact_ref_not_found",
         "missing_media_artifact_ref",
+        "media_artifact_url_only",
         "media_target_too_short_or_scalar",
     }
     if cfg.reject_placeholder_junk:

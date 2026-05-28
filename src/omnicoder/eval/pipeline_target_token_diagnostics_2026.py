@@ -171,6 +171,8 @@ def _pipeline_hidden(
     world_size = int(dist.get_world_size())
     length = int(batch.shape[1])
     with torch.no_grad(), autocast_context(device, precision):
+        if world_size == 1:
+            return shard(batch)
         if rank == 0:
             hidden = shard(batch)
             dist.send(hidden.contiguous(), dst=1)

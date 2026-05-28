@@ -7567,7 +7567,9 @@
     "reasoning_hellaswag_full_2026": {
       "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
       "dataset_revision": "hellaswag-authorized-2026-current",
+      "license_ref": "authorized-eval-ledger:hellaswag",
       "min_tasks": 1,
+      "official_scorer_ref": "hellaswag-official-eval-2026",
       "snapshot_authorization": "official_or_authorized_current_release",
       "snapshot_id": "hellaswag-authorized-2026-current",
       "source": "https://huggingface.co/datasets/Rowan/hellaswag",
@@ -7827,7 +7829,9 @@
     "safety_tool_security_2026": [
       "data/eval/reportable_2026/tool_security_authorized.jsonl"
     ],
-    "reasoning_hellaswag_full_2026": "data/eval/reportable_2026/hellaswag_authorized.jsonl"
+    "reasoning_hellaswag_full_2026": [
+      "data/eval/reportable_2026/hellaswag_authorized.jsonl"
+    ]
   },
   "run_cycles": {
     "nightly": {

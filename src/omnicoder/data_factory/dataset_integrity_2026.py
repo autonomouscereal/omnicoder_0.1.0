@@ -19,9 +19,11 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (reason, re.compile(pattern, re.IGNORECASE | re.DOTALL))
     for reason, pattern in (
         ("prompt_injection_ignore_instructions", r"\bignore (?:all |any |the )?(?:previous|prior|above|system|developer) instructions\b"),
+        ("prompt_injection_disregard_instructions", r"\b(?:disregard|bypass|override|negate) (?:all |any |the )?(?:previous|prior|above|system|developer)(?: \w+){0,3} instructions\b"),
         ("prompt_injection_reveal_prompt", r"\b(?:reveal|print|output|show|dump|leak)\b.{0,80}\b(?:system|developer|hidden|initial) prompt\b"),
         ("prompt_injection_override_role", r"\b(?:you are now|act as|switch to|enter)\b.{0,80}\b(?:developer|system|god|admin|root|jailbreak|dan)\b"),
         ("prompt_injection_context_hijack", r"\b(?:forget|discard|erase)\b.{0,80}\b(?:everything|all instructions|the conversation|your rules)\b"),
+        ("prompt_injection_disable_safety", r"\b(?:disable|turn off|bypass)\b.{0,80}\b(?:safety|guardrails?|policy|moderation|filters?)\b"),
         ("prompt_injection_hidden_directive", r"\b(?:do not|never)\b.{0,80}\b(?:tell|mention|disclose)\b.{0,80}\b(?:this instruction|these instructions|hidden prompt)\b"),
         ("prompt_injection_metadata_payload", r"<(?:meta|script|style|iframe|object|embed)\b[^>]{0,240}\b(?:ignore|prompt|system|developer|secret)\b"),
         ("prompt_injection_hidden_style", r"(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|font-size\s*:\s*0)\b.{0,240}\b(?:ignore|prompt|system|developer|secret)\b"),
@@ -72,6 +74,16 @@ EVAL_LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("eval_leak_swe_bench", r"\bswe[_ -]?bench\b"),
         ("eval_leak_terminal_bench", r"\bterminal[_ -]?bench\b"),
         ("eval_leak_mmmu", r"\bmmmu(?:[_ -]?pro)?\b"),
+        ("eval_leak_mmlu", r"\bmmlu(?:[_ -]?pro)?\b"),
+        ("eval_leak_humaneval", r"\bhuman[_ -]?eval\b|\bhumaneval\b"),
+        ("eval_leak_mbpp", r"\bmbpp\b"),
+        ("eval_leak_gsm8k", r"\bgsm8k\b"),
+        ("eval_leak_gpqa", r"\bgpqa(?:[_ -]?diamond)?\b"),
+        ("eval_leak_bfcl", r"\bbfcl\b|\bberkeley[_ -]?function[_ -]?calling\b"),
+        ("eval_leak_livecodebench", r"\blive[_ -]?code[_ -]?bench\b|\blivecodebench\b"),
+        ("eval_leak_tau_bench", r"\btau[_ -]?bench\b"),
+        ("eval_leak_webarena", r"\bweb[_ -]?arena\b|\bwebarena\b|\bbrowsergym\b|\bosworld\b"),
+        ("eval_leak_frontiermath", r"\bfrontier[_ -]?math\b|\bfrontiermath\b"),
         ("eval_leak_fixture", r"\b(?:fixture|smoke|canary)\b"),
     )
 )
@@ -80,6 +92,7 @@ REFUSAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     for reason, pattern in (
         ("refusal_as_an_ai", r"\bas an ai(?: language)? model\b"),
         ("refusal_cannot_assist", r"\b(?:cannot|can't|can not|unable to) (?:assist|help|comply|provide)\b"),
+        ("refusal_cannot_fulfill", r"\b(?:cannot|can't|can not|unable to) (?:fulfill|complete|do|answer) (?:this|that|the)? ?(?:request|task|question)?\b"),
         ("refusal_policy", r"\b(?:against|violates?) (?:the )?(?:policy|safety policy|guidelines)\b"),
         ("refusal_refuse", r"\b(?:must refuse|have to refuse|refusal|refused|refusing)\b"),
     )
@@ -116,7 +129,23 @@ MODALITY_KEYS = (
     "declared_target_modality",
     "media_family",
 )
+MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts", "ocr"}
+REMOTE_REF_PREFIXES = ("http://", "https://", "s3://", "hf://")
+MEDIA_URL_RE = re.compile(
+    r"(?i)^\s*(?:https?://|s3://|hf://)\S+\.(?:png|jpe?g|webp|gif|bmp|tiff|mp4|mov|mkv|webm|avi|wav|mp3|flac|ogg|m4a|aac|mid|midi)(?:[?#]\S*)?\s*$"
+)
 TEXT_TARGET_KEYS = ("content", "text", "target", "response", "completion", "answer", "expected_answer", "output")
+MEDIA_TOKEN_KEYS = (
+    "artifact_tokens",
+    "media_tokens",
+    "audio_tokens",
+    "video_tokens",
+    "image_tokens",
+    "speech_tokens",
+    "tts_tokens",
+    "music_tokens",
+)
+MEDIA_REF_KEYS = ("artifact_refs", "artifacts", "artifact_paths", "media_refs", "media_paths")
 ARTIFACT_MARKER_BYTES: tuple[tuple[str, bytes], ...] = tuple(
     (reason, marker.lower())
     for reason, marker in (
@@ -212,11 +241,55 @@ def _repetition_issue(text: str) -> str:
     return ""
 
 
+def _is_remote_ref(ref: str) -> bool:
+    return ref.strip().lower().startswith(REMOTE_REF_PREFIXES)
+
+
+def _media_ref_is_payload(value: Any) -> bool:
+    if value in (None, "", [], {}):
+        return False
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return False
+        if text.startswith("data:") or text == "embedded_media_bytes":
+            return True
+        return not _is_remote_ref(text)
+    if isinstance(value, dict):
+        if value.get("bytes") or value.get("byte_size") or value.get("token_count"):
+            return True
+        for key in ("path", "source_path", "artifact_path", "file", "uri"):
+            ref = text_value(value.get(key), limit=2048)
+            if ref and _media_ref_is_payload(ref):
+                return True
+        url = text_value(value.get("url"), limit=2048)
+        return bool(url and not _is_remote_ref(url))
+    if isinstance(value, (list, tuple, set)):
+        return any(_media_ref_is_payload(item) for item in value)
+    return True
+
+
+def _row_has_media_token_payload(row: dict[str, Any]) -> bool:
+    for container in (row, row.get("target_json"), row.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in MEDIA_TOKEN_KEYS:
+            if container.get(key) not in (None, "", [], {}):
+                return True
+    for key in ("artifact_token_ids",):
+        value = row.get(key)
+        if isinstance(value, list) and len(value) > 1:
+            return True
+    return False
+
+
 def _row_has_media_target_payload(row: dict[str, Any]) -> bool:
     for container in (row, row.get("target_json")):
         if not isinstance(container, dict):
             continue
-        if any(container.get(key) not in (None, "", [], {}) for key in ("artifact_refs", "artifacts", "artifact_tokens", "media_tokens")):
+        if any(container.get(key) not in (None, "", [], {}) for key in MEDIA_TOKEN_KEYS):
+            return True
+        if any(_media_ref_is_payload(container.get(key)) for key in MEDIA_REF_KEYS):
             return True
     return False
 
@@ -249,8 +322,59 @@ def _one_token_target_issue(target: str, row: dict[str, Any]) -> str:
     return ""
 
 
+def _text_word_count(text: str) -> int:
+    return len(WORD_RE.findall(text))
+
+
+def _record_length_issue(prompt: str, target: str, row: dict[str, Any]) -> str:
+    if _row_has_media_target_payload(row):
+        return ""
+    if _text_word_count(f"{prompt}\n{target}") <= 1:
+        return "record_len_le_1"
+    return ""
+
+
+def _prompt_target_leakage_issues(prompt: str, target: str, row: dict[str, Any]) -> list[str]:
+    if _row_has_media_target_payload(row):
+        return []
+    norm_prompt = " ".join(prompt.split()).casefold()
+    norm_target = " ".join(target.split()).casefold()
+    if not norm_prompt or not norm_target:
+        return []
+    if norm_prompt == norm_target:
+        return ["prompt_copy"]
+    issues: list[str] = []
+    if len(norm_prompt) >= 40 and norm_target.startswith(norm_prompt):
+        issues.append("target_includes_prompt")
+    if len(norm_target) >= 40 and norm_prompt.startswith(norm_target):
+        issues.append("prompt_includes_target")
+    prompt_tokens = WORD_RE.findall(norm_prompt)
+    target_tokens = WORD_RE.findall(norm_target)
+    if min(len(prompt_tokens), len(target_tokens)) >= 8:
+        prompt_set = set(prompt_tokens)
+        target_set = set(target_tokens)
+        containment = len(prompt_set & target_set) / max(1, min(len(prompt_set), len(target_set)))
+        length_ratio = min(len(prompt_tokens), len(target_tokens)) / max(1, max(len(prompt_tokens), len(target_tokens)))
+        if containment >= 0.92 and length_ratio >= 0.75:
+            issues.append("prompt_target_high_overlap")
+    return sorted(set(issues))
+
+
+def _url_only_media_issue(row: dict[str, Any], *, target: str, modality: str, refs: list[str] | None) -> str:
+    if MEDIA_URL_RE.fullmatch(target or ""):
+        return "target_url_only_media"
+    if (modality or "").strip().lower() not in MEDIA_MODALITIES:
+        return ""
+    if _row_has_media_token_payload(row) or _row_has_media_target_payload(row):
+        return ""
+    ref_values = [str(ref).strip() for ref in refs or [] if str(ref).strip()]
+    if ref_values and all(_is_remote_ref(ref) for ref in ref_values):
+        return "media_url_only_ref"
+    return ""
+
+
 def _artifact_path(ref: str) -> Path | None:
-    if not ref or ref.startswith(("http://", "https://", "s3://", "hf://")):
+    if not ref or ref.startswith(REMOTE_REF_PREFIXES):
         return None
     path = Path(ref)
     return path if path.is_absolute() else None
@@ -367,11 +491,20 @@ def audit_dataset_integrity(
     if tiny_target:
         reasons.append(tiny_target)
         issues.append({"reason": tiny_target, "kind": "target_coverage"})
-    norm_prompt = " ".join(prompt.split()).casefold()
-    norm_target = " ".join(target.split()).casefold()
-    if norm_prompt and norm_prompt == norm_target and not _row_has_media_target_payload(row):
-        reasons.append("prompt_copy")
-        issues.append({"reason": "prompt_copy", "kind": "target_coverage"})
+    if not target and not _row_has_media_target_payload(row):
+        reasons.append("empty_target")
+        issues.append({"reason": "empty_target", "kind": "target_coverage"})
+    record_length = _record_length_issue(prompt, target, row)
+    if record_length:
+        reasons.append(record_length)
+        issues.append({"reason": record_length, "kind": "target_coverage"})
+    for reason in _prompt_target_leakage_issues(prompt, target, row):
+        reasons.append(reason)
+        issues.append({"reason": reason, "kind": "target_leakage"})
+    url_only = _url_only_media_issue(row, target=target, modality=resolved_modality, refs=refs)
+    if url_only:
+        reasons.append(url_only)
+        issues.append({"reason": url_only, "kind": "media_payload"})
 
     artifact_reports: list[dict[str, Any]] = []
     if scan_artifacts:
@@ -433,20 +566,31 @@ def _target_from_container(container: Any) -> str:
 
 
 def row_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
+    input_json = row.get("input_json") if isinstance(row.get("input_json"), dict) else {}
+    target_json = row.get("target_json") if isinstance(row.get("target_json"), dict) else {}
+    output_json = row.get("output_json") if isinstance(row.get("output_json"), dict) else {}
+    teacher_output = row.get("teacher_output")
     messages = row.get("messages")
     if isinstance(messages, list):
         prompt, target = _messages_prompt_target(messages)
         if prompt or target:
             return prompt, target
-    input_json = row.get("input_json") if isinstance(row.get("input_json"), dict) else {}
-    target_json = row.get("target_json") if isinstance(row.get("target_json"), dict) else {}
     messages = input_json.get("messages") if isinstance(input_json.get("messages"), list) else []
     if messages:
         prompt, target = _messages_prompt_target(messages)
-        if prompt or target:
+        if target:
             return prompt, target
-    prompt = ""
+        if not prompt:
+            prompt = text_value(input_json)
+    else:
+        prompt = ""
     target = ""
+    for container in (target_json, output_json, teacher_output):
+        target = _target_from_container(container)
+        if target:
+            break
+    if prompt and target:
+        return prompt, target
     for key in ("prompt", "instruction", "question", "input", "query", "text"):
         prompt = text_value(row.get(key))
         if prompt:
@@ -458,8 +602,6 @@ def row_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
         if target:
             break
     if not target:
-        output_json = row.get("output_json") if isinstance(row.get("output_json"), dict) else {}
-        teacher_output = row.get("teacher_output")
         for container in (target_json, output_json, teacher_output):
             target = _target_from_container(container)
             if target:

@@ -723,6 +723,19 @@ def attach_snapshot_metadata(row: dict[str, Any], descriptor: dict[str, Any] | N
         value = descriptor.get(src)
         if value not in (None, ""):
             row.setdefault(dst, value)
+    if not any(
+        row.get(key)
+        for key in (
+            "snapshot_sha256",
+            "task_file_sha256",
+            "official_task_sha256",
+            "manifest_sha256",
+            "source_sha256",
+        )
+    ):
+        task_file_sha256 = file_sha256(candidate)
+        if task_file_sha256:
+            row.setdefault("task_file_sha256", task_file_sha256)
     auth = (
         descriptor.get("snapshot_authorization")
         or descriptor.get("authorization")

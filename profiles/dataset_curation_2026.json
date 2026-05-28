@@ -31253,7 +31253,11 @@
         "last_verified": "2026-05-28",
         "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
         "splits": [
-          "train"
+          "chat",
+          "code",
+          "math",
+          "stem",
+          "tool_calling"
         ],
         "max_records": 32768,
         "target_modality": "tool",
@@ -31298,13 +31302,23 @@
         "last_verified": "2026-05-28",
         "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
         "splits": [
-          "train"
+          "chat",
+          "code",
+          "math",
+          "stem",
+          "multilingual_ja",
+          "multilingual_de",
+          "multilingual_it",
+          "multilingual_es",
+          "multilingual_fr"
         ],
         "max_records": 32768,
         "target_modality": "tool",
         "use_policy": "research_internal",
         "license": "NVIDIA dataset terms require release-specific review",
         "license_tier": "manual_terms_review",
+        "gated": true,
+        "token_env": "HF_TOKEN",
         "source_review_status": "research_internal_until_exact_license_and_component_mix_verified_2026_05_28",
         "materialization_note": "Prefer v2 after license review; do not mix with protected eval answer traces.",
         "curriculum_axes": [
@@ -31432,10 +31446,7 @@
         "source_year": 2026,
         "last_verified": "2026-05-28",
         "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
-        "configs": [
-          "data",
-          "benchmark"
-        ],
+        "config": "default",
         "splits": [
           "train"
         ],
@@ -31683,7 +31694,7 @@
       {
         "name": "Kinetics-700",
         "family": "video_generation",
-        "url": "https://deepmind.google/discover/blog/the-kinetics-human-action-video-dataset/",
+        "url": "https://github.com/cvdfoundation/kinetics-dataset",
         "source_year": 2026,
         "last_verified": "2026-05-28",
         "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
@@ -31708,7 +31719,7 @@
       {
         "name": "ActivityNet",
         "family": "video_generation",
-        "url": "https://activity-net.org/download.html",
+        "url": "http://activity-net.org/download.html",
         "source_year": 2026,
         "last_verified": "2026-05-28",
         "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",
@@ -31751,7 +31762,7 @@
       {
         "name": "WebVid-10M",
         "family": "video_generation",
-        "url": "https://m-bain.github.io/webvid-dataset/",
+        "url": "https://www.tensorflow.org/datasets/catalog/webvid",
         "source_year": 2026,
         "last_verified": "2026-05-28",
         "registry_wave": "twenty_ninth_wave_gold_dataset_hardening_2026_05_28",

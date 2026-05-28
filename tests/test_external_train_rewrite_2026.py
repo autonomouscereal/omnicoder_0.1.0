@@ -93,3 +93,21 @@ def test_external_train_rewrite_skips_nontrain_accepted_rows(tmp_path: Path) -> 
     assert report["accepted_rows"] == 1
     assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["train-1"]
     assert not (jsonl_dir / "benchmarks.jsonl").exists()
+
+
+def test_external_train_rewrite_dedupes_duplicate_ids(tmp_path: Path) -> None:
+    jsonl_dir = tmp_path / "jsonl"
+    accepted = tmp_path / "accepted.jsonl"
+    _write_jsonl(
+        accepted,
+        [
+            {"record_id": "dup-1", "dataset_family": "math_reasoning", "modality": "text", "training_bucket": "train", "target": "first good answer"},
+            {"record_id": "dup-1", "dataset_family": "math_reasoning", "modality": "text", "training_bucket": "train", "target": "second duplicate answer"},
+            {"record_id": "uniq-1", "dataset_family": "math_reasoning", "modality": "text", "training_bucket": "train", "target": "unique answer"},
+        ],
+    )
+
+    report = rewrite.rewrite_external_train_bucket(accepted, jsonl_dir, tmp_path / "rewrite.json")
+
+    assert report["accepted_rows"] == 2
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["dup-1", "uniq-1"]

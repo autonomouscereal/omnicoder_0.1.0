@@ -24,14 +24,14 @@ def test_dataset_index_counts_sources_modalities_and_fingerprints(tmp_path: Path
                 "contamination_status": "clean",
                 "target_token_ids": [1, 2, 3],
             },
-            {
-                "source_id": "musiccaps_review",
-                "modality": "music",
-                "split": "research_internal",
-                "use_policy": "research_internal",
-                "license": "manual_review",
-                "contamination_status": "clean",
-                "artifact_token_ids": [150000],
+                {
+                    "source_id": "musiccaps_review",
+                    "modality": "music",
+                    "split": "train",
+                    "use_policy": "train",
+                    "license": "manual_review",
+                    "contamination_status": "clean",
+                    "artifact_token_ids": [150000],
             },
         ],
     )
@@ -45,6 +45,58 @@ def test_dataset_index_counts_sources_modalities_and_fingerprints(tmp_path: Path
     assert payload["counts"]["rows_with_target_tokens"] == 1
     assert payload["counts"]["rows_with_artifact_tokens"] == 1
     assert payload["files"][0]["sha256"]
+
+
+def test_dataset_index_tracks_train_eval_research_block_buckets(tmp_path: Path) -> None:
+    data = tmp_path / "mixed.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {"record_id": "train-1", "source_id": "src", "modality": "text", "training_bucket": "train", "target": "Useful training target."},
+            {"record_id": "eval-1", "source_id": "src", "modality": "text", "training_bucket": "eval_holdout", "target": "Eval-only target."},
+            {"record_id": "research-1", "source_id": "src", "modality": "text", "training_bucket": "research_internal", "target": "Research-only target."},
+            {"record_id": "block-1", "source_id": "src", "modality": "text", "training_bucket": "blocked_until_review", "target": "Blocked review target."},
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["by_training_bucket"] == {
+        "blocked_until_review": 1,
+        "eval_holdout": 1,
+        "research_internal": 1,
+        "train": 1,
+    }
+    assert payload["by_train_eval_research_block"] == {"block": 1, "eval": 1, "research": 1, "train": 1}
+
+
+def test_dataset_index_flags_empty_prompt_leak_and_url_only_media(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    prompt = "Explain the exact artifact generation prompt, camera, lighting, and safety provenance."
+    _write_jsonl(
+        data,
+        [
+            {"record_id": "empty", "source_id": "src", "modality": "text", "split": "train", "target": ""},
+            {"record_id": "leak", "source_id": "src", "modality": "text", "split": "train", "prompt": prompt, "response": prompt + " Extra."},
+            {
+                "record_id": "url-media",
+                "source_id": "src",
+                "modality": "image",
+                "split": "train",
+                "target_json": {"content": "https://cdn.example.invalid/image.png", "artifact_refs": [{"url": "https://cdn.example.invalid/image.png"}]},
+            },
+        ],
+    )
+
+    payload = indexer.build_index([data], expected_split="train")
+
+    assert payload["status"] == "failed"
+    assert "empty_target_rows" in payload["fail_reasons"]
+    assert "prompt_target_leakage" in payload["fail_reasons"]
+    assert "url_only_media_rows" in payload["fail_reasons"]
+    assert payload["counts"]["empty_target_rows"] == 1
+    assert payload["counts"]["prompt_target_leakage"] == 1
+    assert payload["counts"]["url_only_media_rows"] == 1
 
 
 def test_dataset_index_fails_train_eval_leakage_marker(tmp_path: Path) -> None:
@@ -89,6 +141,29 @@ def test_dataset_index_counts_structured_target_json_content(tmp_path: Path) -> 
     assert payload["counts"]["rows_with_target_tokens"] == 1
     assert payload["counts"]["one_token_junk_rows"] == 0
     assert payload["by_modality"] == {"text": 1}
+
+
+def test_dataset_index_counts_target_json_when_input_messages_are_prompt_only(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "structured-message-1",
+                "source_id": "structured_source",
+                "modality": "text",
+                "split": "train",
+                "input_json": {"messages": [{"role": "user", "content": "Pretraining chunk prompt"}]},
+                "target_json": {"content": "Pretraining chunk target"},
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data], expected_split="train")
+
+    assert payload["status"] == "passed"
+    assert payload["counts"]["rows_with_target_tokens"] == 1
+    assert payload["counts"]["one_token_junk_rows"] == 0
 
 
 def test_dataset_index_fails_duplicate_ids_missing_modality_one_token_and_split_mismatch(tmp_path: Path) -> None:

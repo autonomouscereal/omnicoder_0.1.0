@@ -12,12 +12,31 @@ from typing import Any, Iterable
 SCHEMA = "omnicoder.dataset_index_2026.v1"
 TRAIN_LEAK_RE = re.compile(
     r"\b(?:public[_ -]?dev|reportable|answer[_ -]?key|protected[_ -]?eval|benchmark[_ -]?holdout|hella[_ -]?swag|hellaswag|"
-    r"arc[_ -]?agi[23]?|arc-agi[23]?|swe[_ -]?bench|terminal[_ -]?bench|mmmu(?:[_ -]?pro)?|fixture|smoke|canary)\b",
+    r"arc[_ -]?agi[23]?|arc-agi[23]?|swe[_ -]?bench|terminal[_ -]?bench|mmmu(?:[_ -]?pro)?|mmlu(?:[_ -]?pro)?|"
+    r"human[_ -]?eval|humaneval|mbpp|gsm8k|gpqa(?:[_ -]?diamond)?|bfcl|berkeley[_ -]?function[_ -]?calling|"
+    r"live[_ -]?code[_ -]?bench|livecodebench|tau[_ -]?bench|web[_ -]?arena|webarena|browsergym|osworld|"
+    r"frontier[_ -]?math|frontiermath|fixture|smoke|canary)\b",
     re.IGNORECASE,
 )
 ID_KEYS = ("record_id", "id", "uid", "uuid", "example_id", "sample_id", "row_id")
 MODALITY_KEYS = ("modality", "target_modality", "input_modality", "output_modality", "declared_target_modality", "media_family")
 TEXT_TARGET_KEYS = ("content", "text", "target", "response", "completion", "answer", "expected_answer", "output")
+MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts", "ocr"}
+REMOTE_REF_PREFIXES = ("http://", "https://", "s3://", "hf://")
+MEDIA_URL_RE = re.compile(
+    r"(?i)^\s*(?:https?://|s3://|hf://)\S+\.(?:png|jpe?g|webp|gif|bmp|tiff|mp4|mov|mkv|webm|avi|wav|mp3|flac|ogg|m4a|aac|mid|midi)(?:[?#]\S*)?\s*$"
+)
+MEDIA_TOKEN_KEYS = (
+    "artifact_tokens",
+    "media_tokens",
+    "audio_tokens",
+    "video_tokens",
+    "image_tokens",
+    "speech_tokens",
+    "tts_tokens",
+    "music_tokens",
+)
+MEDIA_REF_KEYS = ("artifact_refs", "artifacts", "artifact_paths", "media_refs", "media_paths")
 
 
 def _json_blob(value: Any) -> str:
@@ -44,9 +63,24 @@ def _first(row: dict[str, Any], *keys: str, default: str = "unknown") -> str:
     return default
 
 
+def _text_value(value: Any, *, limit: int = 32768) -> str:
+    if isinstance(value, str):
+        text = value
+    elif value is None:
+        text = ""
+    elif isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
+    else:
+        text = str(value)
+    text = text.strip()
+    return text if len(text) <= limit else text[:limit].rstrip()
+
+
 def _record_id(row: dict[str, Any]) -> str:
     meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-    for container in (row, meta):
+    lineage = row.get("lineage") if isinstance(row.get("lineage"), dict) else {}
+    source_payload = row.get("source_payload") if isinstance(row.get("source_payload"), dict) else {}
+    for container in (row, meta, lineage, source_payload):
         for key in ID_KEYS:
             value = container.get(key)
             if value not in (None, "", [], {}):
@@ -75,6 +109,13 @@ def _canonical_split(value: str) -> str:
         "validation": "eval",
         "valid": "eval",
         "dev": "eval",
+        "eval_holdout": "eval",
+        "evaluation": "eval",
+        "research": "research_internal",
+        "internal_research": "research_internal",
+        "blocked": "blocked_until_review",
+        "block": "blocked_until_review",
+        "manual_review": "blocked_until_review",
     }.get(normalized, normalized)
 
 
@@ -83,12 +124,89 @@ def _declared_split(row: dict[str, Any]) -> str:
     return "" if value in (None, "", [], {}) else str(value)
 
 
+def _messages_prompt_target(messages: list[Any]) -> tuple[str, str]:
+    prompt_parts: list[str] = []
+    target = ""
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").lower()
+        content = _text_value(message.get("content"))
+        if not content:
+            continue
+        if role == "assistant":
+            target = content
+        else:
+            prompt_parts.append(f"{role}: {content}")
+    return "\n".join(prompt_parts), target
+
+
+def _target_from_container(container: Any) -> str:
+    if not isinstance(container, dict):
+        return ""
+    for key in TEXT_TARGET_KEYS:
+        value = _text_value(container.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _row_prompt_target(row: dict[str, Any]) -> tuple[str, str]:
+    input_json = row.get("input_json") if isinstance(row.get("input_json"), dict) else {}
+    target_json = row.get("target_json") if isinstance(row.get("target_json"), dict) else {}
+    output_json = row.get("output_json") if isinstance(row.get("output_json"), dict) else {}
+    teacher_output = row.get("teacher_output")
+    messages = row.get("messages")
+    if isinstance(messages, list):
+        prompt, target = _messages_prompt_target(messages)
+        if prompt or target:
+            return prompt, target
+    messages = input_json.get("messages") if isinstance(input_json.get("messages"), list) else []
+    if messages:
+        prompt, target = _messages_prompt_target(messages)
+        if target:
+            return prompt, target
+        if not prompt:
+            prompt = _text_value(input_json)
+    else:
+        prompt = ""
+    target = ""
+    for container in (target_json, output_json, teacher_output):
+        target = _target_from_container(container)
+        if target:
+            break
+    if prompt and target:
+        return prompt, target
+    for key in ("prompt", "instruction", "question", "input", "query", "text"):
+        prompt = _text_value(row.get(key))
+        if prompt:
+            break
+    if not prompt:
+        prompt = _text_value(input_json)
+    for key in ("target", "response", "completion", "answer", "expected_answer", "output"):
+        target = _text_value(row.get(key))
+        if target:
+            break
+    if not target:
+        for container in (target_json, output_json, teacher_output):
+            target = _target_from_container(container)
+            if target:
+                break
+    return prompt, target
+
+
 def _infer_split(path: Path, row: dict[str, Any], expected_split: str = "") -> str:
     if row.get("split") not in (None, "", [], {}):
-        return str(row["split"])
+        return _canonical_split(str(row["split"]))
     if expected_split:
-        return expected_split
+        return _canonical_split(expected_split)
     lower = path.name.lower()
+    if "research_internal" in lower or "research" in lower:
+        return "research_internal"
+    if "blocked_until_review" in lower or "blocked" in lower:
+        return "blocked_until_review"
+    if "eval_holdout" in lower:
+        return "eval"
     if "train" in lower:
         return "train"
     if "eval" in lower or "dev" in lower or "valid" in lower:
@@ -96,6 +214,49 @@ def _infer_split(path: Path, row: dict[str, Any], expected_split: str = "") -> s
     if "test" in lower:
         return "test"
     return "unknown"
+
+
+def _canonical_training_bucket(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"train", "training"}:
+        return "train"
+    if normalized in {"eval", "evaluation", "validation", "valid", "dev", "test", "eval_holdout", "holdout"}:
+        return "eval_holdout"
+    if normalized in {"research", "research_internal", "internal_research", "distill_seed", "internal_distill_seed", "reward_only"}:
+        return "research_internal"
+    if normalized in {"blocked", "block", "blocked_until_review", "manual_review", "rejected", "quarantine"}:
+        return "blocked_until_review"
+    return normalized or "unknown"
+
+
+def _training_bucket(path: Path, row: dict[str, Any], split: str, use_policy: str) -> str:
+    for key in ("training_bucket", "bucket", "use_bucket", "release_bucket"):
+        value = row.get(key)
+        if value not in (None, "", [], {}):
+            return _canonical_training_bucket(str(value))
+    for value in (use_policy, split):
+        bucket = _canonical_training_bucket(value)
+        if bucket != "unknown":
+            return bucket
+    lower = path.name.lower()
+    if "research_internal" in lower or "research" in lower:
+        return "research_internal"
+    if "blocked_until_review" in lower or "blocked" in lower:
+        return "blocked_until_review"
+    if "eval_holdout" in lower or "eval" in lower or "valid" in lower or "dev" in lower or "test" in lower:
+        return "eval_holdout"
+    if "train" in lower:
+        return "train"
+    return "unknown"
+
+
+def _coarse_status(bucket: str) -> str:
+    return {
+        "train": "train",
+        "eval_holdout": "eval",
+        "research_internal": "research",
+        "blocked_until_review": "block",
+    }.get(bucket, "unknown")
 
 
 def _target_token_count(row: dict[str, Any]) -> int:
@@ -120,16 +281,110 @@ def _target_token_count(row: dict[str, Any]) -> int:
     return 0
 
 
+def _is_remote_ref(ref: str) -> bool:
+    return ref.strip().lower().startswith(REMOTE_REF_PREFIXES)
+
+
+def _media_ref_is_payload(value: Any) -> bool:
+    if value in (None, "", [], {}):
+        return False
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return False
+        if text.startswith("data:") or text == "embedded_media_bytes":
+            return True
+        return not _is_remote_ref(text)
+    if isinstance(value, dict):
+        if value.get("bytes") or value.get("byte_size") or value.get("token_count"):
+            return True
+        for key in ("path", "source_path", "artifact_path", "file", "uri"):
+            ref = _text_value(value.get(key), limit=2048)
+            if ref and _media_ref_is_payload(ref):
+                return True
+        url = _text_value(value.get("url"), limit=2048)
+        return bool(url and not _is_remote_ref(url))
+    if isinstance(value, (list, tuple, set)):
+        return any(_media_ref_is_payload(item) for item in value)
+    return True
+
+
+def _row_refs(row: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    for container in (row, row.get("input_json"), row.get("target_json"), row.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in (*MEDIA_REF_KEYS, "artifact_metadata", "media_metadata"):
+            value = container.get(key)
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                if isinstance(item, dict):
+                    ref = item.get("path") or item.get("source_path") or item.get("artifact_path") or item.get("file") or item.get("uri") or item.get("url")
+                else:
+                    ref = item
+                ref_text = _text_value(ref, limit=2048)
+                if ref_text:
+                    refs.append(ref_text)
+    return sorted(set(refs))[:64]
+
+
+def _has_media_token_payload(row: dict[str, Any]) -> bool:
+    for container in (row, row.get("target_json"), row.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in MEDIA_TOKEN_KEYS:
+            if container.get(key) not in (None, "", [], {}):
+                return True
+    value = row.get("artifact_token_ids")
+    return isinstance(value, list) and bool(value)
+
+
 def _has_media_payload(row: dict[str, Any]) -> bool:
-    if isinstance(row.get("artifact_token_ids"), list) and row["artifact_token_ids"]:
+    if _has_media_token_payload(row):
         return True
     for container in (row, row.get("target_json")):
         if not isinstance(container, dict):
             continue
-        for key in ("artifact_refs", "artifacts", "artifact_tokens", "media_tokens"):
-            if container.get(key) not in (None, "", [], {}):
+        for key in MEDIA_REF_KEYS:
+            if _media_ref_is_payload(container.get(key)):
                 return True
     return False
+
+
+def _prompt_target_leakage_issue(prompt: str, target: str, row: dict[str, Any]) -> str:
+    if _has_media_payload(row):
+        return ""
+    norm_prompt = " ".join(prompt.split()).casefold()
+    norm_target = " ".join(target.split()).casefold()
+    if not norm_prompt or not norm_target:
+        return ""
+    if norm_prompt == norm_target:
+        return "prompt_copy"
+    if len(norm_prompt) >= 40 and norm_target.startswith(norm_prompt):
+        return "target_includes_prompt"
+    if len(norm_target) >= 40 and norm_prompt.startswith(norm_target):
+        return "prompt_includes_target"
+    prompt_tokens = re.findall(r"[A-Za-z0-9_]+", norm_prompt)
+    target_tokens = re.findall(r"[A-Za-z0-9_]+", norm_target)
+    if min(len(prompt_tokens), len(target_tokens)) < 8:
+        return ""
+    prompt_set = set(prompt_tokens)
+    target_set = set(target_tokens)
+    containment = len(prompt_set & target_set) / max(1, min(len(prompt_set), len(target_set)))
+    length_ratio = min(len(prompt_tokens), len(target_tokens)) / max(1, max(len(prompt_tokens), len(target_tokens)))
+    return "prompt_target_high_overlap" if containment >= 0.92 and length_ratio >= 0.75 else ""
+
+
+def _url_only_media_issue(row: dict[str, Any], *, modality: str, target: str, refs: list[str]) -> str:
+    if MEDIA_URL_RE.fullmatch(target or ""):
+        return "target_url_only_media"
+    if modality.strip().lower() not in MEDIA_MODALITIES:
+        return ""
+    if _has_media_token_payload(row) or _has_media_payload(row):
+        return ""
+    if refs and all(_is_remote_ref(ref) for ref in refs):
+        return "media_url_only_ref"
+    return ""
 
 
 def iter_jsonl(path: Path) -> Iterable[tuple[int, dict[str, Any], str]]:
@@ -149,10 +404,13 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
     by_modality: Counter[str] = Counter()
     by_source: Counter[str] = Counter()
     by_split: Counter[str] = Counter()
+    by_training_bucket: Counter[str] = Counter()
+    by_train_eval_research_block: Counter[str] = Counter()
     by_use_policy: Counter[str] = Counter()
     by_license: Counter[str] = Counter()
     by_contamination: Counter[str] = Counter()
     matrix: Counter[tuple[str, str, str, str]] = Counter()
+    status_matrix: Counter[tuple[str, str, str, str, str]] = Counter()
     files: list[dict[str, Any]] = []
     duplicate_payloads = 0
     payload_hashes: set[str] = set()
@@ -161,7 +419,10 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
     duplicate_id_rows: list[dict[str, Any]] = []
     train_leak_rows: list[dict[str, Any]] = []
     missing_modality_rows: list[dict[str, Any]] = []
+    empty_target_rows: list[dict[str, Any]] = []
     one_token_junk_rows: list[dict[str, Any]] = []
+    prompt_target_leakage_rows: list[dict[str, Any]] = []
+    url_only_media_rows: list[dict[str, Any]] = []
     split_mismatch_rows: list[dict[str, Any]] = []
     bad_json = 0
     rows_with_target_tokens = 0
@@ -184,13 +445,18 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             use_policy = _first(row, "use_policy", "policy", default="unknown")
             license_id = _first(row, "license", "license_id", default="unknown")
             contamination = _first(row, "contamination_status", default="unknown")
+            training_bucket = _training_bucket(path, row, split, use_policy)
+            coarse_status = _coarse_status(training_bucket)
             by_modality[modality] += 1
             by_source[source] += 1
             by_split[split] += 1
+            by_training_bucket[training_bucket] += 1
+            by_train_eval_research_block[coarse_status] += 1
             by_use_policy[use_policy] += 1
             by_license[license_id] += 1
             by_contamination[contamination] += 1
             matrix[(modality, source, split, use_policy)] += 1
+            status_matrix[(modality, source, split, use_policy, training_bucket)] += 1
             record_id = _record_id(row)
             if record_id:
                 first_seen = seen_ids.get(record_id)
@@ -223,10 +489,37 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
                     }
                 )
             target_tokens = _target_token_count(row)
+            prompt, target = _row_prompt_target(row)
             if target_tokens > 0:
                 rows_with_target_tokens += 1
+            if not target and target_tokens <= 0 and not _has_media_payload(row):
+                empty_target_rows.append({"path": str(path), "line": line_number, "source_id": source, "modality": modality, "training_bucket": training_bucket})
             if target_tokens <= 1 and not _has_media_payload(row):
-                one_token_junk_rows.append({"path": str(path), "line": line_number, "source_id": source, "modality": modality, "target_tokens": target_tokens})
+                one_token_junk_rows.append({"path": str(path), "line": line_number, "source_id": source, "modality": modality, "training_bucket": training_bucket, "target_tokens": target_tokens})
+            leakage = _prompt_target_leakage_issue(prompt, target, row)
+            if leakage:
+                prompt_target_leakage_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "modality": modality,
+                        "training_bucket": training_bucket,
+                        "reason": leakage,
+                    }
+                )
+            url_only = _url_only_media_issue(row, modality=modality, target=target, refs=_row_refs(row))
+            if url_only:
+                url_only_media_rows.append(
+                    {
+                        "path": str(path),
+                        "line": line_number,
+                        "source_id": source,
+                        "modality": modality,
+                        "training_bucket": training_bucket,
+                        "reason": url_only,
+                    }
+                )
             if isinstance(row.get("artifact_token_ids"), list) and row["artifact_token_ids"]:
                 rows_with_artifact_tokens += 1
             payload_hash = _sha256_text(_json_blob(row))
@@ -234,8 +527,8 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
                 duplicate_payloads += 1
             payload_hashes.add(payload_hash)
             blob = _json_blob(row)[:100_000]
-            if split == "train" and TRAIN_LEAK_RE.search(blob):
-                train_leak_rows.append({"path": str(path), "line": line_number, "source_id": source, "modality": modality})
+            if (split == "train" or training_bucket == "train") and TRAIN_LEAK_RE.search(blob):
+                train_leak_rows.append({"path": str(path), "line": line_number, "source_id": source, "modality": modality, "training_bucket": training_bucket})
         files.append(
             {
                 "path": str(path),
@@ -254,8 +547,14 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
         fail_reasons.append("duplicate_ids")
     if missing_modality_rows:
         fail_reasons.append("missing_modality_metadata")
+    if empty_target_rows:
+        fail_reasons.append("empty_target_rows")
     if one_token_junk_rows:
         fail_reasons.append("one_token_junk_rows")
+    if prompt_target_leakage_rows:
+        fail_reasons.append("prompt_target_leakage")
+    if url_only_media_rows:
+        fail_reasons.append("url_only_media_rows")
     if split_mismatch_rows:
         fail_reasons.append("split_mismatch")
     if fail_on_train_leakage and train_leak_rows:
@@ -270,16 +569,21 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             "bad_json": bad_json,
             "duplicate_ids": duplicate_ids,
             "duplicate_payloads": duplicate_payloads,
+            "empty_target_rows": len(empty_target_rows),
             "missing_modality_metadata": len(missing_modality_rows),
             "one_token_junk_rows": len(one_token_junk_rows),
+            "prompt_target_leakage": len(prompt_target_leakage_rows),
             "split_mismatch": len(split_mismatch_rows),
             "train_eval_leakage_markers": len(train_leak_rows),
+            "url_only_media_rows": len(url_only_media_rows),
             "rows_with_target_tokens": rows_with_target_tokens,
             "rows_with_artifact_tokens": rows_with_artifact_tokens,
         },
         "by_modality": dict(sorted(by_modality.items())),
         "by_source": dict(sorted(by_source.items())),
         "by_split": dict(sorted(by_split.items())),
+        "by_training_bucket": dict(sorted(by_training_bucket.items())),
+        "by_train_eval_research_block": dict(sorted(by_train_eval_research_block.items())),
         "by_use_policy": dict(sorted(by_use_policy.items())),
         "by_license": dict(sorted(by_license.items())),
         "by_contamination": dict(sorted(by_contamination.items())),
@@ -287,11 +591,18 @@ def build_index(paths: list[Path], *, expected_split: str = "", fail_on_train_le
             {"modality": modality, "source_id": source, "split": split, "use_policy": policy, "rows": rows}
             for (modality, source, split, policy), rows in sorted(matrix.items())
         ],
+        "by_modality_source_split_policy_status": [
+            {"modality": modality, "source_id": source, "split": split, "use_policy": policy, "training_bucket": bucket, "rows": rows}
+            for (modality, source, split, policy, bucket), rows in sorted(status_matrix.items())
+        ],
         "duplicate_id_examples": duplicate_id_rows[:50],
+        "empty_target_examples": empty_target_rows[:50],
         "missing_modality_examples": missing_modality_rows[:50],
         "one_token_junk_examples": one_token_junk_rows[:50],
+        "prompt_target_leakage_examples": prompt_target_leakage_rows[:50],
         "split_mismatch_examples": split_mismatch_rows[:50],
         "train_leak_examples": train_leak_rows[:50],
+        "url_only_media_examples": url_only_media_rows[:50],
     }
 
 

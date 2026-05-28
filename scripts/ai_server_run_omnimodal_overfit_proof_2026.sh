@@ -40,6 +40,7 @@ LEARNING_RATE="${OMNICODER_OVERFIT_LR:-0.0008}"
 PRECISION="${OMNICODER_OVERFIT_PRECISION:-fp32}"
 INIT_DTYPE="${OMNICODER_OVERFIT_INIT_DTYPE:-fp32}"
 LM_LOSS_CHUNK_TOKENS="${OMNICODER_OVERFIT_LM_LOSS_CHUNK_TOKENS:-64}"
+MAX_RELOAD_SAMPLE_LOSS="${OMNICODER_OVERFIT_MAX_RELOAD_SAMPLE_LOSS:-0.05}"
 DIST_TIMEOUT_SECONDS="${OMNICODER_OVERFIT_DIST_TIMEOUT_SECONDS:-7200}"
 CUDA_ALLOC_CONF="${OMNICODER_OVERFIT_CUDA_ALLOC_CONF:-max_split_size_mb:128,expandable_segments:True}"
 TOP_K="${OMNICODER_OVERFIT_TOP_K:-8}"
@@ -228,6 +229,7 @@ payload = {
     "preset": ${PRESET@Q},
     "seq_len": int(${SEQ_LEN@Q}),
     "steps": int(${STEPS@Q}),
+    "max_reload_sample_loss": float(${MAX_RELOAD_SAMPLE_LOSS@Q}),
     "scratch_only": True,
     "external_checkpoints_allowed": False,
 }
@@ -449,15 +451,71 @@ PY
 
 write_fallback_summary() {
   local target="$HOST_OUT_DIR/omnimodal_overfit_summary.json"
-  "$HOST_PYTHON_BIN" - "$HOST_OUT_DIR" "$target" "${GROUPS_CLEAN[@]}" <<'PY'
+  "$HOST_PYTHON_BIN" - "$HOST_OUT_DIR" "$target" "$MAX_RELOAD_SAMPLE_LOSS" "${GROUPS_CLEAN[@]}" <<'PY'
 import json
+import math
 import pathlib
 import sys
 
 run = pathlib.Path(sys.argv[1])
 out = pathlib.Path(sys.argv[2])
-groups = sys.argv[3:]
-summary = {"schema": "omnicoder.omnimodal_overfit_proof_2026.summary.v1", "run": str(run), "status": "passed", "groups": {}}
+max_reload_sample_loss = float(sys.argv[3])
+groups = sys.argv[4:]
+
+
+def add_failure(item, reason):
+    failures = item.setdefault("failures", [])
+    if reason not in failures:
+        failures.append(reason)
+    item.setdefault("failure", reason)
+
+
+def bucket_loss(bucket):
+    if not isinstance(bucket, dict):
+        return None
+    for key in ("loss", "avg_loss"):
+        value = bucket.get(key)
+        if value not in (None, ""):
+            try:
+                return float(value)
+            except Exception:
+                return None
+    tokens = int(bucket.get("tokens") or 0)
+    if tokens > 0 and bucket.get("loss_sum") not in (None, ""):
+        return float(bucket.get("loss_sum") or 0.0) / float(tokens)
+    return None
+
+
+def sample_loss_failures(loss_json):
+    if not isinstance(loss_json, dict):
+        return [{"reason": "invalid_sample_loss", "bucket": "root"}]
+    checks = [("overall", loss_json.get("overall"))]
+    modalities = loss_json.get("modalities")
+    if isinstance(modalities, dict):
+        checks.extend((f"modality:{name}", bucket) for name, bucket in sorted(modalities.items()))
+    failures = []
+    for bucket_name, bucket in checks:
+        if not isinstance(bucket, dict):
+            failures.append({"reason": "missing_sample_loss_bucket", "bucket": bucket_name})
+            continue
+        tokens = int(bucket.get("tokens") or 0)
+        loss = bucket_loss(bucket)
+        if tokens <= 0 or loss is None:
+            failures.append({"reason": "missing_sample_loss", "bucket": bucket_name, "tokens": tokens})
+        elif not math.isfinite(float(loss)):
+            failures.append({"reason": "nonfinite_sample_loss", "bucket": bucket_name, "loss": loss, "tokens": tokens})
+        elif float(loss) > max_reload_sample_loss:
+            failures.append({"reason": "high_sample_loss", "bucket": bucket_name, "loss": float(loss), "max_loss": max_reload_sample_loss, "tokens": tokens})
+    return failures
+
+
+summary = {
+    "schema": "omnicoder.omnimodal_overfit_proof_2026.summary.v1",
+    "run": str(run),
+    "status": "passed",
+    "groups": {},
+    "max_reload_sample_loss": max_reload_sample_loss,
+}
 for group in groups:
     data = run / "data" / f"{group}.jsonl"
     ckpt = run / "ckpt" / group
@@ -477,15 +535,31 @@ for group in groups:
         item["rows"] = sum(1 for line in data.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip())
     if loss.exists():
         try:
-            item["loss_json"] = json.loads(loss.read_text(encoding="utf-8"))
+            loss_json = json.loads(loss.read_text(encoding="utf-8"))
+            item["loss_json"] = loss_json
+            failures = sample_loss_failures(loss_json)
+            if failures:
+                item["sample_loss_failures"] = failures
+                for failure in failures:
+                    add_failure(item, str(failure.get("reason") or "sample_loss_failed"))
         except Exception as exc:
             item["loss_error"] = repr(exc)
+            add_failure(item, "invalid_sample_loss")
+    else:
+        add_failure(item, "missing_sample_loss")
     if targets.exists():
         try:
             item["target_json"] = json.loads(targets.read_text(encoding="utf-8"))
+            if int(item["target_json"].get("target_tokens") or item["target_json"].get("target_token_count") or 0) <= 0:
+                add_failure(item, "no_target_tokens")
         except Exception as exc:
             item["target_error"] = repr(exc)
+            add_failure(item, "invalid_target_diagnostics")
+    else:
+        add_failure(item, "missing_target_diagnostics")
     if not (item["data_exists"] and item["checkpoint_complete"] and item["loss_exists"] and item["targets_exists"]):
+        add_failure(item, "missing_required_artifact")
+    if item.get("failure") or item.get("rows", 0) <= 0:
         summary["status"] = "failed"
     summary["groups"][group] = item
 out.write_text(json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -652,6 +726,7 @@ summarize_run() {
     summary
     --run "$CONTAINER_OUT_DIR"
     --out "$CONTAINER_OUT_DIR/omnimodal_overfit_summary.json"
+    --max-reload-sample-loss "$MAX_RELOAD_SAMPLE_LOSS"
   )
   if run_cmd summary "$LOG_DIR/summary.log" "${cmd[@]}"; then
     return 0

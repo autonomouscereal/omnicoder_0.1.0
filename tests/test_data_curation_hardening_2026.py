@@ -133,6 +133,26 @@ def test_quality_policy_rejects_prompt_copy_and_bare_media_paths() -> None:
     assert media_payload["accepted"]
 
 
+def test_quality_policy_rejects_url_only_media_refs() -> None:
+    audit = policy.audit_training_record(
+        {
+            "quality_score": 0.99,
+            "contamination_status": "clean",
+            "target_json": {"artifact_refs": [{"url": "https://cdn.example.invalid/song.mp3"}]},
+        },
+        prompt="Generate a verified music artifact.",
+        target="Music artifact available at https://cdn.example.invalid/song.mp3",
+        modality="music",
+        refs=["https://cdn.example.invalid/song.mp3"],
+        existing_quality=0.99,
+        config=policy.CurationPolicyConfig(min_quality_score=0.0),
+    )
+
+    assert not audit["accepted"]
+    assert "media_artifact_url_only" in audit["reasons"]
+    assert "dataset_integrity:media_url_only_ref" in audit["reasons"]
+
+
 def test_dataset_expansion_quarantines_missing_train_metadata(tmp_path: Path) -> None:
     plan = {"artifact_token_count": {}, "target_text_chars": 512}
     entry = {

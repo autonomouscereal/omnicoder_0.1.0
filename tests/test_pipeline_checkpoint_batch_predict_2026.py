@@ -114,3 +114,32 @@ def test_pipeline_eval_parsers_accept_four_rank_world_size_args() -> None:
     assert batch_args.nproc_per_node == 4
     assert target_args.expected_world_size == 4
     assert topk_args.expected_world_size == 4
+
+
+def test_target_diagnostics_single_rank_hidden_path_does_not_send(monkeypatch: pytest.MonkeyPatch) -> None:
+    torch = pytest.importorskip("torch")
+    from omnicoder.eval import pipeline_target_token_diagnostics_2026 as target_diagnostics
+
+    class FakeShard:
+        def __call__(self, batch: torch.Tensor) -> torch.Tensor:
+            return batch.float().unsqueeze(-1)
+
+    def fail_send(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("single-rank target diagnostics must not send to a nonexistent next rank")
+
+    monkeypatch.setattr(target_diagnostics.dist, "get_rank", lambda: 0)
+    monkeypatch.setattr(target_diagnostics.dist, "get_world_size", lambda: 1)
+    monkeypatch.setattr(target_diagnostics.dist, "send", fail_send)
+
+    batch = torch.tensor([[1, 2, 3]], dtype=torch.long)
+    hidden = target_diagnostics._pipeline_hidden(
+        FakeShard(),
+        batch,
+        device=torch.device("cpu"),
+        hidden_dtype=torch.float32,
+        d_model=1,
+        precision="fp32",
+    )
+
+    assert hidden is not None
+    assert hidden.shape == (1, 3, 1)

@@ -492,7 +492,7 @@ KNOWN_BENCHMARKS: dict[str, dict[str, Any]] = {
         "source": "https://huggingface.co/datasets/Rowan/hellaswag",
         "hf": ["hellaswag"],
         "kind": "commonsense_completion_mcq",
-        "splits": ["validation", "train"],
+        "splits": ["validation"],
     },
     "reasoning_hle_rolling_2026": {
         "source": "https://huggingface.co/datasets/cais/hle",
@@ -1200,6 +1200,16 @@ def stable_hashable(value: Any) -> Any:
 def stable_hash(value: Any) -> str:
     blob = json.dumps(stable_hashable(value), sort_keys=True, ensure_ascii=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def file_content_sha256(path: Path | None) -> str | None:
+    if path is None or not path.exists() or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def safe_name(value: str) -> str:
@@ -2933,11 +2943,23 @@ def normalize_task(
             "authorized_snapshot_id",
             "snapshot_sha256",
             "snapshot_authorization",
+            "dataset_revision",
+            "task_revision",
+            "task_file_sha256",
+            "official_task_sha256",
+            "manifest_sha256",
             "authorization_ref",
             "license_ref",
+            "official_scorer_ref",
         ):
             if snapshot.get(key) not in (None, ""):
                 row[key] = snapshot[key]
+        if not any(row.get(key) for key in ("snapshot_sha256", "task_file_sha256", "official_task_sha256", "manifest_sha256")):
+            source_file = raw.get("_source_file")
+            source_path = resolve_path(str(source_file), repo_root()) if has_value(source_file) else None
+            task_file_sha256 = file_content_sha256(source_path)
+            if task_file_sha256:
+                row["task_file_sha256"] = task_file_sha256
     media = normalized_media(raw, row)
     if media:
         row["media"] = media

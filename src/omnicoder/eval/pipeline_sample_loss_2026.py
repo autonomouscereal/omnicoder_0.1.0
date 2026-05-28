@@ -6,6 +6,7 @@ import datetime as _dt
 import json
 import os
 import time
+from dataclasses import fields
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -40,6 +41,8 @@ from omnicoder.training.pipeline_pretrain_2026_dense import (
 from omnicoder.training.pretrain_2026_dense import _dtype_from_name
 from omnicoder.training.simple_tokenizer import get_text_tokenizer
 
+CONFIG_FIELDS = {field.name for field in fields(OmniCoder2026Config)}
+
 
 def _set_fake_quant_env(fake_quant_chunk_rows: int, fake_quant_max_full_elements: int) -> None:
     if int(fake_quant_chunk_rows or 0) > 0:
@@ -60,6 +63,107 @@ def _checkpoint_train_args(path: str | Path) -> dict[str, Any]:
     return train_args if isinstance(train_args, dict) else {}
 
 
+def _first_rank_payload(path: str | Path) -> dict[str, Any]:
+    checkpoint = Path(path)
+    rank0 = checkpoint / "rank00000.pt" if checkpoint.is_dir() else checkpoint
+    if not rank0.exists():
+        return {}
+    try:
+        payload = torch.load(rank0, map_location="cpu", weights_only=False)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _checkpoint_model_kwargs(path: str | Path, preset_name: str) -> tuple[dict[str, Any], str]:
+    preset = get_omnicoder2026_preset(preset_name)
+    kwargs = preset_to_model_kwargs(preset)
+    payload = _first_rank_payload(path)
+    saved_name = ""
+    for key in ("preset", "config", "model_config"):
+        value = payload.get(key)
+        if value is not None and not isinstance(value, dict) and hasattr(value, "__dict__"):
+            value = value.__dict__
+        if not isinstance(value, dict):
+            continue
+        kwargs.update({name: item for name, item in value.items() if name in CONFIG_FIELDS})
+        if key == "preset":
+            saved_name = str(value.get("name") or "")
+    state = payload.get("model_state_dict")
+    if isinstance(state, dict):
+        embed = state.get("embed.weight")
+        if isinstance(embed, torch.Tensor) and embed.ndim == 2:
+            kwargs["vocab_size"] = int(embed.shape[0])
+            kwargs["d_model"] = int(embed.shape[1])
+    if isinstance(kwargs.get("layer_pattern"), list):
+        kwargs["layer_pattern"] = tuple(kwargs["layer_pattern"])
+    kwargs["tie_embeddings"] = False
+    return kwargs, saved_name or preset.name
+
+
+def _placement_counts_from_train_args(train_args: dict[str, Any]) -> str:
+    counts = str(train_args.get("placement_layer_counts") or "").strip()
+    if counts:
+        return counts
+    raw_ranges = str(train_args.get("pipeline_stage_ranges") or "").strip()
+    if not raw_ranges:
+        return ""
+    parsed: list[str] = []
+    for segment in raw_ranges.split(","):
+        segment = segment.strip()
+        if not segment:
+            continue
+        start_s, end_s = segment.split(":", 1)
+        parsed.append(str(int(end_s) - int(start_s)))
+    return ",".join(parsed)
+
+
+def _resolve_int_arg(
+    args: argparse.Namespace,
+    train_args: dict[str, Any],
+    attr: str,
+    *,
+    env_name: str,
+    default: int,
+) -> int:
+    value = getattr(args, attr, None)
+    if value is not None:
+        return int(value)
+    saved = train_args.get(attr)
+    if saved not in (None, ""):
+        return int(saved)
+    env_value = os.getenv(env_name)
+    if env_value not in (None, ""):
+        return int(env_value)
+    return int(default)
+
+
+def _apply_checkpoint_loss_defaults(args: argparse.Namespace) -> dict[str, Any]:
+    train_args = _checkpoint_train_args(args.checkpoint)
+    args.lm_loss_chunk_tokens = _resolve_int_arg(
+        args,
+        train_args,
+        "lm_loss_chunk_tokens",
+        env_name="OMNICODER2026_LM_LOSS_CHUNK_TOKENS",
+        default=128,
+    )
+    args.loss_token_stride = _resolve_int_arg(
+        args,
+        train_args,
+        "loss_token_stride",
+        env_name="OMNICODER2026_LOSS_TOKEN_STRIDE",
+        default=1,
+    )
+    args.max_loss_tokens_per_sample = _resolve_int_arg(
+        args,
+        train_args,
+        "max_loss_tokens_per_sample",
+        env_name="OMNICODER2026_MAX_LOSS_TOKENS_PER_SAMPLE",
+        default=0,
+    )
+    return train_args
+
+
 def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, torch.device, int, int]:
     if not dist.is_initialized():
         backend = "nccl" if torch.cuda.is_available() else "gloo"
@@ -68,18 +172,16 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
     rank = int(dist.get_rank())
     world_size = int(dist.get_world_size())
     device = rank_device(rank, args.rank_device_map)
-    _set_fake_quant_env(int(args.fake_quant_chunk_rows or 0), int(args.fake_quant_max_full_elements or 0))
     train_args = _checkpoint_train_args(args.checkpoint)
-    preset = get_omnicoder2026_preset(args.preset)
-    kwargs = preset_to_model_kwargs(preset)
+    fake_quant_chunk_rows = int(args.fake_quant_chunk_rows or train_args.get("fake_quant_chunk_rows") or 0)
+    fake_quant_max_full_elements = int(args.fake_quant_max_full_elements or train_args.get("fake_quant_max_full_elements") or 0)
+    _set_fake_quant_env(fake_quant_chunk_rows, fake_quant_max_full_elements)
+    kwargs, saved_preset_name = _checkpoint_model_kwargs(args.checkpoint, args.preset)
     kwargs["fake_quant"] = bool(args.fake_quant or train_args.get("fake_quant"))
     kwargs["tie_embeddings"] = False
     cfg = OmniCoder2026Config(**kwargs)
-    ranges = (
-        stage_ranges(int(cfg.n_layers), str(args.placement_layer_counts))
-        if str(args.placement_layer_counts or "").strip()
-        else stage_ranges(int(cfg.n_layers), str(train_args.get("placement_layer_counts") or ""))
-    )
+    placement_counts = str(args.placement_layer_counts or "").strip() or _placement_counts_from_train_args(train_args)
+    ranges = stage_ranges(int(cfg.n_layers), placement_counts)
     if len(ranges) != world_size:
         raise ValueError(f"world_size={world_size} must match pipeline ranges {ranges}")
     spec = shard_spec(rank, ranges)
@@ -97,13 +199,13 @@ def _build_shard(args: argparse.Namespace) -> tuple[OmniCoder2026PipelineShard, 
     resume_args = SimpleNamespace(
         require_target_contract=bool(args.require_target_contract),
         allow_p40_target_contract_eval=bool(args.allow_p40_target_contract_eval),
-        placement_layer_counts=str(args.placement_layer_counts or ""),
+        placement_layer_counts=placement_counts,
         pipeline_stage_ranges=str(train_args.get("pipeline_stage_ranges") or ""),
         pipeline_microbatches=str(train_args.get("pipeline_microbatches") or ""),
         pipeline_schedule=str(train_args.get("pipeline_schedule") or ""),
         fake_quant=bool(kwargs.get("fake_quant")),
     )
-    load_checkpoint_shard(args.checkpoint, shard, optimizer=None, preset=preset, args=resume_args)
+    load_checkpoint_shard(args.checkpoint, shard, optimizer=None, preset=SimpleNamespace(name=saved_preset_name), args=resume_args)
     shard.eval()
     return shard, device, int(cfg.d_model), int(cfg.vocab_size)
 
@@ -264,6 +366,7 @@ def _chunks_pair(ids: list[int], labels: list[int], seq_len: int) -> list[tuple[
 
 
 def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
+    _apply_checkpoint_loss_defaults(args)
     shard, device, d_model, vocab_size = _build_shard(args)
     rank = int(dist.get_rank())
     files = _candidate_data_files(args.data, args.data_dir, exclude_aggregate_jsonl=bool(args.exclude_aggregate_jsonl))
@@ -394,9 +497,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fake_quant", action="store_true")
     parser.add_argument("--fake-quant-chunk-rows", "--fake_quant_chunk_rows", dest="fake_quant_chunk_rows", type=int, default=0)
     parser.add_argument("--fake-quant-max-full-elements", "--fake_quant_max_full_elements", dest="fake_quant_max_full_elements", type=int, default=0)
-    parser.add_argument("--lm-loss-chunk-tokens", "--lm_loss_chunk_tokens", dest="lm_loss_chunk_tokens", type=int, default=int(os.getenv("OMNICODER2026_LM_LOSS_CHUNK_TOKENS", "128") or 128))
-    parser.add_argument("--loss-token-stride", "--loss_token_stride", dest="loss_token_stride", type=int, default=int(os.getenv("OMNICODER2026_LOSS_TOKEN_STRIDE", "1") or 1))
-    parser.add_argument("--max-loss-tokens-per-sample", "--max_loss_tokens_per_sample", dest="max_loss_tokens_per_sample", type=int, default=int(os.getenv("OMNICODER2026_MAX_LOSS_TOKENS_PER_SAMPLE", "0") or 0))
+    parser.add_argument("--lm-loss-chunk-tokens", "--lm_loss_chunk_tokens", dest="lm_loss_chunk_tokens", type=int, default=None)
+    parser.add_argument("--loss-token-stride", "--loss_token_stride", dest="loss_token_stride", type=int, default=None)
+    parser.add_argument("--max-loss-tokens-per-sample", "--max_loss_tokens_per_sample", dest="max_loss_tokens_per_sample", type=int, default=None)
     parser.add_argument("--progress-records", "--progress_records", dest="progress_records", type=int, default=int(os.getenv("OMNICODER2026_PIPELINE_EVAL_PROGRESS_RECORDS", "4") or 4))
     parser.add_argument("--require_target_contract", action="store_true")
     parser.add_argument("--allow-p40-target-contract-eval", "--allow_p40_target_contract_eval", dest="allow_p40_target_contract_eval", action="store_true")

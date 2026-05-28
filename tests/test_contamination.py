@@ -73,6 +73,34 @@ def test_scan_marks_reportable_eval_path_from_metadata(tmp_path: Path) -> None:
     assert "eval_reportable_path" in scan["markers"]
 
 
+def test_scan_marks_modern_eval_suite_metadata(tmp_path: Path) -> None:
+    candidates = tmp_path / "candidates.jsonl"
+    protected = tmp_path / "protected.jsonl"
+    out = tmp_path / "scanned.jsonl"
+    protected.write_text("", encoding="utf-8")
+    _write_jsonl(
+        candidates,
+        [
+            {
+                "prompt": "Run benchmark task.",
+                "response": "Neutral answer.",
+                "benchmark_name": "MMLU-Pro BFCL LiveCodeBench WebArena FrontierMath GPQA-Diamond",
+            }
+        ],
+    )
+
+    contamination.scan(candidates, protected, out, threshold=0.42, ngram=5)
+
+    scan = _read_jsonl(out)[0]["contamination"]
+    assert scan["status"] == "contaminated"
+    assert "mmlu_pro" in scan["markers"]
+    assert "bfcl" in scan["markers"]
+    assert "livecodebench" in scan["markers"]
+    assert "webarena" in scan["markers"]
+    assert "frontiermath" in scan["markers"]
+    assert "gpqa_diamond" in scan["markers"]
+
+
 def test_scanned_public_dev_benchmark_row_cannot_enter_train_split(tmp_path: Path) -> None:
     candidates = tmp_path / "candidates.jsonl"
     protected = tmp_path / "protected.jsonl"
