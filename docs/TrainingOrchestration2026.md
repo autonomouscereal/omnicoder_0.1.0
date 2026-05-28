@@ -586,6 +586,7 @@ single-process placement scheduler:
 
 ```bash
 docker run --rm --gpus '"device=0,4,6"' \
+  --ipc=host \
   -v /home/cereal/omnicoder_2026_work:/workspace \
   -w /workspace \
   -e PYTHONPATH=/workspace/src \

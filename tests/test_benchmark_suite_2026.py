@@ -44,6 +44,19 @@ def _minimal_profile() -> dict[str, Any]:
     }
 
 
+def test_mcq_scoring_accepts_index_letter_or_choice_text() -> None:
+    task = {
+        "benchmark_id": "reasoning_hellaswag_full_2026",
+        "choices": ["opens the door.", "pulls out a tray.", "walks away."],
+        "answer": "1",
+    }
+
+    assert runner.score_mcq_task(task, "B")["score"] == 1.0
+    assert runner.score_mcq_task(task, "pulls out a tray.")["score"] == 1.0
+    assert runner.score_mcq_task({**task, "answer": "2"}, "C")["score"] == 1.0
+    assert runner.score_mcq_task(task, "A")["score"] == 0.0
+
+
 def _json_from_stdout(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
     return json.loads(capsys.readouterr().out)
 

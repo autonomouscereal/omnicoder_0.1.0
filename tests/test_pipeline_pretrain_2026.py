@@ -306,6 +306,24 @@ def test_final_stage_weighted_lm_loss_matches_reward_replay_shape() -> None:
     assert hidden.grad is not None
 
 
+def test_final_stage_dense_lm_loss_keeps_zero_token_targets() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(1, 5, cfg.d_model, requires_grad=True)
+    labels = torch.zeros((1, 5), dtype=torch.long)
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(processed, labels, chunk_tokens=2)
+    logits = final.lm_head(processed[:, :-1, :])
+    expected = F.cross_entropy(logits.transpose(1, 2), labels[:, 1:], reduction="mean")
+
+    assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+    assert float(loss.detach()) > 0.0
+    loss.backward()
+    assert hidden.grad is not None
+
+
 def test_final_stage_selected_token_lm_loss_bounds_vocab_projection() -> None:
     cfg = tiny_cfg(n_layers=3)
     ranges = stage_ranges(3, "1,1,1")
@@ -643,6 +661,16 @@ def test_explicit_token_rows_concatenate_assistant_and_media_targets() -> None:
     assert weight > 0.0
 
 
+def test_explicit_target_only_rows_prepend_masked_context() -> None:
+    record = {"assistant_token_ids": [13]}
+
+    ids, labels, weight = pipeline.record_ids_labels_weight(record, tokenizer=None)
+
+    assert ids == [0, 13]
+    assert labels == [-100, 13]
+    assert weight > 0.0
+
+
 def test_target_token_id_zero_is_preserved_when_masked() -> None:
     record = {
         "prompt_token_ids": [7],
@@ -694,7 +722,7 @@ def test_dataset_sparse_target_chunks_reanchor_to_answer_tokens(tmp_path) -> Non
     dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=32, vocab_size=256)
     _ids, labels, _weight = dataset[0]
 
-    assert labels.ge(0).any()
+    assert labels[1:].ge(0).any()
 
 
 def test_dataset_skips_targetless_context_rows(tmp_path) -> None:
@@ -720,7 +748,7 @@ def test_dataset_skips_targetless_context_rows(tmp_path) -> None:
     dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=64, vocab_size=256)
     _ids, labels, _weight = dataset[0]
 
-    assert labels.ge(0).any()
+    assert labels[1:].ge(0).any()
 
 
 def test_dataset_retries_legacy_targetless_index_entries(tmp_path) -> None:
@@ -746,7 +774,7 @@ def test_dataset_retries_legacy_targetless_index_entries(tmp_path) -> None:
     dataset.records = [(source, first_offset, 0, "jsonl"), (source, second_offset, 0, "jsonl")]
     _ids, labels, _weight = dataset[0]
 
-    assert labels.ge(0).any()
+    assert labels[1:].ge(0).any()
 
 
 def test_dataset_retry_jumps_duplicate_targetless_chunks(tmp_path) -> None:
@@ -773,7 +801,22 @@ def test_dataset_retry_jumps_duplicate_targetless_chunks(tmp_path) -> None:
     dataset.records.append((source, second_offset, 0, "jsonl"))
     _ids, labels, _weight = dataset[0]
 
-    assert labels.ge(0).any()
+    assert labels[1:].ge(0).any()
+
+
+def test_dataset_keeps_single_token_explicit_targets_shifted(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    source = tmp_path / "position_zero_only.jsonl"
+    first = json.dumps({"assistant_token_ids": [13]})
+    source.write_text(first + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=64, vocab_size=256)
+    _ids, labels, _weight = dataset[0]
+
+    assert labels[1:].ge(0).any()
 
 
 def test_dataset_chunk_overlap_preserves_repeated_boundaries(tmp_path) -> None:

@@ -1,6 +1,7 @@
 x-common: &common
   image: omnicoder:cuda
   working_dir: /workspace
+  ipc: host
   volumes:
     - ./:/workspace
     - ./weights:/workspace/weights

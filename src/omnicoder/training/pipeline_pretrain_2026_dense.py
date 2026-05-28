@@ -178,7 +178,7 @@ class OmniCoder2026PipelineShard(nn.Module):
         shifted_hidden = hidden[:, :-1, :]
         shifted_labels = labels[:, 1:]
         sparse_target_labels = bool(labels.eq(-100).any())
-        target_mask = shifted_labels.ge(0) if sparse_target_labels else shifted_labels.ne(0)
+        target_mask = shifted_labels.ge(0)
         if loss_mask is not None:
             if loss_mask.device != hidden.device:
                 loss_mask = loss_mask.to(hidden.device, non_blocking=True)
@@ -800,6 +800,10 @@ def _explicit_token_ids_and_mask(record: dict[str, Any]) -> tuple[list[int], lis
         if value:
             target_ids.extend(value)
     if target_ids:
+        if not prompt_ids:
+            # Explicit media/assistant target rows can be target-only. Prepend a
+            # masked context token so even a one-token target has next-token CE.
+            prompt_ids = [0]
         return prompt_ids + target_ids, ([0.0] * len(prompt_ids)) + ([1.0] * len(target_ids))
     ids = _ids_from_record(record)
     if not ids:
@@ -1172,8 +1176,9 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         if start >= max(1, len(cleaned) - 1):
             start = max(0, len(cleaned) - self.seq_len)
         target_positions = [index for index, label in enumerate(labels) if int(label) >= 0]
-        if target_positions and not any(int(label) >= 0 for label in labels[start:start + self.seq_len]):
-            target_pos = target_positions[int(chunk_index) % len(target_positions)]
+        shifted_target_positions = [index for index in target_positions if int(index) > 0]
+        if shifted_target_positions and not any(int(label) >= 0 for label in labels[start + 1:start + self.seq_len]):
+            target_pos = shifted_target_positions[int(chunk_index) % len(shifted_target_positions)]
             max_start = max(0, len(cleaned) - self.seq_len)
             # Put sparse assistant/media targets as far right as possible so
             # the shared trunk still sees maximum cross-modal prompt context.
@@ -1182,7 +1187,10 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         target_labels = labels[start:start + self.seq_len]
         if sparse_source and target_labels:
             target_labels[0] = -100
-        has_targets = any(int(label) >= 0 for label in target_labels)
+        # The LM objective predicts labels[:, 1:] from hidden[:, :-1].
+        # A target label at position 0 is visible in the tensor but contributes
+        # no CE term, so target-contract windows must have a shifted target.
+        has_targets = any(int(label) >= 0 for label in target_labels[1:])
         if len(ids) < self.seq_len:
             ids = ids + [0] * (self.seq_len - len(ids))
             target_labels = target_labels + [-100] * (self.seq_len - len(target_labels))
@@ -1220,13 +1228,8 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
                 return ids, target_labels, weight
             blocked_records.add(key)
             cursor = self._next_record_index(cursor, key)
-        if last_window is not None:
-            return last_window
-        ids, labels, weight = self.fallback
-        return (
-            torch.tensor(ids[: self.seq_len], dtype=torch.long),
-            torch.tensor(labels[: self.seq_len], dtype=torch.long),
-            torch.tensor(float(weight), dtype=torch.float32),
+        raise RuntimeError(
+            f"no shifted assistant/media target labels found after scanning {scan_budget} indexed windows"
         )
 
     def _next_record_index(self, cursor: int, blocked_key: tuple[Path, int, str]) -> int:
@@ -2154,6 +2157,16 @@ def main(argv: list[str] | None = None) -> int:
                 debug_event("schedule_step_nonzero_done")
         if rank == 0:
             _write_log(args.log_file, {"event": "schedule_step_done", "local_step": int(local_step + 1), "global_step": int(start_step + local_step + 1), "rank": int(rank)})
+        if spec.has_head and losses:
+            loss_value = float(torch.stack([loss.detach().float() for loss in losses]).mean().cpu())
+            last_loss = loss_value
+        loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
+        dist.broadcast(loss_tensor, src=world_size - 1)
+        if bool(args.require_target_contract) and float(loss_tensor.detach().cpu()) <= 0.0:
+            raise RuntimeError(
+                "target contract produced a non-positive training loss; "
+                "check assistant/media target coverage before continuing"
+            )
         should_update = ((local_step + 1) % gradient_accumulation_steps) == 0 or (local_step + 1) == int(args.steps)
         if should_update:
             optimizer.step()
@@ -2184,16 +2197,6 @@ def main(argv: list[str] | None = None) -> int:
                 local_step=local_step + 1,
             ),
         )
-        if spec.has_head and losses:
-            loss_value = float(torch.stack([loss.detach().float() for loss in losses]).mean().cpu())
-            last_loss = loss_value
-        loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
-        dist.broadcast(loss_tensor, src=world_size - 1)
-        if bool(args.require_target_contract) and float(loss_tensor.detach().cpu()) <= 0.0:
-            raise RuntimeError(
-                "target contract produced a non-positive training loss; "
-                "check assistant/media target coverage before continuing"
-            )
         if rank == 0:
             _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": float(loss_tensor.cpu()), "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": float(batch_weights.detach().mean().cpu()), "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle)})
         if int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0:

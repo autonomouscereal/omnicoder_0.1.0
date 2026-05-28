@@ -571,7 +571,6 @@ benchmark_materialize() {
     --suite "$BENCHMARK_MATERIALIZATION_SUITE"
     --mode "$BENCHMARK_MATERIALIZATION_MODE"
     --limit "$BENCHMARK_MATERIALIZATION_LIMIT"
-    materialize
   )
   if truthy "$BENCHMARK_MATERIALIZE_DOWNLOAD"; then
     args+=(--download)
@@ -582,6 +581,7 @@ benchmark_materialize() {
   if truthy "$BENCHMARK_MATERIALIZE_PROFILE_ROOTS"; then
     args+=(--write-profile-reportable-roots)
   fi
+  args+=(materialize)
   log "materialize official/public benchmark task JSONLs"
   CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" "${args[@]}" | tee "$out_dir/logs/benchmark_materializer.stdout.json"
   log "benchmark materialization manifest: $manifest"

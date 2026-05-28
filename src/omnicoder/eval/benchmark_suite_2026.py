@@ -550,6 +550,27 @@ def token_f1(prediction: Any, answer: Any) -> float:
     return (2 * precision * recall) / max(1e-12, precision + recall)
 
 
+def canonical_mcq_answer(value: Any, choices: Any) -> str:
+    normalized = normalize_answer(value)
+    if not isinstance(choices, list) or not choices:
+        return normalized
+    labels = [chr(ord("a") + index) for index in range(min(len(choices), 26))]
+    if normalized in labels:
+        return normalized
+    try:
+        index = int(str(value).strip())
+        if 0 <= index < len(labels):
+            return labels[index]
+        if 1 <= index <= len(labels):
+            return labels[index - 1]
+    except Exception:
+        pass
+    for index, choice in enumerate(choices[: len(labels)]):
+        if normalized and normalized == normalize_answer(choice):
+            return labels[index]
+    return normalized
+
+
 def boolish(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -833,8 +854,9 @@ def score_mcq_task(task: dict[str, Any], prediction: Any) -> dict[str, Any]:
     answer = task.get("answer")
     if answer is None:
         answer = task.get("gold") or task.get("target")
-    pred = normalize_answer(prediction)
-    gold = normalize_answer(answer)
+    choices = task.get("choices")
+    pred = canonical_mcq_answer(prediction, choices)
+    gold = canonical_mcq_answer(answer, choices)
     exact = bool(pred and gold and pred == gold)
     return {"score": 1.0 if exact else 0.0, "metrics": {"exact_match": exact, "normalized_prediction": pred, "normalized_answer": gold}}
 

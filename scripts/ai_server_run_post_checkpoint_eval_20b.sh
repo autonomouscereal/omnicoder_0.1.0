@@ -30,7 +30,7 @@ case "${P40_SAFE,,}" in
 esac
 CONTEXT_LADDER="${OMNICODER_EVAL_CONTEXT_LADDER:-$DEFAULT_CONTEXT_LADDER}"
 LONG_CONTEXT_MAX_RECORDS_PER_FILE="${OMNICODER_EVAL_LONG_CONTEXT_MAX_RECORDS_PER_FILE:-$MAX_RECORDS_PER_FILE}"
-PUBLIC_DEV_TASK_ROOTS="${OMNICODER_EVAL_PUBLIC_DEV_TASK_ROOTS:-$WEIGHTS_ROOT/official_benchmarks_2026/runs/bench_reportable_fix_eaa2463_20260525T181734Z/local_2026}"
+PUBLIC_DEV_TASK_ROOTS="${OMNICODER_EVAL_PUBLIC_DEV_TASK_ROOTS:-}"
 BENCHMARK_PROFILE="${OMNICODER_EVAL_BENCHMARK_PROFILE:-profiles/benchmark_suite_2026.json}"
 PUBLIC_DEV_MIN_TASKS="${OMNICODER_EVAL_PUBLIC_DEV_MIN_TASKS:-1}"
 PREDICT_TIMEOUT_SECONDS="${OMNICODER_EVAL_PREDICT_TIMEOUT_SECONDS:-1800}"
@@ -100,21 +100,39 @@ container_path() {
   fi
 }
 
-checkpoint_is_complete_3shard() {
+default_public_dev_task_roots() {
+  local -a roots=()
+  local base="$WEIGHTS_ROOT/data_factory/runs/benchmark_materialization"
+  local legacy="$WEIGHTS_ROOT/official_benchmarks_2026/runs/bench_reportable_fix_eaa2463_20260525T181734Z/local_2026"
+  local root
+  if [[ -d "$base" ]]; then
+    while IFS= read -r root; do
+      [[ -n "$root" ]] || continue
+      roots+=("$root")
+    done < <(find "$base" -mindepth 2 -maxdepth 2 -type d -name local_2026 -printf '%T@ %p\n' 2>/dev/null | sort -nr | sed 's/^[^ ]* //')
+  fi
+  if [[ -d "$legacy" ]]; then
+    roots+=("$legacy")
+  fi
+  (IFS=','; printf '%s\n' "${roots[*]}")
+}
+
+checkpoint_is_complete_pipeline() {
   local checkpoint="$1"
+  local expected_world_size="${2:-$NPROC_PER_NODE}"
   [[ -d "$checkpoint" ]] || return 1
   [[ -s "$checkpoint/manifest.json" ]] || return 1
   [[ -s "$checkpoint/.complete.json" ]] || return 1
-  grep -Eq '"world_size"[[:space:]]*:[[:space:]]*3' "$checkpoint/manifest.json" || return 1
+  grep -Eq "\"world_size\"[[:space:]]*:[[:space:]]*$expected_world_size([,[:space:]}]|$)" "$checkpoint/manifest.json" || return 1
   local rank rank_file marker count
-  for rank in 0 1 2; do
+  for ((rank=0; rank<expected_world_size; rank++)); do
     printf -v rank_file 'rank%05d.pt' "$rank"
     marker="$checkpoint/${rank_file}.complete.json"
     [[ -s "$checkpoint/$rank_file" ]] || return 1
     [[ -s "$marker" ]] || return 1
   done
   count="$(find "$checkpoint" -maxdepth 1 -type f -name 'rank*.pt' | wc -l)"
-  [[ "$count" -eq 3 ]] || return 1
+  [[ "$count" -eq "$expected_world_size" ]] || return 1
 }
 
 find_latest_checkpoint() {
@@ -127,7 +145,7 @@ find_latest_checkpoint() {
   fi
   shopt -s nullglob
   for candidate in "$root"/*; do
-    if checkpoint_is_complete_3shard "$candidate"; then
+    if checkpoint_is_complete_pipeline "$candidate" "$NPROC_PER_NODE"; then
       mtime="$(stat -c '%Y' "$candidate/.complete.json")"
       if [[ "$mtime" -ge "$best_mtime" ]]; then
         best="$candidate"
@@ -211,17 +229,20 @@ docker_eval() {
 }
 
 CHECKPOINT_INPUT="${OMNICODER_EVAL_CHECKPOINT:-}"
+if [[ -z "$PUBLIC_DEV_TASK_ROOTS" ]]; then
+  PUBLIC_DEV_TASK_ROOTS="$(default_public_dev_task_roots)"
+fi
 if [[ -z "$CHECKPOINT_INPUT" ]]; then
   CHECKPOINT_INPUT="$(find_latest_checkpoint)" || {
-    echo "No complete 3-shard checkpoint found under $RECOVERY_RUN/checkpoints/posttrain." >&2
+    echo "No complete ${NPROC_PER_NODE}-shard checkpoint found under $RECOVERY_RUN/checkpoints/posttrain." >&2
     exit 4
   }
 fi
 CHECKPOINT_HOST="$(host_path "$CHECKPOINT_INPUT")"
 CHECKPOINT_CONTAINER="$(container_path "$CHECKPOINT_HOST")"
 
-if ! checkpoint_is_complete_3shard "$CHECKPOINT_HOST"; then
-  echo "Checkpoint is not a complete 3-shard Omnicoder pipeline checkpoint: $CHECKPOINT_HOST" >&2
+if ! checkpoint_is_complete_pipeline "$CHECKPOINT_HOST" "$NPROC_PER_NODE"; then
+  echo "Checkpoint is not a complete ${NPROC_PER_NODE}-shard Omnicoder pipeline checkpoint: $CHECKPOINT_HOST" >&2
   exit 4
 fi
 

@@ -19,6 +19,8 @@ MODE="${OMNICODER_MODE:-run-full}"
 FAST_GPU_DEVICES="${OMNICODER_FAST_GPU_DEVICES:-0,4,6}"
 RANK_DEVICE_MAP="${OMNICODER_RANK_DEVICE_MAP:-0,1,2}"
 PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"
+IFS=',' read -r -a RANK_DEVICE_MAP_ITEMS <<< "$RANK_DEVICE_MAP"
+NPROC_PER_NODE="${OMNICODER_NPROC_PER_NODE:-${#RANK_DEVICE_MAP_ITEMS[@]}}"
 CUDA_ALLOC_CONF="${OMNICODER_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 START_STAGE="${OMNICODER_START_STAGE:-text}"
@@ -237,7 +239,7 @@ if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then
     --save-interval "$SAVE_INTERVAL"
     "${long_context_args[@]}"
     --distributed pipeline_stage
-    --nproc-per-node 3
+    --nproc-per-node "$NPROC_PER_NODE"
     --rank-device-map "$RANK_DEVICE_MAP"
     --placement-layer-counts "$PLACEMENT_LAYER_COUNTS"
     --pipeline-stage-schedule gpipe
@@ -289,7 +291,7 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --posttrain-steps "$POSTTRAIN_STEPS"
     --save-interval "$SAVE_INTERVAL"
     --distributed pipeline_stage
-    --nproc-per-node 3
+    --nproc-per-node "$NPROC_PER_NODE"
     --rank-device-map "$RANK_DEVICE_MAP"
     --placement-layer-counts "$PLACEMENT_LAYER_COUNTS"
     --pipeline-stage-schedule gpipe
@@ -330,7 +332,7 @@ else
     --posttrain-steps "$POSTTRAIN_STEPS"
     "${long_context_args[@]}"
     --distributed pipeline_stage
-    --nproc-per-node 3
+    --nproc-per-node "$NPROC_PER_NODE"
     --rank-device-map "$RANK_DEVICE_MAP"
     --placement-layer-counts "$PLACEMENT_LAYER_COUNTS"
     --pipeline-stage-schedule gpipe
