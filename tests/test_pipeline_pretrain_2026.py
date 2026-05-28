@@ -749,6 +749,33 @@ def test_dataset_retries_legacy_targetless_index_entries(tmp_path) -> None:
     assert labels.ge(0).any()
 
 
+def test_dataset_retry_jumps_duplicate_targetless_chunks(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    source = tmp_path / "duplicate_chunks.jsonl"
+    first = json.dumps({"messages": [{"role": "user", "content": "legacy context only"}]})
+    second = json.dumps(
+        {
+            "messages": [
+                {"role": "user", "content": "name the target"},
+                {"role": "assistant", "content": "jump answer"},
+            ]
+        }
+    )
+    source.write_text(first + "\n" + second + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=64, vocab_size=256)
+    first_offset = 0
+    second_offset = len((first + "\n").encode("utf-8"))
+    dataset.records = [(source, first_offset, chunk, "jsonl") for chunk in range(2048)]
+    dataset.records.append((source, second_offset, 0, "jsonl"))
+    _ids, labels, _weight = dataset[0]
+
+    assert labels.ge(0).any()
+
+
 def test_dataset_chunk_overlap_preserves_repeated_boundaries(tmp_path) -> None:
     record = {
         "prompt_token_ids": [10, 11, 12],

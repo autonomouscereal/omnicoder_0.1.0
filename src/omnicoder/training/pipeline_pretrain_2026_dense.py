@@ -1206,18 +1206,20 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         scan_budget = min(len(self.records), max(64, self.seq_len * 4))
         last_window: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
         cursor = base_index
-        for _attempt in range(scan_budget):
+        attempts = 0
+        while attempts < scan_budget:
             path, offset, chunk_index, kind = self.records[cursor]
             key = (path, int(offset), kind)
             if key in blocked_records:
-                cursor = (cursor + 1) % len(self.records)
+                cursor = self._next_record_index(cursor, key)
                 continue
+            attempts += 1
             ids, target_labels, weight, has_targets = self._window_from_entry((path, offset, chunk_index, kind))
             last_window = (ids, target_labels, weight)
             if has_targets:
                 return ids, target_labels, weight
             blocked_records.add(key)
-            cursor = (cursor + 1) % len(self.records)
+            cursor = self._next_record_index(cursor, key)
         if last_window is not None:
             return last_window
         ids, labels, weight = self.fallback
@@ -1226,6 +1228,18 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
             torch.tensor(labels[: self.seq_len], dtype=torch.long),
             torch.tensor(float(weight), dtype=torch.float32),
         )
+
+    def _next_record_index(self, cursor: int, blocked_key: tuple[Path, int, str]) -> int:
+        if not self.records:
+            return 0
+        start = int(cursor) % len(self.records)
+        cursor = (start + 1) % len(self.records)
+        while cursor != start:
+            path, offset, _chunk_index, kind = self.records[cursor]
+            if (path, int(offset), kind) != blocked_key:
+                return cursor
+            cursor = (cursor + 1) % len(self.records)
+        return cursor
 
 
 def _validate_resume_payload(
@@ -2175,6 +2189,11 @@ def main(argv: list[str] | None = None) -> int:
             last_loss = loss_value
         loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
         dist.broadcast(loss_tensor, src=world_size - 1)
+        if bool(args.require_target_contract) and float(loss_tensor.detach().cpu()) <= 0.0:
+            raise RuntimeError(
+                "target contract produced a non-positive training loss; "
+                "check assistant/media target coverage before continuing"
+            )
         if rank == 0:
             _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": float(loss_tensor.cpu()), "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": float(batch_weights.detach().mean().cpu()), "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle)})
         if int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0:
