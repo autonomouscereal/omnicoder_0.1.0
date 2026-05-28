@@ -677,6 +677,26 @@ def test_dataset_chunk_overlap_preserves_boundary_target_prediction(tmp_path) ->
     assert int(valid[0].item()) > 0
 
 
+def test_dataset_sparse_target_chunks_reanchor_to_answer_tokens(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    record = {
+        "messages": [
+            {"role": "user", "content": "context " * 80},
+            {"role": "assistant", "content": "needle target"},
+        ]
+    }
+    source = tmp_path / "sparse_target.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=32, vocab_size=256)
+    _ids, labels, _weight = dataset[0]
+
+    assert labels.ge(0).any()
+
+
 def test_dataset_chunk_overlap_preserves_repeated_boundaries(tmp_path) -> None:
     record = {
         "prompt_token_ids": [10, 11, 12],

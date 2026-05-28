@@ -1129,6 +1129,13 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         start = int(chunk_index) * max(1, self.seq_len - 1)
         if start >= max(1, len(cleaned) - 1):
             start = max(0, len(cleaned) - self.seq_len)
+        target_positions = [index for index, label in enumerate(labels) if int(label) >= 0]
+        if target_positions and not any(int(label) >= 0 for label in labels[start:start + self.seq_len]):
+            target_pos = target_positions[int(chunk_index) % len(target_positions)]
+            max_start = max(0, len(cleaned) - self.seq_len)
+            # Put sparse assistant/media targets as far right as possible so
+            # the shared trunk still sees maximum cross-modal prompt context.
+            start = max(0, min(max_start, int(target_pos) - self.seq_len + 1))
         ids = cleaned[start:start + self.seq_len]
         target_labels = labels[start:start + self.seq_len]
         if sparse_source and target_labels:
