@@ -329,6 +329,12 @@ if rejected > 0:
     (run_dir / "integrity" / "train_bucket_integrity_rewrite.json").write_text(json.dumps(rewrite, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(rewrite, sort_keys=True))
 PY
+  log "index external train bucket"
+  "$PYTHON_BIN" -m omnicoder.data_factory.dataset_index_2026 \
+    --input "$out/jsonl/train_all_external.jsonl" \
+    --out "$out/integrity/train_all_external.index.json" \
+    --expected-split train \
+    | tee "$out/integrity/train_all_external.index.stdout.json"
 }
 
 agentic_tool_training() {
