@@ -181,6 +181,20 @@ def truthy_value(value: Any) -> bool:
     return False
 
 
+def materialize_deferred_sources_requested(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "materialize_deferred_sources", False)) or truthy_value(
+        os.environ.get("OMNICODER_MATERIALIZE_DEFERRED_SOURCES")
+    )
+
+
+def materialize_huggingface_sources_requested(args: argparse.Namespace) -> bool:
+    return (
+        bool(getattr(args, "materialize_hf_sources", False))
+        or truthy_value(os.environ.get("OMNICODER_MATERIALIZE_HF_SOURCES"))
+        or materialize_deferred_sources_requested(args)
+    )
+
+
 @contextlib.contextmanager
 def linux_wallclock_limit(seconds: float, label: str) -> Iterable[None]:
     """Bound individual HF source steps on Linux so one Xet/CAS loop cannot pin the sidecar."""
@@ -1021,13 +1035,26 @@ def rows_from_remote_files(entry: dict[str, Any], root: Path, limit: int) -> tup
         if not url:
             continue
         fmt = str(spec.get("format") or Path(url.split("?", 1)[0]).suffix.lstrip(".") or "jsonl")
+        socket_timeout = float(
+            spec.get("timeout")
+            or entry.get("remote_file_timeout_seconds")
+            or entry.get("download_timeout_seconds")
+            or 60
+        )
+        wallclock_timeout = float(
+            spec.get("wallclock_timeout_seconds")
+            or entry.get("remote_file_wallclock_timeout_seconds")
+            or entry.get("download_wallclock_timeout_seconds")
+            or 0
+        )
         try:
-            if url.startswith(("http://", "https://")):
-                request = Request(url, headers={"User-Agent": "omnicoder-dataset-expansion-2026"})
-                with urlopen(request, timeout=float(spec.get("timeout") or 60)) as response:
-                    payload_bytes = response.read()
-            else:
-                payload_bytes = resolve_path(url, root).read_bytes()
+            with linux_wallclock_limit(wallclock_timeout, f"remote_file {url}"):
+                if url.startswith(("http://", "https://")):
+                    request = Request(url, headers={"User-Agent": "omnicoder-dataset-expansion-2026"})
+                    with urlopen(request, timeout=socket_timeout) as response:
+                        payload_bytes = response.read()
+                else:
+                    payload_bytes = resolve_path(url, root).read_bytes()
             if fmt.strip().lower().lstrip(".") == "zip":
                 member_raw = spec.get("members") or spec.get("member")
                 requested_members = set(requested_values(member_raw)) if member_raw else set()
@@ -1198,7 +1225,7 @@ def entry_record_limit(entry: dict[str, Any], args: argparse.Namespace) -> tuple
 
 
 def deferred_live_download_status(entry: dict[str, Any], args: argparse.Namespace, local_status: dict[str, Any]) -> dict[str, Any] | None:
-    if bool(getattr(args, "materialize_deferred_sources", False)):
+    if materialize_deferred_sources_requested(args):
         return None
     if not any(
         truthy_value(entry.get(key))
@@ -1242,6 +1269,27 @@ def materialize_source_rows(entry: dict[str, Any], root: Path, args: argparse.Na
         remote_rows, remote_status = rows_from_remote_files(entry, root, limit)
         if remote_rows:
             return remote_rows, remote_status
+        hf_deferred_status = {
+            "status": "skipped",
+            "reason": "live_huggingface_deferred",
+            "source": "policy_gate",
+            "bucket": source_use_bucket(entry),
+            "hf_id": str(entry.get("hf_id") or ""),
+            "remote_files_status": remote_status,
+        }
+        if entry.get("hf_id") and not materialize_huggingface_sources_requested(args):
+            seeds = synthetic_seed_rows(entry)
+            if limit > 0:
+                seeds = seeds[:limit]
+            if seeds:
+                return seeds, {
+                    "status": "ok",
+                    "source": "distillation_prompts_after_hf_deferred",
+                    "records": len(seeds),
+                    "synthetic_seed_only": True,
+                    "huggingface_status": hf_deferred_status,
+                }
+            return [], hf_deferred_status
         hf_timeout = float(entry.get("hf_step_timeout_seconds") or getattr(args, "hf_step_timeout_seconds", 0.0) or 0.0)
         try:
             hf_rows, hf_status = rows_from_huggingface(entry, limit, streaming=not args.no_streaming, timeout_seconds=hf_timeout)
@@ -1537,6 +1585,13 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
             "research_internal_all_external": str(jsonl_dir / "research_internal_all_external.jsonl"),
             "eval_holdout_all_external": str(jsonl_dir / "eval_holdout_all_external.jsonl"),
         },
+        "promotion_allowed": False,
+        "promotion_status": "provisional_until_dataset_integrity_rewrite_and_index",
+        "promotion_required_gates": [
+            "dataset_integrity_2026 accepted rows",
+            "external_train_rewrite_2026 rewritten_clean",
+            "dataset_index_2026 passed on rewritten train_all_external",
+        ],
         "promotion_policy": "Only train bucket rows may be merged into release weights. research_internal rows are internal distillation/reward candidates. eval_holdout rows are benchmark/evaluation only. Filtered registry delta runs are sidecar inputs unless a full unfiltered requirement pass promotes latest.",
     }
     write_json(manifests_dir / "external_dataset_manifest.json", manifest)
@@ -1566,7 +1621,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Materialize 2025-2026 external dataset expansion rows for Omnicoder training and distillation")
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
     parser.add_argument("--out-dir", default=DEFAULT_OUT_DIR)
-    parser.add_argument("--download", action="store_true", help="Attempt Hugging Face streaming downloads when local JSONL rows are absent")
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Attempt remote file downloads when local JSONL rows are absent. Hugging Face live pulls also require --materialize-hf-sources.",
+    )
     parser.add_argument("--no-streaming", action="store_true", help="Use regular load_dataset instead of streaming")
     parser.add_argument("--max-records-per-dataset", type=int, default=0)
     parser.add_argument(
@@ -1578,7 +1637,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--materialize-deferred-sources",
         action="store_true",
+        default=truthy_value(os.environ.get("OMNICODER_MATERIALIZE_DEFERRED_SOURCES")),
         help="Override per-entry defer_live_download gates. Use only after a local mirror or timeout plan is ready.",
+    )
+    parser.add_argument(
+        "--materialize-hf-sources",
+        action="store_true",
+        default=truthy_value(os.environ.get("OMNICODER_MATERIALIZE_HF_SOURCES")),
+        help="Allow live Hugging Face materialization. Default is off so local mirrors/traces can proceed without HF/Xet partial-content loops.",
     )
     parser.add_argument(
         "--materialize-blocked-review",

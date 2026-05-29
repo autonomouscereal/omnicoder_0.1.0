@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
@@ -11,6 +12,10 @@ from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrit
 
 
 SCHEMA = "omnicoder.external_train_rewrite_2026.v1"
+NEAR_DUP_MIN_NGRAMS = 8
+NEAR_DUP_THRESHOLD = 0.92
+NEAR_DUP_NGRAM = 5
+NEAR_DUP_MAX_CANDIDATES = 24
 TRAINABLE_POLICIES = {"train", "internal_train", "distill_train", "train_ok"}
 CLEAN_CONTAMINATION_STATUSES = {"", "clean", "clear", "passed", "ok", "none", "unknown"}
 
@@ -69,6 +74,65 @@ def _record_id(row: dict[str, Any]) -> str:
 def _payload_hash(row: dict[str, Any]) -> str:
     payload = json.dumps(row, ensure_ascii=True, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _word_tokens(text: str) -> list[str]:
+    return re.findall(r"[A-Za-z0-9_]+", text.lower())
+
+
+def _surface_token_count(text: str) -> int:
+    return len(re.findall(r"\S+", str(text or "")))
+
+
+def _has_structured_training_payload(row: dict[str, Any]) -> bool:
+    for key in (
+        "artifact_token_ids",
+        "target_token_ids",
+        "assistant_token_ids",
+        "media_tokens",
+        "image_tokens",
+        "video_tokens",
+        "audio_tokens",
+        "music_tokens",
+        "tts_tokens",
+        "speech_tokens",
+    ):
+        value = row.get(key)
+        if isinstance(value, list) and len(value) > 1:
+            return True
+    for container in (row, row.get("target_json"), row.get("output_json"), row.get("teacher_output")):
+        if not isinstance(container, dict):
+            continue
+        if container.get("generated_artifact") or container.get("artifact_tokens") or container.get("artifact_token_ids"):
+            return True
+        if container.get("tool_calls") or container.get("tool_results") or container.get("tool_result"):
+            return True
+    if row.get("tool_calls") and (row.get("tool_results") or row.get("tool_result") or row.get("verifier")):
+        return True
+    return False
+
+
+def one_token_train_target_reason(row: dict[str, Any]) -> str:
+    if _has_structured_training_payload(row):
+        return ""
+    _, target = row_prompt_target(row)
+    if _surface_token_count(target) <= 1:
+        return "one_token_train_target"
+    return ""
+
+
+def _near_duplicate_fingerprint(row: dict[str, Any], *, ngram: int = NEAR_DUP_NGRAM) -> set[str]:
+    prompt, target = row_prompt_target(row)
+    tokens = _word_tokens(f"{prompt}\n{target}")
+    if len(tokens) < max(ngram, NEAR_DUP_MIN_NGRAMS):
+        return set()
+    return {" ".join(tokens[index : index + ngram]) for index in range(0, len(tokens) - ngram + 1)}
+
+
+def _jaccard(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / max(1, len(left | right))
 
 
 def _nested_first(row: dict[str, Any], *paths: tuple[str, ...]) -> str:
@@ -148,6 +212,9 @@ def train_block_reason(row: dict[str, Any], *, recheck_integrity: bool = True) -
         reason = current_integrity_block_reason(row)
         if reason:
             return reason
+    reason = one_token_train_target_reason(row)
+    if reason:
+        return reason
     return ""
 
 
@@ -166,6 +233,8 @@ def clean_train_rows(rows: Iterable[dict[str, Any]], skipped: Counter[str] | Non
     cleaned: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     seen_payloads: set[str] = set()
+    near_duplicates: list[set[str]] = []
+    near_inverted: dict[str, list[int]] = {}
     for row in rows:
         reason = train_block_reason(row)
         if reason:
@@ -174,6 +243,8 @@ def clean_train_rows(rows: Iterable[dict[str, Any]], skipped: Counter[str] | Non
             continue
         row = dict(row)
         row["training_bucket"] = "train"
+        row.setdefault("split", "train")
+        row.setdefault("use_policy", "train")
         record_id = _record_id(row)
         if record_id:
             if record_id in seen_ids:
@@ -187,6 +258,28 @@ def clean_train_rows(rows: Iterable[dict[str, Any]], skipped: Counter[str] | Non
                 skipped["duplicate_payload"] += 1
             continue
         seen_payloads.add(payload_hash)
+        fingerprint = _near_duplicate_fingerprint(row)
+        if len(fingerprint) >= NEAR_DUP_MIN_NGRAMS:
+            candidate_hits: Counter[int] = Counter()
+            for gram in fingerprint:
+                for candidate_index in near_inverted.get(gram, ()):
+                    candidate_hits[candidate_index] += 1
+            duplicate_score = 0.0
+            for candidate_index, shared in candidate_hits.most_common(NEAR_DUP_MAX_CANDIDATES):
+                other = near_duplicates[candidate_index]
+                if shared / max(1, min(len(fingerprint), len(other))) < NEAR_DUP_THRESHOLD:
+                    continue
+                duplicate_score = max(duplicate_score, _jaccard(fingerprint, other))
+                if duplicate_score >= NEAR_DUP_THRESHOLD:
+                    break
+            if duplicate_score >= NEAR_DUP_THRESHOLD:
+                if skipped is not None:
+                    skipped["near_duplicate_payload"] += 1
+                continue
+            index = len(near_duplicates)
+            near_duplicates.append(fingerprint)
+            for gram in fingerprint:
+                near_inverted.setdefault(gram, []).append(index)
         cleaned.append(row)
     return cleaned
 
@@ -259,6 +352,8 @@ def rewrite_external_train_bucket(
         manifest["clean_train_families"] = report["by_family"]
         manifest["clean_train_modalities"] = report["by_modality"]
         manifest["integrity_rewrite"] = report
+        manifest["promotion_allowed"] = len(accepted_rows) > 0
+        manifest["promotion_status"] = "integrity_rewritten_pending_index" if accepted_rows else "no_clean_train_rows"
         source_manifest.write_text(json.dumps(manifest, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         report["source_manifest"] = str(source_manifest)
 

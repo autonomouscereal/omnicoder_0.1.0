@@ -340,6 +340,147 @@ def jsonl_read(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _read_json_or_jsonl(path: Path) -> list[dict[str, Any]]:
+    if path.suffix.lower() == ".jsonl":
+        return jsonl_read(path)
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("results", "artifacts", "scores", "rows"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        return [payload]
+    return []
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def load_official_scorer_artifacts(paths: list[str] | None) -> list[dict[str, Any]]:
+    artifacts: list[dict[str, Any]] = []
+    for raw_path in paths or []:
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = repo_root() / path
+        for row in _read_json_or_jsonl(path):
+            artifact = dict(row)
+            artifact.setdefault("_artifact_manifest_path", str(path))
+            ref_value = artifact.get("path") or artifact.get("artifact_path") or artifact.get("result_path")
+            if isinstance(ref_value, str) and ref_value:
+                ref_path = Path(ref_value)
+                if not ref_path.is_absolute():
+                    ref_path = path.parent / ref_path
+                if ref_path.exists() and not any(artifact.get(k) for k in ("sha256", "artifact_sha256", "result_sha256", "hash")):
+                    artifact["artifact_sha256"] = _file_sha256(ref_path)
+                artifact["path"] = str(ref_path)
+            elif not any(artifact.get(k) for k in ("sha256", "artifact_sha256", "result_sha256", "hash")):
+                artifact["artifact_sha256"] = _file_sha256(path)
+            artifacts.append(artifact)
+    return artifacts
+
+
+def _artifact_numeric_score(artifact: dict[str, Any]) -> float | None:
+    candidates: list[Any] = [
+        artifact.get("canonical_score"),
+        artifact.get("official_score"),
+        artifact.get("score"),
+    ]
+    score_json = artifact.get("score_json")
+    if isinstance(score_json, dict):
+        candidates.extend([score_json.get("canonical_score"), score_json.get("score"), score_json.get("accuracy")])
+    metrics = artifact.get("metrics") or artifact.get("metrics_json")
+    if isinstance(metrics, dict):
+        candidates.extend(
+            metrics.get(key)
+            for key in ("score", "accuracy", "normalized_accuracy", "resolved_rate", "pass_rate", "success_rate")
+        )
+    for value in candidates:
+        if value is None or isinstance(value, bool):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _expected_scorer_refs(tasks: list[dict[str, Any]]) -> set[str]:
+    refs = {
+        str(task.get("official_scorer_ref") or task.get("scorer_ref") or "").strip()
+        for task in tasks
+        if task.get("official_scorer_ref") or task.get("scorer_ref")
+    }
+    return {ref for ref in refs if ref}
+
+
+def _artifact_matches_record(artifact: dict[str, Any], record: dict[str, Any], tasks: list[dict[str, Any]]) -> bool:
+    benchmark = str(record.get("benchmark_id") or "")
+    adapter = str(record.get("adapter_id") or "")
+    artifact_benchmark = str(artifact.get("benchmark_id") or artifact.get("adapter_id") or artifact.get("suite_id") or "")
+    if artifact_benchmark and artifact_benchmark not in {benchmark, adapter}:
+        return False
+    artifact_task = str(artifact.get("task_id") or "")
+    if artifact_task:
+        task_ids = {str(task.get("task_id") or "") for task in tasks}
+        if artifact_task not in task_ids and artifact_task != f"{benchmark}:reportable":
+            return False
+    expected_refs = _expected_scorer_refs(tasks)
+    artifact_ref = str(artifact.get("official_scorer_ref") or artifact.get("scorer_ref") or "").strip()
+    if expected_refs and artifact_ref and artifact_ref not in expected_refs:
+        return False
+    if expected_refs and not artifact_ref:
+        return False
+    return True
+
+
+def _official_artifact_ref(artifact: dict[str, Any]) -> dict[str, Any]:
+    digest = (
+        artifact.get("sha256")
+        or artifact.get("artifact_sha256")
+        or artifact.get("result_sha256")
+        or artifact.get("hash")
+        or ""
+    )
+    return {
+        "kind": "official_scorer_result",
+        "path": str(artifact.get("path") or artifact.get("artifact_path") or artifact.get("_artifact_manifest_path") or ""),
+        "sha256": str(digest),
+        "official_scorer_ref": str(artifact.get("official_scorer_ref") or artifact.get("scorer_ref") or ""),
+        "benchmark_id": str(artifact.get("benchmark_id") or artifact.get("adapter_id") or ""),
+    }
+
+
+def select_official_scorer_artifact(
+    record: dict[str, Any],
+    tasks: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]] | None,
+) -> tuple[dict[str, Any] | None, float | None, dict[str, Any] | None]:
+    for artifact in artifacts or []:
+        if not _artifact_matches_record(artifact, record, tasks):
+            continue
+        score = _artifact_numeric_score(artifact)
+        ref = _official_artifact_ref(artifact)
+        if score is None or not row_has_official_scorer_artifact(
+            {
+                "official_scorer_ref": ref.get("official_scorer_ref"),
+                "artifact_refs": [ref],
+                "score_json": {"official_scorer_ref": ref.get("official_scorer_ref")},
+            }
+        ):
+            continue
+        return artifact, score, ref
+    return None, None, None
+
+
 def profile_meta(profile: dict[str, Any], profile_arg: str) -> dict[str, Any]:
     path = profile_path(profile_arg)
     return {
@@ -1007,27 +1148,37 @@ def reportable_result(
     cycle: str,
     model: str,
     min_tasks: int,
+    official_scorer_artifacts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     started_at = utc_now()
     if not tasks:
         task_scores: list[dict[str, Any]] = []
         status = "skipped"
         score = None
+        contract_score = None
         reportable_score = False
         reason = "no_reportable_tasks"
+        scorer_ref = ""
+        artifact_refs: list[dict[str, Any]] = []
     else:
         task_scores = [score_reportable_task(record, task, predictions) for task in tasks]
         score_values = [float(item["score"]) for item in task_scores]
-        score = sum(score_values) / len(score_values) if score_values else 0.0
+        contract_score = sum(score_values) / len(score_values) if score_values else 0.0
         enough_tasks = len(task_scores) >= min_tasks
         metadata_ok = all(item["reportable_metadata"] for item in task_scores)
         metadata_contract_ok = enough_tasks and metadata_ok
-        official_or_external_scorer = False
+        official_artifact, official_score_value, official_artifact_ref = select_official_scorer_artifact(
+            record, tasks, official_scorer_artifacts
+        )
+        official_or_external_scorer = official_score_value is not None and official_artifact_ref is not None
         reportable_score = metadata_contract_ok and official_or_external_scorer
         status = "passed" if reportable_score else ("contract_only" if metadata_contract_ok else "local_only")
         reason = "" if reportable_score else (
             "internal_contract_oracle_not_official_scorer" if metadata_contract_ok else "missing_reportable_metadata_or_min_task_count"
         )
+        score = official_score_value if reportable_score else contract_score
+        scorer_ref = str((official_artifact or {}).get("official_scorer_ref") or (official_artifact or {}).get("scorer_ref") or "")
+        artifact_refs = [official_artifact_ref] if official_artifact_ref else []
     task_revisions = sorted({str(task.get("dataset_revision") or task.get("task_revision") or "unknown") for task in tasks})
     result = {
         "type": "benchmark_result",
@@ -1049,19 +1200,21 @@ def reportable_result(
         "status": status,
         "reason": reason,
         "diagnostic_only": False,
-        "official_score": False,
+        "official_score": bool(reportable_score),
+        "official_scorer_ref": scorer_ref,
         "reportability_scope": "official_or_authorized_external_scorer" if reportable_score else "internal_contract_or_local_only",
         "model": model,
         "score": round(score, 6) if reportable_score and score is not None else None,
         "score_json": {
             "canonical_score": round(score, 6) if reportable_score and score is not None else None,
-            "contract_score": round(score, 6) if score is not None else None,
-            "score_claim_scope": "internal_contract_oracle",
+            "contract_score": round(contract_score, 6) if tasks else None,
+            "score_claim_scope": "official_or_authorized_external_scorer" if reportable_score else "internal_contract_oracle",
             "reportable_score": reportable_score,
             "contract_only": bool(metadata_contract_ok and not reportable_score) if tasks else False,
             "diagnostic_only": False,
-            "official_score": False,
-            "scorer_kind": "authorized_contract_oracle",
+            "official_score": bool(reportable_score),
+            "official_scorer_ref": scorer_ref,
+            "scorer_kind": "official_or_authorized_external_scorer" if reportable_score else "authorized_contract_oracle",
             "task_count": len(task_scores),
             "min_tasks": min_tasks,
             "reportable_scope": "official_or_authorized_external_scorer" if reportable_score else "internal_contract_or_local_only",
@@ -1076,7 +1229,7 @@ def reportable_result(
             "task_scores": task_scores[:1000],
             "task_count": len(task_scores),
         },
-        "artifact_refs": [],
+        "artifact_refs": artifact_refs,
         "input_sha256": stable_hash(tasks),
         "output_sha256": stable_hash(task_scores),
         "manifest_hash": stable_hash({"record": record, "cycle": cycle, "mode": "reportable"}),
@@ -1369,12 +1522,25 @@ def cmd_run_reportable(args: argparse.Namespace) -> int:
     run_id = args.run_id or f"reportable-{int(time.time())}"
     records = select_records(profile, filter_ids(args))
     predictions = load_predictions(args.predictions)
+    official_scorer_artifacts = load_official_scorer_artifacts(args.official_scorer_artifacts)
     out_dir = resolve_out_dir(args.out_dir)
     results_path = out_dir / "reportable_results.jsonl"
     results: list[dict[str, Any]] = []
     for record in records:
         tasks = load_reportable_tasks(profile, record, args.cycle, args.tasks)
-        results.append(reportable_result(profile, record, tasks, predictions, run_id, args.cycle, args.model, args.min_tasks))
+        results.append(
+            reportable_result(
+                profile,
+                record,
+                tasks,
+                predictions,
+                run_id,
+                args.cycle,
+                args.model,
+                args.min_tasks,
+                official_scorer_artifacts,
+            )
+        )
     jsonl_append(results_path, results)
     failed = sum(1 for row in results if row["status"] == "failed")
     skipped = sum(1 for row in results if row["status"] == "skipped")
@@ -1506,6 +1672,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_selection(reportable_p)
     reportable_p.add_argument("--tasks", action="append", help="JSONL file or directory with reportable task rows. Repeatable.")
     reportable_p.add_argument("--predictions", action="append", help="Optional JSONL predictions keyed by benchmark_id/task_id. Repeatable.")
+    reportable_p.add_argument(
+        "--official-scorer-artifacts",
+        action="append",
+        help="Official/external scorer artifact JSON or JSONL with benchmark_id, official_scorer_ref, score, and sha256/path provenance. Repeatable.",
+    )
     reportable_p.add_argument("--cycle", choices=["smoke", "nightly", "release"], default="smoke")
     reportable_p.add_argument("--run-id", default="")
     reportable_p.add_argument("--min-tasks", type=int, default=1)

@@ -17,7 +17,7 @@ class Omnicoder2026Preset:
     n_heads: int = 32
     head_dim: int = 128
     num_key_value_heads: int = 1
-    mlp_dim: int = 16384
+    mlp_dim: int = 15360
     max_seq_len: int = 1_048_576
     train_seq_len: int = 4096
     local_window: int = 128
@@ -175,7 +175,8 @@ def get_omnicoder2026_preset(name: str) -> Omnicoder2026Preset:
         return Omnicoder2026Preset(
             name="omnicoder2026_16b_1m",
             notes=(
-                "Stretch dense 16B-class native-1M target: 6 x [kda, kda, kda, csa, kda, kda, kda, hca].",
+                "Legacy/intermediate 16B-class native-1M profile: 6 x [kda, kda, kda, csa, kda, kda, kda, hca].",
+                "It inherits the 15360-MLP headroom rule and is not the current contract target.",
                 "Single-24GB Q4 inference depends on compressed state/offload; prefer RTX 8000 or multi-GPU for validation.",
                 "Stock GGUF bridge is a compatibility milestone, not the full native-1M runtime.",
             ),
@@ -199,7 +200,7 @@ def get_omnicoder2026_preset(name: str) -> Omnicoder2026Preset:
             rope_dim=64,
             sink_tokens=8,
             flow_latent_dim=512,
-            notes=("Pilot scale for data/training/QAT before the 12B target.",),
+            notes=("Pilot scale for data/training/QAT before the 20B contract target.",),
         )
     raise ValueError(f"Unknown Omnicoder2026 preset: {name}")
 

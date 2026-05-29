@@ -21,6 +21,7 @@ DATASET_INCLUDE_FAMILIES="${OMNICODER_DATASET_INCLUDE_FAMILIES:-}"
 DATASET_INCLUDE_NAMES="${OMNICODER_DATASET_INCLUDE_NAMES:-}"
 HF_STEP_TIMEOUT_SECONDS="${OMNICODER_HF_STEP_TIMEOUT_SECONDS:-90}"
 MATERIALIZE_DEFERRED_SOURCES="${OMNICODER_MATERIALIZE_DEFERRED_SOURCES:-0}"
+MATERIALIZE_HF_SOURCES="${OMNICODER_MATERIALIZE_HF_SOURCES:-0}"
 TRACE_LIMIT="${OMNICODER_TRACE_LIMIT:-0}"
 LMSTUDIO_TRACE_LIMIT="${OMNICODER_LMSTUDIO_TRACE_LIMIT:-100000}"
 LOCAL_TRACE_SOURCE="${OMNICODER_LOCAL_TRACE_SOURCE:-weights/curated_datasets_2026/runs/${RUN_ID}_local_traces}"
@@ -245,6 +246,10 @@ external_expansion() {
     materializer_args+=(--materialize-deferred-sources)
     log "external dataset expansion will materialize deferred live-download sources by override"
   fi
+  if truthy "$MATERIALIZE_HF_SOURCES"; then
+    materializer_args+=(--materialize-hf-sources)
+    log "external dataset expansion will allow live Hugging Face materialization by override"
+  fi
   if [[ -n "$DATASET_INCLUDE_WAVES" ]]; then
     local old_ifs="$IFS"
     IFS=","
@@ -387,6 +392,33 @@ PY
     --out "$out/integrity/train_all_external.index.json" \
     --expected-split train \
     | tee "$out/integrity/train_all_external.index.stdout.json"
+  "$PYTHON_BIN" - "$out/manifests/external_dataset_manifest.json" "$out/integrity/train_all_external.index.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+index_path = Path(sys.argv[2])
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+index = json.loads(index_path.read_text(encoding="utf-8"))
+if index.get("status") != "passed":
+    raise SystemExit(
+        "external train index did not pass: "
+        + json.dumps(index.get("fail_reasons", []), ensure_ascii=True, sort_keys=True)
+    )
+manifest["promotion_allowed"] = True
+manifest["promotion_status"] = "integrity_rewrite_and_index_passed"
+manifest["promotion_index"] = {
+    "counts": index.get("counts", {}),
+    "path": str(index_path),
+    "rows": index.get("rows"),
+    "status": index.get("status"),
+}
+manifest_path.write_text(
+    json.dumps(manifest, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
   if truthy "$PROMOTE_LATEST"; then
     ln -sfn "$ROOT/$out" weights/external_datasets_2026/latest
     EXTERNAL_DATASET_SOURCE="weights/external_datasets_2026/latest"

@@ -437,8 +437,116 @@ def test_dataset_expansion_falls_back_to_distillation_seeds_after_hf_failure(tmp
     assert manifest["synthetic_seed_families"]["image_generation_editing"] == 1
 
 
+def test_dataset_expansion_defers_live_hf_by_default_after_remote_miss(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    entry = {
+        "name": "hf_live_default_off",
+        "hf_id": "source/large-xet-shards",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "field_map": {"prompt": ["prompt"], "target": ["answer"]},
+    }
+    calls: list[str] = []
+
+    def empty_remote_files(entry, root, limit):
+        calls.append("remote_files")
+        return [], {"status": "empty", "source": "remote_files", "records": 0}
+
+    def blocked_hf(*args, **kwargs):
+        calls.append("huggingface")
+        raise AssertionError("live Hugging Face should be opt-in after remote/local miss")
+
+    monkeypatch.setattr(expansion, "rows_from_remote_files", empty_remote_files)
+    monkeypatch.setattr(expansion, "rows_from_huggingface", blocked_hf)
+
+    rows, status = expansion.materialize_source_rows(
+        entry,
+        root,
+        type(
+            "Args",
+            (),
+            {
+                "download": True,
+                "no_streaming": False,
+                "max_records_per_dataset": 0,
+                "materialize_deferred_sources": False,
+                "materialize_blocked_review": False,
+                "hf_step_timeout_seconds": 90,
+            },
+        )(),
+    )
+
+    assert rows == []
+    assert status["status"] == "skipped"
+    assert status["reason"] == "live_huggingface_deferred"
+    assert status["hf_id"] == "source/large-xet-shards"
+    assert calls == ["remote_files"]
+
+
+def test_dataset_expansion_allows_live_hf_with_explicit_materialize_hf_flag(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    entry = {
+        "name": "hf_live_explicit",
+        "hf_id": "source/reviewed-small-shard",
+        "family": "coding_agentic",
+        "target_modality": "code",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "field_map": {"prompt": ["prompt"], "target": ["answer"]},
+    }
+    calls: list[tuple] = []
+
+    def empty_remote_files(entry, root, limit):
+        calls.append(("remote_files", limit))
+        return [], {"status": "empty", "source": "remote_files", "records": 0}
+
+    def one_hf_row(entry, limit, streaming, *, timeout_seconds=0.0):
+        calls.append(("huggingface", limit, streaming, timeout_seconds))
+        return [
+            {
+                "prompt": "Patch the failing parser.",
+                "answer": "Use a focused parser update with tests and keep the response grounded in the failing case.",
+                "source_date": "2026-05-28",
+                "quality_score": 0.94,
+                "contamination_status": "clean",
+            }
+        ], {"status": "ok", "source": "huggingface", "records": 1}
+
+    monkeypatch.setattr(expansion, "rows_from_remote_files", empty_remote_files)
+    monkeypatch.setattr(expansion, "rows_from_huggingface", one_hf_row)
+
+    rows, status = expansion.materialize_source_rows(
+        entry,
+        root,
+        type(
+            "Args",
+            (),
+            {
+                "download": True,
+                "no_streaming": False,
+                "max_records_per_dataset": 1,
+                "materialize_hf_sources": True,
+                "materialize_deferred_sources": False,
+                "materialize_blocked_review": False,
+                "hf_step_timeout_seconds": 33,
+            },
+        )(),
+    )
+
+    assert rows
+    assert status["source"] == "huggingface"
+    assert calls == [("remote_files", 1), ("huggingface", 1, True, 33.0)]
+
+
 def test_dataset_expansion_skips_deferred_live_download_without_synthetic_train_seed(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
+    monkeypatch.delenv("OMNICODER_MATERIALIZE_DEFERRED_SOURCES", raising=False)
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
     entry = {
         "name": "deferred_video",
@@ -450,6 +558,7 @@ def test_dataset_expansion_skips_deferred_live_download_without_synthetic_train_
         "use_policy": "train",
         "defer_live_download": True,
         "defer_reason": "unit test deferred HF/Xet source",
+        "hf_step_timeout_seconds": 7,
         "distillation_prompts": [{"instruction": "video prompt", "target": "video target"}],
     }
     profile = {
@@ -460,6 +569,18 @@ def test_dataset_expansion_skips_deferred_live_download_without_synthetic_train_
     }
     _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
     monkeypatch.setattr(expansion, "repo_root", lambda: root)
+    blocked_calls = []
+
+    def blocked_remote_files(*args, **kwargs):
+        blocked_calls.append("remote_files")
+        raise AssertionError("deferred source should not try remote_files without explicit override")
+
+    def blocked_hf(*args, **kwargs):
+        blocked_calls.append("huggingface")
+        raise AssertionError("deferred source should not try Hugging Face without explicit override")
+
+    monkeypatch.setattr(expansion, "rows_from_remote_files", blocked_remote_files)
+    monkeypatch.setattr(expansion, "rows_from_huggingface", blocked_hf)
 
     rows, status = expansion.materialize_source_rows(
         entry,
@@ -481,6 +602,7 @@ def test_dataset_expansion_skips_deferred_live_download_without_synthetic_train_
     assert rows == []
     assert status["status"] == "skipped"
     assert status["reason"] == "live_download_deferred"
+    assert blocked_calls == []
 
     manifest = expansion.build_expansion(
         root / "profiles" / "dataset_curation_2026.json",
@@ -501,6 +623,87 @@ def test_dataset_expansion_skips_deferred_live_download_without_synthetic_train_
     assert manifest["records"]["train"] == 0
     assert manifest["records"]["research_internal"] == 0
     assert manifest["datasets"][0]["reason"] == "live_download_deferred"
+    assert blocked_calls == []
+
+    override_calls = []
+
+    def empty_remote_files(entry, root, limit):
+        override_calls.append(("remote_files", limit))
+        return [], {"status": "empty", "source": "remote_files", "records": 0}
+
+    def one_hf_row(entry, limit, streaming, *, timeout_seconds=0.0):
+        override_calls.append(("huggingface", limit, streaming, timeout_seconds))
+        return [
+            {
+                "prompt": "Describe the reviewed video action.",
+                "answer": "The reviewed video action target is long enough for the materializer quality gates.",
+                "source_date": "2026-05-28",
+                "quality_score": 0.92,
+                "contamination_status": "clean",
+            }
+        ], {"status": "ok", "source": "huggingface", "records": 1}
+
+    monkeypatch.setattr(expansion, "rows_from_remote_files", empty_remote_files)
+    monkeypatch.setattr(expansion, "rows_from_huggingface", one_hf_row)
+    rows, status = expansion.materialize_source_rows(
+        entry,
+        root,
+        type(
+            "Args",
+            (),
+            {
+                "download": True,
+                "no_streaming": False,
+                "max_records_per_dataset": 1,
+                "materialize_deferred_sources": True,
+                "materialize_blocked_review": False,
+                "hf_step_timeout_seconds": 99,
+            },
+        )(),
+    )
+
+    assert rows
+    assert status["source"] == "huggingface"
+    assert override_calls == [("remote_files", 1), ("huggingface", 1, True, 7.0)]
+
+    override_calls.clear()
+    monkeypatch.setenv("OMNICODER_MATERIALIZE_DEFERRED_SOURCES", "1")
+    rows, status = expansion.materialize_source_rows(
+        entry,
+        root,
+        type(
+            "Args",
+            (),
+            {
+                "download": True,
+                "no_streaming": False,
+                "max_records_per_dataset": 1,
+                "materialize_deferred_sources": False,
+                "materialize_blocked_review": False,
+                "hf_step_timeout_seconds": 99,
+            },
+        )(),
+    )
+
+    assert rows
+    assert status["source"] == "huggingface"
+    assert override_calls == [("remote_files", 1), ("huggingface", 1, True, 7.0)]
+
+
+def test_repo_dataset_registry_marks_hf_xet_raw_media_sources_deferred() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+
+    for name in ("VideoCUA", "OpenS2V-5M"):
+        entry = by_name[name]
+        assert entry["use_policy"] == "train"
+        assert entry["target_modality"] == "video"
+        assert entry["defer_live_download"] is True
+        assert entry["hf_step_timeout_seconds"] == 60
+        assert entry["source_review_status"].startswith("deferred_live_download_hf_xet")
+        assert "partial-content" in entry["defer_reason"]
 
 
 def test_external_long_context_rows_preserve_large_targets(tmp_path: Path, monkeypatch) -> None:
@@ -654,7 +857,7 @@ def test_dataset_expansion_materializes_remote_zip_json_members_for_eval_only(tm
     manifest = expansion.build_expansion(
         root / "profiles" / "dataset_curation_2026.json",
         root / "weights" / "external",
-        type("Args", (), {"download": True, "no_streaming": False, "max_records_per_dataset": 0})(),
+        type("Args", (), {"download": True, "no_streaming": False, "max_records_per_dataset": 0, "materialize_hf_sources": True})(),
     )
 
     rows = [
@@ -1732,6 +1935,9 @@ def test_repo_dataset_registry_covers_seventh_wave_sources_and_trace_gates() -> 
     assert by_name["OpenThoughts-Agent v1 SFT"]["target_modality"] == "tool"
     assert by_name["AI CUDA Engineer Archive"]["target_modality"] == "code"
     assert by_name["OpenS2V-5M"]["target_modality"] == "video"
+    for deferred_name in ("OpenS2V-5M", "VideoCUA", "SWE-Synth"):
+        assert by_name[deferred_name]["defer_live_download"] is True
+        assert "partial-content" in by_name[deferred_name]["defer_reason"]
     assert by_name["UniM Any-to-Any Benchmark"]["target_modality"] == "multimodal"
     assert expansion.source_use_bucket(by_name["TRIG Benchmark"]) == "eval_holdout"
     assert expansion.source_use_bucket(by_name["GitHub CodeReview 356K"]) == "research_internal"

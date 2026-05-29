@@ -483,6 +483,17 @@ def _target_token_count(row: dict[str, Any]) -> int:
         value = row.get(key)
         if isinstance(value, list):
             return len(value)
+    messages = row.get("messages")
+    if isinstance(messages, list):
+        _, target = _messages_prompt_target(messages)
+        if target:
+            return len(re.findall(r"\S+", target))
+    input_json = row.get("input_json") if isinstance(row.get("input_json"), dict) else {}
+    messages = input_json.get("messages") if isinstance(input_json.get("messages"), list) else []
+    if messages:
+        _, target = _messages_prompt_target(messages)
+        if target:
+            return len(re.findall(r"\S+", target))
     target = row.get("target") or row.get("response") or row.get("completion") or row.get("answer") or ""
     if not isinstance(target, str) or not target:
         for container in (row.get("target_json"), row.get("output_json"), row.get("teacher_output")):

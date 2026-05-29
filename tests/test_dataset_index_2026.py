@@ -554,6 +554,36 @@ def test_dataset_index_counts_target_json_when_input_messages_are_prompt_only(tm
     assert payload["counts"]["one_token_junk_rows"] == 0
 
 
+def test_dataset_index_counts_assistant_messages_as_target_tokens(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "message-sft-1",
+                "source_id": "message_source",
+                "modality": "code",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "quality_score": 0.9,
+                "messages": [
+                    {"role": "user", "content": "Write a deterministic parser."},
+                    {
+                        "role": "assistant",
+                        "content": "The parser validates each row, preserves source metadata, and writes clean JSONL records.",
+                    },
+                ],
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data], expected_split="train")
+
+    assert payload["status"] == "passed"
+    assert payload["counts"]["rows_with_target_tokens"] == 1
+    assert payload["counts"]["one_token_junk_rows"] == 0
+
+
 def test_dataset_index_does_not_flag_text_pretraining_self_supervision_as_prompt_leakage(tmp_path: Path) -> None:
     data = tmp_path / "train.jsonl"
     target = (

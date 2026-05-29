@@ -329,6 +329,42 @@ def test_dataset_integrity_rejects_url_only_media_and_prompt_target_leakage() ->
     assert "target_includes_prompt" in audit["reasons"]
 
 
+@pytest.mark.parametrize(
+    "row",
+    [
+        {
+            "prompt": "Describe the generated media artifact.",
+            "modality": "image",
+            "target": "https://cdn.example.invalid/generated.png",
+        },
+        {
+            "prompt": "Describe the generated media artifact.",
+            "modality": "image",
+            "target_json": {"content": "https://cdn.example.invalid/generated.png"},
+        },
+        {
+            "prompt": "Describe the generated media artifact.",
+            "modality": "image",
+            "target_json": {"media_refs": [{"url": "https://cdn.example.invalid/generated.png"}]},
+        },
+    ],
+)
+def test_dataset_integrity_detects_media_refs_embedded_in_target_fields(row: dict) -> None:
+    prompt, target = integrity.row_prompt_target(row)
+
+    audit = integrity.audit_dataset_integrity(
+        row,
+        prompt=prompt,
+        target=target,
+        modality="image",
+        refs=[],
+        scan_artifacts=False,
+    )
+
+    assert audit["accepted"] is False
+    assert set(audit["reasons"]) & {"target_url_only_media", "media_url_only_ref", "missing_media_artifact_ref"}
+
+
 def test_dataset_integrity_rejects_broader_eval_and_injection_markers() -> None:
     row = {
         "prompt": "Evaluate this benchmark record.",
@@ -415,6 +451,25 @@ def test_dataset_integrity_rejects_missing_local_media_artifact(tmp_path: Path) 
 
     assert audit["accepted"] is False
     assert "media_local_artifact_missing_or_empty" in audit["reasons"]
+
+
+def test_dataset_integrity_resolves_relative_media_artifacts_against_source_file(tmp_path: Path) -> None:
+    source_dir = tmp_path / "image_source"
+    source_dir.mkdir()
+    artifact = source_dir / "generated.png"
+    artifact.write_bytes(b"\x89PNG\r\n\x1a\nclean-image-bytes")
+    row = {
+        "prompt": "Caption this generated image artifact with concise visual details.",
+        "response": "A clean product image with balanced lighting and centered composition.",
+        "modality": "image",
+        "source_file": str(source_dir / "image.clean.jsonl"),
+        "artifact_refs": ["generated.png"],
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], modality="image", refs=[], scan_artifacts=True)
+
+    assert audit["accepted"] is True
+    assert audit["artifact_reports"][0]["path"] == str(artifact)
 
 
 def test_dataset_integrity_requires_tool_call_result_pairing() -> None:

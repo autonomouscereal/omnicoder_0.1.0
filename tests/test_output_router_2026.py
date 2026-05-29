@@ -53,6 +53,32 @@ def test_music_route_targets_audio_music_and_music_control() -> None:
     assert "music_control" in names
 
 
+def test_explicit_media_output_modality_routes_prediction_field_to_artifact_decoder() -> None:
+    expectations = {
+        "video": ("video", {"vision_semantic", "vision_residual", "audio_music", "time_space", "flow"}),
+        "audio": ("audio", {"audio_music", "time_space", "flow"}),
+        "music": ("music", {"audio_music", "music_control", "time_space", "flow"}),
+        "speech": ("audio", {"speech_tts", "time_space", "flow"}),
+        "image": ("image", {"vision_semantic", "vision_residual", "time_space", "flow"}),
+    }
+
+    for modality, (artifact_kind, expected_ranges) in expectations.items():
+        route = route_for_output(
+            row={"benchmark_id": "plain_prediction_fixture_2026", "output_modality": modality},
+            output_field="prediction",
+            tokenizer=_Tokenizer(),
+            model_vocab_size=330_000,
+        )
+
+        names = {item[0] for item in route.token_ranges}
+        assert route.output_field == "prediction"
+        assert route.output_modality == modality
+        assert route.requires_artifact_decoder is True
+        assert route.artifact_kind == artifact_kind
+        assert expected_ranges <= names
+        assert "text" not in names
+
+
 def test_model_output_route_prefix_selects_media_decoder_and_strips_marker() -> None:
     route, cleaned = route_for_model_output_text(
         text='image | {"output_modality":"image","artifact_tokens":"<image_begin> proof <image_end>"}',

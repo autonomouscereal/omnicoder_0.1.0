@@ -1327,3 +1327,101 @@ def test_run_reportable_scores_hellaswag_with_descriptor_file_hash(
     assert result["score_json"]["contract_only"] is True
     assert task_score["reportable_metadata"] is True
     assert task_score["has_model_output"] is True
+
+
+def test_run_reportable_ingests_official_scorer_artifact_for_reportable_score(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    benchmark_id = "reasoning_hellaswag_full_2026"
+    tasks = tmp_path / "hellaswag_authorized.jsonl"
+    profile = {
+        "version": "2026-05-23.official-artifact-test",
+        "benchmarks": [
+            {
+                "benchmark_id": benchmark_id,
+                "adapter_kind": "commonsense_completion_mcq",
+                "axis": "reasoning",
+                "source": "https://huggingface.co/datasets/Rowan/hellaswag",
+                "task_format": "jsonl_multiple_choice_completion",
+                "splits": {"smoke": "authorized HellaSwag fixture"},
+                "metrics": ["accuracy", "normalized_accuracy"],
+                "holdout_policy": ["hide_answer_keys"],
+            }
+        ],
+        "release_gates": {"reasoning_release": [benchmark_id]},
+        "reportable_task_roots": {benchmark_id: [str(tasks)]},
+        "reportable_snapshots": {
+            benchmark_id: {
+                "snapshot_id": "hellaswag-authorized-2026-current",
+                "snapshot_authorization": "official_or_authorized_current_release",
+                "dataset_revision": "hellaswag-authorized-2026-current",
+                "source": "https://huggingface.co/datasets/Rowan/hellaswag",
+                "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
+                "license_ref": "authorized-eval-ledger:hellaswag",
+                "official_scorer_ref": "hellaswag-official-eval-2026",
+                "task_root": str(tasks),
+            }
+        },
+    }
+    profile_path = _write_profile(tmp_path / "profile.json", profile)
+    tasks.write_text(
+        json.dumps(
+            {
+                "benchmark_id": benchmark_id,
+                "task_id": "hellaswag-1",
+                "question": "A person opens the oven door and",
+                "choices": ["sits on the couch.", "pulls out a tray.", "drives away.", "prints a receipt."],
+                "answer": "1",
+                "prediction": "B",
+                "source": "https://huggingface.co/datasets/Rowan/hellaswag",
+                "reportable": True,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    artifact = tmp_path / "lm_eval_hellaswag_score.json"
+    artifact.write_text(
+        json.dumps(
+            {
+                "benchmark_id": benchmark_id,
+                "official_scorer_ref": "hellaswag-official-eval-2026",
+                "score": 0.875,
+                "metrics": {"normalized_accuracy": 0.875},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        runner.main(
+            [
+                "--profile",
+                str(profile_path),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "run-reportable",
+                "--adapter",
+                benchmark_id,
+                "--run-id",
+                "hellaswag-official-artifact-fixture",
+                "--official-scorer-artifacts",
+                str(artifact),
+            ]
+        )
+        == 0
+    )
+
+    payload = _json_from_stdout(capsys)
+    result = _jsonl_rows(Path(payload["results"]))[0]
+    assert payload["status"] == "ok"
+    assert payload["reportable"] == 1
+    assert payload["official"] == 1
+    assert result["status"] == "passed"
+    assert result["score"] == 0.875
+    assert result["score_json"]["contract_score"] == 1.0
+    assert result["score_json"]["canonical_score"] == 0.875
+    assert result["score_json"]["reportable_score"] is True
+    assert result["score_json"]["official_score"] is True
+    assert result["artifact_refs"][0]["kind"] == "official_scorer_result"
+    assert result["artifact_refs"][0]["sha256"].startswith("sha256:")

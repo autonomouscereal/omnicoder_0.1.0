@@ -130,7 +130,7 @@ def route_for_output(
     modality = infer_output_modality(row, output_field)
     text_begin, text_end = effective_text_token_range(tokenizer=tokenizer, model_vocab_size=model_vocab_size)
     text_range = (("text", int(text_begin), int(text_end)),)
-    if output_field in MEDIA_FIELDS or modality == "image":
+    if output_field in MEDIA_FIELDS or modality in {"image", "video", "music", "audio", "speech"}:
         if modality == "image":
             return OutputRoute(
                 name="image_artifact",

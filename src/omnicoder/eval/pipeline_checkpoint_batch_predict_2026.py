@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -43,8 +45,10 @@ from omnicoder.training.simple_tokenizer import get_text_tokenizer
 
 BACKEND_NAME = "pipeline_checkpoint_batch_predict_2026"
 SUMMARY_SCHEMA = "omnicoder.pipeline_checkpoint_batch_predict_2026.summary.v1"
+DIAGNOSTIC_MEDIA_ARTIFACT_SCHEMA = "omnicoder.diagnostic_native_media_artifact_2026.v1"
 CONFIG_FIELDS = {field.name for field in fields(OmniCoder2026Config)}
 TEXT_RANGE = DEFAULT_LEDGER.as_config_ranges()["text"]
+SAFE_PATH_PART_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 class BatchPredictError(ValueError):
@@ -283,18 +287,37 @@ def _broadcast_task_header(
     active: bool | None,
     max_new_tokens: int = 0,
     text_token_hi: int = 0,
-) -> tuple[bool, int, int]:
+    token_ranges: tuple[tuple[int, int], ...] | None = None,
+) -> tuple[bool, int, int, tuple[tuple[int, int], ...] | None]:
     rank = int(dist.get_rank())
     if rank == 0:
+        ranges = tuple(token_ranges or ())
+        if len(ranges) > 5:
+            raise BatchPredictError(f"at most 5 generation token ranges can be broadcast, got {len(ranges)}")
+        flat_ranges: list[int] = []
+        for lo, hi in ranges:
+            flat_ranges.extend([int(lo), int(hi)])
+        while len(flat_ranges) < 10:
+            flat_ranges.extend([0, 0])
         payload = torch.tensor(
-            [1 if active else 0, int(max_new_tokens), int(text_token_hi)],
+            [1 if active else 0, int(max_new_tokens), int(text_token_hi), len(ranges), *flat_ranges],
             dtype=torch.long,
             device=device,
         )
     else:
-        payload = torch.empty((3,), dtype=torch.long, device=device)
+        payload = torch.empty((14,), dtype=torch.long, device=device)
     dist.broadcast(payload, src=0)
-    return bool(int(payload[0].item())), int(payload[1].item()), int(payload[2].item())
+    range_count = max(0, min(5, int(payload[3].item())))
+    received_ranges: list[tuple[int, int]] = []
+    for index in range(range_count):
+        offset = 4 + index * 2
+        received_ranges.append((int(payload[offset].item()), int(payload[offset + 1].item())))
+    return (
+        bool(int(payload[0].item())),
+        int(payload[1].item()),
+        int(payload[2].item()),
+        tuple(received_ranges) if received_ranges else None,
+    )
 
 
 def _broadcast_ids(batch: torch.Tensor | None, device: torch.device) -> torch.Tensor:
@@ -332,6 +355,7 @@ def _pipeline_next_token(
     vocab_size: int,
     precision: str,
     text_range: tuple[int, int] | None = None,
+    token_ranges: tuple[tuple[int, int], ...] | None = None,
 ) -> int:
     rank = int(dist.get_rank())
     world_size = int(dist.get_world_size())
@@ -340,7 +364,7 @@ def _pipeline_next_token(
         if world_size == 1:
             hidden = shard(batch)
             logits = shard.lm_head(hidden[:, -1:, :]).float()
-            token = _select_text_token(logits[:, -1, :], vocab_size, text_range)
+            token = _select_text_token(logits[:, -1, :], vocab_size, text_range, token_ranges=token_ranges)
             dist.broadcast(token, src=0)
             return int(token.detach().cpu().item())
         if rank == 0:
@@ -358,19 +382,32 @@ def _pipeline_next_token(
             dist.broadcast(token, src=world_size - 1)
             return int(token.detach().cpu().item())
         logits = shard.lm_head(hidden[:, -1:, :]).float()
-        token = _select_text_token(logits[:, -1, :], vocab_size, text_range)
+        token = _select_text_token(logits[:, -1, :], vocab_size, text_range, token_ranges=token_ranges)
         dist.broadcast(token, src=rank)
         return int(token.detach().cpu().item())
 
 
-def _select_text_token(logits: torch.Tensor, vocab_size: int, text_range: tuple[int, int] | None = None) -> torch.Tensor:
-    lo, hi = text_range or TEXT_RANGE
-    hi = min(int(hi), int(vocab_size), int(logits.shape[-1]))
-    if hi <= int(lo):
-        raise BatchPredictError(f"text generation range {(lo, hi)} is outside vocab_size={vocab_size}")
+def _select_text_token(
+    logits: torch.Tensor,
+    vocab_size: int,
+    text_range: tuple[int, int] | None = None,
+    *,
+    token_ranges: tuple[tuple[int, int], ...] | None = None,
+) -> torch.Tensor:
+    ranges = tuple(token_ranges or (text_range or TEXT_RANGE,))
+    normalized: list[tuple[int, int]] = []
+    for lo, hi in ranges:
+        clipped_lo = max(0, int(lo))
+        clipped_hi = min(int(hi), int(vocab_size), int(logits.shape[-1]))
+        if clipped_hi > clipped_lo:
+            normalized.append((clipped_lo, clipped_hi))
+    if not normalized:
+        raise BatchPredictError(f"generation token ranges {ranges!r} are outside vocab_size={vocab_size}")
     masked = logits.float().clone()
-    masked[..., : int(lo)] = float("-inf")
-    masked[..., hi:] = float("-inf")
+    allowed = torch.zeros(masked.shape[-1], dtype=torch.bool, device=masked.device)
+    for lo, hi in normalized:
+        allowed[int(lo) : int(hi)] = True
+    masked[..., ~allowed] = float("-inf")
     return torch.argmax(masked, dim=-1).to(dtype=torch.long)
 
 
@@ -388,7 +425,8 @@ def _decode_rank0(
     vocab_size: int,
     precision: str,
     text_range: tuple[int, int] | None = None,
-) -> tuple[str, int]:
+    token_ranges: tuple[tuple[int, int], ...] | None = None,
+) -> tuple[str, int, list[int]]:
     ids = [int(item) for item in tokenizer.encode(prompt)]
     if not ids:
         raise BatchPredictError("tokenizer produced no prompt tokens")
@@ -416,6 +454,7 @@ def _decode_rank0(
             vocab_size=vocab_size,
             precision=precision,
             text_range=text_range,
+            token_ranges=token_ranges,
         )
         token_id = int(next_token) % max(2, int(vocab_size))
         generated.append(token_id)
@@ -424,10 +463,13 @@ def _decode_rank0(
         _broadcast_stop(device, should_stop)
         if should_stop:
             break
-    text = tokenizer.decode(new_tokens).strip()
+    try:
+        text = tokenizer.decode(new_tokens).strip()
+    except Exception:
+        text = "__OMNICODER_MEDIA_TOKEN_DECODE__" if token_ranges else "__OMNICODER_EMPTY_DECODE__"
     if not text:
         text = "__OMNICODER_EMPTY_DECODE__"
-    return text, len(new_tokens)
+    return text, len(new_tokens), new_tokens
 
 
 def _decode_nonzero(
@@ -439,6 +481,7 @@ def _decode_nonzero(
     d_model: int,
     precision: str,
     text_range: tuple[int, int] | None = None,
+    token_ranges: tuple[tuple[int, int], ...] | None = None,
 ) -> None:
     for _ in range(int(max_new_tokens)):
         batch = _broadcast_ids(None, device)
@@ -451,6 +494,7 @@ def _decode_nonzero(
             vocab_size=int(getattr(shard, "cfg").vocab_size),
             precision=precision,
             text_range=text_range,
+            token_ranges=token_ranges,
         )
         if _broadcast_stop(device, None):
             break
@@ -470,11 +514,109 @@ def _generation_config(args: argparse.Namespace, checkpoint: Path) -> harness.Ge
     )
 
 
+def _safe_path_part(value: str, *, fallback: str) -> str:
+    cleaned = SAFE_PATH_PART_RE.sub("-", str(value or "").strip()).strip(".-")
+    return cleaned[:96] if cleaned else fallback
+
+
+def _diagnostic_media_artifact_dir(out_path: Path) -> Path:
+    return out_path.parent / f"{out_path.stem}.diagnostic_media_artifacts"
+
+
+def _write_diagnostic_native_media_artifact(
+    *,
+    task: harness.TaskRecord,
+    out_path: Path,
+    output_route: dict[str, Any],
+    token_ids: list[int],
+    generated_text: str,
+) -> dict[str, Any]:
+    modality = str(output_route.get("output_modality") or output_route.get("artifact_kind") or "").strip().lower()
+    if not modality:
+        modality = str(task.row.get("output_modality") or task.row.get("modality") or "media").strip().lower()
+    token_ids = [int(item) for item in token_ids]
+    if not token_ids:
+        raise BatchPredictError(
+            f"{task.source_path}:{task.source_line}: diagnostic media artifact requires at least one generated token"
+        )
+    artifact_dir = _diagnostic_media_artifact_dir(out_path)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    identity = harness.stable_hash(
+        {
+            "benchmark_id": task.benchmark_id,
+            "task_id": task.task_id,
+            "route": output_route,
+            "token_ids": token_ids,
+        }
+    )[:16]
+    name = "-".join(
+        [
+            _safe_path_part(task.benchmark_id, fallback="benchmark"),
+            _safe_path_part(task.task_id, fallback="task"),
+            _safe_path_part(modality, fallback="media"),
+            identity,
+        ]
+    )
+    artifact_path = artifact_dir / f"{name}.omni-media-tokens.json"
+    payload = {
+        "schema": DIAGNOSTIC_MEDIA_ARTIFACT_SCHEMA,
+        "backend": "diagnostic_native_media_token_artifact",
+        "scope": "diagnostic_proof_only",
+        "reportable_quality": "not_reportable_without_real_codec_backend",
+        "benchmark_id": task.benchmark_id,
+        "task_id": task.task_id,
+        "modality": modality,
+        "artifact_kind": str(output_route.get("artifact_kind") or modality),
+        "token_ids": token_ids,
+        "token_count": len(token_ids),
+        "generated_text": str(generated_text or ""),
+        "output_route": output_route,
+    }
+    artifact_path.write_text(
+        json.dumps(payload, ensure_ascii=True, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    byte_size = int(artifact_path.stat().st_size)
+    sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    manifest = {
+        "schema": DIAGNOSTIC_MEDIA_ARTIFACT_SCHEMA,
+        "backend": "diagnostic_native_media_token_artifact",
+        "scope": "diagnostic_proof_only",
+        "diagnostic": True,
+        "diagnostic_only": True,
+        "reportable_quality": "not_reportable_without_real_codec_backend",
+        "path": str(artifact_path),
+        "modality": modality,
+        "artifact_kind": str(output_route.get("artifact_kind") or modality),
+        "token_ids": token_ids,
+        "token_count": len(token_ids),
+        "sha256": sha256,
+        "byte_size": byte_size,
+        "output_route": output_route,
+    }
+    return manifest
+
+
+def _valid_artifact_metadata(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if not all(value.get(key) not in (None, "", [], {}) for key in ("path", "modality", "sha256", "byte_size", "output_route")):
+        return False
+    has_tokens = bool(value.get("token_ids")) or int(value.get("token_count") or 0) > 0
+    if not has_tokens:
+        return False
+    try:
+        return int(value.get("byte_size")) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _prediction_row(
     task: harness.TaskRecord,
     cfg: harness.GenerateConfig,
     output_field: str,
-    text: str,
+    text: Any,
     *,
     latency_seconds: float,
     generated_tokens: int,
@@ -522,6 +664,15 @@ def _prediction_row(
     if output_route is not None:
         row["generation_metadata"]["output_route"] = output_route
     row[output_field] = text
+    if output_field == "generated_artifact" and _valid_artifact_metadata(text):
+        row["prediction_scope"] = "diagnostic_native_media_artifact_proof"
+        row["diagnostic_prediction"] = True
+        row["reportable_prediction_candidate"] = False
+        row["official_score"] = False
+        row["reportable_score"] = False
+        row["generation_metadata"]["artifact_backend"] = "diagnostic_native_media_token_artifact"
+        row["generation_metadata"]["diagnostic_only"] = True
+        row["generation_metadata"]["reportable_quality"] = "not_reportable_without_real_codec_backend"
     rejected_outputs = harness.decode_sanity_rejections(row)
     if rejected_outputs:
         row["prediction_quality_status"] = "rejected_model_output"
@@ -706,25 +857,7 @@ def _run_rank0_batch(
             prompt = harness.prompt_from_task(task.row)
             prompt_tokens = len(tokenizer.encode(prompt))
             skipped_reason = ""
-            if route.requires_artifact_decoder and not bool(args.allow_media_route_text_proof):
-                _broadcast_task_header(device, True, 0, text_token_hi)
-                row = _skipped_prediction_row(
-                    task,
-                    cfg,
-                    output_field,
-                    reason="unsupported_media_artifact_backend",
-                    prompt_tokens=prompt_tokens,
-                    max_prompt_tokens=int(args.max_prompt_tokens),
-                    checkpoint=checkpoint,
-                )
-                row["prediction_quality_status"] = "rejected_model_output"
-                row["prediction_quality_reasons"] = ["unsupported_media_artifact_backend"]
-                row["generation_metadata"]["output_quality_status"] = "rejected_model_output"
-                row["generation_metadata"]["output_quality_reasons"] = ["unsupported_media_artifact_backend"]
-                row["generation_metadata"]["text_token_range"] = [int(text_range[0]), int(text_range[1])]
-                row["generation_metadata"]["output_route"] = route_info
-                skipped_reason = "unsupported_media_artifact_backend"
-            elif prompt_tokens > int(args.max_prompt_tokens):
+            if prompt_tokens > int(args.max_prompt_tokens):
                 _broadcast_task_header(device, True, 0, text_token_hi)
                 row = _skipped_prediction_row(
                     task,
@@ -738,8 +871,15 @@ def _run_rank0_batch(
                 skipped_reason = "prompt_over_max_prompt_tokens"
             else:
                 effective_output_field = "generated_artifact" if route.requires_artifact_decoder else output_field
-                _broadcast_task_header(device, True, int(args.max_output_tokens), text_token_hi)
-                text, generated_tokens = _decode_rank0(
+                media_token_ranges = route.numeric_ranges() if route.requires_artifact_decoder else None
+                _broadcast_task_header(
+                    device,
+                    True,
+                    int(args.max_output_tokens),
+                    text_token_hi,
+                    token_ranges=media_token_ranges,
+                )
+                text, generated_tokens, generated_token_ids = _decode_rank0(
                     shard,
                     prompt,
                     tokenizer=tokenizer,
@@ -752,8 +892,10 @@ def _run_rank0_batch(
                     vocab_size=vocab_size,
                     precision=str(args.precision),
                     text_range=text_range,
+                    token_ranges=media_token_ranges,
                 )
-                if route.requires_artifact_decoder and bool(args.allow_media_route_text_proof):
+                prediction_value: Any = text
+                if route.requires_artifact_decoder:
                     parsed_route, cleaned_text = route_for_model_output_text(
                         text=text,
                         row=task.row,
@@ -764,15 +906,25 @@ def _run_rank0_batch(
                     route_info = {
                         **route_info,
                         "diagnostic_only": True,
-                        "media_route_text_proof": True,
+                        "artifact_backend": "diagnostic_native_media_token_artifact",
+                        "proof_scope": "diagnostic_native_media_artifact_only",
+                        "reportable_quality": "not_reportable_without_real_codec_backend",
+                        "media_route_text_proof": bool(args.allow_media_route_text_proof),
                         "parsed_output_route": route_manifest(parsed_route),
                         "route_text_cleaned_chars": len(cleaned_text),
                     }
+                    prediction_value = _write_diagnostic_native_media_artifact(
+                        task=task,
+                        out_path=out_path,
+                        output_route=route_info,
+                        token_ids=generated_token_ids,
+                        generated_text=cleaned_text or text,
+                    )
                 row = _prediction_row(
                     task,
                     cfg,
                     effective_output_field,
-                    text,
+                    prediction_value,
                     latency_seconds=time.perf_counter() - task_started,
                     generated_tokens=generated_tokens,
                     checkpoint=checkpoint,
@@ -845,7 +997,7 @@ def _run_nonzero_batch(
     hidden_dtype_name = str(args.init_dtype if str(args.init_dtype or "auto").lower() != "auto" else args.precision)
     hidden_dtype = _dtype_from_name(hidden_dtype_name)
     while True:
-        active, max_new_tokens, text_token_hi = _broadcast_task_header(device, None)
+        active, max_new_tokens, text_token_hi, token_ranges = _broadcast_task_header(device, None)
         if not active:
             break
         text_range = (int(TEXT_RANGE[0]), int(text_token_hi or TEXT_RANGE[1]))
@@ -857,6 +1009,7 @@ def _run_nonzero_batch(
             d_model=d_model,
             precision=str(args.precision),
             text_range=text_range,
+            token_ranges=token_ranges,
         )
 
 
@@ -953,6 +1106,8 @@ def _parent_main(args: argparse.Namespace) -> int:
         cmd.append("--allow-one-token-canary")
     if bool(args.allow_rejected_model_output):
         cmd.append("--allow-rejected-model-output")
+    if bool(args.allow_media_route_text_proof):
+        cmd.append("--allow-media-route-text-proof")
     if bool(args.force):
         cmd.append("--force")
     proc = subprocess.run(cmd, cwd=str(repo_root()), check=False)

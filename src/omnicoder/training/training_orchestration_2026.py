@@ -285,6 +285,47 @@ def configured_reportable_roots(
     return unique, sources
 
 
+def configured_reportable_official_scorer_artifacts(
+    cfg: dict[str, Any],
+    benchmark_profile: str,
+    runtime_artifacts: Any = None,
+) -> tuple[list[str], list[str]]:
+    artifacts: list[str] = []
+    sources: list[str] = []
+
+    def add(values: Any, source: str) -> None:
+        before = len(artifacts)
+        artifacts.extend(flatten_path_values(values))
+        if len(artifacts) != before:
+            sources.append(source)
+
+    gates = cfg.get("benchmark_gates") if isinstance(cfg.get("benchmark_gates"), dict) else {}
+    add(runtime_artifacts, "runtime.reportable_official_scorer_artifacts")
+    add(cfg.get("reportable_official_scorer_artifacts"), "training_profile.reportable_official_scorer_artifacts")
+    add(cfg.get("official_scorer_artifacts"), "training_profile.official_scorer_artifacts")
+    add(gates.get("reportable_official_scorer_artifacts"), "training_profile.benchmark_gates.reportable_official_scorer_artifacts")
+    add(gates.get("official_scorer_artifacts"), "training_profile.benchmark_gates.official_scorer_artifacts")
+
+    benchmark_profile_path = resolve_path(benchmark_profile, repo_root())
+    if benchmark_profile_path.exists():
+        try:
+            benchmark_cfg = read_json(benchmark_profile_path)
+            add(benchmark_cfg.get("reportable_official_scorer_artifacts"), f"{benchmark_profile}.reportable_official_scorer_artifacts")
+            add(benchmark_cfg.get("official_scorer_artifacts"), f"{benchmark_profile}.official_scorer_artifacts")
+        except Exception as exc:
+            sources.append(f"{benchmark_profile}.read_error:{exc}")
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for item in artifacts:
+        key = str(item).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(key)
+    return unique, sources
+
+
 def reportable_prediction_value(row: dict[str, Any]) -> Any:
     for key in (
         "prediction",
@@ -611,16 +652,21 @@ def mark_integrity_verified_candidates(rows: Iterable[dict[str, Any]], preflight
             contamination = dict(contamination)
             contamination.update(
                 {
-                    "status": "clean",
+                    "status": status or "unknown",
                     "verified_by": "dataset_integrity_2026_candidate_preflight",
                     "preflight_manifest": manifest,
+                    "content_integrity_accepted": True,
                 }
             )
             item["contamination"] = contamination
-            item["contamination_status"] = "clean"
+            item["contamination_status"] = status or "unknown"
         source_date = str(item.get("source_date") or "").strip().lower()
         if not source_date or source_date == "unknown":
-            item["source_date"] = str(item.get("curated_at") or now_iso())[:10]
+            item["source_date"] = row.get("source_date") or "unknown"
+            item["source_date_verification"] = {
+                "status": "not_proven_by_content_integrity",
+                "preflight_manifest": manifest,
+            }
         verified.append(item)
     return verified
 
@@ -1237,6 +1283,12 @@ def make_training_record(
         "contamination": contamination,
         "source_payload": source_payload or {},
     }
+    if modality == "tool" and isinstance(source_payload, dict):
+        for key in ("tool_calls", "tool_results", "actions", "observations", "trajectory", "verifier", "reward"):
+            value = source_payload.get(key)
+            if value not in (None, "", [], {}):
+                row[key] = value
+                row["target_json"][key] = value
     return row
 
 
@@ -2215,6 +2267,12 @@ def build_posttraining_curation_exports(
         target = row_target(row)
         if not prompt or not target:
             continue
+        tool_payload: dict[str, Any] = {}
+        if row.get("modality") == "tool":
+            for key in ("tool_calls", "tool_results", "actions", "observations", "trajectory", "verifier", "reward"):
+                value = row.get(key)
+                if value not in (None, "", [], {}):
+                    tool_payload[key] = value
         base = {
             "source_record_id": row.get("record_id"),
             "source_id": row.get("source_id"),
@@ -2222,6 +2280,7 @@ def build_posttraining_curation_exports(
             "artifact_refs": row.get("artifact_refs") or [],
             "quality_score": row.get("quality_score", 1.0),
             "contamination_status": row.get("contamination_status", "unknown"),
+            **tool_payload,
         }
         sft_rows.append(
             {
@@ -4811,6 +4870,11 @@ def run_checkpoint_benchmark_gate(
             benchmark_profile,
             arg_value(args, "reportable_task_roots", None),
         )
+        official_scorer_artifacts, official_scorer_artifact_sources = configured_reportable_official_scorer_artifacts(
+            cfg,
+            benchmark_profile,
+            arg_value(args, "reportable_official_scorer_artifacts", None),
+        )
         reportable_paths = existing_paths(reportable_roots, repo_root())
         missing_policy = str(
             cfg.get("missing_reportable_policy")
@@ -4973,6 +5037,8 @@ def run_checkpoint_benchmark_gate(
             reportable_cmd.extend(["--tasks", str(path)])
         if int(prediction_seed.get("records") or 0) > 0:
             reportable_cmd.extend(["--predictions", str(prediction_seed["path"])])
+        for artifact in official_scorer_artifacts:
+            reportable_cmd.extend(["--official-scorer-artifacts", str(resolve_path(artifact, repo_root()))])
         reportable_code = run_command(reportable_cmd, out_dir / "logs" / f"benchmark_{safe_filename(phase)}_reportable.log")
         reportable_summary_cmd = [
             sys.executable,
@@ -5004,6 +5070,8 @@ def run_checkpoint_benchmark_gate(
             "task_roots": [str(path) for path in reportable_paths],
             "configured_task_roots": [str(path) for path in reportable_roots],
             "root_sources": reportable_sources,
+            "official_scorer_artifacts": [str(resolve_path(path, repo_root())) for path in official_scorer_artifacts],
+            "official_scorer_artifact_sources": official_scorer_artifact_sources,
             "predictions": prediction_seed,
             "status": reportable_summary.get("status"),
             "cycle": benchmark_cycle,
@@ -5938,6 +6006,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
     run.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
     run.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
+    run.add_argument("--reportable-official-scorer-artifact", "--official-scorer-artifacts", dest="reportable_official_scorer_artifacts", action="append", default=[])
     run.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     run.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     add_checkpoint_readiness_args(run)
@@ -6004,6 +6073,7 @@ def main(argv: list[str] | None = None) -> int:
     long.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
     long.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
     long.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
+    long.add_argument("--reportable-official-scorer-artifact", "--official-scorer-artifacts", dest="reportable_official_scorer_artifacts", action="append", default=[])
     long.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     long.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     add_checkpoint_readiness_args(long)
@@ -6076,6 +6146,7 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
     post.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
     post.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
+    post.add_argument("--reportable-official-scorer-artifact", "--official-scorer-artifacts", dest="reportable_official_scorer_artifacts", action="append", default=[])
     post.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     post.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     add_checkpoint_readiness_args(post)
@@ -6156,6 +6227,7 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--benchmark-prediction-timeout-seconds", dest="benchmark_prediction_timeout_seconds", type=int, default=0)
     full.add_argument("--benchmark-prediction-max-output-tokens", dest="benchmark_prediction_max_output_tokens", type=int, default=0)
     full.add_argument("--reportable-task-root", dest="reportable_task_roots", action="append", default=[])
+    full.add_argument("--reportable-official-scorer-artifact", "--official-scorer-artifacts", dest="reportable_official_scorer_artifacts", action="append", default=[])
     full.add_argument("--require-reportable-gate", dest="require_reportable_gate", action="store_true")
     full.add_argument("--rerun-heldout-evals", dest="rerun_heldout_evals", action="store_true")
     add_checkpoint_readiness_args(full)

@@ -41,6 +41,16 @@ def _authorized_task(**overrides: Any) -> dict[str, Any]:
     return row
 
 
+def _task_record(row: dict[str, Any]) -> harness.TaskRecord:
+    return harness.TaskRecord(
+        benchmark_id=str(row.get("benchmark_id") or "fixture_benchmark"),
+        task_id=str(row.get("task_id") or "fixture-task"),
+        row=row,
+        source_path=Path("fixture_tasks.jsonl"),
+        source_line=1,
+    )
+
+
 def _reportable_profile(path: Path) -> Path:
     profile = {
         "version": "2026-05-24.prediction-harness-test",
@@ -66,6 +76,39 @@ def test_prompt_from_task_preserves_explicit_prompt_suffix() -> None:
     row = {"prompt": "user: Render proof media.\nassistant: "}
 
     assert harness.prompt_from_task(row).endswith("assistant: ")
+
+
+@pytest.mark.parametrize(
+    ("field_key", "field_value"),
+    [
+        ("output_field", "generated_artifact"),
+        ("expected_output_field", "output_path"),
+    ],
+)
+def test_output_field_for_task_honors_explicit_valid_output_field(
+    field_key: str, field_value: str
+) -> None:
+    task = _task_record(
+        _authorized_task(
+            benchmark_id="reasoning_arc_agi3_2026",
+            task_format="interactive",
+            **{field_key: field_value},
+        )
+    )
+
+    assert harness.output_field_for_task(task) == field_value
+
+
+def test_output_field_for_task_ignores_invalid_explicit_output_field() -> None:
+    task = _task_record(
+        _authorized_task(
+            benchmark_id="swe_bench_verified_2026",
+            task_format="git_patch",
+            output_field="not_a_model_output_key",
+        )
+    )
+
+    assert harness.output_field_for_task(task) == "model_patch"
 
 
 def test_fixture_mode_writes_run_reportable_predictions_without_network(

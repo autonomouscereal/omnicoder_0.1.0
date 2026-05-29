@@ -213,6 +213,11 @@ REMOTE_REF_PREFIXES = ("http://", "https://", "s3://", "hf://")
 MEDIA_URL_RE = re.compile(
     r"(?i)^\s*(?:https?://|s3://|hf://)\S+\.(?:png|jpe?g|webp|gif|bmp|tiff|mp4|mov|mkv|webm|avi|wav|mp3|flac|ogg|m4a|aac|mid|midi)(?:[?#]\S*)?\s*$"
 )
+INLINE_MEDIA_REF_RE = re.compile(
+    r"(?i)(?:artifact(?:_path|_ref)?\s*[:=]\s*)?"
+    r"(?P<ref>(?:[A-Za-z]:[\\/][^\s\"'<>]+|/[^\s\"'<>]+|(?:https?|s3|hf)://[^\s\"'<>]+)"
+    r"\.(?:png|jpe?g|webp|gif|bmp|tiff|mp4|mov|mkv|webm|avi|wav|mp3|flac|ogg|m4a|aac|mid|midi)(?:[?#][^\s\"'<>]+)?)"
+)
 TEXT_TARGET_KEYS = ("content", "text", "target", "response", "completion", "answer", "expected_answer", "output")
 MEDIA_TOKEN_KEYS = (
     "artifact_tokens",
@@ -450,6 +455,54 @@ def _row_has_media_target_payload(row: dict[str, Any]) -> bool:
     return False
 
 
+def _row_media_ref_texts(row: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    for container in (row, row.get("input_json"), row.get("target_json"), row.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in MEDIA_REF_KEYS:
+            value = container.get(key)
+            values = value if isinstance(value, list) else [value]
+            for item in values:
+                if isinstance(item, dict):
+                    ref = (
+                        item.get("path")
+                        or item.get("source_path")
+                        or item.get("artifact_path")
+                        or item.get("file")
+                        or item.get("uri")
+                        or item.get("url")
+                    )
+                else:
+                    ref = item
+                ref_text = text_value(ref, limit=2048)
+                if ref_text:
+                    refs.append(ref_text)
+    return sorted(set(refs))[:64]
+
+
+def _inline_media_ref_texts(*texts: str) -> list[str]:
+    refs: list[str] = []
+    for text in texts:
+        for match in INLINE_MEDIA_REF_RE.finditer(text or ""):
+            refs.append(match.group("ref").rstrip(".,);]"))
+    return sorted(set(ref for ref in refs if ref))[:64]
+
+
+def _missing_media_artifact_issue(row: dict[str, Any], modality: str, refs: list[str]) -> str:
+    if (modality or "").strip().lower() not in MEDIA_MODALITIES:
+        return ""
+    bucket = str(row.get("training_bucket") or row.get("bucket") or "train").strip().lower()
+    policy = str(row.get("use_policy") or row.get("policy") or "train").strip().lower()
+    if bucket != "train" or policy not in {"train", "internal_train", "distill_train", "train_ok"}:
+        return ""
+    if _row_has_media_token_payload(row):
+        return ""
+    if refs:
+        return ""
+    return "missing_media_artifact_ref"
+
+
 def _row_has_structured_tool_payload(row: dict[str, Any]) -> bool:
     for container in (row, row.get("target_json"), row.get("output_json"), row.get("teacher_output")):
         if not isinstance(container, dict):
@@ -593,14 +646,37 @@ def _url_only_media_issue(row: dict[str, Any], *, target: str, modality: str, re
     return ""
 
 
-def _artifact_path(ref: str) -> Path | None:
+def _artifact_base_dirs(row: dict[str, Any], source_path: Path | str | None) -> list[Path]:
+    dirs: list[Path] = []
+    for value in (source_path, row.get("source_file"), row.get("source_path")):
+        if value in (None, ""):
+            continue
+        try:
+            path = Path(str(value))
+        except (TypeError, ValueError):
+            continue
+        parent = path if path.is_dir() else path.parent
+        if str(parent) and parent not in dirs:
+            dirs.append(parent)
+    return dirs
+
+
+def _artifact_path(ref: str, base_dirs: list[Path] | tuple[Path, ...] = ()) -> Path | None:
     if not ref or ref.startswith(REMOTE_REF_PREFIXES):
         return None
     path = Path(ref)
-    return path if path.is_absolute() else None
+    if path.is_absolute():
+        return path
+    for base in base_dirs:
+        candidate = base / path
+        if candidate.exists():
+            return candidate
+    if base_dirs:
+        return base_dirs[0] / path
+    return None
 
 
-def _media_artifact_ref_issues(refs: list[str] | None, modality: str) -> list[dict[str, Any]]:
+def _media_artifact_ref_issues(refs: list[str] | None, modality: str, base_dirs: list[Path] | tuple[Path, ...] = ()) -> list[dict[str, Any]]:
     if (modality or "").strip().lower() not in MEDIA_MODALITIES:
         return []
     issues: list[dict[str, Any]] = []
@@ -608,7 +684,7 @@ def _media_artifact_ref_issues(refs: list[str] | None, modality: str) -> list[di
         text = str(ref or "").strip()
         if not text or _is_remote_ref(text) or text.startswith("data:") or text == "embedded_media_bytes":
             continue
-        path = _artifact_path(text)
+        path = _artifact_path(text, base_dirs)
         if path is None:
             issues.append({"reason": "media_local_artifact_unresolved", "kind": "media_payload", "ref": text[:512]})
             continue
@@ -679,6 +755,10 @@ def audit_dataset_integrity(
     metadata = _metadata_blob(row, source_path)
     prompt = text_value(prompt, limit=131072)
     target = text_value(target, limit=131072)
+    artifact_base_dirs = _artifact_base_dirs(row, source_path)
+    all_refs = sorted(
+        set([str(ref) for ref in (refs or []) if str(ref).strip()] + _row_media_ref_texts(row) + _inline_media_ref_texts(prompt, target))
+    )[:64]
     combined = "\n".join(part for part in (metadata, prompt, target) if part)
     lowered = combined.lower()
     reasons: list[str] = []
@@ -747,11 +827,15 @@ def audit_dataset_integrity(
     for reason in _prompt_target_leakage_issues(prompt, target, row, resolved_modality):
         reasons.append(reason)
         issues.append({"reason": reason, "kind": "target_leakage"})
-    url_only = _url_only_media_issue(row, target=target, modality=resolved_modality, refs=refs)
+    missing_media = _missing_media_artifact_issue(row, resolved_modality, all_refs)
+    if missing_media:
+        reasons.append(missing_media)
+        issues.append({"reason": missing_media, "kind": "media_payload"})
+    url_only = _url_only_media_issue(row, target=target, modality=resolved_modality, refs=all_refs)
     if url_only:
         reasons.append(url_only)
         issues.append({"reason": url_only, "kind": "media_payload"})
-    for issue in _media_artifact_ref_issues(refs, resolved_modality):
+    for issue in _media_artifact_ref_issues(all_refs, resolved_modality, artifact_base_dirs):
         reasons.append(str(issue["reason"]))
         issues.append(issue)
     for reason in _tool_schema_issues(row, resolved_modality):
@@ -760,8 +844,8 @@ def audit_dataset_integrity(
 
     artifact_reports: list[dict[str, Any]] = []
     if scan_artifacts:
-        for ref in (refs or [])[:16]:
-            path = _artifact_path(str(ref))
+        for ref in all_refs[:16]:
+            path = _artifact_path(str(ref), artifact_base_dirs)
             if path is None:
                 continue
             report = scan_artifact_bytes(path, max_bytes=max_artifact_bytes)

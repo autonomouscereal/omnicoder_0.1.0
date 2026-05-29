@@ -94,13 +94,13 @@ Core pieces:
 
 ## Presets
 
-| Preset | Purpose | Layers | Width | Pattern | Context |
-|---|---:|---:|---:|---|---:|
-| `omnicoder2026_native1m_probe` | construction/server probe | 4 | 512 | KDA/KDA/CSA/HCA | 1,048,576 |
-| `omnicoder2026_full_ledger_probe` | AI-server full-token-ledger training verifier | 4 | 512 | KDA/KDA/CSA/HCA | 1,048,576 |
-| `omnicoder2026_3b_pilot` | data and QAT pilot | 32 | 2560 | 8-layer cycle | 1,048,576 |
-| `omnicoder2026_20b_1m` | primary 24GB Q4 native-1M target | 64 | 4096 | 8-layer cycle | 1,048,576 |
-| `omnicoder2026_16b_1m` | fallback/intermediate target | 48 | 4096 | 8-layer cycle | 1,048,576 |
+| Preset | Purpose | Layers | Width | MLP hidden | Pattern | Context |
+|---|---:|---:|---:|---:|---|---:|
+| `omnicoder2026_native1m_probe` | construction/server probe | 4 | 512 | 1408 | KDA/KDA/CSA/HCA | 1,048,576 |
+| `omnicoder2026_full_ledger_probe` | AI-server full-token-ledger training verifier | 4 | 512 | 1408 | KDA/KDA/CSA/HCA | 1,048,576 |
+| `omnicoder2026_3b_pilot` | data and QAT pilot | 32 | 2560 | 6912 | 8-layer cycle | 1,048,576 |
+| `omnicoder2026_20b_1m` | primary 24GB Q4 native-1M target | 64 | 4096 | 15360 | 8-layer cycle | 1,048,576 |
+| `omnicoder2026_16b_1m` | fallback/intermediate profile, not the contract target | 48 | 4096 | 15360 | 8-layer cycle | 1,048,576 |
 
 The active contract target is 20B-ish, not a fixed vanity size. The current
 profile keeps `omnicoder2026_20b_1m` at `mlp_dim=15360`, about 19.57B trunk

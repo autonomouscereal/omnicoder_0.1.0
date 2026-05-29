@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -116,3 +117,31 @@ def test_dense_profile_matches_implemented_20b_contract() -> None:
     assert round(float(model["estimated_params_b"]), 2) == round(budget.params_b, 2)
     assert round(float(model["q4_weight_gib_estimate"]), 2) == round(budget.weight_gib_q4, 2)
     assert round(float(model["native_1m_total_gib_estimate"]), 2) == round(budget.total_native_estimate_gib, 2)
+
+
+def test_legacy_16b_profile_keeps_15360_mlp_headroom_without_becoming_target() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dense_omni_24gb.json").read_text(encoding="utf-8"))
+    legacy_profile = profile["model"]["legacy_16b"]
+    legacy_preset = get_omnicoder2026_preset("omnicoder2026_16b_1m")
+    source_tree = ast.parse((root / "src" / "omnicoder" / "modeling" / "omnicoder2026.py").read_text(encoding="utf-8"))
+    config_class = next(node for node in source_tree.body if isinstance(node, ast.ClassDef) and node.name == "OmniCoder2026Config")
+    default_mlp = next(
+        node.value
+        for node in config_class.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "mlp_dim"
+    )
+    target_16b = next(node for node in config_class.body if isinstance(node, ast.FunctionDef) and node.name == "target_16b")
+    target_16b_mlp = next(
+        keyword.value
+        for node in ast.walk(target_16b)
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+        if keyword.arg == "mlp_dim"
+    )
+
+    assert legacy_profile["mlp_dim"] == legacy_preset.mlp_dim == 15360
+    assert ast.literal_eval(default_mlp) == 15360
+    assert ast.literal_eval(target_16b_mlp) == 15360
+    assert legacy_preset.name != "omnicoder2026_20b_1m"
+    assert "no longer the main contract target" in legacy_profile["risk"]

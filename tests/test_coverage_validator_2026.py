@@ -61,7 +61,16 @@ def _write_minimal_coverage_base(root: Path, run_id: str) -> None:
     _write_jsonl(curated / "raw" / "normalized_traces.jsonl", [{"text": "trace"}])
 
     external = root / "weights" / "external_datasets_2026" / "runs" / run_id
-    _write_json(external / "manifests" / "external_dataset_manifest.json", {"status": "passed", "records": {"train": 3}})
+    _write_json(
+        external / "manifests" / "external_dataset_manifest.json",
+        {
+            "status": "passed",
+            "records": {"train": 3},
+            "integrity_rewrite": {"status": "rewritten_clean"},
+            "promotion_allowed": True,
+            "promotion_index": {"status": "passed", "rows": 3},
+        },
+    )
 
     agentic = root / "weights" / "agentic_tool_training_2026" / "runs" / run_id
     counts = {name: 2 for name in coverage.REQUIRED_AGENTIC_EXPORTS}
@@ -99,7 +108,16 @@ def test_coverage_validator_passes_full_run_artifacts(tmp_path: Path) -> None:
     _write_jsonl(local / "raw" / "normalized_traces.jsonl", [{"text": "local trace"}])
 
     external = root / "weights" / "external_datasets_2026" / "runs" / run_id
-    _write_json(external / "manifests" / "external_dataset_manifest.json", {"status": "passed", "records": {"train": 9}})
+    _write_json(
+        external / "manifests" / "external_dataset_manifest.json",
+        {
+            "status": "passed",
+            "records": {"train": 9},
+            "integrity_rewrite": {"status": "rewritten_clean"},
+            "promotion_allowed": True,
+            "promotion_index": {"status": "passed", "rows": 9},
+        },
+    )
 
     agentic = root / "weights" / "agentic_tool_training_2026" / "runs" / run_id
     counts = {name: 3 for name in coverage.REQUIRED_AGENTIC_EXPORTS}
@@ -128,6 +146,48 @@ def test_coverage_validator_passes_full_run_artifacts(tmp_path: Path) -> None:
     assert report["counts"]["media_teacher_rollouts"]["comfyui_modality_teacher_rollouts.jsonl"] == 1
 
 
+def test_coverage_validator_rejects_unpromoted_external_train_manifest(tmp_path: Path) -> None:
+    run_id = "run_unpromoted_external"
+    _write_minimal_coverage_base(tmp_path, run_id)
+    external = tmp_path / "weights" / "external_datasets_2026" / "runs" / run_id
+    _write_json(
+        external / "manifests" / "external_dataset_manifest.json",
+        {
+            "status": "passed",
+            "records": {"train": 9},
+            "promotion_allowed": False,
+        },
+    )
+
+    report = coverage.validate_coverage(_args(tmp_path, run_id, require_media_teacher_rollouts=False))
+
+    labels = {item["label"] for item in report["missing"]}
+    assert "external_train_promotion_allowed" in labels
+    assert "external_train_integrity_rewrite" in labels
+    assert "external_train_promotion_index" in labels
+
+
+def test_coverage_validator_rejects_external_train_manifest_missing_integrity_or_index_evidence(tmp_path: Path) -> None:
+    run_id = "run_external_missing_evidence"
+    _write_minimal_coverage_base(tmp_path, run_id)
+    external = tmp_path / "weights" / "external_datasets_2026" / "runs" / run_id
+    _write_json(
+        external / "manifests" / "external_dataset_manifest.json",
+        {
+            "status": "passed",
+            "records": {"train": 7},
+            "promotion_allowed": True,
+        },
+    )
+
+    report = coverage.validate_coverage(_args(tmp_path, run_id, require_media_teacher_rollouts=False))
+
+    labels = {item["label"] for item in report["missing"]}
+    assert "external_train_promotion_allowed" not in labels
+    assert "external_train_integrity_rewrite" in labels
+    assert "external_train_promotion_index" in labels
+
+
 def test_coverage_validator_accepts_real_pipeline_manifest_layout(tmp_path: Path) -> None:
     run_id = "run_streaming"
     root = tmp_path
@@ -142,7 +202,16 @@ def test_coverage_validator_accepts_real_pipeline_manifest_layout(tmp_path: Path
     )
 
     external = root / "weights" / "external_datasets_2026" / "runs" / "external_run"
-    _write_json(external / "external_dataset_manifest.stdout.json", {"records": {"train": 99}, "status": "passed"})
+    _write_json(
+        external / "external_dataset_manifest.stdout.json",
+        {
+            "records": {"train": 99},
+            "status": "passed",
+            "integrity_rewrite": {"status": "rewritten_clean"},
+            "promotion_allowed": True,
+            "promotion_index": {"status": "passed", "rows": 99},
+        },
+    )
 
     teacher = root / "weights" / "data_factory" / "runs" / "teacher_jobs" / "teacher_run"
     _write_jsonl(teacher / "all_jobs.jsonl", [{"job": 1}])

@@ -36,7 +36,14 @@ def _profile(root: Path) -> dict:
         [
             {
                 "event_type": "tool_call",
+                "tool_calls": [{"tool": "status", "arguments": {"scope": "full"}}],
                 "tool_input": {"cmd": "status --full"},
+                "tool_results": [
+                    {
+                        "tool": "status",
+                        "content": "The status tool returned the complete run state, active modality counts, and verification evidence.",
+                    }
+                ],
                 "tool_output": {
                     "ok": True,
                     "content": "The orchestrator collected a long real trace span with tool arguments, observations, state deltas, retry decisions, and final verification evidence.",
@@ -351,6 +358,7 @@ def _runtime_args(**overrides):
         "benchmark_prediction_checkpoint_runner": "",
         "benchmark_prediction_timeout_seconds": 0,
         "benchmark_prediction_max_output_tokens": 0,
+        "reportable_official_scorer_artifacts": [],
         "require_reportable_gate": False,
         "checkpoint_readiness_report": "",
         "checkpoint_topk_probe": "",
@@ -860,6 +868,193 @@ def test_pipeline_checkpoint_benchmark_gate_scores_generated_predictions(tmp_pat
     assert result["reportable_gate"]["predictions"]["source"] == "model_generated_predictions"
     assert result["reportable_gate"]["reportable"] == 1
     assert any("run-reportable" in cmd for cmd in commands)
+
+
+def test_pipeline_checkpoint_benchmark_gate_forwards_official_scorer_artifacts(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    eval_path = tmp_path / "eval.jsonl"
+    tasks_path = tmp_path / "reportable_tasks.jsonl"
+    predictions_path = tmp_path / "predictions.jsonl"
+    artifact_path = tmp_path / "official_score.json"
+    _write_jsonl(eval_path, [{"text": "hello world", "modality": "text"}])
+    _write_jsonl(
+        tasks_path,
+        [
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "arc-1",
+                "reportable": True,
+                "official": True,
+                "source": "authorized_fixture",
+                "snapshot_id": "arcagi3-2026-fixture",
+                "snapshot_hash": "abc123",
+                "authorization": "unit-test-authorized",
+                "official_scorer_ref": "arc-agi3-official-scorer-2026",
+                "gold": "A",
+            }
+        ],
+    )
+    _write_jsonl(predictions_path, [{"benchmark_id": "reasoning_arc_agi3_2026", "task_id": "arc-1", "prediction": "A"}])
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "official_scorer_ref": "arc-agi3-official-scorer-2026",
+                "score": 1.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    profile = _profile(tmp_path)
+    profile["reportable_task_roots"] = [str(tasks_path)]
+    profile["reportable_official_scorer_artifacts"] = [str(artifact_path)]
+    profile["benchmark_gates"] = {"benchmark_cycle": "release", "benchmark_min_tasks": 1}
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+    }
+    manifest = {"eval_all_jsonl": str(eval_path)}
+    commands: list[list[str]] = []
+
+    def fake_run_command(cmd: list[str], log_path: Path, timeout_seconds: int = 0) -> int:
+        commands.append(cmd)
+        if "omnicoder.eval.pipeline_sample_loss_2026" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.71, "tokens": 16, "samples": 1, "records": 1}}), encoding="utf-8")
+        elif "run-reportable" in cmd:
+            assert cmd[cmd.index("--official-scorer-artifacts") + 1] == str(artifact_path)
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "gate_policy": "fail_closed",
+                        "gate_decision": "passed",
+                        "reportable": 1,
+                        "official": 1,
+                        "failed": 0,
+                        "skipped": 0,
+                        "local_only": 0,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        elif "summarize" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps({"reportable_results": 1}), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    result = orch.run_checkpoint_benchmark_gate(
+        profile,
+        manifest,
+        tmp_path,
+        checkpoint,
+        "pipeline",
+        _runtime_args(benchmark_cycle="release", benchmark_predictions=str(predictions_path)),
+    )
+
+    reportable_commands = [cmd for cmd in commands if "run-reportable" in cmd]
+    assert result["status"] == "passed"
+    assert result["reportable_gate"]["official_scorer_artifacts"] == [str(artifact_path)]
+    assert reportable_commands
+    assert "--official-scorer-artifacts" in reportable_commands[0]
+
+
+def test_required_reportable_gate_fails_closed_without_official_scorer_artifacts(tmp_path, monkeypatch) -> None:
+    checkpoint = tmp_path / "pipeline_ckpt"
+    _write_complete_sharded_checkpoint(checkpoint)
+    eval_path = tmp_path / "eval.jsonl"
+    tasks_path = tmp_path / "reportable_tasks.jsonl"
+    predictions_path = tmp_path / "predictions.jsonl"
+    _write_jsonl(eval_path, [{"text": "hello world", "modality": "text"}])
+    _write_jsonl(
+        tasks_path,
+        [
+            {
+                "benchmark_id": "reasoning_arc_agi3_2026",
+                "task_id": "arc-1",
+                "reportable": True,
+                "official": True,
+                "source": "authorized_fixture",
+                "snapshot_id": "arcagi3-2026-fixture",
+                "snapshot_hash": "abc123",
+                "authorization": "unit-test-authorized",
+                "official_scorer_ref": "arc-agi3-official-scorer-2026",
+                "gold": "A",
+            }
+        ],
+    )
+    _write_jsonl(predictions_path, [{"benchmark_id": "reasoning_arc_agi3_2026", "task_id": "arc-1", "prediction": "A"}])
+    profile = _profile(tmp_path)
+    profile["reportable_task_roots"] = [str(tasks_path)]
+    profile["benchmark_gates"] = {"benchmark_cycle": "release", "benchmark_min_tasks": 1}
+    profile["training_plan"]["distributed_training"] = {
+        "mode": "pipeline_stage",
+        "nproc_per_node": 3,
+        "rank_device_map": ["0", "1", "2"],
+        "placement_layer_counts": [16, 16, 32],
+    }
+    manifest = {"eval_all_jsonl": str(eval_path)}
+
+    def fake_run_command(cmd: list[str], log_path: Path, timeout_seconds: int = 0) -> int:
+        if "omnicoder.eval.pipeline_sample_loss_2026" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps({"overall": {"avg_loss": 1.0, "perplexity": 2.71, "tokens": 16, "samples": 1, "records": 1}}), encoding="utf-8")
+        elif "run-reportable" in cmd:
+            assert "--official-scorer-artifacts" not in cmd
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                json.dumps(
+                    {
+                        "status": "needs_data",
+                        "gate_policy": "fail_closed",
+                        "gate_decision": "blocked_needs_data",
+                        "reportable": 0,
+                        "official": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                        "local_only": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        elif "summarize" in cmd:
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps({"reportable_results": 0, "contract_only_results": 1}), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(orch, "run_command", fake_run_command)
+    result = orch.run_checkpoint_benchmark_gate(
+        profile,
+        manifest,
+        tmp_path,
+        checkpoint,
+        "pipeline",
+        _runtime_args(
+            benchmark_cycle="release",
+            benchmark_predictions=str(predictions_path),
+            require_reportable_gate=True,
+        ),
+    )
+
+    assert result["status"] == "failed"
+    assert result["reportable_gate"]["status"] == "needs_data"
+    assert result["reportable_gate"]["gate_decision"] == "blocked_needs_data"
+    assert result["reportable_gate"]["reportable"] == 0
+    assert result["reportable_gate"]["local_only"] == 1
+    assert result["reportable_gate"]["official_scorer_artifacts"] == []
 
 
 def test_pipeline_checkpoint_benchmark_gate_generates_predictions_when_backend_configured(tmp_path, monkeypatch) -> None:
@@ -1440,14 +1635,16 @@ def test_run_posttraining_cli_can_start_at_safety_negative_replay(tmp_path, monk
     _write_jsonl(
         train_dir / "tool_sft.jsonl",
         [
-            {
-                "prompt": "sft",
-                "response": "Complete the supervised tool replay successfully.",
-                "reward": 1.0,
-                "modality": "tool",
-            }
-        ],
-    )
+                {
+                    "prompt": "sft",
+                    "response": "Complete the supervised tool replay successfully.",
+                    "reward": 1.0,
+                    "modality": "tool",
+                    "tool_calls": [{"tool": "status", "arguments": {"scope": "posttrain"}}],
+                    "tool_results": [{"tool": "status", "content": "posttraining replay ready"}],
+                }
+            ],
+        )
     _write_jsonl(train_dir / "tool_safety_negatives.jsonl", [{"prompt": "capability negative contrast row", "reward": 1.0}])
     profile["reinforcement_learning"] = {
         "enabled": True,

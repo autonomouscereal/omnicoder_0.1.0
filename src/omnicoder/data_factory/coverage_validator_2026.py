@@ -104,6 +104,50 @@ def agentic_export_count(counts: dict[str, Any], name: str) -> int:
     return max(int(counts.get(alias) or 0) for alias in aliases)
 
 
+def validate_external_train_promotion_evidence(
+    manifest: Path,
+    data: dict[str, Any],
+    train_rows: int,
+    missing: list[dict[str, Any]],
+) -> dict[str, Any]:
+    integrity_rewrite = data.get("integrity_rewrite") if isinstance(data.get("integrity_rewrite"), dict) else {}
+    promotion_index = data.get("promotion_index") if isinstance(data.get("promotion_index"), dict) else {}
+    promotion_allowed = data.get("promotion_allowed") is True
+
+    if train_rows > 0:
+        if not promotion_allowed:
+            add_missing(
+                missing,
+                "external_train_promotion_allowed",
+                manifest,
+                "promotion_allowed_false_or_missing_for_train_rows",
+                train_rows,
+            )
+        if integrity_rewrite.get("status") != "rewritten_clean":
+            add_missing(
+                missing,
+                "external_train_integrity_rewrite",
+                manifest,
+                f"missing_or_unpassed_integrity_rewrite_{integrity_rewrite.get('status')}",
+                train_rows,
+            )
+        if promotion_index.get("status") != "passed":
+            add_missing(
+                missing,
+                "external_train_promotion_index",
+                manifest,
+                f"missing_or_unpassed_promotion_index_{promotion_index.get('status')}",
+                train_rows,
+            )
+
+    return {
+        "promotion_allowed": promotion_allowed,
+        "promotion_status": data.get("promotion_status"),
+        "integrity_rewrite_status": integrity_rewrite.get("status"),
+        "promotion_index_status": promotion_index.get("status"),
+    }
+
+
 def coerce_path_values(value: Any) -> list[Path]:
     values: list[Any]
     if value in (None, "", [], ()):
@@ -414,6 +458,12 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
         add_missing(missing, "external_train_records", external_manifest, "missing_or_zero_train_records", external_train_rows)
     if external_manifest_data and external_manifest_data.get("status") not in {None, "passed", "ok"}:
         warnings.append(f"external manifest status is {external_manifest_data.get('status')}")
+    external_train_promotion = validate_external_train_promotion_evidence(
+        external_manifest,
+        external_manifest_data,
+        external_train_rows,
+        missing,
+    )
 
     agentic_manifest, agentic_manifest_data = read_first_json(
         [
@@ -546,6 +596,7 @@ def validate_coverage(args: argparse.Namespace) -> dict[str, Any]:
             "curated_normalized_traces": normalized_trace_rows,
             "strict_local_normalized_traces": local_trace_rows,
             "external_train": external_train_rows,
+            "external_train_promotion": external_train_promotion,
             "agentic_exports": agentic_counts,
             "agentic_after_teacher_exports": after_teacher_counts,
             "teacher_jobs_all": all_job_rows,

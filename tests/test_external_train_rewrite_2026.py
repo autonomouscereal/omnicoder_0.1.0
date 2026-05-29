@@ -62,6 +62,8 @@ def test_external_train_rewrite_replaces_stale_train_files_and_preserves_nontrai
 
     assert report["accepted_rows"] == 2
     assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["fineweb-1", "opencoder-1"]
+    assert {row["use_policy"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")} == {"train"}
+    assert {row["split"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")} == {"train"}
     assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train.jsonl")] == ["fineweb-1", "opencoder-1"]
     assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "educational_text.jsonl")] == ["fineweb-1"]
     assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "code_generation.jsonl")] == ["opencoder-1"]
@@ -75,6 +77,10 @@ def test_external_train_rewrite_replaces_stale_train_files_and_preserves_nontrai
     assert updated["records"]["total_training_rows"] == 8
     assert updated["clean_train_families"] == {"code_generation": 1, "educational_text": 1}
     assert updated["integrity_rewrite"]["status"] == "rewritten_clean"
+    assert updated["integrity_rewrite"]["accepted_rows"] == 2
+    assert updated["integrity_rewrite"]["skipped_rows"] == 0
+    assert updated["promotion_allowed"] is True
+    assert updated["promotion_status"] == "integrity_rewritten_pending_index"
 
 
 def test_external_train_rewrite_skips_nontrain_accepted_rows(tmp_path: Path) -> None:
@@ -199,8 +205,86 @@ def test_external_train_rewrite_rechecks_stale_accepted_rows_with_current_integr
 
     assert report["accepted_rows"] == 1
     assert report["skipped_rows"] == 1
-    assert report["skipped_rows_by_reason"] == {"dataset_integrity_current:target_len_le_1": 1}
+    assert list(report["skipped_rows_by_reason"].values()) == [1]
+    assert next(iter(report["skipped_rows_by_reason"])).startswith("dataset_integrity_current:")
+    assert "target_len_le_1" in next(iter(report["skipped_rows_by_reason"]))
     assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["clean-substantive-1"]
+
+
+def test_external_train_rewrite_skips_one_token_answer_only_math_rows(tmp_path: Path) -> None:
+    jsonl_dir = tmp_path / "jsonl"
+    accepted = tmp_path / "accepted.jsonl"
+    _write_jsonl(
+        accepted,
+        [
+            {
+                "record_id": "answer-only-1",
+                "dataset_family": "math_reasoning",
+                "modality": "math",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "contamination_status": "clean",
+                "quality_score": 0.75,
+                "messages": [
+                    {"role": "user", "content": "Choose the correct option for the geometry problem."},
+                    {"role": "assistant", "content": "$\\fbox{A}$"},
+                ],
+                "dataset_integrity_2026": {"accepted": True, "reasons": []},
+            },
+            {
+                "record_id": "reasoned-1",
+                "dataset_family": "math_reasoning",
+                "modality": "math",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "contamination_status": "clean",
+                "quality_score": 0.85,
+                "messages": [
+                    {"role": "user", "content": "Solve and explain."},
+                    {
+                        "role": "assistant",
+                        "content": "Compute the expression step by step, verify the arithmetic, and report the final value.",
+                    },
+                ],
+                "dataset_integrity_2026": {"accepted": True, "reasons": []},
+            },
+        ],
+    )
+
+    report = rewrite.rewrite_external_train_bucket(accepted, jsonl_dir, tmp_path / "rewrite.json")
+
+    assert report["accepted_rows"] == 1
+    assert report["skipped_rows_by_reason"] == {"one_token_train_target": 1}
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["reasoned-1"]
+
+
+def test_external_train_rewrite_rejects_external_media_train_rows_without_artifacts(tmp_path: Path) -> None:
+    jsonl_dir = tmp_path / "jsonl"
+    accepted = tmp_path / "accepted.jsonl"
+    _write_jsonl(
+        accepted,
+        [
+            {
+                "record_id": "image-no-artifact-1",
+                "dataset_family": "image_generation_editing",
+                "modality": "image",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "contamination_status": "clean",
+                "quality_score": 0.91,
+                "prompt": "Generate a clean product-style image for the supplied brief.",
+                "target": "A bright studio image with clear lighting, centered composition, and polished visual detail.",
+                "dataset_integrity_2026": {"accepted": True, "reasons": []},
+            },
+        ],
+    )
+
+    report = rewrite.rewrite_external_train_bucket(accepted, jsonl_dir, tmp_path / "rewrite.json")
+
+    assert report["accepted_rows"] == 0
+    assert report["skipped_rows"] == 1
+    assert report["skipped_rows_by_reason"] == {"dataset_integrity_current:missing_media_artifact_ref": 1}
+    assert not (jsonl_dir / "train_all_external.jsonl").exists()
 
 
 def test_external_train_rewrite_dedupes_duplicate_ids(tmp_path: Path) -> None:
@@ -219,3 +303,41 @@ def test_external_train_rewrite_dedupes_duplicate_ids(tmp_path: Path) -> None:
 
     assert report["accepted_rows"] == 2
     assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["dup-1", "uniq-1"]
+
+
+def test_external_train_rewrite_skips_near_duplicate_payloads(tmp_path: Path) -> None:
+    jsonl_dir = tmp_path / "jsonl"
+    accepted = tmp_path / "accepted.jsonl"
+    base = (
+        "The training example explains a robust parser that validates inputs, preserves provenance fields, "
+        "records every rejection reason, and emits deterministic JSONL output for audit review."
+    )
+    _write_jsonl(
+        accepted,
+        [
+            {
+                "record_id": "near-1",
+                "source_id": "src-a",
+                "dataset_family": "text_pretraining",
+                "modality": "text",
+                "training_bucket": "train",
+                "quality_score": 0.92,
+                "target": base,
+            },
+            {
+                "record_id": "near-2",
+                "source_id": "src-b",
+                "dataset_family": "text_pretraining",
+                "modality": "text",
+                "training_bucket": "train",
+                "quality_score": 0.93,
+                "target": base,
+            },
+        ],
+    )
+
+    report = rewrite.rewrite_external_train_bucket(accepted, jsonl_dir, tmp_path / "rewrite.json")
+
+    assert report["accepted_rows"] == 1
+    assert report["skipped_rows_by_reason"] == {"near_duplicate_payload": 1}
+    assert [row["record_id"] for row in _read_jsonl(jsonl_dir / "train_all_external.jsonl")] == ["near-1"]

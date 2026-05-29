@@ -616,11 +616,16 @@
             "metadata"
           ]
         },
+        "defer_live_download": true,
+        "defer_reason": "HF/Xet raw media zip/json source can loop on partial-content downloads; materialize from a local mirror or explicit override after size/provenance review.",
         "hf_id": "ServiceNow/VideoCUA",
         "license": "MIT",
         "license_tier": "permissive",
+        "hf_step_timeout_seconds": 60,
+        "materialization_note": "Train policy remains registry-reviewed, but live HF/Xet raw media download is deferred so dataset sidecars do not hang on partial-content zip/json sources. Local JSONL mirrors still materialize normally.",
         "max_records": 2048,
         "name": "VideoCUA",
+        "source_review_status": "deferred_live_download_hf_xet_partial_content_2026_05_28",
         "splits": [
           "train"
         ],
@@ -1324,11 +1329,15 @@
             "reward"
           ]
         },
+        "defer_live_download": true,
+        "defer_reason": "HF/Xet parquet shard source repeatedly returned partial-content loops in live sidecar; use local mirror or explicit override after license/provenance review.",
         "hf_id": "swesynth/SWE-Synth",
         "license": "license pending source review",
         "license_tier": "unknown",
+        "hf_step_timeout_seconds": 60,
         "max_records": 2048,
         "name": "SWE-Synth",
+        "source_review_status": "deferred_live_download_hf_xet_partial_content_2026_05_28",
         "splits": [
           "train"
         ],

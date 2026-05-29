@@ -450,6 +450,9 @@ def parse_model_payload(value: Any, fallback_field: str) -> dict[str, Any]:
 
 def output_field_for_task(task: TaskRecord) -> str:
     row = task.row
+    explicit = str(row.get("output_field") or row.get("expected_output_field") or "").strip()
+    if explicit in MODEL_OUTPUT_KEYS:
+        return explicit
     text = " ".join(
         str(row.get(key) or "")
         for key in ("benchmark_id", "adapter_id", "adapter_kind", "axis", "task_format", "source")

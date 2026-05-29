@@ -47,7 +47,7 @@ class OmniCoder2026Config:
     n_heads: int = 32
     head_dim: int = 128
     num_key_value_heads: int = 1
-    mlp_dim: int = 16_384
+    mlp_dim: int = 15_360
     max_seq_len: int = 1_048_576
 
     # DeepSeek V4 verified shape: short local window + compressed sparse slots.
@@ -206,7 +206,7 @@ class OmniCoder2026Config:
             n_heads=32,
             head_dim=128,
             num_key_value_heads=1,
-            mlp_dim=16_384,
+            mlp_dim=15_360,
             local_window=128,
             csa_block_size=4096,
             csa_top_k_blocks=512,
