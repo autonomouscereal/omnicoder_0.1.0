@@ -50,7 +50,37 @@ def test_sft_export_rejects_nonclean_rows_and_drops_tainted_trace(tmp_path: Path
             {
                 "lineage": {"trace_id": "clean"},
                 "input_json": {"messages": [{"role": "user", "content": "Summarize."}]},
-                "target_json": {"content": "Only clean rows export."},
+                "target_json": {"content": "I will inspect the available evidence before summarizing."},
+                "quality": {"score": 0.95},
+                "contamination": {"status": "clean"},
+            },
+            {
+                "lineage": {"trace_id": "clean", "step_index": 2},
+                "input_json": {
+                    "messages": [{"role": "assistant", "content": "I will inspect the clean trace metadata."}],
+                    "tool_name": "shell_command",
+                    "tool_input": {"command": "rg clean curated.jsonl"},
+                },
+                "target_json": {
+                    "content": "The search completed.",
+                    "tool_output": {"exit_code": 0, "stdout": "clean trace present"},
+                },
+                "tool_calls": [{"tool": "shell_command", "arguments": {"command": "rg clean curated.jsonl"}}],
+                "tool_results": [{"exit_code": 0, "stdout": "clean trace present"}],
+                "quality": {"score": 0.95},
+                "contamination": {"status": "clean"},
+            },
+            {
+                "lineage": {"trace_id": "clean", "step_index": 3},
+                "input_json": {
+                    "messages": [
+                        {
+                            "role": "assistant",
+                            "content": "Only clean rows export after the trace has a grounded tool call and observation. This gives the SFT packer enough evidence to train an agent loop instead of a tiny ungrounded answer.",
+                        }
+                    ]
+                },
+                "target_json": {"content": "Only clean rows export, and the trace includes a grounded inspect-observe-summary pattern."},
                 "quality": {"score": 0.95},
                 "contamination": {"status": "clean"},
             },

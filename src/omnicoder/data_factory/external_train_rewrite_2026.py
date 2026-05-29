@@ -17,7 +17,7 @@ NEAR_DUP_THRESHOLD = 0.92
 NEAR_DUP_NGRAM = 5
 NEAR_DUP_MAX_CANDIDATES = 24
 TRAINABLE_POLICIES = {"train", "internal_train", "distill_train", "train_ok"}
-CLEAN_CONTAMINATION_STATUSES = {"", "clean", "clear", "passed", "ok", "none", "unknown"}
+CLEAN_CONTAMINATION_STATUSES = {"", "clean", "clear", "passed", "ok", "none"}
 
 NONTRAIN_EXACT_NAMES = {
     "blocked_until_review.jsonl",

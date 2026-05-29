@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -16,9 +17,18 @@ from typing import Any
 
 SCHEMA = "omnicoder.media_teacher_rollout_2026.v1"
 MANIFEST_SCHEMA = "omnicoder.media_teacher_rollouts_manifest_2026.v1"
-DEFAULT_COMFYUI_URL = "http://192.168.50.222:27188"
+DEFAULT_COMFYUI_URL = "http://127.0.0.1:27189"
 NEGATIVE_IMAGE = "low quality, blurry, distorted text, watermark, deformed"
 NEGATIVE_VIDEO = "low quality, blurry, jitter, text, watermark"
+CONTAINER_OUTPUT_PREFIXES = (
+    "/opt/ComfyUI/output",
+    "/workspace/ComfyUI/output",
+)
+TRAINABLE_CONTAMINATION_STATUSES = {"clean", "verified_clean", "accepted_clean", "permissive_clean"}
+EMBEDDED_CONTAMINATION_RE = re.compile(
+    r"""['"]contamination['"]\s*:\s*\{[^{}]*['"]status['"]\s*:\s*['"]([^'"]+)""",
+    re.IGNORECASE,
+)
 
 
 def utc_now() -> str:
@@ -395,8 +405,17 @@ def artifact_metadata(path: str | Path | dict[str, Any], root: str | Path | None
     else:
         p = Path(path)
         filename = p.name
-    if root and not p.is_absolute():
-        p = Path(root) / subfolder / filename if subfolder else Path(root) / p
+    if root:
+        root_path = Path(root)
+        normalized = str(p).replace("\\", "/")
+        for prefix in CONTAINER_OUTPUT_PREFIXES:
+            if normalized == prefix or normalized.startswith(prefix + "/"):
+                relative = normalized[len(prefix) :].lstrip("/")
+                p = root_path / relative
+                break
+        else:
+            if not p.is_absolute():
+                p = root_path / subfolder / filename if subfolder else root_path / p
     meta: dict[str, Any] = {
         "path": str(p),
         "filename": filename,
@@ -407,6 +426,43 @@ def artifact_metadata(path: str | Path | dict[str, Any], root: str | Path | None
     if p.exists() and p.is_file():
         meta.update({"byte_size": p.stat().st_size, "sha256": file_sha256(p), "suffix": p.suffix.lower()})
     return meta
+
+
+def source_contamination_status(job: dict[str, Any]) -> str:
+    input_json = job.get("input_json")
+    if isinstance(input_json, dict):
+        prompt_text = str(input_json.get("prompt") or "")
+        match = EMBEDDED_CONTAMINATION_RE.search(prompt_text)
+        if match:
+            return match.group(1).strip().lower()
+    curation = job.get("curation_policy_2026")
+    if isinstance(curation, dict) and curation.get("accepted") is True:
+        integrity = curation.get("dataset_integrity_2026")
+        if not isinstance(integrity, dict) or integrity.get("accepted", True) is True:
+            issues = []
+            if isinstance(integrity, dict):
+                issues = list(integrity.get("issues") or []) + list(integrity.get("reasons") or [])
+            if not issues:
+                return "clean"
+    candidates: list[Any] = [
+        job.get("contamination_status"),
+        job.get("contamination"),
+    ]
+    for key in ("source_payload", "input_json", "source_record"):
+        payload = job.get(key)
+        if isinstance(payload, dict):
+            candidates.extend([payload.get("contamination_status"), payload.get("contamination")])
+            nested_source = payload.get("source_payload")
+            if isinstance(nested_source, dict):
+                candidates.extend([nested_source.get("contamination_status"), nested_source.get("contamination")])
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            value = candidate.get("status") or candidate.get("label")
+        else:
+            value = candidate
+        if value is not None and str(value).strip():
+            return str(value).strip().lower()
+    return "missing"
 
 
 def parse_runner_stdout(stdout: str) -> dict[str, Any]:
@@ -534,8 +590,19 @@ def row_for_result(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     prompt = prompt_from_job(job)
-    reward = 0.85 if status == "ok" else 0.0
     artifact_types = sorted({str(item.get("suffix") or item.get("type") or "") for item in artifacts if item.get("exists")})
+    source_status = source_contamination_status(job)
+    source_is_clean = source_status in TRAINABLE_CONTAMINATION_STATUSES
+    artifact_backed = bool(artifacts) and all(item.get("exists") and int(item.get("byte_size") or 0) > 0 for item in artifacts)
+    train_eligible = status == "ok" and artifact_backed and source_is_clean
+    quarantine_reasons: list[str] = []
+    if status != "ok":
+        quarantine_reasons.append(error or status or "media_teacher_rollout_failed")
+    if not artifact_backed:
+        quarantine_reasons.append("missing_or_empty_media_artifact")
+    if not source_is_clean:
+        quarantine_reasons.append(f"source_contamination_status_not_clean:{source_status}")
+    reward = 0.85 if train_eligible else 0.0
     teacher_signal = {
         "corrected_response": (
             f"Generate {family['modality']} tokens for the requested {family['workflow']} task, "
@@ -556,6 +623,7 @@ def row_for_result(
             "modality": family["modality"],
             "artifact_count": len(artifacts),
             "artifact_types": artifact_types,
+            "source_contamination_status": source_status,
         },
         "process_labels": [
             "parse_user_prompt",
@@ -573,7 +641,7 @@ def row_for_result(
         "index": index,
         "status": status,
         "error": error,
-        "teacher": job.get("teacher_name"),
+        "teacher": job.get("teacher_name") or job.get("teacher"),
         "job_hash": stable_hash(job),
         "job_type": job.get("job_type"),
         "media_family": family["media_family"],
@@ -593,8 +661,12 @@ def row_for_result(
         },
         "artifact_metadata": artifacts,
         "artifact_count": len(artifacts),
-        "split": "train",
-        "quality_score": 0.85 if status == "ok" else 0.0,
+        "split": "train" if train_eligible else "blocked_until_review",
+        "training_bucket": "train" if train_eligible else "blocked_until_review",
+        "contamination_status": "clean" if train_eligible else "quarantine",
+        "source_contamination_status": source_status,
+        "train_quarantine_reasons": [] if train_eligible else quarantine_reasons,
+        "quality_score": 0.85 if train_eligible else 0.0,
     }
 
 
@@ -683,7 +755,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runner-command", default=os.getenv("OMNICODER_MEDIA_TEACHER_RUNNER_COMMAND", ""))
     parser.add_argument("--modal-script", default=os.getenv("OMNICODER_MEDIA_TEACHER_MODAL_SCRIPT", ""))
     parser.add_argument("--comfyui-url", "--comfy-url", dest="comfyui_url", default=os.getenv("OMNICODER_COMFYUI_URL", DEFAULT_COMFYUI_URL))
-    parser.add_argument("--artifact-root", default=os.getenv("OMNICODER_COMFYUI_OUTPUT_ROOT", "/opt/ComfyUI/output"))
+    parser.add_argument("--artifact-root", default=os.getenv("OMNICODER_COMFYUI_OUTPUT_ROOT", "/home/cereal/comfyui/output"))
     parser.add_argument("--timeout", type=int, default=int(os.getenv("OMNICODER_MEDIA_TEACHER_TIMEOUT", "2400")))
     parser.add_argument("--request-timeout", type=int, default=120)
     parser.add_argument("--poll-seconds", type=float, default=5.0)

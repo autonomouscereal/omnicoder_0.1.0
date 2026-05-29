@@ -25,9 +25,13 @@ def test_agentic_tool_training_builds_all_training_splits(tmp_path: Path) -> Non
                         "content": "{\"tool\":\"server_manager\",\"arguments\":{\"server\":\"ai\",\"command\":\"curl -s http://127.0.0.1:4000/health\"}}",
                     },
                     {"role": "tool", "content": "{\"exit_code\":0,\"status\":\"ok\"}"},
-                    {"role": "assistant", "content": "Health check passed."},
+                    {
+                        "role": "assistant",
+                        "content": "The dashboard health check returned a successful JSON response from the AI server, so the trace includes a real tool call, observation, and grounded final report.",
+                    },
                 ],
                 "quality": {"score": 0.91},
+                "contamination_status": "clean",
                 "lineage": {"trace_id": "trace-health"},
             }
         ],
@@ -71,7 +75,16 @@ def test_agentic_tool_training_builds_all_training_splits(tmp_path: Path) -> Non
 def test_posttrain_bridge_detects_tool_trajectory_dataset(tmp_path: Path) -> None:
     train_path = _write_jsonl(
         tmp_path / "tool_reward.jsonl",
-        [{"training_kind": "tool_reward", "prompt": "use tool", "reward": 1.0}],
+        [
+            {
+                "training_kind": "tool_reward",
+                "prompt": "Use the server manager tool to check service health and report the observed result.",
+                "target": "The tool call completed and returned a healthy service response, so the task outcome reward is positive.",
+                "reward": 1.0,
+                "contamination_status": "clean",
+                "quality_score": 0.95,
+            }
+        ],
     )
 
     manifest = posttrain_bridge_2026.build_manifest(
@@ -240,10 +253,38 @@ def test_agentic_tool_training_explicit_safety_negative_has_no_refusal_target() 
 def test_build_exports_domain_rlvr_files(tmp_path: Path) -> None:
     rows = tooltrain.build_rows(
         [
-            {"text": "Solve the math equation. final answer is \\boxed{4}", "tool_calls": [{"tool": "calculator"}], "quality": {"score": 1.0}},
-            {"text": "Patch def f and pytest passed.", "tool_calls": [{"tool": "shell"}], "tool_results": [{"tests_passed": 1, "tests_total": 1}], "quality": {"score": 1.0}},
-            {"text": "Run bash command", "tool_calls": [{"tool": "terminal"}], "tool_results": [{"exit_code": 0, "stdout": "ok"}], "quality": {"score": 1.0}},
-            {"text": "Open browser URL and citation source answer.", "tool_calls": [{"tool": "browser"}], "tool_results": [{"content": "source"}], "quality": {"score": 1.0}},
+            {
+                "text": "Solve the math equation with the calculator tool. final answer is \\boxed{4}",
+                "target_json": {"content": "The calculator-backed solution verifies the final answer is \\boxed{4}."},
+                "tool_calls": [{"tool": "calculator", "arguments": {"expression": "2+2"}}],
+                "tool_results": [{"result": "4", "status": "ok"}],
+                "quality": {"score": 1.0},
+                "contamination_status": "clean",
+            },
+            {
+                "text": "Patch def f and pytest passed.",
+                "target_json": {"content": "The shell tool verified pytest passed after the code patch."},
+                "tool_calls": [{"tool": "shell", "arguments": {"command": "pytest -q"}}],
+                "tool_results": [{"tests_passed": 1, "tests_total": 1}],
+                "quality": {"score": 1.0},
+                "contamination_status": "clean",
+            },
+            {
+                "text": "Run bash command",
+                "target_json": {"content": "The terminal command completed successfully and returned ok output."},
+                "tool_calls": [{"tool": "terminal", "arguments": {"command": "echo ok"}}],
+                "tool_results": [{"exit_code": 0, "stdout": "ok"}],
+                "quality": {"score": 1.0},
+                "contamination_status": "clean",
+            },
+            {
+                "text": "Open browser URL and citation source answer.",
+                "target_json": {"content": "The browser result provided source evidence supporting the answer."},
+                "tool_calls": [{"tool": "browser", "arguments": {"url": "https://example.com/source"}}],
+                "tool_results": [{"content": "source"}],
+                "quality": {"score": 1.0},
+                "contamination_status": "clean",
+            },
         ],
         min_quality=0.1,
         profile_cfg={},
@@ -262,8 +303,10 @@ def test_pure_math_row_emits_math_rlvr_without_tool_sft() -> None:
     rows = tooltrain.rows_for_record(
         {
             "text": "Solve the olympiad equation. The final answer is \\boxed{4}.",
+            "target_json": {"content": "The olympiad equation solution is verified and the final answer is \\boxed{4}."},
             "quality": {"score": 1.0},
             "domains": ["math"],
+            "contamination_status": "clean",
         },
         min_quality=0.1,
         profile_cfg={},
@@ -281,8 +324,10 @@ def test_pure_code_verifier_row_emits_code_rlvr_without_tool_sft() -> None:
     rows = tooltrain.rows_for_record(
         {
             "text": "Repair the failing Python routine. pytest passed after the fix.",
+            "target_json": {"content": "The Python repair is verified because pytest passed after the fix."},
             "quality": {"score": 1.0},
             "domains": ["code"],
+            "contamination_status": "clean",
         },
         min_quality=0.1,
         profile_cfg={},
@@ -323,6 +368,7 @@ def test_teacher_rollout_json_becomes_typed_training_rows() -> None:
         },
         "modalities": ["text", "tool"],
         "quality": {"score": 0.9},
+        "contamination_status": "clean",
     }
 
     rows = tooltrain.rows_for_record(record, min_quality=0.1, profile_cfg={})

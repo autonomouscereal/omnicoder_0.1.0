@@ -2120,11 +2120,40 @@ def training_bound_jsonl_paths_from_manifest(manifest: dict[str, Any]) -> list[P
 def distillation_train_records_path(manifest: dict[str, Any], out_dir: Path) -> tuple[str, dict[str, Any]]:
     train_all = str(manifest.get("train_all_jsonl") or "").strip()
     if train_all:
+        promotion_index = manifest.get("promotion_index") if isinstance(manifest.get("promotion_index"), dict) else {}
+        dataset_index = manifest.get("dataset_index_2026") if isinstance(manifest.get("dataset_index_2026"), dict) else {}
+        integrity_rewrite = manifest.get("integrity_rewrite") if isinstance(manifest.get("integrity_rewrite"), dict) else {}
+        index_status = str(promotion_index.get("status") or dataset_index.get("status") or "").strip().lower()
+        integrity_status = str(integrity_rewrite.get("status") or "").strip().lower()
+        if index_status != "passed" and integrity_status != "rewritten_clean":
+            return "", {
+                "schema": "omnicoder.distillation_records_selection_2026.v1",
+                "status": "failed",
+                "reason": "missing_dataset_index_or_integrity_rewrite_for_train_all_jsonl",
+                "source": "train_all_jsonl",
+                "records": train_all,
+                "promotion_index_status": index_status or None,
+                "dataset_index_status": str(dataset_index.get("status") or "").strip() or None,
+                "integrity_rewrite_status": integrity_status or None,
+            }
+        preflight = run_integrity_preflight([Path(train_all)], out_dir, label="distillation_train_all_jsonl")
+        if preflight.get("status") != "passed":
+            return "", {
+                "schema": "omnicoder.distillation_records_selection_2026.v1",
+                "status": "failed",
+                "reason": "train_all_integrity_preflight_failed",
+                "source": "train_all_jsonl",
+                "records": train_all,
+                "integrity_preflight": preflight,
+            }
         return train_all, {
             "schema": "omnicoder.distillation_records_selection_2026.v1",
             "status": "passed",
             "source": "train_all_jsonl",
             "records": train_all,
+            "promotion_index_status": index_status or None,
+            "integrity_rewrite_status": integrity_status or None,
+            "integrity_preflight": preflight,
             "filtered_rows": None,
             "rejected_rows": None,
         }
@@ -5393,6 +5422,14 @@ def run_final_finetune_stage(
     data_path = Path(str(manifest.get("train_all_jsonl") or ""))
     if not data_path.exists():
         return {"status": "failed", "reason": "missing_train_all_jsonl", "train_all_jsonl": str(data_path)}
+    preflight = run_integrity_preflight([data_path], out_dir, label="final_finetune_train_all_jsonl")
+    if preflight.get("status") != "passed":
+        return {
+            "status": "failed",
+            "reason": "final_finetune_train_all_integrity_preflight_failed",
+            "train_all_jsonl": str(data_path),
+            "integrity_preflight": preflight,
+        }
     checkpoint_out = out_dir / "checkpoints" / "99_final_all_modality_finetune.pt"
     train_log = out_dir / "logs" / "99_final_all_modality_finetune_loss.jsonl"
     steps = int(arg_value(args, "finetune_steps", 0) or plan.get("finetune_steps") or plan.get("steps_per_stage") or 64)
@@ -5449,6 +5486,7 @@ def run_final_finetune_stage(
         "final_checkpoint": str(checkpoint_out) if checkpoint_complete else str(checkpoint),
         "checkpoint_complete": checkpoint_complete,
         "train_jsonl": str(data_path),
+        "integrity_preflight": preflight,
         "loss_log": str(train_log),
         "loss_points": len(losses),
         "loss_first": losses[0] if losses else None,

@@ -40,20 +40,9 @@ def read_jsonl(path: str | Path, limit: int = 0) -> list[dict[str, Any]]:
 
 
 def normalize_sft_rows(path: str | Path, limit: int = 0) -> list[dict[str, Any]]:
-    rows = []
-    for obj in read_jsonl(path, limit):
-        messages = obj.get("messages")
-        if isinstance(messages, list) and messages:
-            rows.append({"messages": messages, "tools": obj.get("tools"), "metadata": obj.get("metadata", {})})
-            continue
-        prompt = obj.get("prompt")
-        completion = obj.get("completion")
-        if prompt is not None and completion is not None:
-            rows.append({"prompt": prompt, "completion": completion, "metadata": obj.get("metadata", {})})
-            continue
-        text = obj.get("text") or obj.get("content")
-        if text:
-            rows.append({"text": str(text), "metadata": obj.get("metadata", {})})
+    from omnicoder.training import local_hf_trainer_bridge_2026
+
+    rows, _, _ = local_hf_trainer_bridge_2026.normalize_sft_rows(path, limit, require_train_bucket=True)
     return rows
 
 

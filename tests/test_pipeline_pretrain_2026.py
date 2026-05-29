@@ -24,6 +24,7 @@ from omnicoder.training.pipeline_pretrain_2026_dense import (
     shard_spec,
     stage_ranges,
 )
+from omnicoder.training.pretrain_2026_dense import TextJsonlDataset
 
 
 def tiny_cfg(n_layers: int = 3) -> OmniCoder2026Config:
@@ -758,6 +759,61 @@ def test_dataset_chunk_overlap_preserves_boundary_target_prediction(tmp_path) ->
 
     assert valid.numel() > 0
     assert int(valid[0].item()) > 0
+
+
+def test_weighted_dataset_skips_explicitly_quarantined_rows(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 97 + 2 for ch in text]
+
+    bad = {
+        "messages": [{"role": "user", "content": "bad"}, {"role": "assistant", "content": "bad target"}],
+        "quality_score": 0.99,
+        "contamination_status": "clean",
+        "train_quarantine_reasons": ["poison_wrong_answer_rule"],
+    }
+    good = {
+        "messages": [{"role": "user", "content": "good"}, {"role": "assistant", "content": "good target"}],
+        "quality_score": 0.99,
+        "contamination_status": "clean",
+    }
+    source = tmp_path / "train.jsonl"
+    source.write_text(json.dumps(bad) + "\n" + json.dumps(good) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=32, vocab_size=256)
+
+    assert len(dataset.source_row_keys) == 1
+    assert next(iter(dataset.row_metadata.values()))["source_id"].startswith("train.jsonl:")
+    ids, labels, _weight = dataset[0]
+    assert int(labels.ge(0).sum().item()) > 0
+
+
+def test_text_dataset_rejects_refusal_and_contaminated_rows(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 97 + 2 for ch in text]
+
+    bad_refusal = {
+        "messages": [{"role": "user", "content": "answer"}, {"role": "assistant", "content": "Sorry, I can't assist with that."}],
+        "quality_score": 0.99,
+        "contamination_status": "clean",
+    }
+    bad_contaminated = {
+        "text": "poisoned row",
+        "quality_score": 0.99,
+        "contamination_status": "contaminated",
+    }
+    good = {
+        "messages": [{"role": "user", "content": "answer"}, {"role": "assistant", "content": "direct useful answer"}],
+        "quality_score": 0.99,
+        "contamination_status": "clean",
+    }
+    source = tmp_path / "dense.jsonl"
+    source.write_text("\n".join(json.dumps(row) for row in [bad_refusal, bad_contaminated, good]) + "\n", encoding="utf-8")
+
+    dataset = TextJsonlDataset(str(source), TinyTokenizer(), seq_len=64, vocab_size=256)
+
+    assert len(dataset.samples) == 1
 
 
 def test_dataset_sparse_target_chunks_reanchor_to_answer_tokens(tmp_path) -> None:

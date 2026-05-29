@@ -36,6 +36,7 @@ from omnicoder.training.pretrain_2026_dense import (
     _dtype_from_name,
     _is_probe_name,
     _text_from_record,
+    _row_trainability_rejection_reason,
     _restore_rng_state,
     _rng_state,
     _sha256_file,
@@ -1443,6 +1444,8 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
                     obj = {}
                 if not isinstance(obj, dict):
                     obj = {}
+                if _row_trainability_rejection_reason(obj) is not None:
+                    continue
                 chunks = self._estimate_chunks(len(raw))
                 self._register_source_row(
                     path,
@@ -1477,6 +1480,8 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
             obj = {"text": line}
         if not isinstance(obj, dict):
             obj = {"text": str(obj)}
+        if _row_trainability_rejection_reason(obj) is not None:
+            return self.fallback[0], self.fallback[1], self.fallback[2], len(self.fallback[0])
         ids, labels, weight = record_ids_labels_weight(obj, self.tokenizer)
         return ids, labels, weight, len(ids)
 

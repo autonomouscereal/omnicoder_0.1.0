@@ -17,6 +17,7 @@ DEFAULT_JOB_TYPES = {
     "dataset_materialization",
     "external_dataset_expansion",
     "materialization",
+    "media_teacher_rollout",
     "training",
     "training_run",
     "teacher_distillation",
@@ -120,8 +121,43 @@ def configured_main_devices(profile: dict[str, Any]) -> list[str]:
     return split_devices(env_devices or cfg.get("main_training_devices") or dist.get("main_gpu_devices") or ["0", "4", "6"])
 
 
+def qwen_reserved_devices(profile: dict[str, Any]) -> set[str]:
+    cfg = sidecar_cfg(profile)
+    return set(split_devices(cfg.get("qwen_reserved_devices") or ["1", "2", "3"]))
+
+
+def comfyui_modality_devices(profile: dict[str, Any]) -> set[str]:
+    cfg = sidecar_cfg(profile)
+    return set(split_devices(cfg.get("comfyui_modality_devices") or ["5"]))
+
+
+def qwen_exact_model_ids(profile: dict[str, Any]) -> set[str]:
+    cfg = sidecar_cfg(profile)
+    return set(
+        as_list(
+            cfg.get("qwen_exact_model_ids")
+            or [
+                "qwen/qwen3.6-27b",
+                "qwen/qwen3.6-27b2",
+                "qwen/qwen3.6-27b3",
+            ]
+        )
+    )
+
+
 def selected_jobs(args: argparse.Namespace | None) -> set[str]:
     return set(as_list(getattr(args, "job", None) if args is not None else None))
+
+
+def role_for_job(job: dict[str, Any], job_type: str) -> str:
+    role = str(job.get("role") or job.get("gpu_role") or "").strip()
+    if role:
+        return role
+    if job_type == "openai_compatible_teacher_rollout":
+        return "qwen_distillation"
+    if job_type == "media_teacher_rollout":
+        return "comfyui_modality"
+    return ""
 
 
 def validate_device_isolation(profile: dict[str, Any], selected: set[str] | None = None) -> dict[str, Any]:
@@ -133,6 +169,11 @@ def validate_device_isolation(profile: dict[str, Any], selected: set[str] | None
     main_set = set(main)
     job_device_overlaps: list[dict[str, str]] = []
     invalid_job_devices: list[dict[str, str]] = []
+    role_device_violations: list[dict[str, str]] = []
+    qwen_devices = qwen_reserved_devices(profile)
+    comfy_devices = comfyui_modality_devices(profile)
+    allowed_qwen_models = qwen_exact_model_ids(profile)
+    protected_p40 = qwen_devices | comfy_devices
     raw_jobs = sidecar_cfg(profile).get("jobs")
     if isinstance(raw_jobs, list):
         for index, raw in enumerate(raw_jobs):
@@ -154,14 +195,41 @@ def validate_device_isolation(profile: dict[str, Any], selected: set[str] | None
                     job_device_overlaps.append({"job_id": job_id, "device": device})
                 if device not in sidecar_set:
                     invalid_job_devices.append({"job_id": job_id, "device": device, "reason": "device_not_in_sidecar_pool"})
-    status = "failed" if overlap or job_device_overlaps or invalid_job_devices else "ok"
+            role = role_for_job(raw, job_type)
+            concrete_devices = {device for device in split_devices(device_text) if device.lower() != "cpu"}
+            if role == "qwen_distillation":
+                for device in sorted(concrete_devices - qwen_devices):
+                    role_device_violations.append({"job_id": job_id, "device": device, "reason": "qwen_distillation_must_use_qwen_reserved_p40"})
+                raw_model_ids = as_list(raw.get("model_ids"))
+                configured_models = set(raw_model_ids)
+                for key in ("model", "teacher_model"):
+                    value = str(raw.get(key) or "").strip()
+                    if value:
+                        configured_models.add(value)
+                if not configured_models:
+                    role_device_violations.append({"job_id": job_id, "device": ",".join(sorted(concrete_devices)) or "cpu", "reason": "qwen_distillation_requires_explicit_model_ids"})
+                if len(concrete_devices) > 1 and len(raw_model_ids) != len(concrete_devices):
+                    role_device_violations.append({"job_id": job_id, "device": ",".join(sorted(concrete_devices)), "reason": "qwen_model_ids_must_match_device_count"})
+                for model_id in sorted(configured_models - allowed_qwen_models):
+                    role_device_violations.append({"job_id": job_id, "device": ",".join(sorted(concrete_devices)) or "cpu", "reason": f"qwen_distillation_model_not_exact_pinned:{model_id}"})
+            elif role == "comfyui_modality":
+                for device in sorted(concrete_devices - comfy_devices):
+                    role_device_violations.append({"job_id": job_id, "device": device, "reason": "comfyui_modality_must_use_comfyui_p40"})
+            elif concrete_devices & protected_p40:
+                for device in sorted(concrete_devices & protected_p40):
+                    role_device_violations.append({"job_id": job_id, "device": device, "reason": "protected_p40_requires_explicit_qwen_or_comfyui_role"})
+    status = "failed" if overlap or job_device_overlaps or invalid_job_devices or role_device_violations else "ok"
     return {
         "status": status,
         "sidecar_devices": sidecars,
         "main_training_devices": main,
+        "qwen_reserved_devices": sorted(qwen_devices),
+        "comfyui_modality_devices": sorted(comfy_devices),
+        "qwen_exact_model_ids": sorted(allowed_qwen_models),
         "overlap": overlap,
         "job_device_overlaps": job_device_overlaps,
         "invalid_job_devices": invalid_job_devices,
+        "role_device_violations": role_device_violations,
     }
 
 
@@ -426,9 +494,9 @@ def default_command(profile_path: str | Path, profile: dict[str, Any], out_root:
             "--out",
             output,
             "--base-url",
-            str(job.get("base_url") or "http://127.0.0.1:18082/v1"),
+            str(job.get("base_url") or "http://127.0.0.1:1234/v1"),
             "--model",
-            str(job.get("model") or job.get("teacher_model") or "qwen3.6-27b-q4"),
+            str(job.get("model") or job.get("teacher_model") or "qwen/qwen3.6-27b"),
             "--record-kind",
             str(job.get("record_kind") or "qwen36_p40_teacher_rollout"),
         ]
@@ -447,6 +515,29 @@ def default_command(profile_path: str | Path, profile: dict[str, Any], out_root:
                 cmd.extend([flag, str(value)])
         if str(job.get("thermal_gpu_index") or device).strip().lower() != "cpu":
             cmd.extend(["--thermal-gpu-index", str(job.get("thermal_gpu_index") or device)])
+        if bool(job.get("resume", True)):
+            cmd.append("--resume")
+        return cmd
+    if job_type == "media_teacher_rollout":
+        records = str(job.get("records") or out_root / "teacher_jobs" / "latest" / "media_jobs.jsonl")
+        out_dir = str(job.get("out_dir") or out_root / context["job_id"])
+        cmd = [
+            sys.executable,
+            "-m",
+            "omnicoder.data_factory.media_teacher_rollouts_2026",
+            "--input",
+            records,
+            "--out-dir",
+            out_dir,
+            "--comfyui-url",
+            str(job.get("comfyui_url") or "http://127.0.0.1:27189"),
+        ]
+        limit = int(job.get("limit") or 0)
+        if limit > 0:
+            cmd.extend(["--limit", str(limit)])
+        timeout = int(job.get("timeout") or job.get("timeout_seconds") or 0)
+        if timeout > 0:
+            cmd.extend(["--timeout", str(timeout)])
         if bool(job.get("resume", True)):
             cmd.append("--resume")
         return cmd
@@ -481,6 +572,9 @@ def per_device_teacher_job(job: dict[str, Any], job_id: str, device: str, offset
     base_urls = worker.get("base_urls")
     if isinstance(base_urls, list) and offset < len(base_urls):
         worker["base_url"] = str(base_urls[offset])
+    model_ids = worker.get("model_ids")
+    if isinstance(model_ids, list) and offset < len(model_ids):
+        worker["model"] = str(model_ids[offset])
     return worker
 
 

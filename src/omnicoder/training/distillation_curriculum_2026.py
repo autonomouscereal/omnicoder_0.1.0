@@ -8,6 +8,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+from omnicoder.data_factory.curation_policy_2026 import CurationPolicyConfig, audit_training_record
+from omnicoder.data_factory.export_sft_jsonl import NONTRAIN_CONTAMINATION_STATUSES, contains_secret_payload
+
 
 DEFAULT_JOB_SCHEMA = {
     "critique": "localized critique with corrected answer/action",
@@ -92,7 +95,13 @@ def quality_score(record: dict[str, Any]) -> float:
 
 def contamination_status(record: dict[str, Any]) -> str:
     contamination = record.get("contamination") if isinstance(record.get("contamination"), dict) else {}
-    return str(contamination.get("status") or "clean")
+    return str(
+        contamination.get("status")
+        or record.get("contamination_status")
+        or record.get("decontamination_status")
+        or record.get("protected_benchmark_scan")
+        or "unknown"
+    ).strip().lower()
 
 
 def has_secret(record: dict[str, Any]) -> bool:
@@ -137,7 +146,8 @@ def media_families(record: dict[str, Any]) -> set[str]:
 
 def record_is_eligible(record: dict[str, Any], profile: dict[str, Any]) -> bool:
     cfg = profile.get("job_plan") if isinstance(profile.get("job_plan"), dict) else {}
-    if cfg.get("skip_contaminated", True) and contamination_status(record) == "contaminated":
+    status = contamination_status(record)
+    if cfg.get("skip_contaminated", True) and status in NONTRAIN_CONTAMINATION_STATUSES:
         return False
     if cfg.get("skip_secret_rejected", True) and has_secret(record):
         return False
@@ -146,7 +156,39 @@ def record_is_eligible(record: dict[str, Any], profile: dict[str, Any]) -> bool:
     split = str(record.get("split") or (record.get("split_assignment") or {}).get("split") or "train")
     if split == "eval_holdout" and not bool(cfg.get("include_eval_holdout", False)):
         return False
-    return bool(extract_text(record).strip())
+    if not extract_text(record).strip():
+        return False
+    if contains_secret_payload(record):
+        return False
+    prompt = ""
+    target = ""
+    input_json = record.get("input_json") if isinstance(record.get("input_json"), dict) else {}
+    target_json = record.get("target_json") if isinstance(record.get("target_json"), dict) else {}
+    messages = input_json.get("messages") if isinstance(input_json.get("messages"), list) else record.get("messages")
+    if isinstance(messages, list):
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            role = str(message.get("role") or "").lower()
+            content = str(message.get("content") or "").strip()
+            if role == "assistant" and content:
+                target = content
+            elif role in {"user", "system", "tool"} and content:
+                prompt = f"{prompt}\n{content}".strip()
+    prompt = prompt or extract_text({"input_json": input_json})
+    target = target or extract_text({"target_json": target_json})
+    modality = next(iter(media_families(record)), "text")
+    audit = audit_training_record(
+        record,
+        prompt=prompt,
+        target=target,
+        modality=modality,
+        source_path=None,
+        refs=[],
+        existing_quality=quality_score(record),
+        config=CurationPolicyConfig(min_quality_score=float(cfg.get("min_quality", 0.35)), require_media_artifacts=False, scan_integrity_artifacts=False),
+    )
+    return bool(audit.get("accepted"))
 
 
 def enabled_teachers(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:

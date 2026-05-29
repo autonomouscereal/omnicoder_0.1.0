@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from omnicoder.data_factory.curation_policy_2026 import CurationPolicyConfig, audit_training_record
+from omnicoder.data_factory.export_sft_jsonl import contains_secret_payload, eligible
 from omnicoder.data_factory.postgres import claim_teacher_job, enqueue_teacher_job
 
 
@@ -57,6 +59,67 @@ def target_from_record(record: dict[str, Any]) -> str:
     return first_text(target_json) or first_text(record.get("target")) or first_text(record.get("response")) or first_text(record.get("messages"))
 
 
+def modality_from_record(record: dict[str, Any]) -> str:
+    modality = str(record.get("modality") or "").strip().lower()
+    if modality:
+        return modality
+    modalities = record.get("modalities")
+    if isinstance(modalities, list):
+        for value in modalities:
+            text = str(value or "").strip().lower()
+            if text:
+                return text
+    text = f"{prompt_from_record(record)}\n{target_from_record(record)}".lower()
+    if any(marker in text for marker in ("tool", "shell", "terminal", "function_call")):
+        return "tool"
+    if any(marker in text for marker in ("image", "ocr", "vision")):
+        return "image"
+    if "video" in text:
+        return "video"
+    if any(marker in text for marker in ("audio", "speech", "tts", "music")):
+        return "audio"
+    if any(marker in text for marker in ("pytest", "python", "code", "patch")):
+        return "code"
+    return "text"
+
+
+def artifact_refs(record: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    for key in ("artifact_refs", "media_refs", "artifacts"):
+        value = record.get(key)
+        if isinstance(value, list):
+            refs.extend(str(item) for item in value if str(item).strip())
+    for container in (record, record.get("target_json"), record.get("output_json")):
+        if not isinstance(container, dict):
+            continue
+        for key in ("artifact_path", "image_path", "video_path", "audio_path", "music_path"):
+            value = container.get(key)
+            if value:
+                refs.append(str(value))
+    return sorted(set(refs))
+
+
+def record_is_trainable(record: dict[str, Any], *, source_path: Path) -> bool:
+    prompt = prompt_from_record(record)
+    target = target_from_record(record)
+    if not eligible(record, min_quality=0.35, allow_contaminated=False):
+        return False
+    payload = {"messages": record.get("messages"), "input_json": record.get("input_json"), "target_json": record.get("target_json")}
+    if contains_secret_payload(payload):
+        return False
+    audit = audit_training_record(
+        record,
+        prompt=prompt,
+        target=target,
+        modality=modality_from_record(record),
+        source_path=source_path,
+        refs=artifact_refs(record),
+        existing_quality=float((record.get("quality") or {}).get("score") or record.get("quality_score") or 0.0),
+        config=CurationPolicyConfig(min_quality_score=0.35, require_media_artifacts=False, scan_integrity_artifacts=False),
+    )
+    return bool(audit.get("accepted"))
+
+
 def build_job_input(record: dict[str, Any]) -> dict[str, Any]:
     input_json = record.get("input_json") if isinstance(record.get("input_json"), dict) else {}
     target_json = record.get("target_json") if isinstance(record.get("target_json"), dict) else {}
@@ -92,11 +155,14 @@ def build_job_input(record: dict[str, Any]) -> dict[str, Any]:
 
 def build_jobs(records_path: str, teacher: str, job_type: str, limit: int = 0) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
-    with Path(records_path).open("r", encoding="utf-8", errors="ignore") as handle:
+    source_path = Path(records_path)
+    with source_path.open("r", encoding="utf-8", errors="ignore") as handle:
         for line in handle:
             if not line.strip():
                 continue
             obj = json.loads(line)
+            if not isinstance(obj, dict) or not record_is_trainable(obj, source_path=source_path):
+                continue
             jobs.append(
                 {
                     "teacher_name": teacher,

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
 from omnicoder.data_factory import curation_layers_2026
+from omnicoder.data_factory.curation_policy_2026 import CurationPolicyConfig, audit_training_record
 from omnicoder.data_factory.postgres import transaction
 
 NONTRAIN_CONTAMINATION_STATUSES = {
@@ -35,6 +38,7 @@ EVAL_OR_QUARANTINE_MARKERS = {
     "quarantine",
     "smoke",
 }
+SCALAR_OR_PUNCTUATION_RE = re.compile(r"^[\W_]*[A-Za-z0-9]?[.\-!?]*$")
 
 
 def _jsonl(path: Path) -> Iterable[dict[str, Any]]:
@@ -106,15 +110,22 @@ def _quality_score(record: dict[str, Any]) -> float | None:
 
 def _contamination_status(record: dict[str, Any]) -> str:
     contamination = record.get("contamination") if isinstance(record.get("contamination"), dict) else {}
-    for value in (
-        contamination.get("status"),
-        record.get("contamination_status"),
-        record.get("decontamination_status"),
-        record.get("protected_benchmark_scan"),
-        record.get("benchmark_contamination_status"),
-    ):
-        if value not in (None, "", [], {}):
-            return str(value).strip().lower()
+    containers = [record, contamination]
+    for key in ("metadata", "curation", "lineage", "quality"):
+        value = record.get(key)
+        if isinstance(value, dict):
+            containers.append(value)
+    for container in containers:
+        for key in (
+            "status",
+            "contamination_status",
+            "decontamination_status",
+            "protected_benchmark_scan",
+            "benchmark_contamination_status",
+        ):
+            value = container.get(key)
+            if value not in (None, "", [], {}):
+                return str(value).strip().lower()
     return "unknown"
 
 
@@ -273,6 +284,73 @@ def contains_secret_payload(value: Any) -> bool:
     return bool(curation_layers_2026.redact_secrets(serialized).get("has_secret"))
 
 
+def _prompt_text(messages: list[dict[str, str]]) -> str:
+    return "\n".join(message["content"] for message in messages if message["role"] in {"system", "user", "tool"})[:20000]
+
+
+def _modality_from_record(record: dict[str, Any]) -> str:
+    modalities = record.get("modalities")
+    if isinstance(modalities, list) and modalities:
+        return str(modalities[0])
+    for key in ("modality", "bucket", "training_bucket"):
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            lowered = value.lower()
+            for candidate in ("video", "image", "music", "audio", "speech", "tts", "ocr", "tool", "code", "math", "text"):
+                if candidate in lowered:
+                    return candidate
+    return "text"
+
+
+def _policy_rejection_reasons(record: dict[str, Any], messages: list[dict[str, str]], min_quality: float) -> list[str]:
+    modality = _modality_from_record(record)
+    has_tool_trace = any(message.get("role") == "tool" or '"tool_call"' in message.get("content", "") for message in messages)
+    if modality == "text" and has_tool_trace:
+        modality = "tool"
+    audit_record = dict(record)
+    if has_tool_trace and not audit_record.get("tool_calls"):
+        tool_calls: list[dict[str, Any]] = []
+        tool_results: list[Any] = []
+        for message in messages:
+            content = message.get("content", "")
+            if message.get("role") == "assistant" and '"tool_call"' in content:
+                try:
+                    payload = json.loads(content)
+                except Exception:
+                    payload = {}
+                call = payload.get("tool_call") if isinstance(payload, dict) else None
+                if isinstance(call, dict):
+                    tool_calls.append(call)
+            elif message.get("role") == "tool":
+                try:
+                    payload = json.loads(content)
+                except Exception:
+                    payload = {"result": content}
+                tool_results.append(payload)
+        if tool_calls:
+            audit_record["tool_calls"] = tool_calls
+        if tool_results:
+            audit_record["tool_results"] = tool_results
+    audit = audit_training_record(
+        audit_record,
+        prompt=_prompt_text(messages),
+        target=_assistant_text(messages),
+        modality=modality,
+        existing_quality=_quality_score(record),
+        config=CurationPolicyConfig(
+            reject_refusal_boilerplate=True,
+            reject_placeholder_junk=modality not in {"code", "tool"},
+            reject_eval_holdout=True,
+            reject_dataset_integrity_issues=True,
+            scan_integrity_artifacts=False,
+            min_quality_score=float(min_quality),
+        ),
+    )
+    if audit.get("accepted", False):
+        return []
+    return [f"policy:{reason}" for reason in audit.get("reasons") or ["unknown"]]
+
+
 def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     compacted: list[dict[str, str]] = []
     for message in messages:
@@ -284,6 +362,102 @@ def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
             continue
         compacted.append({"role": role, "content": content})
     return compacted
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_truthy(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _visible_token_count(text: str) -> int:
+    return len(re.findall(r"[A-Za-z0-9_]+", text))
+
+
+def _assistant_text(messages: list[dict[str, str]]) -> str:
+    return "\n".join(message["content"] for message in messages if message["role"] == "assistant")
+
+
+def _has_media_payload_text(messages: list[dict[str, str]]) -> bool:
+    text = "\n".join(message["content"] for message in messages)
+    return any(marker in text for marker in ("artifact_path", "artifact_tokens", "media_tokens", "image_tokens", "video_tokens", "audio_tokens"))
+
+
+def _message_quality_reasons(messages: list[dict[str, str]], metadata: dict[str, Any]) -> list[str]:
+    """Reject direct SFT exports that are too small to be useful training data."""
+    reasons: list[str] = []
+    min_assistant_chars = _env_int("OMNICODER_SFT_MIN_DIRECT_ASSISTANT_CHARS", 32)
+    min_assistant_tokens = _env_int("OMNICODER_SFT_MIN_DIRECT_ASSISTANT_TOKENS", 6)
+    roles = {message["role"] for message in messages}
+    assistant_text = _assistant_text(messages).strip()
+    has_media_payload = _has_media_payload_text(messages)
+    if "user" not in roles:
+        reasons.append("missing_user_turn")
+    if "assistant" not in roles:
+        reasons.append("missing_assistant_turn")
+    if not has_media_payload:
+        if len(assistant_text) < min_assistant_chars:
+            reasons.append("assistant_target_too_short")
+        if _visible_token_count(assistant_text) < min_assistant_tokens:
+            reasons.append("assistant_target_too_few_tokens")
+        if SCALAR_OR_PUNCTUATION_RE.fullmatch(assistant_text[:64] or "."):
+            reasons.append("assistant_target_scalar_or_punctuation")
+    metadata["message_quality_gate"] = {
+        "min_assistant_chars": min_assistant_chars,
+        "min_assistant_tokens": min_assistant_tokens,
+        "has_media_payload": has_media_payload,
+        "assistant_chars": len(assistant_text),
+        "assistant_tokens": _visible_token_count(assistant_text),
+    }
+    return reasons
+
+
+def _trace_quality_reasons(messages: list[dict[str, str]], metadata: dict[str, Any]) -> list[str]:
+    """Reject toy harness traces before they become SFT rows."""
+    reasons: list[str] = []
+    min_messages = _env_int("OMNICODER_SFT_MIN_TRACE_MESSAGES", 4)
+    min_assistant_chars = _env_int("OMNICODER_SFT_MIN_ASSISTANT_CHARS", 128)
+    min_assistant_tokens = _env_int("OMNICODER_SFT_MIN_ASSISTANT_TOKENS", 24)
+    require_agent_loop = _env_truthy("OMNICODER_SFT_REQUIRE_AGENT_LOOP", True)
+    roles = {message["role"] for message in messages}
+    assistant_text = _assistant_text(messages)
+    has_tool_call = any(message["role"] == "assistant" and '"tool_call"' in message["content"] for message in messages)
+    has_tool_result = any(message["role"] == "tool" for message in messages)
+    has_media_artifact = _has_media_payload_text(messages)
+    if len(messages) < min_messages:
+        reasons.append("trace_too_few_messages")
+    if "user" not in roles:
+        reasons.append("missing_user_turn")
+    if "assistant" not in roles:
+        reasons.append("missing_assistant_turn")
+    if len(assistant_text.strip()) < min_assistant_chars:
+        reasons.append("assistant_trace_too_short")
+    if _visible_token_count(assistant_text) < min_assistant_tokens:
+        reasons.append("assistant_trace_too_few_tokens")
+    if SCALAR_OR_PUNCTUATION_RE.fullmatch(assistant_text.strip()[:64] or "."):
+        reasons.append("assistant_trace_scalar_or_punctuation")
+    if require_agent_loop and not (has_tool_call and has_tool_result) and not has_media_artifact:
+        reasons.append("missing_agent_observe_loop")
+    metadata["trace_quality_gate"] = {
+        "min_messages": min_messages,
+        "min_assistant_chars": min_assistant_chars,
+        "min_assistant_tokens": min_assistant_tokens,
+        "require_agent_loop": require_agent_loop,
+        "has_tool_call": has_tool_call,
+        "has_tool_result": has_tool_result,
+        "has_media_artifact": has_media_artifact,
+        "assistant_chars": len(assistant_text.strip()),
+        "assistant_tokens": _visible_token_count(assistant_text),
+    }
+    return reasons
 
 
 def export_offline(input_path: Path, out_path: Path, min_quality: float, allow_contaminated: bool, limit: int = 0) -> int:
@@ -303,7 +477,11 @@ def export_offline(input_path: Path, out_path: Path, min_quality: float, allow_c
                     "quality": record.get("quality", {}),
                 },
             }
+            if _message_quality_reasons(payload["messages"], payload["metadata"]):
+                continue
             if contains_secret_payload(payload):
+                continue
+            if _policy_rejection_reasons(record, payload["messages"], min_quality):
                 continue
             handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
             count += 1
@@ -372,6 +550,9 @@ def export_trace_conversations(input_path: Path, out_path: Path, min_quality: fl
             roles = {message["role"] for message in messages}
             if len(messages) < 2 or "assistant" not in roles:
                 continue
+            trace_quality_reasons = _trace_quality_reasons(messages, group["metadata"])
+            if trace_quality_reasons:
+                continue
             scores = group["metadata"].pop("quality_scores", [])
             if scores:
                 group["metadata"]["quality"] = {
@@ -381,6 +562,17 @@ def export_trace_conversations(input_path: Path, out_path: Path, min_quality: fl
                 }
             payload = {"messages": messages, "metadata": group["metadata"]}
             if contains_secret_payload(payload):
+                continue
+            policy_record = {
+                "bucket": group["metadata"].get("bucket"),
+                "split": group["metadata"].get("split"),
+                "source_date": group["metadata"].get("source_date"),
+                "lineage": {"trace_lineages": group["metadata"].get("lineages", [])},
+                "quality": group["metadata"].get("quality", {}),
+            }
+            if isinstance(policy_record["quality"], dict) and "score" not in policy_record["quality"]:
+                policy_record["quality"]["score"] = policy_record["quality"].get("avg")
+            if _policy_rejection_reasons(policy_record, messages, min_quality):
                 continue
             handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
             count += 1
@@ -423,7 +615,16 @@ def export_postgres(out_path: Path, split: str, bucket: str | None, min_quality:
                 "lineage": _decode_jsonb(row[5]) if row[5] else {},
                 "quality": {"score": float(row[6])},
             }
-            handle.write(json.dumps({"messages": _messages_from(record), "metadata": {"training_example_id": int(row[0]), **record}}, ensure_ascii=True, default=str) + "\n")
+            payload = {"messages": _messages_from(record), "metadata": {"training_example_id": int(row[0]), **record}}
+            if _rejection_reasons(record, min_quality, allow_contaminated=False):
+                continue
+            if _message_quality_reasons(payload["messages"], payload["metadata"]):
+                continue
+            if contains_secret_payload(payload):
+                continue
+            if _policy_rejection_reasons(record, payload["messages"], min_quality):
+                continue
+            handle.write(json.dumps(payload, ensure_ascii=True, default=str) + "\n")
             count += 1
     return count
 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import socket
@@ -861,7 +861,7 @@ def test_run_reportable_scores_arc_swe_and_mmmu_with_real_oracles(
                 "reportable-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
@@ -871,14 +871,14 @@ def test_run_reportable_scores_arc_swe_and_mmmu_with_real_oracles(
     assert len(rows) == 3
     by_id = {row["benchmark_id"]: row for row in rows}
     assert by_id["reasoning_arc_agi3_2026"]["score"] is None
-    assert by_id["reasoning_arc_agi3_2026"]["score_json"]["contract_score"] == 0.5
-    assert by_id["coding_swe_bench_live_2026"]["score_json"]["contract_score"] == 1.0
-    assert by_id["multimodal_mmmu_pro_2026"]["score_json"]["contract_score"] == 1.0
+    assert by_id["reasoning_arc_agi3_2026"]["score_json"]["contract_score"] == 0.0
+    assert by_id["coding_swe_bench_live_2026"]["score_json"]["contract_score"] == 0.0
+    assert by_id["multimodal_mmmu_pro_2026"]["score_json"]["contract_score"] == 0.0
     for row in rows:
         assert row["mode"] == "reportable"
-        assert row["status"] == "contract_only"
+        assert row["status"] == "local_only"
         assert row["score_json"]["reportable_score"] is False
-        assert row["score_json"]["contract_only"] is True
+        assert row["score_json"]["contract_only"] is False
 
 
 def test_run_reportable_rejects_reportable_true_without_authorized_snapshot(
@@ -906,7 +906,7 @@ def test_run_reportable_rejects_reportable_true_without_authorized_snapshot(
                 "missing-snapshot-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
@@ -941,7 +941,7 @@ def test_run_reportable_rejects_missing_license_and_scorer_metadata(
                 "missing-license-scorer-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
@@ -992,16 +992,16 @@ def test_run_reportable_accepts_authorized_snapshot_descriptor(
                 "descriptor-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
     result = _jsonl_rows(Path(payload["results"]))[0]
     task_score = result["metrics_json"]["task_scores"][0]
     assert payload["status"] == "needs_data"
-    assert result["status"] == "contract_only"
+    assert result["status"] == "local_only"
     assert result["score_json"]["reportable_score"] is False
-    assert result["score_json"]["contract_only"] is True
+    assert result["score_json"]["contract_only"] is False
     assert task_score["snapshot_id"] == "arc-agi3-authorized-descriptor"
 
 
@@ -1029,7 +1029,7 @@ def test_run_reportable_marks_missing_official_metadata_as_local_only(
                 "local-only-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
@@ -1064,7 +1064,7 @@ def test_run_reportable_requires_task_level_source_not_profile_backfill(
                 "missing-source-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
@@ -1100,7 +1100,7 @@ def test_run_reportable_requires_model_output_not_only_gold_answer(
                 "missing-output-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
@@ -1137,7 +1137,7 @@ def test_run_reportable_requires_prediction_not_oracle_success(
                 "oracle-only-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
@@ -1173,7 +1173,7 @@ def test_run_reportable_requires_model_patch_not_oracle_patch(
                 "oracle-patch-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
@@ -1313,20 +1313,20 @@ def test_run_reportable_scores_hellaswag_with_descriptor_file_hash(
                 "hellaswag-reportable-fixture",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = _json_from_stdout(capsys)
     result = _jsonl_rows(Path(payload["results"]))[0]
     task_score = result["metrics_json"]["task_scores"][0]
     assert payload["status"] == "needs_data"
-    assert result["status"] == "contract_only"
+    assert result["status"] == "local_only"
     assert result["score"] is None
-    assert result["score_json"]["contract_score"] == 1.0
+    assert result["score_json"]["contract_score"] == 0.0
     assert result["score_json"]["reportable_score"] is False
-    assert result["score_json"]["contract_only"] is True
-    assert task_score["reportable_metadata"] is True
-    assert task_score["has_model_output"] is True
+    assert result["score_json"]["contract_only"] is False
+    assert task_score["reportable_metadata"] is False
+    assert task_score["has_model_output"] is False
 
 
 def test_run_reportable_ingests_official_scorer_artifact_for_reportable_score(
@@ -1354,6 +1354,7 @@ def test_run_reportable_ingests_official_scorer_artifact_for_reportable_score(
             benchmark_id: {
                 "snapshot_id": "hellaswag-authorized-2026-current",
                 "snapshot_authorization": "official_or_authorized_current_release",
+                "snapshot_sha256": "sha256:hellaswagauthorizedsnapshot000000000000000000000000000000000000",
                 "dataset_revision": "hellaswag-authorized-2026-current",
                 "source": "https://huggingface.co/datasets/Rowan/hellaswag",
                 "authorization_ref": "operator_supplied_authorized_snapshot_manifest",
@@ -1381,11 +1382,31 @@ def test_run_reportable_ingests_official_scorer_artifact_for_reportable_score(
         encoding="utf-8",
     )
     artifact = tmp_path / "lm_eval_hellaswag_score.json"
+    predictions = tmp_path / "model_predictions.jsonl"
+    predictions.write_text(
+        json.dumps(
+            {
+                "benchmark_id": benchmark_id,
+                "task_id": "hellaswag-1",
+                "prediction": "B",
+                "prediction_source": "model_backend",
+                "prediction_scope": "reportable_candidate_model_output",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     artifact.write_text(
         json.dumps(
             {
                 "benchmark_id": benchmark_id,
                 "official_scorer_ref": "hellaswag-official-eval-2026",
+                "scorer_package": "lm_eval",
+                "scorer_version": "2026.5.test",
+                "scorer_command": "lm_eval --tasks hellaswag",
+                "prediction_sha256": runner._file_sha256(predictions),
+                "task_snapshot_sha256": "sha256:hellaswagauthorizedsnapshot000000000000000000000000000000000000",
+                "checkpoint_sha256": "sha256:modelcheckpoint0000000000000000000000000000000000000000",
                 "score": 0.875,
                 "metrics": {"normalized_accuracy": 0.875},
             }
@@ -1405,6 +1426,8 @@ def test_run_reportable_ingests_official_scorer_artifact_for_reportable_score(
                 benchmark_id,
                 "--run-id",
                 "hellaswag-official-artifact-fixture",
+                "--predictions",
+                str(predictions),
                 "--official-scorer-artifacts",
                 str(artifact),
             ]

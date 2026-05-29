@@ -9,6 +9,26 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+ALLOWED_QWEN_MODEL_IDS = (
+    "qwen/qwen3.6-27b",
+    "qwen/qwen3.6-27b2",
+    "qwen/qwen3.6-27b3",
+)
+
+BAD_TEACHER_TEXT_MARKERS = (
+    "as an ai",
+    "cannot assist",
+    "can't assist",
+    "unable to assist",
+    "synthid",
+    "c2pa",
+    "content credentials",
+    "watermark",
+    "answer key",
+    "protected eval",
+    "benchmark holdout",
+)
+
 
 SYSTEM_PROMPT = (
     "You are a teacher model producing compact structured distillation targets "
@@ -141,6 +161,19 @@ def parse_teacher_signal(content: str) -> dict[str, Any]:
     return {}
 
 
+def teacher_signal_is_valid(content: str, parsed_signal: dict[str, Any]) -> tuple[bool, str]:
+    if not parsed_signal:
+        return False, "teacher_signal_not_json"
+    corrected = parsed_signal.get("corrected_response") or parsed_signal.get("corrected_answer") or parsed_signal.get("answer")
+    if not isinstance(corrected, str) or len(corrected.strip()) < 16:
+        return False, "teacher_signal_missing_substantive_corrected_response"
+    lowered = f"{content}\n{json.dumps(parsed_signal, ensure_ascii=True, sort_keys=True)}".lower()
+    for marker in BAD_TEACHER_TEXT_MARKERS:
+        if marker in lowered:
+            return False, f"teacher_signal_bad_marker:{marker}"
+    return True, ""
+
+
 def gpu_temperature(index: str) -> int | None:
     if not index:
         return None
@@ -174,8 +207,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="OpenAI-compatible teacher rollout writer for Omnicoder 2026 distillation data")
     parser.add_argument("--input", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--base-url", default="http://127.0.0.1:18082/v1")
-    parser.add_argument("--model", default="qwen3.6-27b-q4")
+    parser.add_argument("--base-url", default="http://127.0.0.1:1234/v1")
+    parser.add_argument("--model", choices=ALLOWED_QWEN_MODEL_IDS, default="qwen/qwen3.6-27b")
     parser.add_argument("--limit", type=int, default=64)
     parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--temperature", type=float, default=0.2)
@@ -224,12 +257,13 @@ def main(argv: list[str] | None = None) -> int:
             response = post_chat(args.base_url, args.model, prompt, args.timeout, args.max_tokens, args.temperature)
             content = teacher_text(response)
             parsed_signal = parse_teacher_signal(content)
-            if content.strip():
+            valid_signal, validation_error = teacher_signal_is_valid(content, parsed_signal)
+            if content.strip() and valid_signal:
                 status = "ok"
                 error = ""
             else:
                 status = "failed"
-                error = "empty_teacher_content"
+                error = validation_error or "empty_teacher_content"
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
             content = ""
             parsed_signal = {}

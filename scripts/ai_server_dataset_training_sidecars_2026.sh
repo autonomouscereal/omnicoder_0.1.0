@@ -4,7 +4,11 @@ set -euo pipefail
 ROOT="${OMNICODER_REPO:-/home/cereal/omnicoder_2026_work}"
 RUN_ID="${OMNICODER_RUN_ID:-dataset_sidecars_$(date -u +%Y%m%dT%H%M%SZ)}"
 PROFILE="${OMNICODER_DATASET_PROFILE:-profiles/dataset_curation_2026.json}"
-TEACHER_MODEL="${OMNICODER_TEACHER_MODEL:-qwen3.6-27b-q4}"
+TEACHER_MODEL="${OMNICODER_TEACHER_MODEL:-qwen/qwen3.6-27b}"
+TEACHER_MODEL_GPU1="${OMNICODER_TEACHER_MODEL_GPU1:-qwen/qwen3.6-27b}"
+TEACHER_MODEL_GPU2="${OMNICODER_TEACHER_MODEL_GPU2:-qwen/qwen3.6-27b2}"
+TEACHER_MODEL_GPU3="${OMNICODER_TEACHER_MODEL_GPU3:-qwen/qwen3.6-27b3}"
+TEACHER_BASE_URL="${OMNICODER_TEACHER_BASE_URL:-http://127.0.0.1:1234/v1}"
 MAX_RECORDS_PER_DATASET="${OMNICODER_MAX_RECORDS_PER_DATASET:-1024}"
 TEACHER_LIMIT="${OMNICODER_TEACHER_LIMIT:-256}"
 MAX_GPU_TEMP="${OMNICODER_MAX_GPU_TEMP:-78}"
@@ -43,7 +47,7 @@ MEDIA_TEACHER_ROLLOUT_MODE="${OMNICODER_MEDIA_TEACHER_ROLLOUT_MODE:-live}"
 MEDIA_TEACHER_LIMIT="${OMNICODER_MEDIA_TEACHER_LIMIT:-$TEACHER_LIMIT}"
 LOCAL_HF_PROFILE="${OMNICODER_LOCAL_HF_PROFILE:-profiles/training_harness_2026.json}"
 LOCAL_HF_BACKEND="${OMNICODER_LOCAL_HF_BACKEND:-unsloth}"
-LOCAL_HF_MODEL="${OMNICODER_LOCAL_HF_MODEL:-Qwen/Qwen3-4B}"
+LOCAL_HF_MODEL="${OMNICODER_LOCAL_HF_MODEL:-}"
 LOCAL_HF_TRAIN_JSONL="${OMNICODER_LOCAL_HF_TRAIN_JSONL:-}"
 LOCAL_HF_MAX_STEPS="${OMNICODER_LOCAL_HF_MAX_STEPS:-1000}"
 LOCAL_HF_MAX_SEQ_LEN="${OMNICODER_LOCAL_HF_MAX_SEQ_LEN:-4096}"
@@ -68,6 +72,29 @@ truthy() {
     *) return 1 ;;
   esac
 }
+
+require_exact_teacher_models() {
+  local item
+  for item in "$TEACHER_MODEL" "$TEACHER_MODEL_GPU1" "$TEACHER_MODEL_GPU2" "$TEACHER_MODEL_GPU3"; do
+    case "$item" in
+      qwen/qwen3.6-27b|qwen/qwen3.6-27b2|qwen/qwen3.6-27b3) ;;
+      *) echo "bad Qwen teacher model id: $item (must be one of the exact LM Studio pinned ids)" >&2; exit 23 ;;
+    esac
+  done
+}
+
+require_non_qwen_fast_hf_model() {
+  if [[ -z "$LOCAL_HF_MODEL" ]]; then
+    echo "LOCAL_HF_MODEL is required for local HF fast-card lanes and must not be Qwen" >&2
+    exit 24
+  fi
+  if [[ "$LOCAL_HF_MODEL" == Qwen/* || "$LOCAL_HF_MODEL" == qwen/* ]]; then
+    echo "LOCAL_HF_MODEL must not be Qwen on fast-card/non-Qwen lanes: $LOCAL_HF_MODEL" >&2
+    exit 24
+  fi
+}
+
+require_exact_teacher_models
 
 require_nonempty_jsonl() {
   local path="$1"
@@ -625,8 +652,8 @@ p40_teacher_rollouts() {
     CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" -m omnicoder.data_factory.openai_teacher_rollout_2026 \
       --input "$job_dir/shard_gpu1.jsonl" \
       --out "$out_dir/qwen36_gpu1.jsonl" \
-      --base-url http://127.0.0.1:18084/v1 \
-      --model "$TEACHER_MODEL" \
+      --base-url "$TEACHER_BASE_URL" \
+      --model "$TEACHER_MODEL_GPU1" \
       --limit "$TEACHER_LIMIT" --max-tokens 1024 --temperature 0.2 --timeout 180 --sleep 2 \
       --record-kind qwen36_p40_agentic_math_code_tool \
       --thermal-gpu-index 1 --max-gpu-temp "$MAX_GPU_TEMP" \
@@ -638,8 +665,8 @@ p40_teacher_rollouts() {
     CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" -m omnicoder.data_factory.openai_teacher_rollout_2026 \
       --input "$job_dir/shard_gpu2.jsonl" \
       --out "$out_dir/qwen36_gpu2.jsonl" \
-      --base-url http://127.0.0.1:18082/v1 \
-      --model "$TEACHER_MODEL" \
+      --base-url "$TEACHER_BASE_URL" \
+      --model "$TEACHER_MODEL_GPU2" \
       --limit "$TEACHER_LIMIT" --max-tokens 1024 --temperature 0.2 --timeout 180 --sleep 2 \
       --record-kind qwen36_p40_agentic_math_code_tool \
       --thermal-gpu-index 2 --max-gpu-temp "$MAX_GPU_TEMP" \
@@ -651,8 +678,8 @@ p40_teacher_rollouts() {
     CUDA_VISIBLE_DEVICES="" "$PYTHON_BIN" -m omnicoder.data_factory.openai_teacher_rollout_2026 \
       --input "$job_dir/shard_gpu3.jsonl" \
       --out "$out_dir/qwen36_gpu3.jsonl" \
-      --base-url http://127.0.0.1:18085/v1 \
-      --model "$TEACHER_MODEL" \
+      --base-url "$TEACHER_BASE_URL" \
+      --model "$TEACHER_MODEL_GPU3" \
       --limit "$TEACHER_LIMIT" --max-tokens 1024 --temperature 0.2 --timeout 180 --sleep 2 \
       --record-kind qwen36_p40_agentic_math_code_tool \
       --thermal-gpu-index 3 --max-gpu-temp "$MAX_GPU_TEMP" \
@@ -788,6 +815,7 @@ benchmark_materialize() {
 }
 
 local_hf_trainer() {
+  require_non_qwen_fast_hf_model
   local source="$LOCAL_HF_TRAIN_JSONL"
   if [[ -z "$source" ]]; then
     if [[ -s "weights/agentic_tool_training_2026/latest_run/tool_sft.jsonl" ]]; then

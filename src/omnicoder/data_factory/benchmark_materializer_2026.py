@@ -19,6 +19,8 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.parse
+import urllib.request
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -2295,6 +2297,70 @@ def hf_file_rows(
     return rows[:limit], errors
 
 
+def hf_dataset_server_rows(
+    dataset_id: str,
+    *,
+    config: str | None,
+    splits: list[str],
+    limit: int,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    rows: list[dict[str, Any]] = []
+    errors: list[str] = []
+    dataset_candidates = [dataset_id]
+    if dataset_id == "hellaswag":
+        dataset_candidates.append("Rowan/hellaswag")
+    for split in splits:
+        if len(rows) >= limit:
+            break
+        offset = 0
+        while len(rows) < limit:
+            page_rows: list[Any] | None = None
+            source_url = ""
+            for candidate in dataset_candidates:
+                query = {
+                    "dataset": candidate,
+                    "config": config or "default",
+                    "split": split,
+                    "offset": offset,
+                    "length": max(1, min(100, int(limit) - len(rows))),
+                }
+                url = "https://datasets-server.huggingface.co/rows?" + urllib.parse.urlencode(query)
+                try:
+                    with urllib.request.urlopen(url, timeout=45) as response:
+                        payload = json.loads(response.read().decode("utf-8", errors="replace"))
+                except Exception as exc:
+                    errors.append(f"{candidate}:{config or 'default'}:{split}: datasets-server rows failed: {exc}")
+                    continue
+                value = payload.get("rows")
+                if isinstance(value, list):
+                    page_rows = value
+                    source_url = url
+                    break
+                errors.append(f"{candidate}:{config or 'default'}:{split}: datasets-server returned no rows list")
+            if not page_rows:
+                break
+            for item in page_rows:
+                if not isinstance(item, dict):
+                    continue
+                raw = item.get("row")
+                if not isinstance(raw, dict):
+                    continue
+                row = dict(raw)
+                row.setdefault("_hf_dataset", dataset_id)
+                if config:
+                    row.setdefault("_hf_config", config)
+                row.setdefault("_hf_split", split)
+                row.setdefault("_source_index", int(item.get("row_idx") or len(rows)))
+                row.setdefault("_source_ref", source_url)
+                rows.append(row)
+                if len(rows) >= limit:
+                    break
+            offset += len(page_rows)
+            if len(page_rows) < 1:
+                break
+    return rows[:limit], errors
+
+
 def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[dict[str, Any]], list[str]]:
     errors: list[str] = []
     try:
@@ -2305,12 +2371,25 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
             if not isinstance(entry, dict):
                 entry = {"id": str(entry).strip()}
             dataset_id = str(entry.get("id") or entry.get("dataset") or "").strip()
+            config = str(entry.get("config") or entry.get("name") or "").strip() or None
+            splits = entry.get("splits") or spec.get("splits") or ["test", "validation", "train"]
+            if not isinstance(splits, list):
+                splits = [str(splits)]
             if not dataset_id:
                 continue
             file_rows, file_errors = hf_file_rows(dataset_id, entry, cache_root, limit)
             errors.extend(file_errors)
             if file_rows:
                 return file_rows, errors
+            server_rows, server_errors = hf_dataset_server_rows(
+                dataset_id,
+                config=config,
+                splits=[str(split) for split in splits],
+                limit=limit,
+            )
+            errors.extend(server_errors)
+            if server_rows:
+                return server_rows, errors
         return [], errors
     try:
         from datasets import Video  # type: ignore
@@ -2370,6 +2449,15 @@ def hf_rows(spec: dict[str, Any], cache_root: Path, limit: int) -> tuple[list[di
             except Exception as exc:
                 label = f"{dataset_id}:{config}:{split}" if config else f"{dataset_id}:{split}"
                 errors.append(f"{label}: {exc}")
+        server_rows, server_errors = hf_dataset_server_rows(
+            dataset_id,
+            config=config,
+            splits=[str(split) for split in splits],
+            limit=limit,
+        )
+        errors.extend(server_errors)
+        if server_rows:
+            return server_rows, errors
         file_rows, file_errors = hf_file_rows(dataset_id, entry, cache_root, limit)
         errors.extend(file_errors)
         if file_rows:

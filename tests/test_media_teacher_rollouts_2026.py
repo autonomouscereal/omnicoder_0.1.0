@@ -52,7 +52,12 @@ def test_live_subprocess_runner_records_artifact_metadata(tmp_path: Path, monkey
     _jsonl(
         source,
         [
-            {"teacher_name": "qwen_image_generate", "job_type": "image_reward_label", "input_json": {"prompt": "city at night"}},
+            {
+                "teacher_name": "qwen_image_generate",
+                "job_type": "image_reward_label",
+                "contamination_status": "clean",
+                "input_json": {"prompt": "city at night"},
+            },
         ],
     )
     calls: list[str] = []
@@ -84,6 +89,7 @@ def test_live_subprocess_runner_records_artifact_metadata(tmp_path: Path, monkey
     assert calls == [f"python runner.py --job {out_dir / 'jobs' / 'media_teacher_job_00000001.json'} --test qwen_t2i"]
     row = _rows(out_dir / "media_teacher_rollouts.jsonl")[0]
     assert row["status"] == "ok"
+    assert row["split"] == "train"
     assert row["artifact_metadata"][0]["exists"] is True
     assert row["artifact_metadata"][0]["byte_size"] == artifact.stat().st_size
     assert row["artifact_metadata"][0]["sha256"]
@@ -93,11 +99,13 @@ def test_resume_retries_failed_rows_but_skips_ok_rows(tmp_path: Path, monkeypatc
     retry_job = {
         "teacher_name": "qwen_image_generate",
         "job_type": "image_reward_label",
+        "contamination_status": "clean",
         "input_json": {"prompt": "retry this failed teacher job"},
     }
     completed_job = {
         "teacher_name": "qwen_image_generate",
         "job_type": "image_reward_label",
+        "contamination_status": "clean",
         "input_json": {"prompt": "do not rerun this completed teacher job"},
     }
     source = tmp_path / "jobs.jsonl"
@@ -159,6 +167,7 @@ def test_live_http_runner_uses_embedded_workflow(tmp_path: Path, monkeypatch) ->
             {
                 "teacher_name": "ltx_2_3",
                 "job_type": "temporal_reward_label",
+                "contamination_status": "clean",
                 "input_json": {"prompt": "slow camera move", "workflow": {"1": {"class_type": "SaveAnimatedWEBP"}}},
             }
         ],
@@ -196,8 +205,178 @@ def test_live_http_runner_uses_embedded_workflow(tmp_path: Path, monkeypatch) ->
     assert calls[1][0] == "GET"
     row = _rows(out_dir / "media_teacher_rollouts.jsonl")[0]
     assert row["status"] == "ok"
+    assert row["split"] == "train"
     assert row["target_json"]["rollout_result"]["prompt_id"] == "abc"
     assert row["artifact_metadata"][0]["path"].endswith("ltx_result.webp")
+
+
+def test_live_artifact_with_unknown_source_contamination_is_quarantined(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "jobs.jsonl"
+    out_dir = tmp_path / "rollouts"
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir()
+    artifact = artifact_root / "qwen_result.png"
+    artifact.write_bytes(b"valid enough artifact bytes")
+    _jsonl(
+        source,
+        [
+            {
+                "teacher_name": "qwen_image_generate",
+                "job_type": "image_reward_label",
+                "input_json": {
+                    "prompt": "city at night",
+                    "source_payload": {"contamination": {"status": "unknown"}},
+                },
+            },
+        ],
+    )
+
+    def fake_run(command, shell, check, stdout, stderr, text, timeout, env):  # noqa: ANN001
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"ok": True, "files": [str(artifact)]}), stderr="")
+
+    monkeypatch.setattr(rollouts.subprocess, "run", fake_run)
+
+    code = rollouts.main(
+        [
+            "--input",
+            str(source),
+            "--out-dir",
+            str(out_dir),
+            "--mode",
+            "live",
+            "--artifact-root",
+            str(artifact_root),
+            "--runner-command",
+            "python runner.py --job {job_json} --test {test}",
+        ]
+    )
+
+    assert code == 0
+    row = _rows(out_dir / "media_teacher_rollouts.jsonl")[0]
+    assert row["status"] == "ok"
+    assert row["artifact_metadata"][0]["exists"] is True
+    assert row["split"] == "blocked_until_review"
+    assert row["training_bucket"] == "blocked_until_review"
+    assert row["contamination_status"] == "quarantine"
+    assert row["source_contamination_status"] == "unknown"
+    assert "source_contamination_status_not_clean:unknown" in row["train_quarantine_reasons"]
+    assert row["quality_score"] == 0.0
+
+
+def test_live_artifact_with_clean_curation_policy_is_trainable(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "jobs.jsonl"
+    out_dir = tmp_path / "rollouts"
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir()
+    artifact = artifact_root / "qwen_result.png"
+    artifact.write_bytes(b"valid enough artifact bytes")
+    _jsonl(
+        source,
+        [
+            {
+                "teacher": "qwen_image_generate",
+                "job_type": "qwen_image_prompt_reward",
+                "curation_policy_2026": {
+                    "accepted": True,
+                    "dataset_integrity_2026": {"accepted": True, "issues": [], "reasons": []},
+                },
+                "input_json": {"prompt": "clean curated image prompt"},
+            },
+        ],
+    )
+
+    def fake_run(command, shell, check, stdout, stderr, text, timeout, env):  # noqa: ANN001
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"ok": True, "files": [str(artifact)]}), stderr="")
+
+    monkeypatch.setattr(rollouts.subprocess, "run", fake_run)
+
+    code = rollouts.main(
+        [
+            "--input",
+            str(source),
+            "--out-dir",
+            str(out_dir),
+            "--mode",
+            "live",
+            "--artifact-root",
+            str(artifact_root),
+            "--runner-command",
+            "python runner.py --job {job_json} --test {test}",
+        ]
+    )
+
+    assert code == 0
+    row = _rows(out_dir / "media_teacher_rollouts.jsonl")[0]
+    assert row["status"] == "ok"
+    assert row["teacher"] == "qwen_image_generate"
+    assert row["split"] == "train"
+    assert row["source_contamination_status"] == "clean"
+    assert row["train_quarantine_reasons"] == []
+
+
+def test_clean_curation_policy_does_not_override_embedded_unknown_source_prompt(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "jobs.jsonl"
+    out_dir = tmp_path / "rollouts"
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir()
+    artifact = artifact_root / "qwen_result.png"
+    artifact.write_bytes(b"valid enough artifact bytes")
+    _jsonl(
+        source,
+        [
+            {
+                "teacher": "qwen_image_generate",
+                "job_type": "qwen_image_prompt_reward",
+                "curation_policy_2026": {
+                    "accepted": True,
+                    "dataset_integrity_2026": {"accepted": True, "issues": [], "reasons": []},
+                },
+                "input_json": {
+                    "prompt": "Generate image from {'contamination': {'status': 'unknown'}, 'prompt': 'bad embedded metadata'}",
+                },
+            },
+        ],
+    )
+
+    def fake_run(command, shell, check, stdout, stderr, text, timeout, env):  # noqa: ANN001
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"ok": True, "files": [str(artifact)]}), stderr="")
+
+    monkeypatch.setattr(rollouts.subprocess, "run", fake_run)
+
+    code = rollouts.main(
+        [
+            "--input",
+            str(source),
+            "--out-dir",
+            str(out_dir),
+            "--mode",
+            "live",
+            "--artifact-root",
+            str(artifact_root),
+            "--runner-command",
+            "python runner.py --job {job_json} --test {test}",
+        ]
+    )
+
+    assert code == 0
+    row = _rows(out_dir / "media_teacher_rollouts.jsonl")[0]
+    assert row["status"] == "ok"
+    assert row["split"] == "blocked_until_review"
+    assert row["source_contamination_status"] == "unknown"
+    assert "source_contamination_status_not_clean:unknown" in row["train_quarantine_reasons"]
+
+
+def test_artifact_metadata_maps_comfyui_container_output_path_to_host_root(tmp_path: Path) -> None:
+    artifact = tmp_path / "nested" / "result.png"
+    artifact.parent.mkdir()
+    artifact.write_bytes(b"real-ish image bytes")
+
+    meta = rollouts.artifact_metadata("/opt/ComfyUI/output/nested/result.png", tmp_path)
+
+    assert meta["path"] == str(artifact)
+    assert meta["exists"] is True
+    assert meta["byte_size"] == artifact.stat().st_size
+    assert meta["sha256"]
 
 
 def test_live_strict_returns_nonzero_on_missing_runner(tmp_path: Path) -> None:

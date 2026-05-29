@@ -62,7 +62,18 @@ def test_dataset_inspector_rejects_holdout_reportable_and_contaminated_rows(tmp_
     train = _write_jsonl(
         tmp_path / "train.jsonl",
         [
-            {"split": "train", "messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "there"}]},
+            {
+                "split": "train",
+                "contamination_status": "clean",
+                "quality": {"score": 0.95},
+                "messages": [
+                    {"role": "user", "content": "Explain the validated trainer bridge health check."},
+                    {
+                        "role": "assistant",
+                        "content": "The trainer bridge accepts this row because it has clean curation metadata, a substantive prompt, and a substantive assistant target.",
+                    },
+                ],
+            },
             {"split": "eval_holdout", "prompt": "do not train", "completion": "leak"},
             {"split": "train", "prompt": "secret", "completion": "bad", "secret_rejected": True},
             {"split": "train", "prompt": "contam", "completion": "bad", "contamination": {"contaminated": True}},
@@ -80,7 +91,18 @@ def test_dataset_inspector_rejects_holdout_reportable_and_contaminated_rows(tmp_
 
 
 def test_dry_run_manifest_allows_missing_unsloth_but_records_backend(tmp_path: Path) -> None:
-    train = _write_jsonl(tmp_path / "train.jsonl", [{"split": "train", "prompt": "solve", "completion": "ok"}])
+    train = _write_jsonl(
+        tmp_path / "train.jsonl",
+        [
+            {
+                "split": "train",
+                "contamination_status": "clean",
+                "quality": {"score": 0.95},
+                "prompt": "Solve the bridge readiness task with a useful explanation.",
+                "completion": "The bridge readiness task passes because the clean train row has a substantive completion.",
+            }
+        ],
+    )
     args = _args(train, tmp_path / "out")
 
     code, manifest = bridge.execute(args)
@@ -101,8 +123,10 @@ def test_normalizer_accepts_omnicoder_input_target_training_rows(tmp_path: Path)
             {
                 "training_bucket": "train",
                 "use_policy": "train",
-                "input_json": {"messages": [{"role": "user", "content": "Solve 2+2."}]},
-                "target_json": {"content": "4"},
+                "contamination_status": "clean",
+                "quality": {"score": 0.95},
+                "input_json": {"messages": [{"role": "user", "content": "Solve 2+2 and explain the verification."}]},
+                "target_json": {"content": "The verified answer is 4 because adding two and two yields four."},
                 "schema": "omnicoder.real_multimodal_training_2026.v1",
             }
         ],
@@ -112,11 +136,30 @@ def test_normalizer_accepts_omnicoder_input_target_training_rows(tmp_path: Path)
 
     assert total == 1
     assert rejected == {}
-    assert rows == [{"messages": [{"role": "user", "content": "Solve 2+2."}, {"role": "assistant", "content": "4"}], "metadata": {}}]
+    assert rows == [
+        {
+            "messages": [
+                {"role": "user", "content": "Solve 2+2 and explain the verification."},
+                {"role": "assistant", "content": "The verified answer is 4 because adding two and two yields four."},
+            ],
+            "metadata": {},
+        }
+    ]
 
 
 def test_live_manifest_fails_closed_when_backend_missing(tmp_path: Path, monkeypatch) -> None:
-    train = _write_jsonl(tmp_path / "train.jsonl", [{"split": "train", "prompt": "solve", "completion": "ok"}])
+    train = _write_jsonl(
+        tmp_path / "train.jsonl",
+        [
+            {
+                "split": "train",
+                "contamination_status": "clean",
+                "quality": {"score": 0.95},
+                "prompt": "Solve the live backend dependency check with a useful explanation.",
+                "completion": "The live backend path should fail closed when required dependencies are missing.",
+            }
+        ],
+    )
     args = _args(train, tmp_path / "out", dry_run=False)
     monkeypatch.setattr(bridge, "missing_deps", lambda backend, load_in_4bit: ["unsloth"])
 
@@ -128,7 +171,18 @@ def test_live_manifest_fails_closed_when_backend_missing(tmp_path: Path, monkeyp
 
 
 def test_protected_gpu_overlap_fails_closed(tmp_path: Path) -> None:
-    train = _write_jsonl(tmp_path / "train.jsonl", [{"split": "train", "prompt": "solve", "completion": "ok"}])
+    train = _write_jsonl(
+        tmp_path / "train.jsonl",
+        [
+            {
+                "split": "train",
+                "contamination_status": "clean",
+                "quality": {"score": 0.95},
+                "prompt": "Solve the protected GPU overlap check with a useful explanation.",
+                "completion": "The protected GPU guard should fail closed when requested GPUs overlap protected devices.",
+            }
+        ],
+    )
     args = _args(train, tmp_path / "out", host_gpu_ids="0")
 
     code, manifest = bridge.execute(args)

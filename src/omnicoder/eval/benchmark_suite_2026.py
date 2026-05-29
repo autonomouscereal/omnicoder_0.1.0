@@ -18,6 +18,7 @@ DEFAULT_PROFILE = "profiles/benchmark_suite_2026.json"
 DEFAULT_OUT_DIR = "weights/benchmarks_2026"
 DEFAULT_TIMEOUT_SECONDS = 30
 FSDP_LOCAL_FORMAT = "omnicoder2026_native_train_checkpoint_v3_fsdp_local"
+PREDICTION_META_KEY = "__omnicoder_prediction_file_metadata__"
 JUNK_OUTPUT_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
@@ -442,6 +443,69 @@ def _artifact_matches_record(artifact: dict[str, Any], record: dict[str, Any], t
     return True
 
 
+def _first_task_snapshot_hash(tasks: list[dict[str, Any]]) -> str:
+    for task in tasks:
+        for key in ("snapshot_sha256", "task_file_sha256", "official_task_sha256", "manifest_sha256"):
+            value = str(task.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _artifact_prediction_hash(artifact: dict[str, Any]) -> str:
+    return str(artifact.get("prediction_sha256") or artifact.get("predictions_sha256") or artifact.get("prediction_file_sha256") or "").strip()
+
+
+def _hash_aliases(value: str) -> set[str]:
+    text = str(value or "").strip()
+    if not text:
+        return set()
+    aliases = {text}
+    if text.lower().startswith("sha256:"):
+        aliases.add(text.split(":", 1)[1])
+    else:
+        aliases.add(f"sha256:{text}")
+    return aliases
+
+
+def _artifact_strict_binding_reasons(
+    artifact: dict[str, Any],
+    tasks: list[dict[str, Any]],
+    prediction_hashes: set[str] | None = None,
+) -> list[str]:
+    reasons: list[str] = []
+    required_any = {
+        "scorer_identity": ("scorer_package", "scorer_name", "official_scorer_package"),
+        "scorer_version": ("scorer_version", "official_scorer_version"),
+        "scorer_command": ("scorer_command", "command", "official_scorer_command"),
+        "prediction_hash": ("prediction_sha256", "predictions_sha256", "prediction_file_sha256"),
+        "model_fingerprint": ("model_fingerprint", "checkpoint_sha256", "checkpoint_fingerprint", "model_sha256"),
+    }
+    for label, keys in required_any.items():
+        if not any(str(artifact.get(key) or "").strip() for key in keys):
+            reasons.append(f"missing_{label}")
+    task_hash = _first_task_snapshot_hash(tasks)
+    artifact_task_hash = str(
+        artifact.get("task_snapshot_sha256")
+        or artifact.get("snapshot_sha256")
+        or artifact.get("task_file_sha256")
+        or artifact.get("official_task_sha256")
+        or artifact.get("manifest_sha256")
+        or ""
+    ).strip()
+    if not artifact_task_hash:
+        reasons.append("missing_task_snapshot_hash")
+    elif task_hash and artifact_task_hash != task_hash:
+        reasons.append("task_snapshot_hash_mismatch")
+    artifact_prediction_hash = _artifact_prediction_hash(artifact)
+    if prediction_hashes is not None:
+        if not artifact_prediction_hash:
+            reasons.append("missing_prediction_hash")
+        elif not (_hash_aliases(artifact_prediction_hash) & prediction_hashes):
+            reasons.append("prediction_hash_mismatch")
+    return reasons
+
+
 def _official_artifact_ref(artifact: dict[str, Any]) -> dict[str, Any]:
     digest = (
         artifact.get("sha256")
@@ -456,6 +520,10 @@ def _official_artifact_ref(artifact: dict[str, Any]) -> dict[str, Any]:
         "sha256": str(digest),
         "official_scorer_ref": str(artifact.get("official_scorer_ref") or artifact.get("scorer_ref") or ""),
         "benchmark_id": str(artifact.get("benchmark_id") or artifact.get("adapter_id") or ""),
+        "prediction_sha256": str(artifact.get("prediction_sha256") or artifact.get("predictions_sha256") or artifact.get("prediction_file_sha256") or ""),
+        "task_snapshot_sha256": str(artifact.get("task_snapshot_sha256") or artifact.get("snapshot_sha256") or artifact.get("task_file_sha256") or artifact.get("official_task_sha256") or artifact.get("manifest_sha256") or ""),
+        "scorer_package": str(artifact.get("scorer_package") or artifact.get("scorer_name") or artifact.get("official_scorer_package") or ""),
+        "scorer_version": str(artifact.get("scorer_version") or artifact.get("official_scorer_version") or ""),
     }
 
 
@@ -463,9 +531,12 @@ def select_official_scorer_artifact(
     record: dict[str, Any],
     tasks: list[dict[str, Any]],
     artifacts: list[dict[str, Any]] | None,
+    prediction_hashes: set[str] | None = None,
 ) -> tuple[dict[str, Any] | None, float | None, dict[str, Any] | None]:
     for artifact in artifacts or []:
         if not _artifact_matches_record(artifact, record, tasks):
+            continue
+        if _artifact_strict_binding_reasons(artifact, tasks, prediction_hashes):
             continue
         score = _artifact_numeric_score(artifact)
         ref = _official_artifact_ref(artifact)
@@ -917,20 +988,39 @@ def load_reportable_tasks(profile: dict[str, Any], record: dict[str, Any], cycle
 
 def load_predictions(paths: list[str] | None) -> dict[str, dict[str, Any]]:
     predictions: dict[str, dict[str, Any]] = {}
+    metadata: dict[str, Any] = {"files": [], "hashes": []}
     for item in paths or []:
         path = Path(item)
         if not path.is_absolute():
             path = repo_root() / path
+        digest = _file_sha256(path)
+        metadata["files"].append({"path": str(path), "sha256": digest})
+        metadata["hashes"].append(digest)
         for row in read_jsonl(path):
             benchmark = str(row.get("benchmark_id") or row.get("adapter_id") or "")
             task = str(row.get("task_id") or row.get("id") or "")
             if task:
                 predictions[f"{benchmark}:{task}"] = row
                 predictions.setdefault(task, row)
+    if metadata["files"]:
+        if len(metadata["files"]) > 1:
+            metadata["combined_sha256"] = f"sha256:{stable_hash(metadata['files'])}"
+            metadata["hashes"].append(metadata["combined_sha256"])
+        predictions[PREDICTION_META_KEY] = metadata
     return predictions
 
 
-def task_prediction(task: dict[str, Any], predictions: dict[str, dict[str, Any]]) -> Any:
+def loaded_prediction_hashes(predictions: dict[str, dict[str, Any]]) -> set[str]:
+    metadata = predictions.get(PREDICTION_META_KEY)
+    if not isinstance(metadata, dict):
+        return set()
+    values: set[str] = set()
+    for digest in metadata.get("hashes") or []:
+        values.update(_hash_aliases(str(digest)))
+    return values
+
+
+def task_prediction(task: dict[str, Any], predictions: dict[str, dict[str, Any]], *, allow_task_embedded_prediction: bool = False) -> Any:
     benchmark = str(task.get("benchmark_id") or "")
     task_id = str(task.get("task_id") or task.get("id") or "")
     row = predictions.get(f"{benchmark}:{task_id}") or predictions.get(task_id)
@@ -941,9 +1031,10 @@ def task_prediction(task: dict[str, Any], predictions: dict[str, dict[str, Any]]
         for key in ("model_answer", "model_output", "model_patch", "model_actions", "output_path", "generated_artifact"):
             if key in row:
                 return row[key]
-    for key in ("prediction", "model_answer", "model_output", "output", "model_patch", "model_actions", "tool_call", "artifact_path", "output_path", "generated_artifact"):
-        if key in task:
-            return task[key]
+    if allow_task_embedded_prediction:
+        for key in ("prediction", "model_answer", "model_output", "output", "model_patch", "model_actions", "tool_call", "artifact_path", "output_path", "generated_artifact"):
+            if key in task:
+                return task[key]
     return None
 
 
@@ -996,23 +1087,8 @@ def task_has_reportable_metadata(task: dict[str, Any]) -> bool:
 
 
 def task_has_model_output(task: dict[str, Any], prediction: Any) -> bool:
+    del task
     if prediction is None:
-        for key in (
-            "prediction",
-            "model_answer",
-            "model_output",
-            "model_patch",
-            "model_actions",
-            "trajectory",
-            "response",
-            "tool_call",
-            "artifact_path",
-            "output_path",
-            "generated_artifact",
-        ):
-            value = task.get(key)
-            if value not in (None, "", [], {}) and not model_output_quality_reason(value):
-                return True
         return False
     return not model_output_quality_reason(prediction)
 
@@ -1103,7 +1179,7 @@ def score_media_task(task: dict[str, Any], prediction: Any) -> dict[str, Any]:
 
 
 def score_reportable_task(record: dict[str, Any], task: dict[str, Any], predictions: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    prediction = task_prediction(task, predictions)
+    prediction = task_prediction(task, predictions, allow_task_embedded_prediction=False)
     has_output = task_has_model_output(task, prediction)
     text = f"{record['benchmark_id']} {record['adapter_kind']} {record['axis']} {record.get('task_format')}".lower()
     if not has_output:
@@ -1168,7 +1244,7 @@ def reportable_result(
         metadata_ok = all(item["reportable_metadata"] for item in task_scores)
         metadata_contract_ok = enough_tasks and metadata_ok
         official_artifact, official_score_value, official_artifact_ref = select_official_scorer_artifact(
-            record, tasks, official_scorer_artifacts
+            record, tasks, official_scorer_artifacts, loaded_prediction_hashes(predictions)
         )
         official_or_external_scorer = official_score_value is not None and official_artifact_ref is not None
         reportable_score = metadata_contract_ok and official_or_external_scorer
@@ -1523,6 +1599,8 @@ def cmd_run_reportable(args: argparse.Namespace) -> int:
     records = select_records(profile, filter_ids(args))
     predictions = load_predictions(args.predictions)
     official_scorer_artifacts = load_official_scorer_artifacts(args.official_scorer_artifacts)
+    if not predictions:
+        official_scorer_artifacts = []
     out_dir = resolve_out_dir(args.out_dir)
     results_path = out_dir / "reportable_results.jsonl"
     results: list[dict[str, Any]] = []
@@ -1573,7 +1651,7 @@ def cmd_run_reportable(args: argparse.Namespace) -> int:
     # gate condition, not a CLI/process failure. Keep the release gate fail-closed
     # in the summary while returning success so automation can collect and publish
     # the local-only evidence for remediation.
-    return 1 if failed > 0 else 0
+    return 1 if failed > 0 or blocked or status != "ok" else 0
 
 
 def cmd_summarize(args: argparse.Namespace) -> int:

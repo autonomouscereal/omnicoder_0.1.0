@@ -297,15 +297,15 @@ def test_export_sft_rejects_secret_redaction_flag(tmp_path: Path) -> None:
         source,
         [
             {
-                "input_json": {"messages": [{"role": "user", "content": "hello"}]},
-                "target_json": {"content": "safe"},
+                "input_json": {"messages": [{"role": "user", "content": "Explain why secret-bearing rows must be removed."}]},
+                "target_json": {"content": "Secret-bearing rows must be removed before training because they can leak credentials or teach unsafe memorization behavior."},
                 "quality": {"score": 1.0},
                 "contamination_status": "clean",
                 "secret_redaction": {"has_secret": True},
             },
             {
-                "input_json": {"messages": [{"role": "user", "content": "hello"}]},
-                "target_json": {"content": "safe answer"},
+                "input_json": {"messages": [{"role": "user", "content": "Explain why a clean row can be exported."}]},
+                "target_json": {"content": "A clean row can be exported when it has no secret payload, clean contamination metadata, and a substantive assistant target."},
                 "quality": {"score": 1.0},
                 "contamination_status": "clean",
                 "secret_redaction": {"has_secret": False},
@@ -317,4 +317,4 @@ def test_export_sft_rejects_secret_redaction_flag(tmp_path: Path) -> None:
     count = export_sft_jsonl.export_offline(source, out, min_quality=0.1, allow_contaminated=False)
 
     assert count == 1
-    assert "safe answer" in out.read_text(encoding="utf-8")
+    assert "A clean row can be exported" in out.read_text(encoding="utf-8")

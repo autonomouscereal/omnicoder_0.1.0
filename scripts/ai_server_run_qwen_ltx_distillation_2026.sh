@@ -21,14 +21,15 @@ PYTHON_BIN="${OMNICODER_DATA_PYTHON:-python3}"
 RUN_QWEN_TEXT="${OMNICODER_QWEN_LTX_RUN_QWEN_TEXT:-1}"
 RUN_MEDIA="${OMNICODER_QWEN_LTX_RUN_MEDIA:-1}"
 QWEN_TEXT_LIMIT="${OMNICODER_QWEN_TEXT_LIMIT:-48}"
-QWEN_TEXT_MAX_TOKENS="${OMNICODER_QWEN_TEXT_MAX_TOKENS:-224}"
+QWEN_TEXT_MAX_TOKENS="${OMNICODER_QWEN_TEXT_MAX_TOKENS:-2048}"
 QWEN_TEXT_TIMEOUT="${OMNICODER_QWEN_TEXT_TIMEOUT:-420}"
-QWEN_BASE_URL="${OMNICODER_QWEN_BASE_URL:-http://127.0.0.1:18082/v1}"
-QWEN_ENDPOINTS="${OMNICODER_QWEN_ENDPOINTS:-$QWEN_BASE_URL}"
-QWEN_MODEL="${OMNICODER_QWEN_MODEL:-qwen3.6-27b-q4}"
-QWEN_MANAGED_SERVER="${OMNICODER_QWEN_MANAGED_SERVER:-1}"
-QWEN_SERVER_GPU="${OMNICODER_QWEN_SERVER_GPU:-2}"
-QWEN_SERVER_GPUS="${OMNICODER_QWEN_SERVER_GPUS:-$QWEN_SERVER_GPU}"
+QWEN_BASE_URL="${OMNICODER_QWEN_BASE_URL:-http://127.0.0.1:1234/v1}"
+QWEN_ENDPOINTS="${OMNICODER_QWEN_ENDPOINTS:-http://127.0.0.1:1234/v1,http://127.0.0.1:1234/v1,http://127.0.0.1:1234/v1}"
+QWEN_MODELS="${OMNICODER_QWEN_MODELS:-qwen/qwen3.6-27b,qwen/qwen3.6-27b2,qwen/qwen3.6-27b3}"
+QWEN_MODEL="${OMNICODER_QWEN_MODEL:-qwen/qwen3.6-27b}"
+QWEN_MANAGED_SERVER="${OMNICODER_QWEN_MANAGED_SERVER:-0}"
+QWEN_SERVER_GPU="${OMNICODER_QWEN_SERVER_GPU:-1}"
+QWEN_SERVER_GPUS="${OMNICODER_QWEN_SERVER_GPUS:-1,2,3}"
 QWEN_GPU_LAYERS="${OMNICODER_QWEN_GPU_LAYERS:-99}"
 QWEN_CTX_SIZE="${OMNICODER_QWEN_CTX_SIZE:-4096}"
 QWEN_THREADS="${OMNICODER_QWEN_THREADS:-16}"
@@ -36,7 +37,7 @@ QWEN_MAX_GPU_TEMP="${OMNICODER_QWEN_MAX_GPU_TEMP:-88}"
 QWEN_STOP_MANAGED_SERVER="${OMNICODER_QWEN_STOP_MANAGED_SERVER:-0}"
 QWEN_EXISTING_ROLLOUT_DIR="${OMNICODER_EXISTING_QWEN_ROLLOUT_DIR:-$WEIGHTS_ROOT/data_factory/teacher_rollouts/latest}"
 
-COMFYUI_URL="${OMNICODER_COMFYUI_URL:-http://192.168.50.222:27188}"
+COMFYUI_URL="${OMNICODER_COMFYUI_URL:-http://127.0.0.1:27189}"
 COMFY_OUTPUT_ROOT="${OMNICODER_COMFYUI_OUTPUT_ROOT:-/home/cereal/comfyui/output}"
 COMFY_INPUT_ROOT="${OMNICODER_COMFYUI_INPUT_ROOT:-/home/cereal/comfyui/input}"
 QWEN_EDIT_SOURCE_IMAGE="${OMNICODER_QWEN_EDIT_SOURCE_IMAGE:-omnicoder_qwen_edit_seed.png}"
@@ -200,6 +201,31 @@ csv_to_lines() {
   tr ',' '\n' | sed '/^[[:space:]]*$/d' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
 }
 
+require_qwen_lane_policy() {
+  local item model_count endpoint_count gpu_count
+  for item in $(printf '%s,%s' "$QWEN_SERVER_GPU" "$QWEN_SERVER_GPUS" | csv_to_lines); do
+    case "$item" in
+      1|2|3) ;;
+      *) echo "bad Qwen GPU lane: $item (allowed: 1,2,3)" >&2; exit 22 ;;
+    esac
+  done
+  for item in $(printf '%s,%s' "$QWEN_MODELS" "$QWEN_MODEL" | csv_to_lines); do
+    case "$item" in
+      qwen/qwen3.6-27b|qwen/qwen3.6-27b2|qwen/qwen3.6-27b3) ;;
+      *) echo "bad Qwen model id: $item (must be exact LM Studio pinned ids)" >&2; exit 23 ;;
+    esac
+  done
+  endpoint_count=$(printf '%s' "$QWEN_ENDPOINTS" | csv_to_lines | wc -l | tr -d ' ')
+  model_count=$(printf '%s' "$QWEN_MODELS" | csv_to_lines | wc -l | tr -d ' ')
+  gpu_count=$(printf '%s' "$QWEN_SERVER_GPUS" | csv_to_lines | wc -l | tr -d ' ')
+  if [[ "$endpoint_count" -gt 1 && ( "$model_count" -ne "$endpoint_count" || "$gpu_count" -ne "$endpoint_count" ) ]]; then
+    echo "Qwen lane mismatch: endpoints=$endpoint_count models=$model_count gpus=$gpu_count" >&2
+    exit 24
+  fi
+}
+
+require_qwen_lane_policy
+
 start_qwen_servers_if_needed() {
   local save_url="$QWEN_BASE_URL"
   local save_gpu="$QWEN_SERVER_GPU"
@@ -361,7 +387,7 @@ for spec in specs:
         job = {
             "schema": "omnicoder.qwen36_text_teacher_job_2026.v1",
             "teacher_name": "qwen3.6_27b_q4_local",
-            "teacher_model_alias": "qwen3.6-27b-q4",
+            "teacher_model_alias": "qwen/qwen3.6-27b",
             "teacher_provider": "llama_cpp_p40_openai_compatible",
             "job_type": f"{modality}_qwen36_teacher_distill",
             "modality": modality,
@@ -425,8 +451,10 @@ run_qwen_text_rollouts() {
   start_qwen_servers_if_needed
   local -a endpoints=()
   local -a gpus=()
+  local -a models=()
   mapfile -t endpoints < <(printf '%s' "$QWEN_ENDPOINTS" | csv_to_lines)
   mapfile -t gpus < <(printf '%s' "$QWEN_SERVER_GPUS" | csv_to_lines)
+  mapfile -t models < <(printf '%s' "$QWEN_MODELS" | csv_to_lines)
   if (( ${#endpoints[@]} == 0 )); then
     endpoints=("$QWEN_BASE_URL")
   fi
@@ -456,10 +484,11 @@ print(json.dumps({"status": "ok", "shards": count, "rows": row_index}, sort_keys
 PY
   log "running Qwen 3.6 27B Q4 text/code/agentic rollouts limit=$QWEN_TEXT_LIMIT endpoints=${#endpoints[@]}"
   local -a pids=()
-  local index endpoint gpu shard out
+  local index endpoint gpu model shard out
   for index in "${!endpoints[@]}"; do
     endpoint="${endpoints[$index]}"
     gpu="${gpus[$index]:-${gpus[0]:-$QWEN_SERVER_GPU}}"
+    model="${models[$index]:-${models[0]:-$QWEN_MODEL}}"
     shard="$shard_dir/shard_${index}.jsonl"
     out="$OUT_ROOT/raw/qwen36_agentic_code_math_tool.shard_${index}.raw.jsonl"
     [[ -s "$shard" ]] || continue
@@ -467,7 +496,7 @@ PY
       --input "$shard" \
       --out "$out" \
       --base-url "$endpoint" \
-      --model "$QWEN_MODEL" \
+      --model "$model" \
       --limit "$QWEN_TEXT_LIMIT" \
       --max-tokens "$QWEN_TEXT_MAX_TOKENS" \
       --temperature 0.2 \

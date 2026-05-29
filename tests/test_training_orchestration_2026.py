@@ -2105,7 +2105,20 @@ def test_distillation_curriculum_uses_train_all_instead_of_combined_curated(tmp_
     curated = out_dir / "jsonl" / "curated_records.jsonl"
     train_all = out_dir / "jsonl" / "train_all_modalities.jsonl"
     _write_jsonl(curated, [{"split": "eval", "target": "heldout leak"}])
-    _write_jsonl(train_all, [{"split": "train", "target": "train answer"}])
+    _write_jsonl(
+        train_all,
+        [
+            {
+                "split": "train",
+                "training_bucket": "train",
+                "contamination_status": "clean",
+                "quality": {"score": 0.95},
+                "modality": "text",
+                "input": "Explain how an agent verifies a code change before reporting completion.",
+                "target": "A strong agent inspects the relevant files, applies the smallest necessary patch, runs the targeted tests, reads the output, and reports both the changed files and any verification gaps.",
+            }
+        ],
+    )
     commands: list[list[str]] = []
 
     def fake_run_command(cmd, log_path, timeout_seconds=None):
@@ -2116,7 +2129,12 @@ def test_distillation_curriculum_uses_train_all_instead_of_combined_curated(tmp_
     args = argparse.Namespace(distill_profile="", distill_limit=0)
     stage = orch.run_distillation_curriculum_stage(
         profile,
-        {"curated_jsonl": str(curated), "train_all_jsonl": str(train_all)},
+        {
+            "curated_jsonl": str(curated),
+            "train_all_jsonl": str(train_all),
+            "promotion_index": {"status": "passed"},
+            "integrity_rewrite": {"status": "rewritten_clean"},
+        },
         out_dir,
         checkpoint=None,
         args=args,
@@ -2125,6 +2143,17 @@ def test_distillation_curriculum_uses_train_all_instead_of_combined_curated(tmp_
     assert commands
     assert commands[0][commands[0].index("--records") + 1] == str(train_all)
     assert stage["records_selection"]["source"] == "train_all_jsonl"
+
+
+def test_distillation_rejects_train_all_without_integrity_evidence(tmp_path):
+    out_dir = tmp_path / "out"
+    train_all = out_dir / "jsonl" / "train_all_modalities.jsonl"
+    _write_jsonl(train_all, [{"split": "train", "target": "train answer"}])
+    records, selection = orch.distillation_train_records_path({"train_all_jsonl": str(train_all)}, out_dir)
+    assert records == ""
+    assert selection["status"] == "failed"
+    assert selection["source"] == "train_all_jsonl"
+    assert selection["reason"] == "missing_dataset_index_or_integrity_rewrite_for_train_all_jsonl"
 
 
 def test_distillation_fallback_filters_curated_to_train_only(tmp_path):

@@ -530,6 +530,11 @@ def try_external_curation(input_path: Path, out_path: Path, rejected_path: Path,
 
 def fallback_curation(input_path: Path, out_path: Path, rejected_path: Path, profile: dict[str, Any]) -> dict[str, Any]:
     cfg = profile.get("curation_layers") if isinstance(profile.get("curation_layers"), dict) else {}
+    if not bool(cfg.get("allow_weak_fallback_curation", False)):
+        raise RuntimeError(
+            "curation_layers_2026 unavailable and weak fallback curation is disabled; "
+            "set curation_layers.allow_weak_fallback_curation=true only for explicit diagnostics"
+        )
     require_2025_2026 = bool(cfg.get("require_2025_2026", True))
     min_chars = int(cfg.get("min_chars", 8))
     seen: set[str] = set()

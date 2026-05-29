@@ -9,12 +9,29 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from omnicoder.data_factory.curation_policy_2026 import CurationPolicyConfig, audit_training_record
+from omnicoder.data_factory.export_sft_jsonl import NONTRAIN_CONTAMINATION_STATUSES, contains_secret_payload
+
 
 BASE_DEPS = ("torch", "transformers", "datasets", "trl", "peft")
 UNSLOTH_DEPS = BASE_DEPS + ("unsloth",)
 DEFAULT_PROTECTED_GPUS = "0,4,6"
 TRAIN_SPLITS = {"train", "training"}
-REJECT_SPLITS = {"eval", "evaluation", "test", "holdout", "eval_holdout", "reportable", "validation", "valid"}
+REJECT_SPLITS = {
+    "blocked_until_review",
+    "eval",
+    "eval_holdout",
+    "evaluation",
+    "holdout",
+    "quarantine",
+    "rejected",
+    "reportable",
+    "research_internal",
+    "reward_only",
+    "test",
+    "valid",
+    "validation",
+}
 
 
 def find_dep(name: str) -> bool:
@@ -92,11 +109,18 @@ def rejection_reason(obj: dict[str, Any], require_train_bucket: bool) -> str | N
     contamination = obj.get("contamination") or obj.get("contamination_report") or {}
     if isinstance(contamination, dict) and contamination.get("contaminated") is True:
         return "contaminated"
-    status = str(obj.get("contamination_status") or nested_value(obj, ("metadata", "contamination_status")) or "").lower()
-    if status in {"contaminated", "rejected", "benchmark_leak"}:
-        return "contaminated"
     if obj.get("reportable_task") is True or nested_value(obj, ("metadata", "reportable_task")) is True:
         return "reportable_task"
+    status = str(
+        obj.get("contamination_status")
+        or nested_value(obj, ("metadata", "contamination_status"))
+        or nested_value(obj, ("lineage", "contamination_status"))
+        or "unknown"
+    ).lower()
+    if status in NONTRAIN_CONTAMINATION_STATUSES:
+        return f"contamination:{status}"
+    if contains_secret_payload(obj):
+        return "secret_payload"
     return None
 
 
@@ -120,13 +144,44 @@ def normalize_messages(messages: Any) -> list[dict[str, str]] | None:
     return normalized or None
 
 
+def prompt_target_from_normalized(row: dict[str, Any]) -> tuple[str, str]:
+    messages = row.get("messages") if isinstance(row.get("messages"), list) else []
+    if messages:
+        prompt = "\n".join(str(message.get("content") or "") for message in messages if str(message.get("role") or "").lower() in {"system", "user", "tool"})
+        target = "\n".join(str(message.get("content") or "") for message in messages if str(message.get("role") or "").lower() == "assistant")
+        return prompt, target
+    return str(row.get("prompt") or ""), str(row.get("completion") or row.get("text") or "")
+
+
+def policy_rejection_reason(obj: dict[str, Any], normalized: dict[str, Any]) -> str | None:
+    prompt, target = prompt_target_from_normalized(normalized)
+    audit = audit_training_record(
+        obj,
+        prompt=prompt,
+        target=target,
+        modality=str(obj.get("modality") or "text"),
+        existing_quality=float((obj.get("quality") or {}).get("score") or obj.get("quality_score") or 1.0),
+        config=CurationPolicyConfig(min_quality_score=0.35, require_media_artifacts=False, scan_integrity_artifacts=False),
+    )
+    if audit.get("accepted", False):
+        return None
+    return "policy:" + ",".join(str(reason) for reason in audit.get("reasons") or ["unknown"])
+
+
+def accepted_row(obj: dict[str, Any], row: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    reason = policy_rejection_reason(obj, row)
+    if reason:
+        return None, reason
+    return row, None
+
+
 def normalize_sft_obj(obj: dict[str, Any], require_train_bucket: bool) -> tuple[dict[str, Any] | None, str | None]:
     reason = rejection_reason(obj, require_train_bucket)
     if reason:
         return None, reason
     messages = normalize_messages(obj.get("messages")) or normalize_messages(obj.get("conversations"))
     if messages:
-        return {"messages": messages, "metadata": obj.get("metadata", {})}, None
+        return accepted_row(obj, {"messages": messages, "metadata": obj.get("metadata", {})})
     input_json = obj.get("input_json") if isinstance(obj.get("input_json"), dict) else {}
     target_json = obj.get("target_json") if isinstance(obj.get("target_json"), dict) else {}
     if input_json or target_json:
@@ -148,18 +203,21 @@ def normalize_sft_obj(obj: dict[str, Any], require_train_bucket: bool) -> tuple[
             or input_json.get("question")
         )
         if input_messages and isinstance(target_content, str) and target_content.strip():
-            return {
+            return accepted_row(
+                obj,
+                {
                 "messages": input_messages + [{"role": "assistant", "content": target_content}],
                 "metadata": obj.get("metadata", {}),
-            }, None
+                },
+            )
         if input_messages and target_messages:
-            return {"messages": input_messages + target_messages, "metadata": obj.get("metadata", {})}, None
+            return accepted_row(obj, {"messages": input_messages + target_messages, "metadata": obj.get("metadata", {})})
         if isinstance(input_content, str) and input_content.strip() and isinstance(target_content, str) and target_content.strip():
-            return {"prompt": input_content, "completion": target_content, "metadata": obj.get("metadata", {})}, None
+            return accepted_row(obj, {"prompt": input_content, "completion": target_content, "metadata": obj.get("metadata", {})})
     prompt = obj.get("prompt")
     completion = obj.get("completion") or obj.get("response") or obj.get("answer") or obj.get("output")
     if prompt is not None and completion is not None:
-        return {"prompt": str(prompt), "completion": str(completion), "metadata": obj.get("metadata", {})}, None
+        return accepted_row(obj, {"prompt": str(prompt), "completion": str(completion), "metadata": obj.get("metadata", {})})
     instruction = obj.get("instruction") or obj.get("Instruction")
     output = obj.get("output") or obj.get("Output")
     if instruction is not None and output is not None:
@@ -167,10 +225,10 @@ def normalize_sft_obj(obj: dict[str, Any], require_train_bucket: bool) -> tuple[
         prompt_text = str(instruction)
         if input_text:
             prompt_text = f"{prompt_text}\n\n{input_text}"
-        return {"prompt": prompt_text, "completion": str(output), "metadata": obj.get("metadata", {})}, None
+        return accepted_row(obj, {"prompt": prompt_text, "completion": str(output), "metadata": obj.get("metadata", {})})
     text = obj.get("text") or obj.get("content")
     if isinstance(text, str) and text.strip():
-        return {"text": text, "metadata": obj.get("metadata", {})}, None
+        return accepted_row(obj, {"text": text, "metadata": obj.get("metadata", {})})
     return None, "unsupported_schema"
 
 

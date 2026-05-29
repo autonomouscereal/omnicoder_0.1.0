@@ -282,6 +282,9 @@
     "teacher_profile": "profiles/distillation_curriculum_2026.json"
   },
   "gpu_utilization_sidecar": {
+    "comfyui_modality_devices": [
+      "5"
+    ],
     "devices": [
       "1",
       "2",
@@ -295,11 +298,12 @@
     },
     "jobs": [
       {
-        "device": "1",
+        "device": "cpu",
         "enabled": true,
         "job_id": "p40_1_dataset_token_materialization",
         "job_type": "dataset_materialization",
-        "priority": 10
+        "priority": 10,
+        "routing_note": "CPU only: P40 devices 1,2,3 are reserved for exact-ID Qwen distillation, and P40 5 is reserved for ComfyUI modality work."
       },
       {
         "device": "cpu",
@@ -313,28 +317,34 @@
         "promotion": "symlink to weights/external_datasets_2026/latest only after manifest has nonzero train rows and license tiers are reviewed"
       },
       {
-        "device": "2",
+        "device": "cpu",
         "enabled": true,
         "job_id": "p40_2_teacher_distillation_jobs",
         "job_type": "teacher_distillation",
         "limit": 512,
         "priority": 20,
         "records": "weights/curated_datasets_2026/latest/jsonl/train_tool.jsonl",
+        "routing_note": "CPU-only job builder; actual Qwen inference must run through p40_qwen36_agentic_math_code_teacher_rollouts.",
         "skip_if_missing": [
           "weights/curated_datasets_2026/latest/jsonl/train_tool.jsonl"
         ]
       },
       {
         "base_urls": [
-          "http://127.0.0.1:18084/v1",
-          "http://127.0.0.1:18082/v1",
-          "http://127.0.0.1:18085/v1"
+          "http://127.0.0.1:1234/v1",
+          "http://127.0.0.1:1234/v1",
+          "http://127.0.0.1:1234/v1"
         ],
         "cuda_visible_devices": "",
         "device": "1,2,3",
         "enabled": true,
         "job_id": "p40_qwen36_agentic_math_code_teacher_rollouts",
         "job_type": "openai_compatible_teacher_rollout",
+        "model_ids": [
+          "qwen/qwen3.6-27b",
+          "qwen/qwen3.6-27b2",
+          "qwen/qwen3.6-27b3"
+        ],
         "output": "weights/data_factory/teacher_rollouts/latest/qwen36_agentic_math_code_tool.jsonl",
         "priority": 25,
         "record_kind": "qwen36_p40_agentic_math_code_tool",
@@ -344,12 +354,13 @@
       {
         "checkpoint": "weights/training_orchestration_2026/checkpoints/08_long_context.pt",
         "data_dir": "weights/training_orchestration_2026/jsonl",
-        "device": "3",
+        "device": "cpu",
         "enabled": true,
         "job_id": "p40_3_eval_shard_latest_checkpoint",
         "job_type": "eval_shard",
         "max_records_per_file": 64,
         "priority": 30,
+        "routing_note": "CPU/default diagnostic until promoted to a fast-card eval lane; P40 1,2,3 are Qwen-only.",
         "seq_len": 512,
         "skip_if_missing": [
           "weights/training_orchestration_2026/checkpoints/08_long_context.pt",
@@ -357,37 +368,41 @@
         ]
       },
       {
-        "allow_verifier_preset": true,
-        "batch_size": 1,
         "device": "5",
-        "distributed": "none",
         "enabled": true,
-        "fake_quant": true,
-        "init_dtype": "fp16",
-        "job_id": "p40_5_probe_training_run",
-        "job_type": "training_run",
-        "optimizer": "adafactor",
-        "placement": "single",
-        "precision": "fp16",
-        "preset": "ledger_probe",
+        "job_id": "p40_5_comfyui_media_teacher_rollout",
+        "job_type": "media_teacher_rollout",
+        "comfyui_url": "http://127.0.0.1:27189",
+        "limit": 64,
+        "records": "weights/data_factory/runs/teacher_jobs/latest/media_jobs.jsonl",
         "priority": 35,
-        "save_interval": 0,
-        "seq_len": 192,
-        "stage": "run-real",
-        "steps_per_stage": 4
+        "routing_note": "P40 5 is the spare ComfyUI modality lane for Qwen Image/Edit, LTX, ACE/music, TTS/audio, OCR media artifacts.",
+        "timeout": 2400
       },
       {
         "cycle": "smoke",
-        "device": "3",
+        "device": "cpu",
         "enabled": true,
-        "job_id": "p40_3_benchmark_canary",
+        "job_id": "cpu_benchmark_canary",
         "job_type": "benchmark_canary",
         "mode": "smoke",
         "model": "sidecar_probe_or_latest",
         "priority": 40,
+        "routing_note": "CPU diagnostic only; P40 1,2,3 are exact-ID Qwen only and P40 5 is ComfyUI modality only.",
         "timeout_seconds": 60
       }
     ],
+    "qwen_reserved_devices": [
+      "1",
+      "2",
+      "3"
+    ],
+    "qwen_exact_model_ids": [
+      "qwen/qwen3.6-27b",
+      "qwen/qwen3.6-27b2",
+      "qwen/qwen3.6-27b3"
+    ],
+    "role_policy": "P40 1,2,3 are exact-ID Qwen distillation only; P40 5 is ComfyUI modality only; fast GPUs 0,4,6 are reserved for non-Qwen training/eval/heavy work.",
     "launcher": "omnicoder.tools.gpu_sidecar_2026",
     "main_training_devices": [
       "0",

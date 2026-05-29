@@ -33,8 +33,10 @@ def test_build_jobs_emits_schema_id_roles_and_training_targets(tmp_path: Path) -
         [
             {
                 "input_json": {"messages": [{"role": "user", "content": "Patch this repo and run pytest."}]},
-                "target_json": {"content": "tests passed"},
+                "target_json": {"content": "The patch plan should inspect the failing test, make the smallest code change, rerun pytest, and report the verified result."},
+                "modality": "tool",
                 "quality": {"score": 0.95},
+                "contamination_status": "clean",
                 "split": "train",
             }
         ],
@@ -71,6 +73,45 @@ def test_build_jobs_emits_schema_id_roles_and_training_targets(tmp_path: Path) -
     assert "unit_tests" in expected["required_fields"]
     assert "rlvr_grpo" in job["input_json"]["training_targets"]
     assert job["input_json"]["source_record_hash"]
+
+
+def test_build_jobs_filters_unknown_contamination_and_toy_targets(tmp_path: Path) -> None:
+    records = tmp_path / "records.jsonl"
+    _write_jsonl(
+        records,
+        [
+            {
+                "input_json": {"messages": [{"role": "user", "content": "What is 2+2?"}]},
+                "target_json": {"content": "4"},
+                "modality": "text",
+                "quality": {"score": 1.0},
+                "contamination_status": "clean",
+                "split": "train",
+            },
+            {
+                "input_json": {"messages": [{"role": "user", "content": "Explain the trace readiness."}]},
+                "target_json": {"content": "This row is long enough, but it should fail closed because contamination metadata is absent."},
+                "modality": "text",
+                "quality": {"score": 1.0},
+                "split": "train",
+            },
+        ],
+    )
+    profile = {
+        "job_plan": {"min_quality": 0.1},
+        "teacher_registry": {
+            "qwen3.6_27b_q4_local": {
+                "enabled": True,
+                "modalities": ["text"],
+                "job_types": ["trace_critique"],
+            }
+        },
+    }
+
+    jobs, summary = distill.build_jobs(profile, records)
+
+    assert jobs == []
+    assert summary["records_filtered"] == 2
 
 
 def test_validate_reports_roles_and_schema_registry(tmp_path: Path) -> None:

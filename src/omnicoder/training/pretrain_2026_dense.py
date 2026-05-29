@@ -44,6 +44,52 @@ except Exception:  # pragma: no cover - exercised on the AI-server CUDA image.
 
 TARGET_PRESET = "omnicoder2026_20b_1m"
 PROBE_PRESET_NAMES = {"probe", "native1m_probe", "ledger_probe", "full_ledger_probe", "omnicoder2026_native1m_probe", "omnicoder2026_full_ledger_probe"}
+NONTRAIN_CONTAMINATION_STATUSES = {
+    "blocked",
+    "contaminated",
+    "eval",
+    "eval_holdout",
+    "holdout",
+    "nontrain",
+    "poison",
+    "poisoned",
+    "quarantine",
+    "quarantined",
+    "suspect",
+    "test",
+    "train_quarantine",
+    "unsafe",
+    "watermark",
+    "watermarked",
+}
+NONTRAIN_USE_POLICIES = {
+    "benchmark_holdout",
+    "blocked",
+    "blocked_until_review",
+    "eval",
+    "eval_only",
+    "holdout",
+    "nontrain",
+    "protected_eval",
+    "quarantine",
+    "rejected",
+    "research_internal",
+    "test",
+    "validation",
+}
+TRAIN_TEXT_BLOCK_MARKERS = (
+    "as an ai language model",
+    "i can't assist with",
+    "i cannot assist with",
+    "i won't help with",
+    "i am not able to help with",
+    "sorry, but i can't",
+    "sorry, i can't",
+    "synthid",
+    "invisible watermark",
+    "ai watermark",
+    "watermark detector",
+)
 
 
 def _message_text(message: object) -> str:
@@ -102,6 +148,99 @@ def _ids_from_record(obj: dict) -> list[int] | None:
     return None
 
 
+def _env_truthy(name: str) -> bool:
+    return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _row_quality_value(record: dict[str, Any]) -> float | None:
+    for key in ("quality_score", "score", "reward"):
+        value = record.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except Exception:
+                pass
+    quality = record.get("quality")
+    if isinstance(quality, dict):
+        for key in ("score", "quality_score", "overall", "value"):
+            value = quality.get(key)
+            if value is not None:
+                try:
+                    return float(value)
+                except Exception:
+                    pass
+    return None
+
+
+def _row_contamination_status(record: dict[str, Any]) -> str:
+    for key in ("contamination_status", "decontamination_status", "benchmark_contamination_status", "source_contamination_status"):
+        value = record.get(key)
+        if value is not None:
+            return str(value).strip().lower()
+    contamination = record.get("contamination")
+    if isinstance(contamination, dict):
+        value = contamination.get("status") or contamination.get("contamination_status")
+        if value is not None:
+            return str(value).strip().lower()
+    lineage = record.get("lineage")
+    if isinstance(lineage, dict):
+        value = lineage.get("contamination_status")
+        if value is not None:
+            return str(value).strip().lower()
+    return ""
+
+
+def _policy_rejected(record: dict[str, Any], key: str) -> bool:
+    value = record.get(key)
+    if not isinstance(value, dict):
+        return False
+    if value.get("accepted") is False:
+        return True
+    status = str(value.get("status") or "").strip().lower()
+    return status in {"blocked", "failed", "fail", "reject", "rejected", "quarantine", "quarantined"}
+
+
+def _row_trainability_rejection_reason(
+    record: dict[str, Any],
+    *,
+    strict_metadata: bool | None = None,
+    min_quality: float | None = None,
+) -> str | None:
+    strict = _env_truthy("OMNICODER_REQUIRE_TRAINABLE_ROW_METADATA") if strict_metadata is None else bool(strict_metadata)
+    minimum = float(os.environ.get("OMNICODER_MIN_TRAIN_ROW_QUALITY", "0.0") or 0.0) if min_quality is None else float(min_quality)
+    split = str(record.get("split") or record.get("dataset_split") or "").strip().lower()
+    if split in {"eval", "test", "validation", "holdout", "benchmark"}:
+        return f"nontrain_split:{split}"
+    use_policy = str(record.get("use_policy") or record.get("train_policy") or record.get("policy") or "").strip().lower()
+    if use_policy in NONTRAIN_USE_POLICIES:
+        return f"nontrain_use_policy:{use_policy}"
+    quarantine = record.get("train_quarantine_reasons") or record.get("quarantine_reasons")
+    if isinstance(quarantine, list) and quarantine:
+        return f"train_quarantine:{quarantine[0]}"
+    if isinstance(quarantine, str) and quarantine.strip():
+        return f"train_quarantine:{quarantine.strip()[:80]}"
+    if _policy_rejected(record, "curation_policy_2026"):
+        return "curation_policy_rejected"
+    if _policy_rejected(record, "dataset_integrity_2026"):
+        return "dataset_integrity_rejected"
+    contamination = _row_contamination_status(record)
+    if contamination in NONTRAIN_CONTAMINATION_STATUSES:
+        return f"contamination_status:{contamination}"
+    if strict and contamination not in {"clean", "decontaminated", "accepted"}:
+        return "missing_or_unclean_contamination_status"
+    quality = _row_quality_value(record)
+    if quality is None:
+        if strict:
+            return "missing_quality_score"
+    elif quality < minimum:
+        return f"quality_below_min:{quality:.4f}"
+    text = _text_from_record(record).lower()
+    for marker in TRAIN_TEXT_BLOCK_MARKERS:
+        if marker in text:
+            return f"blocked_text_marker:{marker}"
+    return None
+
+
 class TextJsonlDataset(Dataset):
     def __init__(self, path: str, tokenizer, seq_len: int, max_records: int = 0, vocab_size: int = 0):
         self.tokenizer = tokenizer
@@ -119,7 +258,13 @@ class TextJsonlDataset(Dataset):
                 break
             self._load_path(src, limit)
         if not self.samples:
-            self.samples.append([1] * self.seq_len)
+            if os.environ.get("OMNICODER_ALLOW_EMPTY_PRETRAIN_FALLBACK", "").strip().lower() in {"1", "true", "yes", "on"}:
+                self.samples.append([1] * self.seq_len)
+            else:
+                raise ValueError(
+                    "pretrain dataset produced zero trainable samples; refusing silent [1]*seq_len fallback "
+                    "unless OMNICODER_ALLOW_EMPTY_PRETRAIN_FALLBACK=true is explicitly set for diagnostics"
+                )
 
     def _load_path(self, path: Path, limit: int | None) -> None:
         if not path.exists():
@@ -137,6 +282,8 @@ class TextJsonlDataset(Dataset):
                 obj = json.loads(line)
             except Exception:
                 obj = {"text": line}
+            if isinstance(obj, dict) and _row_trainability_rejection_reason(obj) is not None:
+                continue
             ids = _ids_from_record(obj) if isinstance(obj, dict) else None
             if ids:
                 self._append_ids(ids, limit)

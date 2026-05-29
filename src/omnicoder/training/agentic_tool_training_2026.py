@@ -8,6 +8,9 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
+from omnicoder.data_factory.curation_policy_2026 import CurationPolicyConfig, audit_training_record
+from omnicoder.data_factory.export_sft_jsonl import NONTRAIN_CONTAMINATION_STATUSES, contains_secret_payload
+
 
 SCHEMA_VERSION = "2026-05-24"
 TOOL_HINTS = (
@@ -204,9 +207,30 @@ def quality_score(record: dict[str, Any]) -> float:
     return 1.0
 
 
-def has_hidden_material(record: dict[str, Any]) -> bool:
+def contamination_status(record: dict[str, Any]) -> str:
     contamination = record.get("contamination") if isinstance(record.get("contamination"), dict) else {}
-    if contamination.get("status") == "contaminated":
+    containers = [record, contamination]
+    for key in ("metadata", "curation", "lineage", "quality"):
+        value = record.get(key)
+        if isinstance(value, dict):
+            containers.append(value)
+    for container in containers:
+        for key in (
+            "status",
+            "contamination_status",
+            "decontamination_status",
+            "protected_benchmark_scan",
+            "benchmark_contamination_status",
+        ):
+            value = container.get(key)
+            if value not in (None, "", [], {}):
+                return str(value).strip().lower()
+    return "unknown"
+
+
+def has_hidden_material(record: dict[str, Any]) -> bool:
+    status = contamination_status(record)
+    if status != "unknown" and status in NONTRAIN_CONTAMINATION_STATUSES:
         return True
     text = record_text(record).lower()
     return "hidden test" in text or "answer key" in text or "gold patch" in text
@@ -220,6 +244,17 @@ def has_tool_signal(record: dict[str, Any]) -> bool:
         return True
     text = record_text(record).lower()
     return any(hint in text for hint in TOOL_HINTS)
+
+
+def has_valid_tool_trajectory(record: dict[str, Any]) -> bool:
+    calls = tool_calls(record)
+    results = tool_results(record)
+    if calls and results:
+        return True
+    signal = teacher_signal(record)
+    if calls and signal.get("is_teacher_rollout") and signal.get("corrected_response"):
+        return True
+    return any(message["role"] == "tool" for message in record_messages(record))
 
 
 def task_domains(record: dict[str, Any]) -> list[str]:
@@ -310,6 +345,10 @@ def teacher_signal(record: dict[str, Any]) -> dict[str, Any]:
     content = str(target_json.get("content") or target_json.get("completion") or target_json.get("answer") or "")
     if not content:
         return {}
+    teacher_status = str(target_json.get("teacher_status") or record.get("status") or "").lower()
+    is_teacher_rollout = str(record.get("schema") or "").startswith("omnicoder.openai_teacher_rollout") or "teacher_status" in target_json
+    if is_teacher_rollout and teacher_status and teacher_status != "ok":
+        return {}
     parsed: dict[str, Any] = target_json.get("teacher_signal") if isinstance(target_json.get("teacher_signal"), dict) else {}
     for value in parse_json_values(content):
         if isinstance(value, dict):
@@ -341,8 +380,7 @@ def teacher_signal(record: dict[str, Any]) -> dict[str, Any]:
     chosen = first_string(parsed.get("chosen")) or corrected_response
     rejected = first_string(parsed.get("rejected")) or first_string(parsed.get("negative")) or "No valid tool plan."
     return {
-        "is_teacher_rollout": str(record.get("schema") or "").startswith("omnicoder.openai_teacher_rollout")
-        or "teacher_status" in target_json,
+        "is_teacher_rollout": is_teacher_rollout,
         "corrected_response": corrected_response,
         "corrected_tool_calls": corrected_tool_calls,
         "chosen": chosen,
@@ -494,15 +532,46 @@ def source_date(record: dict[str, Any]) -> str | None:
 def eligible(record: dict[str, Any], min_quality: float) -> bool:
     if has_hidden_material(record):
         return False
+    if contamination_status(record) in NONTRAIN_CONTAMINATION_STATUSES:
+        return False
+    if contains_secret_payload(record):
+        return False
     if quality_score(record) < min_quality:
         return False
-    if not normalize_messages_for_tools(record):
+    messages = normalize_messages_for_tools(record)
+    if not messages:
         return False
-    return has_tool_signal(record) or bool(pure_verifiable_rlvr_domains(record))
+    prompt = "\n".join(message["content"] for message in messages if message["role"] in {"system", "user", "tool"})
+    target = "\n".join(message["content"] for message in messages if message["role"] == "assistant")
+    signal = teacher_signal(record)
+    audit_record = record
+    if signal.get("is_teacher_rollout"):
+        target = target or str(signal.get("corrected_response") or "")
+        target_json = record.get("target_json") if isinstance(record.get("target_json"), dict) else {}
+        audit_record = {
+            **record,
+            "record_kind": record.get("record_kind") or "teacher_distillation",
+            "target_json": {**target_json, "teacher_signal": signal},
+        }
+    domains = task_domains(record) or ["tool"]
+    audit_modality = "tool" if signal.get("is_teacher_rollout") and signal.get("corrected_tool_calls") else domains[0]
+    audit = audit_training_record(
+        audit_record,
+        prompt=prompt,
+        target=target,
+        modality=audit_modality,
+        source_path=None,
+        refs=[],
+        existing_quality=quality_score(record),
+        config=CurationPolicyConfig(min_quality_score=float(min_quality), require_media_artifacts=False, scan_integrity_artifacts=False),
+    )
+    if not audit.get("accepted", False):
+        return False
+    return has_valid_tool_trajectory(record) or bool(pure_verifiable_rlvr_domains(record))
 
 
 def pure_verifiable_rlvr_domains(record: dict[str, Any]) -> list[str]:
-    if has_tool_signal(record):
+    if has_valid_tool_trajectory(record):
         return []
     domains = [domain for domain in task_domains(record) if domain in PURE_VERIFIABLE_RLVR_DOMAINS]
     if not domains:
