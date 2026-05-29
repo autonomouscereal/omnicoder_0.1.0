@@ -6,7 +6,7 @@
   "native_context_target": 1048576,
   "deployment_truth_path": "omnicoder2026 native runtime with KDA recurrent state plus CSA/HCA sparse latent KV",
   "adoption_bridge": "qwen3-compatible GGUF for shorter-context LM Studio/llama.cpp adoption",
-  "primary_parameter_target": "20B-class dense target, sized by q4 native-1M 24GB budget rather than a fixed round number",
+  "primary_parameter_target": "20B-class dense target with mlp_dim=15360, estimated ~=19.57B trunk params and ~=22.57B including enabled MTP/residual/media heads, ~=10.51 GiB q4 weights, sized by native-1M 24GB headroom rather than a fixed round number",
   "stretch_parameter_target": "larger than 20B only after TurboQuant native-state validation proves 24GB headroom on RTX 3090",
   "verified_source_map": {
     "deepseek_v4": {
@@ -34,9 +34,11 @@
   "model": {
     "primary_20b": {
       "preset": "omnicoder2026_20b_1m",
-      "estimated_params_b": 20.37,
-      "q4_weight_gib_estimate": 9.49,
-      "native_1m_total_gib_estimate": 12.05,
+      "estimated_params_b": 22.57,
+      "trunk_params_b": 19.57,
+      "auxiliary_params_b": 3.0,
+      "q4_weight_gib_estimate": 10.51,
+      "native_1m_total_gib_estimate": 13.13,
       "n_layers": 64,
       "d_model": 4096,
       "n_heads": 32,
@@ -45,7 +47,7 @@
       "q_lora_rank": 1024,
       "o_lora_rank": 1024,
       "o_groups": 8,
-      "mlp_dim": 16384,
+      "mlp_dim": 15360,
       "layer_pattern": ["kda", "kda", "kda", "csa", "kda", "kda", "kda", "hca"],
       "attention_ratio": "6 KDA : 1 CSA : 1 HCA per 8-layer cycle",
       "local_window": 128,
@@ -54,9 +56,9 @@
       "hca_compress_rate": 128,
       "latent_dim": 512,
       "tie_embeddings": true,
-      "mtp_heads": 0,
+      "mtp_heads": 2,
       "flow_latent_dim": 1024,
-      "contract": "fit 24GB at q4 with compressed native state, TurboQuant path, full 330k omnimodal ledger, and native 1M context"
+      "contract": "fit 24GB at q4 with compressed native state, TurboQuant path, full 330k omnimodal ledger, native 1M context, and intentional 15360-MLP headroom for block residual attention, native media heads, and OOM margin"
     },
     "legacy_16b": {
       "preset": "omnicoder2026_16b_1m",
@@ -68,12 +70,12 @@
       "q_lora_rank": 1024,
       "o_lora_rank": 1024,
       "o_groups": 8,
-      "mlp_dim": 16384,
+      "mlp_dim": 15360,
       "layer_pattern": ["kda", "kda", "kda", "csa", "kda", "kda", "kda", "hca"],
       "local_window": 128,
       "csa_top_k_blocks": 512,
       "latent_dim": 512,
-      "risk": "kept as an intermediate fallback; it is no longer the main contract target"
+      "risk": "kept as an intermediate fallback and inherits the 15360-MLP headroom rule; it is no longer the main contract target"
     },
     "server_probe": {
       "preset": "omnicoder2026_full_ledger_probe",

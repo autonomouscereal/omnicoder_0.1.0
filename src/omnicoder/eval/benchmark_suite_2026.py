@@ -1098,6 +1098,63 @@ def row_score_json(row: dict[str, Any]) -> dict[str, Any]:
     return score_json if isinstance(score_json, dict) else {}
 
 
+def _has_real_hash(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if text in {"", "unknown", "none", "null", "<operator_supplied_sha256>", "operator_required"}:
+        return False
+    return text.startswith("sha256:") or len(text) >= 32
+
+
+def row_has_official_scorer_artifact(row: dict[str, Any]) -> bool:
+    """Require provenance for any row claiming a reportable official score."""
+
+    score_json = row_score_json(row)
+    scorer_ref = str(
+        row.get("official_scorer_ref")
+        or score_json.get("official_scorer_ref")
+        or score_json.get("scorer_ref")
+        or ""
+    ).strip()
+    if not scorer_ref or scorer_ref.lower() in {"unknown", "none", "null", "authorized_contract_oracle"}:
+        return False
+
+    candidates: list[Any] = []
+    for key in ("official_scorer_artifact", "official_score_artifact", "official_scorer_result"):
+        value = row.get(key) or score_json.get(key)
+        if value:
+            candidates.append(value)
+    refs = row.get("artifact_refs")
+    if isinstance(refs, list):
+        candidates.extend(refs)
+
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            if candidate.strip():
+                return True
+            continue
+        if not isinstance(candidate, dict):
+            continue
+        kind = str(
+            candidate.get("kind")
+            or candidate.get("type")
+            or candidate.get("artifact_type")
+            or candidate.get("role")
+            or ""
+        ).lower()
+        if "official" not in kind and "scorer" not in kind:
+            continue
+        ref = candidate.get("path") or candidate.get("uri") or candidate.get("ref") or candidate.get("artifact")
+        digest = (
+            candidate.get("sha256")
+            or candidate.get("artifact_sha256")
+            or candidate.get("result_sha256")
+            or candidate.get("hash")
+        )
+        if ref and _has_real_hash(digest):
+            return True
+    return False
+
+
 def row_is_diagnostic_only(row: dict[str, Any]) -> bool:
     score_json = row_score_json(row)
     if boolish(row.get("diagnostic_only") or score_json.get("diagnostic_only")):
@@ -1111,7 +1168,11 @@ def row_is_diagnostic_only(row: dict[str, Any]) -> bool:
 
 
 def row_reportable_score(row: dict[str, Any]) -> bool:
-    return boolish(row_score_json(row).get("reportable_score", False)) and not row_is_diagnostic_only(row)
+    return (
+        boolish(row_score_json(row).get("reportable_score", False))
+        and not row_is_diagnostic_only(row)
+        and row_has_official_scorer_artifact(row)
+    )
 
 
 def row_official_score(row: dict[str, Any]) -> bool:

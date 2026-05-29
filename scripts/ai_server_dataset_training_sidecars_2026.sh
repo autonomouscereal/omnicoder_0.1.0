@@ -19,6 +19,8 @@ ENFORCE_DATASET_MINIMA="${OMNICODER_ENFORCE_DATASET_MINIMA:-1}"
 DATASET_INCLUDE_WAVES="${OMNICODER_DATASET_INCLUDE_WAVES:-}"
 DATASET_INCLUDE_FAMILIES="${OMNICODER_DATASET_INCLUDE_FAMILIES:-}"
 DATASET_INCLUDE_NAMES="${OMNICODER_DATASET_INCLUDE_NAMES:-}"
+HF_STEP_TIMEOUT_SECONDS="${OMNICODER_HF_STEP_TIMEOUT_SECONDS:-90}"
+MATERIALIZE_DEFERRED_SOURCES="${OMNICODER_MATERIALIZE_DEFERRED_SOURCES:-0}"
 TRACE_LIMIT="${OMNICODER_TRACE_LIMIT:-0}"
 LMSTUDIO_TRACE_LIMIT="${OMNICODER_LMSTUDIO_TRACE_LIMIT:-100000}"
 LOCAL_TRACE_SOURCE="${OMNICODER_LOCAL_TRACE_SOURCE:-weights/curated_datasets_2026/runs/${RUN_ID}_local_traces}"
@@ -53,6 +55,7 @@ cd "$ROOT"
 export RUN_ID
 export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
 export OMNICODER_TRACE_WORK_DIR="${OMNICODER_TRACE_WORK_DIR:-weights/data_factory/runs/trace_orchestrator/${RUN_ID}}"
+export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
 
 log() {
   printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
@@ -233,8 +236,14 @@ external_expansion() {
   local out="weights/external_datasets_2026/runs/${RUN_ID}"
   local requirement_args=()
   local selection_args=()
+  local materializer_args=()
   if [[ "$ENFORCE_DATASET_MINIMA" == "1" || "$ENFORCE_DATASET_MINIMA" == "true" ]]; then
     requirement_args+=(--enforce-requirements)
+  fi
+  materializer_args+=(--hf-step-timeout-seconds "$HF_STEP_TIMEOUT_SECONDS")
+  if truthy "$MATERIALIZE_DEFERRED_SOURCES"; then
+    materializer_args+=(--materialize-deferred-sources)
+    log "external dataset expansion will materialize deferred live-download sources by override"
   fi
   if [[ -n "$DATASET_INCLUDE_WAVES" ]]; then
     local old_ifs="$IFS"
@@ -277,6 +286,7 @@ external_expansion() {
     --out-dir "$out" \
     --download \
     --max-records-per-dataset "$MAX_RECORDS_PER_DATASET" \
+    "${materializer_args[@]}" \
     "${selection_args[@]}" \
     "${requirement_args[@]}" \
     build | tee "$out/external_dataset_manifest.stdout.json"
@@ -316,6 +326,7 @@ PY
   "$PYTHON_BIN" - <<'PY'
 import json
 import os
+import hashlib
 from pathlib import Path
 run_id = os.environ["RUN_ID"]
 run_dir = Path("weights/external_datasets_2026/runs") / run_id
@@ -327,9 +338,42 @@ accepted_path = Path(data.get("accepted_jsonl") or "")
 rejected_path = Path(data.get("rejected_jsonl") or "")
 if accepted <= 0 or not accepted_path.exists():
     raise SystemExit(f"external train bucket integrity scan accepted no rows; refusing train promotion: {json.dumps(data.get('counts', {}), sort_keys=True)}")
+rejected_audit_path = run_dir / "integrity" / "dataset_integrity_rejected_audit.jsonl"
+rejected_payload_deleted = False
 if rejected > 0 and rejected_path.exists():
+    with rejected_path.open("r", encoding="utf-8", errors="ignore") as src, rejected_audit_path.open("w", encoding="utf-8") as dst:
+        for line in src:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            payload = json.dumps(row, ensure_ascii=True, sort_keys=True, default=str, separators=(",", ":"))
+            audit = {
+                "record_id": row.get("record_id") or row.get("id") or row.get("source_id"),
+                "source_id": row.get("source_id"),
+                "split": row.get("split"),
+                "modality": row.get("modality"),
+                "payload_sha256": row.get("payload_sha256") or row.get("sha256") or hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest(),
+                "rejection_reasons": row.get("rejection_reasons") or row.get("reasons") or row.get("integrity_reasons"),
+            }
+            dst.write(json.dumps(audit, ensure_ascii=True, sort_keys=True) + "\n")
     rejected_path.unlink()
-print(json.dumps({"status": "integrity_checked", "accepted_rows": accepted, "deleted_rejected_rows": rejected, "counts": data.get("counts", {})}, sort_keys=True))
+    rejected_payload_deleted = True
+    data["rejected_jsonl_payload_removed"] = True
+    data["rejected_jsonl_deleted"] = str(rejected_path)
+    data["rejected_audit_jsonl"] = str(rejected_audit_path)
+    data["rejected_jsonl"] = ""
+    manifest.write_text(json.dumps(data, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+print(json.dumps({
+    "status": "integrity_checked",
+    "accepted_rows": accepted,
+    "rejected_rows": rejected,
+    "rejected_payload_deleted": rejected_payload_deleted,
+    "rejected_audit_jsonl": str(rejected_audit_path) if rejected > 0 else "",
+    "counts": data.get("counts", {}),
+}, sort_keys=True))
 PY
   "$PYTHON_BIN" -m omnicoder.data_factory.external_train_rewrite_2026 \
     --accepted "$out/integrity/dataset_integrity_accepted.jsonl" \

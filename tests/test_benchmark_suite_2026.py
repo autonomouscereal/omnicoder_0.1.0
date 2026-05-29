@@ -688,6 +688,32 @@ def test_summarize_reports_status_counts_and_latest_adapter_state(
             "score": 1.0,
             "score_json": {"reportable_score": True, "contract_only": False},
         },
+        {
+            "type": "benchmark_result",
+            "schema_version": "2026-05-23",
+            "run_id": "official",
+            "adapter_id": "reasoning_arc_agi3_2026",
+            "benchmark_id": "reasoning_arc_agi3_2026",
+            "adapter_kind": "interactive_reasoning_env",
+            "mode": "reportable",
+            "phase": "reportable_scoring",
+            "status": "passed",
+            "score": 0.75,
+            "official_score": True,
+            "official_scorer_ref": "arc-agi3-official-scorer-2026",
+            "official_scorer_artifact": {
+                "kind": "official_scorer_result",
+                "path": "official_arc_agi3_results.json",
+                "sha256": "sha256:" + ("a" * 64),
+            },
+            "score_json": {
+                "reportable_score": True,
+                "canonical_score": 0.75,
+                "official_score": True,
+                "official_scorer_ref": "arc-agi3-official-scorer-2026",
+                "contract_only": False,
+            },
+        },
     ]
     results_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
 
@@ -696,8 +722,8 @@ def test_summarize_reports_status_counts_and_latest_adapter_state(
     summary = _json_from_stdout(capsys)
     assert summary["type"] == "benchmark_summary"
     assert summary["schema_version"] == "2026-05-23"
-    assert summary["total_results"] == 3
-    assert summary["by_status"] == {"failed": 1, "passed": 2}
+    assert summary["total_results"] == 4
+    assert summary["by_status"] == {"failed": 1, "passed": 3}
     assert summary["by_adapter"]["local_alpha"] == {
             "latest_status": "passed",
             "latest_mode": "smoke",
@@ -709,7 +735,10 @@ def test_summarize_reports_status_counts_and_latest_adapter_state(
             "reportable_score": False,
         }
     assert summary["reportable_results"] == 1
+    assert summary["official_results"] == 1
     assert summary["contract_only_results"] == 0
+    assert runner.row_reportable_score(rows[2]) is False
+    assert runner.row_reportable_score(rows[3]) is True
 
 
 def _reportable_profile(tmp_path: Path) -> tuple[Path, Path]:

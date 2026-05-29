@@ -25,6 +25,10 @@ from omnicoder.eval.checkpoint_readiness_2026 import (
     checkpoint_readiness,
     validate_checkpoint_binding,
 )
+from omnicoder.model_contract_2026 import (
+    TARGET_PRESET_2026 as RELEASE_TARGET_PRESET_2026,
+    validate_target_contract_preset,
+)
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 
 
@@ -3355,6 +3359,26 @@ def guard_target_training_preset(cfg: dict[str, Any], preset: str, args: argpars
         )
 
 
+def release_training_contract_report(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> dict[str, Any]:
+    contract = cfg.get("model_contract") if isinstance(cfg.get("model_contract"), dict) else {}
+    plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
+    target = str(contract.get("target_profile") or RELEASE_TARGET_PRESET_2026)
+    preset = resolve_training_preset(cfg, args)
+    allow = bool(arg_value(args, "allow_verifier_preset", False))
+    fake_quant = bool(arg_value(args, "fake_quant", False) or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled"))
+    required = list_from_config_value(plan.get("required_modalities")) or list(DEFAULT_STAGE_ORDER)
+    return validate_target_contract_preset(
+        preset,
+        require_target_contract=target == RELEASE_TARGET_PRESET_2026,
+        allow_probe=allow,
+        contract=contract,
+        context_ladder=context_ladder_values(cfg, args),
+        required_modalities=required,
+        enabled_modalities=enabled_modalities(cfg),
+        fake_quant_enabled=fake_quant,
+    )
+
+
 def distributed_training_plan(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> dict[str, Any]:
     plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
     distributed = plan.get("distributed_training") if isinstance(plan.get("distributed_training"), dict) else {}
@@ -5629,7 +5653,9 @@ def run_long_context(args: argparse.Namespace) -> dict[str, Any]:
 
 def run_full(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_profile(args.profile)
-    out_dir = Path(args.out_dir or profile_cfg(profile).get("work_dir") or DEFAULT_OUT_DIR)
+    cfg = profile_cfg(profile)
+    out_dir = Path(args.out_dir or cfg.get("work_dir") or DEFAULT_OUT_DIR)
+    release_contract = release_training_contract_report(cfg, args)
     manifest = build_real_corpus(profile, out_dir)
     pretrain = run_training_stages(profile, manifest, out_dir, args)
     current_checkpoint = pretrain.get("final_checkpoint")
@@ -5681,7 +5707,8 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "status": full_run_status(pretrain, long_context_curriculum, distillation, posttraining, finetune, final_benchmark),
         "created_at": now_iso(),
-        "model_contract": profile_cfg(profile).get("model_contract"),
+        "model_contract": cfg.get("model_contract"),
+        "release_training_contract": release_contract,
         "curation": manifest,
         "pretraining": pretrain,
         "pre_long_context_short_context_gate": pre_long_context_gate,
@@ -5757,7 +5784,9 @@ def mix_plan(args: argparse.Namespace) -> dict[str, Any]:
 
 def run_real(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_profile(args.profile)
-    out_dir = Path(args.out_dir or profile_cfg(profile).get("work_dir") or DEFAULT_OUT_DIR)
+    cfg = profile_cfg(profile)
+    out_dir = Path(args.out_dir or cfg.get("work_dir") or DEFAULT_OUT_DIR)
+    release_contract = release_training_contract_report(cfg, args)
     manifest = build_real_corpus(profile, out_dir)
     training = run_training_stages(profile, manifest, out_dir, args)
     pre_long_context_gate = (
@@ -5787,7 +5816,8 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "status": status,
         "created_at": now_iso(),
-        "model_contract": profile_cfg(profile).get("model_contract"),
+        "model_contract": cfg.get("model_contract"),
+        "release_training_contract": release_contract,
         "curation": manifest,
         "training": training,
         "pre_long_context_short_context_gate": pre_long_context_gate,

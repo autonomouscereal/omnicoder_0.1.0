@@ -437,6 +437,72 @@ def test_dataset_expansion_falls_back_to_distillation_seeds_after_hf_failure(tmp
     assert manifest["synthetic_seed_families"]["image_generation_editing"] == 1
 
 
+def test_dataset_expansion_skips_deferred_live_download_without_synthetic_train_seed(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    entry = {
+        "name": "deferred_video",
+        "hf_id": "missing/deferred-video",
+        "family": "video_generation",
+        "target_modality": "video",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "defer_live_download": True,
+        "defer_reason": "unit test deferred HF/Xet source",
+        "distillation_prompts": [{"instruction": "video prompt", "target": "video target"}],
+    }
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [entry],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+
+    rows, status = expansion.materialize_source_rows(
+        entry,
+        root,
+        type(
+            "Args",
+            (),
+            {
+                "download": True,
+                "no_streaming": False,
+                "max_records_per_dataset": 0,
+                "materialize_deferred_sources": False,
+                "materialize_blocked_review": False,
+                "hf_step_timeout_seconds": 1,
+            },
+        )(),
+    )
+
+    assert rows == []
+    assert status["status"] == "skipped"
+    assert status["reason"] == "live_download_deferred"
+
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type(
+            "Args",
+            (),
+            {
+                "download": True,
+                "no_streaming": False,
+                "max_records_per_dataset": 0,
+                "materialize_deferred_sources": False,
+                "materialize_blocked_review": False,
+                "enforce_requirements": False,
+            },
+        )(),
+    )
+    assert manifest["records"]["train"] == 0
+    assert manifest["records"]["research_internal"] == 0
+    assert manifest["datasets"][0]["reason"] == "live_download_deferred"
+
+
 def test_external_long_context_rows_preserve_large_targets(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     training = _training_profile(root)

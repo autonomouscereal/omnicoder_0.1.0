@@ -19935,6 +19935,11 @@
         "license_tier": "attribution",
         "max_records": 2048,
         "name": "OpenS2V-5M",
+        "defer_live_download": true,
+        "defer_reason": "HF/Xet live materialization repeatedly loops on Jsons/total_part1.json partial-content responses. Defer until a reviewed local mirror or explicit OMNICODER_MATERIALIZE_DEFERRED_SOURCES=1 run is available.",
+        "hf_step_timeout_seconds": 60,
+        "source_review_status": "deferred_live_download_hf_xet_partial_content_2026_05_28",
+        "materialization_note": "Train policy remains registry-reviewed, but live HF/Xet download is deferred so P0 sidecars can continue through other high-quality video sources. Local JSONL mirrors still materialize normally.",
         "registry_wave": "seventh_wave_agentic_math_code_omni_2026_05_24",
         "splits": [
           "train"

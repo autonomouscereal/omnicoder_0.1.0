@@ -71,6 +71,9 @@ The primary training target is `omnicoder2026_20b_1m`, defined in
 | KV heads on sparse attention paths | 1 |
 | MLP | SwiGLU |
 | MLP hidden | 15360 |
+| Estimated trunk parameters | ~=19.57B |
+| Estimated total parameters with MTP/media/residual heads | ~=22.57B |
+| q4 weight estimate | ~=10.51 GiB |
 | Typed ledger vocab | 330000 |
 | Native context target | 1048576 tokens |
 | Layer cycle | `kda, kda, kda, csa, kda, kda, kda, hca` |
@@ -89,9 +92,14 @@ Expanded across 64 layers, the layer cycle gives:
 The model is intentionally dense. There is no active MoE router or fused expert
 dispatch in the current 20B target.
 
-The MLP hidden width was reduced from the earlier 16384 budget to 15360 so the
-model can pay for block residual attention, MTP heads, and native media
-supervision while staying in the 20B-ish/q4 memory envelope.
+The MLP hidden width is intentionally held at 15360 rather than the earlier
+wider MLP budget. This keeps the dense trunk at ~=19.57B parameters while the
+enabled MTP heads, block residual modules, native media bridge, flow head,
+grounding head, and sync head bring the honest target footprint to ~=22.57B
+parameters and a ~=10.51 GiB q4 weight estimate. The point of the 15360 MLP is
+not to shrink the model into a weak target; it preserves the headroom needed for
+full residual attention, native media heads, and OOM margin instead of chasing a
+rounder FFN count.
 
 ## Long Context
 

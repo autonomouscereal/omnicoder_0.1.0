@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import hashlib
 import io
 import json
 import os
 import re
+import signal
 import time
 import zipfile
 from collections import Counter, defaultdict
@@ -23,6 +25,7 @@ DEFAULT_PROFILE = "profiles/dataset_curation_2026.json"
 DEFAULT_TRAINING_PROFILE = "profiles/training_orchestration_2026.json"
 DEFAULT_OUT_DIR = "weights/external_datasets_2026/latest"
 DEFAULT_MIN_TRAIN_QUALITY_SCORE = 0.70
+TRUTHY_STRINGS = {"1", "true", "yes", "y", "on"}
 
 FAMILY_TO_MODALITY = {
     "math_reasoning": "text",
@@ -166,6 +169,36 @@ def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:
             handle.write(json.dumps(row, ensure_ascii=True, sort_keys=True, default=str) + "\n")
             count += 1
     return count
+
+
+def truthy_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in TRUTHY_STRINGS
+    return False
+
+
+@contextlib.contextmanager
+def linux_wallclock_limit(seconds: float, label: str) -> Iterable[None]:
+    """Bound individual HF source steps on Linux so one Xet/CAS loop cannot pin the sidecar."""
+    if seconds <= 0 or os.name == "nt" or not hasattr(signal, "SIGALRM") or not hasattr(signal, "setitimer"):
+        yield
+        return
+
+    def _raise_timeout(signum: int, frame: Any) -> None:
+        raise TimeoutError(f"{label} exceeded {seconds:.1f}s")
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    try:
+        signal.signal(signal.SIGALRM, _raise_timeout)
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
@@ -1037,7 +1070,13 @@ def rows_from_remote_files(entry: dict[str, Any], root: Path, limit: int) -> tup
     }
 
 
-def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def rows_from_huggingface(
+    entry: dict[str, Any],
+    limit: int,
+    streaming: bool,
+    *,
+    timeout_seconds: float = 0.0,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     hf_id = entry.get("hf_id")
     if not hf_id:
         return [], {"status": "skipped", "reason": "no_hf_id"}
@@ -1093,10 +1132,11 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
                 break
             split_label = f"{cfg}:{split}" if cfg else str(split)
             try:
-                if cfg:
-                    dataset = load_dataset(str(hf_id), str(cfg), split=str(split), **load_kwargs)
-                else:
-                    dataset = load_dataset(str(hf_id), split=str(split), **load_kwargs)
+                with linux_wallclock_limit(float(timeout_seconds), f"load_dataset {hf_id} {split_label}"):
+                    if cfg:
+                        dataset = load_dataset(str(hf_id), str(cfg), split=str(split), **load_kwargs)
+                    else:
+                        dataset = load_dataset(str(hf_id), split=str(split), **load_kwargs)
             except Exception as exc:
                 errors.append(f"{split_label}: {repr(exc)}")
                 continue
@@ -1115,15 +1155,16 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
             take = remaining if limit > 0 else 0
             count = 0
             try:
-                iterator = dataset if take <= 0 else islice(dataset, take)
-                for raw in iterator:
-                    if isinstance(raw, dict):
-                        item = dict(raw)
-                        if cfg:
-                            item.setdefault("_hf_config", str(cfg))
-                        item.setdefault("_hf_split", str(split))
-                        rows.append(item)
-                        count += 1
+                with linux_wallclock_limit(float(timeout_seconds), f"iterate_dataset {hf_id} {split_label}"):
+                    iterator = dataset if take <= 0 else islice(dataset, take)
+                    for raw in iterator:
+                        if isinstance(raw, dict):
+                            item = dict(raw)
+                            if cfg:
+                                item.setdefault("_hf_config", str(cfg))
+                            item.setdefault("_hf_split", str(split))
+                            rows.append(item)
+                            count += 1
             except Exception as exc:
                 errors.append(f"{split_label}: iteration failed: {repr(exc)}")
             per_split[split_label] = count
@@ -1143,6 +1184,7 @@ def rows_from_huggingface(entry: dict[str, Any], limit: int, streaming: bool) ->
         "token_env": str(token_env) if token_env else None,
         "token_used": bool(token_value),
         "streaming": streaming,
+        "timeout_seconds": float(timeout_seconds),
         "records": len(rows),
         "per_split": per_split,
         "errors": errors[:8],
@@ -1153,6 +1195,30 @@ def entry_record_limit(entry: dict[str, Any], args: argparse.Namespace) -> tuple
     if "max_records" in entry and entry.get("max_records") not in (None, ""):
         return max(0, int(entry.get("max_records") or 0)), True
     return max(0, int(getattr(args, "max_records_per_dataset", 0) or 0)), False
+
+
+def deferred_live_download_status(entry: dict[str, Any], args: argparse.Namespace, local_status: dict[str, Any]) -> dict[str, Any] | None:
+    if bool(getattr(args, "materialize_deferred_sources", False)):
+        return None
+    if not any(
+        truthy_value(entry.get(key))
+        for key in (
+            "defer_live_download",
+            "defer_hf_download",
+            "defer_materialization",
+            "download_deferred",
+            "live_download_deferred",
+        )
+    ):
+        return None
+    return {
+        "status": "skipped",
+        "reason": "live_download_deferred",
+        "source": "policy_gate",
+        "bucket": source_use_bucket(entry),
+        "defer_reason": str(entry.get("defer_reason") or entry.get("materialization_note") or "deferred by dataset registry"),
+        "local": local_status,
+    }
 
 
 def materialize_source_rows(entry: dict[str, Any], root: Path, args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -1169,11 +1235,18 @@ def materialize_source_rows(entry: dict[str, Any], root: Path, args: argparse.Na
     local_rows, local_status = rows_from_local_jsonl(entry, root, limit)
     if local_rows:
         return local_rows, local_status
+    deferred_status = deferred_live_download_status(entry, args, local_status)
+    if deferred_status is not None:
+        return [], deferred_status
     if args.download:
         remote_rows, remote_status = rows_from_remote_files(entry, root, limit)
         if remote_rows:
             return remote_rows, remote_status
-        hf_rows, hf_status = rows_from_huggingface(entry, limit, streaming=not args.no_streaming)
+        hf_timeout = float(entry.get("hf_step_timeout_seconds") or getattr(args, "hf_step_timeout_seconds", 0.0) or 0.0)
+        try:
+            hf_rows, hf_status = rows_from_huggingface(entry, limit, streaming=not args.no_streaming, timeout_seconds=hf_timeout)
+        except TypeError:
+            hf_rows, hf_status = rows_from_huggingface(entry, limit, streaming=not args.no_streaming)
         if hf_rows:
             return hf_rows, hf_status
         seeds = synthetic_seed_rows(entry)
@@ -1496,6 +1569,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--download", action="store_true", help="Attempt Hugging Face streaming downloads when local JSONL rows are absent")
     parser.add_argument("--no-streaming", action="store_true", help="Use regular load_dataset instead of streaming")
     parser.add_argument("--max-records-per-dataset", type=int, default=0)
+    parser.add_argument(
+        "--hf-step-timeout-seconds",
+        type=float,
+        default=float(os.environ.get("OMNICODER_HF_STEP_TIMEOUT_SECONDS", "0") or 0),
+        help="Linux wall-clock timeout for each Hugging Face load/iteration step. Zero disables.",
+    )
+    parser.add_argument(
+        "--materialize-deferred-sources",
+        action="store_true",
+        help="Override per-entry defer_live_download gates. Use only after a local mirror or timeout plan is ready.",
+    )
     parser.add_argument(
         "--materialize-blocked-review",
         action="store_true",

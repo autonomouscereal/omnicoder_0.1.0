@@ -102,13 +102,16 @@ Core pieces:
 | `omnicoder2026_20b_1m` | primary 24GB Q4 native-1M target | 64 | 4096 | 8-layer cycle | 1,048,576 |
 | `omnicoder2026_16b_1m` | fallback/intermediate target | 48 | 4096 | 8-layer cycle | 1,048,576 |
 
-The active contract target is 20B-class, not a fixed vanity size. The current
-estimator places `omnicoder2026_20b_1m` at about 20.4B parameters, about 9.5 GiB
-of Q4 weights, and about 12.1 GiB total native-state estimate for 1M context.
-That leaves the rest of a 24GB card for runtime scratch, modality heads, and
-TurboQuant/compressed-state variance. The small probe is only a full-ledger
-training and orchestration verifier; it is not presented as the production
-model.
+The active contract target is 20B-ish, not a fixed vanity size. The current
+profile keeps `omnicoder2026_20b_1m` at `mlp_dim=15360`, about 19.57B trunk
+parameters and about 22.57B total parameters once the enabled MTP heads, block
+residual modules, native media bridge, flow head, grounding head, and sync head
+are counted. That is about 10.51 GiB of Q4 weights and about 13.13 GiB total
+native-state estimate for 1M context. The intentional MLP reduction from the
+earlier wider MLP budget preserves 24GB headroom for full block residual
+attention, native media heads, runtime scratch, and TurboQuant/compressed-state
+variance. The small probe is only a full-ledger training and orchestration
+verifier; it is not presented as the production model.
 
 ## Token Ledger
 

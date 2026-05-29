@@ -20,6 +20,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from omnicoder.config_2026 import get_omnicoder2026_preset, preset_to_model_kwargs
+from omnicoder.model_contract_2026 import validate_target_contract_preset
 from omnicoder.modeling.omnicoder2026 import (
     OmniCoder2026Block,
     OmniCoder2026Config,
@@ -2584,6 +2585,12 @@ def main(argv: list[str] | None = None) -> int:
             f"Refusing to train verifier preset {preset.name!r} for a target-contract run. "
             f"Pass --allow_probe only for explicit validation runs, or use --preset {TARGET_PRESET}."
         )
+    validate_target_contract_preset(
+        preset,
+        require_target_contract=bool(args.require_target_contract),
+        allow_probe=bool(args.allow_probe),
+        fake_quant_enabled=bool(args.fake_quant),
+    )
     kwargs = preset_to_model_kwargs(preset)
     kwargs["fake_quant"] = bool(args.fake_quant)
     # Pipeline split puts embed on stage 0 and head on the final stage, so keep
