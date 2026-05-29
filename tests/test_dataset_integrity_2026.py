@@ -230,6 +230,8 @@ def test_dataset_integrity_allows_substantive_science_math_code_and_tool_rows() 
             "prompt": "Call the status tool.",
             "response": "The status tool returned successfully with code 200 and the service state was reported as healthy.",
             "modality": "tool",
+            "tool_calls": [{"name": "status", "arguments": {"service": "api"}}],
+            "tool_results": [{"status_code": 200, "state": "healthy"}],
         },
     ]
 

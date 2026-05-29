@@ -343,3 +343,71 @@ def test_legacy_curated_trace_export_does_not_prompt_copy() -> None:
     assert prompt.strip()
     assert target.strip()
     assert prompt != target
+
+
+def test_curation_agent_rejects_near_duplicate_5gram_rows(tmp_path: Path) -> None:
+    source = tmp_path / "source.jsonl"
+    clean = tmp_path / "clean.jsonl"
+    rejected = tmp_path / "rejected.jsonl"
+    manifest = tmp_path / "manifest.json"
+    target_a = (
+        "The coding assistant opens the failing test, identifies the parser regression, "
+        "applies a minimal fix, reruns the focused test, and records the verified result."
+    )
+    target_b = (
+        "The coding assistant opens the failing test, identifies the parser regression, "
+        "applies a minimal fix, reruns the focused test, and records the confirmed result."
+    )
+    _write_jsonl(
+        source,
+        [
+            {
+                "record_id": "dedupe-a",
+                "source_id": "agentic_traces",
+                "modality": "text",
+                "prompt": "Summarize the trace.",
+                "target": target_a,
+                "quality_score": 0.95,
+                "contamination_status": "clean",
+            },
+            {
+                "record_id": "dedupe-b",
+                "source_id": "agentic_traces",
+                "modality": "text",
+                "prompt": "Summarize the trace.",
+                "target": target_b,
+                "quality_score": 0.95,
+                "contamination_status": "clean",
+            },
+        ],
+    )
+
+    result = policy.run_agent(
+        argparse.Namespace(
+            input=[str(source)],
+            out=str(clean),
+            rejected=str(rejected),
+            manifest=str(manifest),
+            modality="text",
+            min_quality=0.0,
+            require_media_artifacts=False,
+            allow_refusal_boilerplate=False,
+            allow_eval_holdout=False,
+            allow_dataset_integrity_issues=False,
+            skip_integrity_artifact_scan=False,
+            max_integrity_artifact_bytes=1024 * 1024,
+            dedupe=True,
+            near_dedupe=True,
+            near_dedupe_threshold=0.84,
+            near_dedupe_ngram=5,
+            max_records=0,
+        )
+    )
+
+    clean_rows = [json.loads(line) for line in clean.read_text(encoding="utf-8").splitlines()]
+    rejected_rows = [json.loads(line) for line in rejected.read_text(encoding="utf-8").splitlines()]
+
+    assert result["accepted"] == 1
+    assert len(clean_rows) == 1
+    assert len(rejected_rows) == 1
+    assert "near_duplicate_5gram" in rejected_rows[0]["curation_policy_2026"]["reasons"]

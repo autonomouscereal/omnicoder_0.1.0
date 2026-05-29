@@ -31733,7 +31733,6 @@
       {
         "name": "Kinetics-800",
         "family": "video_generation",
-        "url": "https://github.com/cvdfoundation/kinetics-dataset",
         "source_year": 2026,
         "last_verified": "2026-05-28",
         "registry_wave": "thirtieth_wave_requested_dataset_completion_2026_05_28",
@@ -31748,7 +31747,7 @@
         "license_tier": "manual_video_rights_blocked_until_review",
         "gated": true,
         "source_review_status": "blocked_until_video_rights_and_download_availability_verified_2026_05_28",
-        "materialization_note": "Registry coverage only until official payload access, video rights, watermark/provenance, and benchmark-overlap scans pass.",
+        "materialization_note": "Registry coverage only until an official Kinetics-800 payload source is verified separately from CVDF Kinetics-700/400/600 assets, and video rights, watermark/provenance, and benchmark-overlap scans pass.",
         "curriculum_axes": [
           "video_action",
           "temporal_understanding",

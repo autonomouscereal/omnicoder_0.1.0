@@ -29,6 +29,43 @@ AUTHORIZED_VALUES = {
     "official_or_authorized",
     "official_or_authorized_current_release",
 }
+HASH_METADATA_KEYS = (
+    "snapshot_sha256",
+    "snapshot_hash",
+    "task_file_sha256",
+    "official_task_sha256",
+    "manifest_sha256",
+    "source_sha256",
+)
+PLACEHOLDER_VALUES = {
+    "",
+    "unknown",
+    "none",
+    "null",
+    "n/a",
+    "na",
+    "todo",
+    "tbd",
+    "placeholder",
+    "<operator_supplied_sha256>",
+    "<operator-supplied-sha256>",
+    "operator_required",
+    "operator-supplied",
+    "operator_supplied",
+    "sha256:descriptor",
+    "sha256:placeholder",
+    "sha256:operator_required",
+}
+PLACEHOLDER_PREFIXES = (
+    "operator_required",
+    "operator supplied",
+    "operator-supplied",
+    "operator_supplied",
+    "<operator",
+    "placeholder:",
+    "todo:",
+    "tbd:",
+)
 MODEL_OUTPUT_KEYS = (
     "prediction",
     "model_patch",
@@ -124,6 +161,16 @@ def repo_root() -> Path:
 def stable_hash(value: Any) -> str:
     payload = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def non_placeholder(value: Any) -> bool:
+    if value in (None, "", [], {}):
+        return False
+    text = str(value).strip()
+    lowered = text.lower()
+    if lowered in PLACEHOLDER_VALUES:
+        return False
+    return not any(lowered.startswith(prefix) for prefix in PLACEHOLDER_PREFIXES)
 
 
 def output_quality_reason(value: Any) -> str:
@@ -274,6 +321,12 @@ def validate_authorized_task(
     ).strip().lower()
     if authorization not in AUTHORIZED_VALUES:
         raise HarnessError(f"{source}:{line}: unsupported snapshot authorization: {authorization or '<missing>'}")
+    if not non_placeholder(row.get("license_ref")):
+        raise HarnessError(f"{source}:{line}: authorized task row is missing license_ref")
+    if not non_placeholder(row.get("official_scorer_ref")):
+        raise HarnessError(f"{source}:{line}: authorized task row is missing official_scorer_ref")
+    if not any(non_placeholder(row.get(key)) for key in HASH_METADATA_KEYS):
+        raise HarnessError(f"{source}:{line}: authorized task row is missing non-placeholder snapshot/task hash")
     return TaskRecord(benchmark_id=benchmark_id, task_id=task_id, row=row, source_path=source, source_line=line)
 
 
@@ -551,12 +604,42 @@ def validate_prediction_row(row: dict[str, Any], *, allow_rejected_model_output:
         raise HarnessError(f"prediction row has no model output field: {row!r}")
 
 
-def prediction_row(task: TaskRecord, cfg: GenerateConfig) -> dict[str, Any]:
+def prediction_provenance(task: TaskRecord, cfg: GenerateConfig, *, task_mode: str) -> dict[str, Any]:
+    authorized_task = task_mode == "authorized_reportable"
+    fixture_backend = cfg.backend == "fixture"
+    diagnostic_prediction = fixture_backend or not authorized_task
+    if not authorized_task:
+        prediction_scope = "diagnostic_local_public_dev"
+    elif fixture_backend:
+        prediction_scope = "diagnostic_fixture"
+    else:
+        prediction_scope = "reportable_candidate_model_output"
+    return {
+        "schema": "omnicoder.reportable_prediction_provenance_2026.v1",
+        "task_mode": task_mode,
+        "prediction_scope": prediction_scope,
+        "prediction_source": "fixture_backend" if fixture_backend else "model_backend",
+        "authorized_task": authorized_task,
+        "local_public_dev_task": not authorized_task,
+        "diagnostic_prediction": diagnostic_prediction,
+        "reportable_prediction_candidate": authorized_task and not fixture_backend,
+        "official_score": False,
+        "reportable_score": False,
+        "backend": cfg.backend,
+        "model": cfg.model,
+        "checkpoint_path": cfg.checkpoint_path,
+        "source_task_path": str(task.source_path),
+        "source_line": task.source_line,
+    }
+
+
+def prediction_row(task: TaskRecord, cfg: GenerateConfig, *, task_mode: str = "authorized_reportable") -> dict[str, Any]:
     started = time.perf_counter()
     output = call_backend(task, cfg)
     elapsed = round(time.perf_counter() - started, 6)
     if not isinstance(output, dict):
         output = parse_model_payload(output, output_field_for_task(task))
+    provenance = prediction_provenance(task, cfg, task_mode=task_mode)
     row = {
         "schema": PREDICTION_SCHEMA,
         "schema_version": SCHEMA_VERSION,
@@ -574,12 +657,20 @@ def prediction_row(task: TaskRecord, cfg: GenerateConfig) -> dict[str, Any]:
         ),
         "model": cfg.model,
         "backend": cfg.backend,
+        "task_mode": task_mode,
+        "prediction_scope": provenance["prediction_scope"],
+        "prediction_source": provenance["prediction_source"],
+        "diagnostic_prediction": provenance["diagnostic_prediction"],
+        "reportable_prediction_candidate": provenance["reportable_prediction_candidate"],
+        "official_score": False,
+        "reportable_score": False,
         "source_task_path": str(task.source_path),
         "source_line": task.source_line,
         "task_row_sha256": stable_hash(task.row),
         "task_file_sha256": file_sha256(task.source_path),
         "request_sha256": stable_hash(model_request(task, cfg)),
         "latency_seconds": elapsed,
+        "prediction_provenance": provenance,
     }
     row.update(output)
     row["prediction_id"] = stable_hash({key: value for key, value in row.items() if key != "prediction_id"})
@@ -597,11 +688,19 @@ def run_generation(
 ) -> dict[str, Any]:
     paths = task_paths(task_inputs)
     tasks = load_tasks(paths, allow_local_dev=allow_local_dev)
-    rows = [prediction_row(task, cfg) for task in tasks]
+    task_mode = "local_public_dev" if allow_local_dev else "authorized_reportable"
+    rows = [prediction_row(task, cfg, task_mode=task_mode) for task in tasks]
     out = resolve_path(out_path)
     write_jsonl(out, rows, force=force)
     by_backend = {cfg.backend: len(rows)}
-    task_mode = "local_public_dev" if allow_local_dev else "authorized_reportable"
+    by_scope: dict[str, int] = {}
+    diagnostic_predictions = 0
+    reportable_candidates = 0
+    for row in rows:
+        scope = str(row.get("prediction_scope") or "unknown")
+        by_scope[scope] = by_scope.get(scope, 0) + 1
+        diagnostic_predictions += int(bool(row.get("diagnostic_prediction")))
+        reportable_candidates += int(bool(row.get("reportable_prediction_candidate")))
     return {
         "status": "ok",
         "schema_version": SCHEMA_VERSION,
@@ -612,6 +711,9 @@ def run_generation(
         "official_score": False,
         "model": cfg.model,
         "backend_counts": by_backend,
+        "prediction_scope_counts": dict(sorted(by_scope.items())),
+        "diagnostic_predictions": diagnostic_predictions,
+        "reportable_prediction_candidates": reportable_candidates,
         "prediction_sha256": file_sha256(out),
     }
 

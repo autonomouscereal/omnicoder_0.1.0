@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import re
+import zlib
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -24,6 +25,26 @@ REJECTED_PATH_MARKERS = (
     "policy_audit_rejected.jsonl",
     "blocked_until_review.jsonl",
     "_blocked_until_review.jsonl",
+)
+FIXTURE_OR_SAMPLE_PATH_MARKERS = (
+    "/examples/",
+    "\\examples\\",
+    "/fixtures/",
+    "\\fixtures\\",
+    "/sample/",
+    "\\sample\\",
+    "/samples/",
+    "\\samples\\",
+    "/smoke/",
+    "\\smoke\\",
+    "/canary/",
+    "\\canary\\",
+    ".sample.jsonl",
+    "_sample.jsonl",
+    ".smoke.jsonl",
+    "_smoke.jsonl",
+    ".canary.jsonl",
+    "_canary.jsonl",
 )
 TRAIN_LEAK_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:benchmark(?:[_ -]?(?:id|task|suite|eval|materialized|holdout))?|public[_ -]?dev|reportable|local[_ -]?only|"
@@ -82,6 +103,11 @@ MEDIA_TOKEN_KEYS = (
     "music_tokens",
 )
 MEDIA_REF_KEYS = ("artifact_refs", "artifacts", "artifact_paths", "media_refs", "media_paths")
+NEAR_DUP_WORD_RE = re.compile(r"[A-Za-z0-9_]+")
+NEAR_DUP_MIN_NGRAMS = 12
+NEAR_DUP_MAX_NGRAMS = 384
+NEAR_DUP_MAX_INDEX_ROWS = 100_000
+NEAR_DUP_MAX_POSTINGS_PER_GRAM = 256
 
 
 def _json_blob(value: Any) -> str:
@@ -93,6 +119,10 @@ def _json_blob(value: Any) -> str:
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _stable_gram_hash(value: str) -> int:
+    return zlib.crc32(value.encode("utf-8", errors="ignore")) & 0xFFFFFFFF
 
 
 def _first(row: dict[str, Any], *keys: str, default: str = "unknown") -> str:
@@ -527,6 +557,18 @@ def _rejected_path_issue(path: Path) -> str:
     return ""
 
 
+def _fixture_or_sample_path_issue(path: Path, *, training_bucket: str) -> str:
+    if _canonical_training_bucket(training_bucket) != "train":
+        return ""
+    normalized = str(path).replace("\\", "/").lower()
+    name = path.name.lower()
+    if any(marker.replace("\\", "/") in normalized for marker in FIXTURE_OR_SAMPLE_PATH_MARKERS):
+        return "fixture_or_sample_path_in_train"
+    if name.startswith(("sample_", "smoke_", "canary_", "fixture_")) or name in {"sample.jsonl", "smoke.jsonl", "canary.jsonl", "fixture.jsonl"}:
+        return "fixture_or_sample_path_in_train"
+    return ""
+
+
 def _nested_rejected_reasons(row: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     for key in ("curation_policy_2026", "dataset_integrity_2026"):
@@ -642,6 +684,32 @@ def _prompt_target_leakage_issue(prompt: str, target: str, row: dict[str, Any]) 
     return "prompt_target_high_overlap" if containment >= 0.92 and length_ratio >= 0.75 else ""
 
 
+def _near_duplicate_text(row: dict[str, Any], *, prompt: str, target: str) -> str:
+    if _has_structured_target_payload(row):
+        return ""
+    return f"{prompt}\n{target}".strip()
+
+
+def _ngram_fingerprint(text: str, *, ngram: int) -> set[int]:
+    tokens = NEAR_DUP_WORD_RE.findall(text.casefold())
+    if len(tokens) < max(1, ngram):
+        return set()
+    grams = (
+        _stable_gram_hash(" ".join(tokens[index : index + ngram]))
+        for index in range(0, len(tokens) - ngram + 1)
+    )
+    fingerprint = set(grams)
+    if len(fingerprint) <= NEAR_DUP_MAX_NGRAMS:
+        return fingerprint
+    return set(sorted(fingerprint)[:NEAR_DUP_MAX_NGRAMS])
+
+
+def _jaccard(left: set[int], right: set[int]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / max(1, len(left | right))
+
+
 def _url_only_media_issue(row: dict[str, Any], *, modality: str, target: str, refs: list[str]) -> str:
     if MEDIA_URL_RE.fullmatch(target or ""):
         return "target_url_only_media"
@@ -674,6 +742,9 @@ def build_index(
     fail_on_train_leakage: bool = True,
     scan_dataset_integrity: bool = False,
     min_quality_score: float = 0.0,
+    fail_on_near_duplicates: bool = True,
+    near_duplicate_threshold: float = 0.92,
+    near_duplicate_ngram: int = 5,
 ) -> dict[str, Any]:
     by_modality: Counter[str] = Counter()
     by_source: Counter[str] = Counter()
@@ -707,9 +778,13 @@ def build_index(
     benchmark_train_bucket_rows: list[dict[str, Any]] = []
     benchmark_unclassified_rows: list[dict[str, Any]] = []
     rejected_input_files: list[dict[str, Any]] = []
+    fixture_input_files: list[dict[str, Any]] = []
     nested_rejected_rows: list[dict[str, Any]] = []
     low_quality_rows: list[dict[str, Any]] = []
     dataset_integrity_rows: list[dict[str, Any]] = []
+    near_duplicate_rows: list[dict[str, Any]] = []
+    near_duplicate_fingerprints: list[dict[str, Any]] = []
+    near_duplicate_inverted: dict[int, list[int]] = {}
     bad_json = 0
     rows_with_target_tokens = 0
     rows_with_artifact_tokens = 0
@@ -767,6 +842,9 @@ def build_index(
                         "index_bucket": index_bucket,
                     }
                 )
+            fixture_issue = _fixture_or_sample_path_issue(path, training_bucket=training_bucket)
+            if fixture_issue:
+                fixture_input_files.append({"path": str(path), "line": line_number, "source_id": source, "reason": fixture_issue})
             if index_bucket == "benchmark_eval_unclassified":
                 benchmark_unclassified_rows.append(
                     {
@@ -875,6 +953,57 @@ def build_index(
                         "reason": leakage,
                     }
                 )
+            if fail_on_near_duplicates and _canonical_training_bucket(training_bucket) == "train":
+                fingerprint_text = _near_duplicate_text(row, prompt=prompt, target=target)
+                fingerprint = _ngram_fingerprint(fingerprint_text, ngram=max(1, int(near_duplicate_ngram)))
+                if len(fingerprint) >= NEAR_DUP_MIN_NGRAMS:
+                    candidate_hits: Counter[int] = Counter()
+                    for gram in fingerprint:
+                        for candidate_index in near_duplicate_inverted.get(gram, ()):
+                            candidate_hits[candidate_index] += 1
+                    best_index = -1
+                    best_score = 0.0
+                    for candidate_index, shared in candidate_hits.most_common(24):
+                        other = near_duplicate_fingerprints[candidate_index]
+                        other_fp = other["fingerprint"]
+                        if shared / max(1, min(len(fingerprint), len(other_fp))) < float(near_duplicate_threshold):
+                            continue
+                        score = _jaccard(fingerprint, other_fp)
+                        if score > best_score:
+                            best_index = candidate_index
+                            best_score = score
+                    if best_index >= 0 and best_score >= float(near_duplicate_threshold):
+                        other = near_duplicate_fingerprints[best_index]
+                        near_duplicate_rows.append(
+                            {
+                                "path": str(path),
+                                "line": line_number,
+                                "source_id": source,
+                                "modality": modality,
+                                "training_bucket": training_bucket,
+                                "score": round(best_score, 6),
+                                "match_type": f"{int(near_duplicate_ngram)}gram_jaccard",
+                                "first_path": other["path"],
+                                "first_line": other["line"],
+                                "first_source_id": other["source_id"],
+                                "first_modality": other["modality"],
+                            }
+                        )
+                    if len(near_duplicate_fingerprints) < NEAR_DUP_MAX_INDEX_ROWS:
+                        near_duplicate_index = len(near_duplicate_fingerprints)
+                        near_duplicate_fingerprints.append(
+                            {
+                                "fingerprint": fingerprint,
+                                "path": str(path),
+                                "line": line_number,
+                                "source_id": source,
+                                "modality": modality,
+                            }
+                        )
+                        for gram in fingerprint:
+                            postings = near_duplicate_inverted.setdefault(gram, [])
+                            if len(postings) < NEAR_DUP_MAX_POSTINGS_PER_GRAM:
+                                postings.append(near_duplicate_index)
             url_only = _url_only_media_issue(row, modality=modality, target=target, refs=_row_refs(row))
             if url_only:
                 url_only_media_rows.append(
@@ -980,12 +1109,16 @@ def build_index(
         fail_reasons.append("benchmark_rows_in_train_bucket")
     if rejected_input_files:
         fail_reasons.append("rejected_or_quarantine_input_files")
+    if fixture_input_files:
+        fail_reasons.append("fixture_or_sample_train_input_files")
     if nested_rejected_rows:
         fail_reasons.append("nested_rejected_rows")
     if low_quality_rows:
         fail_reasons.append("low_quality_rows")
     if dataset_integrity_rows:
         fail_reasons.append("dataset_integrity_rejected_rows")
+    if near_duplicate_rows:
+        fail_reasons.append("near_duplicate_rows")
     return {
         "schema": SCHEMA,
         "status": "failed" if fail_reasons else "passed",
@@ -1012,9 +1145,11 @@ def build_index(
             "benchmark_rows_in_train_bucket": len(benchmark_train_bucket_rows),
             "url_only_media_rows": len(url_only_media_rows),
             "rejected_or_quarantine_input_files": len(rejected_input_files),
+            "fixture_or_sample_train_input_files": len(fixture_input_files),
             "nested_rejected_rows": len(nested_rejected_rows),
             "low_quality_rows": len(low_quality_rows),
             "dataset_integrity_rejected_rows": len(dataset_integrity_rows),
+            "near_duplicate_rows": len(near_duplicate_rows),
             "rows_with_target_tokens": rows_with_target_tokens,
             "rows_with_artifact_tokens": rows_with_artifact_tokens,
         },
@@ -1022,7 +1157,11 @@ def build_index(
             "scan_dataset_integrity": bool(scan_dataset_integrity),
             "min_quality_score": float(min_quality_score),
             "reject_rejected_or_quarantine_input_files": True,
+            "reject_fixture_or_sample_paths_in_train": True,
             "reject_nested_policy_or_integrity_rejections": True,
+            "fail_on_near_duplicates": bool(fail_on_near_duplicates),
+            "near_duplicate_threshold": float(near_duplicate_threshold),
+            "near_duplicate_ngram": int(near_duplicate_ngram),
         },
         "by_modality": dict(sorted(by_modality.items())),
         "by_source": dict(sorted(by_source.items())),
@@ -1063,9 +1202,11 @@ def build_index(
         "benchmark_unclassified_examples": benchmark_unclassified_rows[:50],
         "url_only_media_examples": url_only_media_rows[:50],
         "rejected_input_file_examples": rejected_input_files[:50],
+        "fixture_input_file_examples": fixture_input_files[:50],
         "nested_rejected_examples": nested_rejected_rows[:50],
         "low_quality_examples": low_quality_rows[:50],
         "dataset_integrity_examples": dataset_integrity_rows[:50],
+        "near_duplicate_examples": near_duplicate_rows[:50],
     }
 
 
@@ -1077,6 +1218,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-train-leakage-markers", "--allow_train_leakage_markers", dest="allow_train_leakage_markers", action="store_true")
     parser.add_argument("--skip-dataset-integrity-scan", "--skip_dataset_integrity_scan", dest="skip_dataset_integrity_scan", action="store_true")
     parser.add_argument("--min-quality-score", "--min_quality_score", dest="min_quality_score", type=float, default=0.55)
+    parser.add_argument("--allow-near-duplicates", "--allow_near_duplicates", dest="allow_near_duplicates", action="store_true")
+    parser.add_argument("--near-duplicate-threshold", "--near_duplicate_threshold", dest="near_duplicate_threshold", type=float, default=0.92)
+    parser.add_argument("--near-duplicate-ngram", "--near_duplicate_ngram", dest="near_duplicate_ngram", type=int, default=5)
     return parser
 
 
@@ -1089,6 +1233,9 @@ def main(argv: list[str] | None = None) -> int:
         fail_on_train_leakage=not bool(args.allow_train_leakage_markers),
         scan_dataset_integrity=not bool(args.skip_dataset_integrity_scan),
         min_quality_score=float(args.min_quality_score),
+        fail_on_near_duplicates=not bool(args.allow_near_duplicates),
+        near_duplicate_threshold=float(args.near_duplicate_threshold),
+        near_duplicate_ngram=int(args.near_duplicate_ngram),
     )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

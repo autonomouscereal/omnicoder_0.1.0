@@ -658,3 +658,69 @@ def test_dataset_index_fails_duplicate_ids_missing_modality_one_token_and_split_
     assert payload["counts"]["missing_modality_metadata"] == 1
     assert payload["counts"]["one_token_junk_rows"] == 1
     assert payload["counts"]["split_mismatch"] == 1
+
+
+def test_dataset_index_fails_train_near_duplicate_5gram_rows(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    target_a = (
+        "The verified tool trace opens the repository, inspects the failing unit test, "
+        "patches the parser branch, reruns the exact regression, and records the passing evidence."
+    )
+    target_b = (
+        "The verified tool trace opens the repository, inspects the failing unit test, "
+        "patches the parser branch, reruns the exact regression, and records the clean evidence."
+    )
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "near-dup-a",
+                "source_id": "agent_traces",
+                "modality": "tool",
+                "split": "train",
+                "use_policy": "train",
+                "prompt": "Summarize the validated repair trace.",
+                "target": target_a,
+            },
+            {
+                "record_id": "near-dup-b",
+                "source_id": "agent_traces",
+                "modality": "tool",
+                "split": "train",
+                "use_policy": "train",
+                "prompt": "Summarize the validated repair trace.",
+                "target": target_b,
+            },
+        ],
+    )
+
+    payload = indexer.build_index([data], expected_split="train", near_duplicate_threshold=0.84)
+
+    assert payload["status"] == "failed"
+    assert "near_duplicate_rows" in payload["fail_reasons"]
+    assert payload["counts"]["near_duplicate_rows"] == 1
+    assert payload["near_duplicate_examples"][0]["match_type"] == "5gram_jaccard"
+
+
+def test_dataset_index_rejects_sample_paths_for_train_rows(tmp_path: Path) -> None:
+    data = tmp_path / "samples" / "train.jsonl"
+    data.parent.mkdir()
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "sample-train-row",
+                "source_id": "sample_source",
+                "modality": "text",
+                "split": "train",
+                "use_policy": "train",
+                "target": "Sample fixture rows must not silently enter a real training manifest.",
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data], expected_split="train")
+
+    assert payload["status"] == "failed"
+    assert "fixture_or_sample_train_input_files" in payload["fail_reasons"]
+    assert payload["counts"]["fixture_or_sample_train_input_files"] == 1

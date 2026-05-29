@@ -55,7 +55,7 @@ def test_dataset_expansion_materializes_license_tiered_rows(tmp_path: Path, monk
         [
             {
                 "problem": "Solve 2+2.",
-                "answer": "4",
+                "answer": "Add the two integers: 2 + 2 = 4, so the final answer is 4.",
                 "uuid": "m1",
                 "contamination_status": "clean",
                 "source_date": "2026-02-14",
@@ -116,7 +116,7 @@ def test_dataset_expansion_writes_curation_quality_audit_artifact(tmp_path: Path
         [
             {
                 "problem": "Solve 9+1.",
-                "answer": "10",
+                "answer": "Add the two integers: 9 + 1 = 10, so the final answer is 10.",
                 "uuid": "m1",
                 "quality": {"score": 0.96},
                 "source_date": "2026-02-14T11:00:00Z",

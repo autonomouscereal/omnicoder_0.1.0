@@ -1215,7 +1215,11 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
         "alt_caption",
     ]
     prompt_from_map = field_conversation_text(record, prompt_fields, USER_ROLE_ALIASES) or field_text(record, prompt_fields)
-    target_from_map = field_conversation_text(record, target_fields, ASSISTANT_ROLE_ALIASES, reverse=True) or preference_pair_text(record)
+    target_from_map = (
+        field_conversation_text(record, target_fields, ASSISTANT_ROLE_ALIASES, reverse=True)
+        or preference_pair_text(record)
+        or field_text(record, target_fields)
+    )
     prompt = prompt_from_map
     target = target_from_map or fallback_target(entry, record)
     used_fallback_prompt = False

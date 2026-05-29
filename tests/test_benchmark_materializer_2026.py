@@ -6,7 +6,7 @@ import sys
 import types
 from pathlib import Path
 
-from omnicoder.data_factory import benchmark_materializer_2026 as materializer
+from omnicoder.eval import benchmark_materializer_2026 as materializer
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -793,6 +793,7 @@ def test_materializer_normalizes_hellaswag_completion_rows() -> None:
     )
 
     assert task is not None
+    assert task["task_id"] == "hellaswag-17"
     assert task["question"] == "A person opens the oven door and"
     assert task["choices"][1] == "pulls out a tray."
     assert task["answer"] == "1"
@@ -803,6 +804,34 @@ def test_materializer_normalizes_hellaswag_completion_rows() -> None:
     assert task["evaluation_only"] is True
     assert task["reportability_scope"] == "validation_only_public_dev"
     assert materializer.is_scorable_task(task, spec)
+
+
+def test_materializer_normalizes_multimodal_media_fields_into_canonical_media() -> None:
+    task = materializer.normalize_task(
+        "multimodal_rtv_bench_2026",
+        {
+            "task_id": "rtv-1",
+            "query": "Answer using every supplied modality.",
+            "query_media": [{"image_path": "frames/q.png"}, {"audio_path": "audio/q.wav"}],
+            "example_media": {"video_path": "clips/example.mp4"},
+            "global_media": {"document_path": "docs/context.pdf"},
+            "answer": "A",
+        },
+        {"kind": "video_audio", "source": "fixture"},
+        {"adapter_kind": "multimodal_video_audio_eval"},
+        {},
+        "public-dev",
+        "fixture",
+        0,
+    )
+
+    assert task is not None
+    media = task["media"]
+    assert {item["type"] for item in media} >= {"image", "audio", "video", "document"}
+    assert any(item["field"] == "query_media[0].image_path" and item["path"] == "frames/q.png" for item in media)
+    assert any(item["field"] == "query_media[1].audio_path" and item["path"] == "audio/q.wav" for item in media)
+    assert any(item["field"] == "example_media.video_path" and item["path"] == "clips/example.mp4" for item in media)
+    assert any(item["field"] == "global_media.document_path" and item["path"] == "docs/context.pdf" for item in media)
 
 
 def test_materializer_reportable_hellaswag_attaches_scorer_license_and_file_hash(tmp_path: Path) -> None:
@@ -2019,8 +2048,11 @@ def test_audit_profile_reports_materializer_and_core25_gaps(tmp_path: Path) -> N
                 "agent_bfcl_v4_2026": {
                     "snapshot_id": "bfcl-authorized",
                     "snapshot_authorization": "official_or_authorized_current_release",
+                    "snapshot_sha256": "sha256:bfcl-authorized-test",
                     "dataset_revision": "bfcl-authorized",
                     "source": "fixture",
+                    "license_ref": "authorized-eval-ledger:bfcl",
+                    "official_scorer_ref": "bfcl-official-scorer-2026",
                 }
             },
         },
@@ -2041,6 +2073,63 @@ def test_audit_profile_reports_materializer_and_core25_gaps(tmp_path: Path) -> N
     assert "fresh_missing_2026" in report["missing_materializer_or_snapshot"]
     assert "fresh_missing_2026" in report["core25"]["missing_reportable_task_root"]
     assert "fresh_missing_2026" in report["core25"]["missing_reportable_snapshot"]
+
+
+def test_audit_profile_fails_reportable_snapshot_missing_official_metadata(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.json"
+    _write_json(
+        profile,
+        {
+            "benchmarks": [
+                {
+                    "benchmark_id": "agent_bfcl_v4_2026",
+                    "adapter_kind": "tool_call_state_scorer",
+                    "axis": "agent_tool",
+                    "source": "fixture",
+                    "splits": {"smoke": "fixture"},
+                }
+            ],
+            "reportable_task_roots": {
+                "agent_bfcl_v4_2026": ["data/eval/reportable_2026/bfcl_v4_authorized.jsonl"]
+            },
+            "reportable_snapshots": {
+                "agent_bfcl_v4_2026": {
+                    "snapshot_id": "bfcl-authorized",
+                    "snapshot_authorization": "official_or_authorized_current_release",
+                    "dataset_revision": "bfcl-authorized",
+                    "source": "fixture",
+                    "snapshot_sha256": "sha256:descriptor",
+                }
+            },
+        },
+    )
+
+    report = materializer.audit_profile(
+        argparse.Namespace(
+            profile=str(profile),
+            benchmark=None,
+            suite="profile",
+            fail_core25=False,
+            fail_missing_materializers=False,
+            fail_known_not_profile=False,
+            fail_missing_reportable_files=False,
+        )
+    )
+
+    assert report["status"] == "failed"
+    assert report["fail_reasons"] == ["reportable_snapshots_missing_official_metadata"]
+    assert report["official_reportable_snapshot_metadata_ok"] is False
+    assert report["snapshot_metadata_gaps"] == [
+        {
+            "benchmark_id": "agent_bfcl_v4_2026",
+            "missing": [
+                "license_ref",
+                "official_scorer_ref",
+                "snapshot_sha256_or_task_file_sha256",
+            ],
+            "snapshot_id": "bfcl-authorized",
+        }
+    ]
 
 
 def test_audit_profile_cli_exits_nonzero_on_core25_gap(tmp_path: Path) -> None:
@@ -2088,8 +2177,11 @@ def test_audit_profile_can_require_declared_reportable_files(tmp_path: Path) -> 
                 "agent_bfcl_v4_2026": {
                     "snapshot_id": "bfcl-authorized",
                     "snapshot_authorization": "official_or_authorized_current_release",
+                    "snapshot_sha256": "sha256:bfcl-authorized-test",
                     "dataset_revision": "bfcl-authorized",
                     "source": "fixture",
+                    "license_ref": "authorized-eval-ledger:bfcl",
+                    "official_scorer_ref": "bfcl-official-scorer-2026",
                 }
             },
         },

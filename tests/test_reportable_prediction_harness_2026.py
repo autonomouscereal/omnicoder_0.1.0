@@ -107,6 +107,14 @@ def test_fixture_mode_writes_run_reportable_predictions_without_network(
             "prediction": "C",
         }
     ]
+    assert rows[0]["prediction_scope"] == "diagnostic_fixture"
+    assert rows[0]["prediction_source"] == "fixture_backend"
+    assert rows[0]["diagnostic_prediction"] is True
+    assert rows[0]["reportable_prediction_candidate"] is False
+    assert rows[0]["official_score"] is False
+    assert rows[0]["reportable_score"] is False
+    assert rows[0]["prediction_provenance"]["task_mode"] == "authorized_reportable"
+    assert rows[0]["prediction_provenance"]["prediction_scope"] == "diagnostic_fixture"
 
     profile = _reportable_profile(tmp_path / "profile.json")
     out_dir = tmp_path / "bench"
@@ -129,14 +137,47 @@ def test_fixture_mode_writes_run_reportable_predictions_without_network(
         == 0
     )
     result = _jsonl_rows(out_dir / "reportable_results.jsonl")[0]
-    assert result["status"] == "passed"
-    assert result["score"] == 1.0
-    assert result["score_json"]["reportable_score"] is True
+    assert result["status"] == "contract_only"
+    assert result["score"] is None
+    assert result["score_json"]["contract_score"] == 1.0
+    assert result["score_json"]["reportable_score"] is False
+    assert result["score_json"]["contract_only"] is True
 
 
 def test_strict_validation_rejects_unauthorized_task_before_generation(tmp_path: Path) -> None:
     task = _authorized_task()
     task.pop("snapshot_authorization")
+    tasks = _write_jsonl(tmp_path / "tasks.jsonl", [task])
+
+    assert (
+        harness.main(
+            [
+                "--backend",
+                "fixture",
+                "--tasks",
+                str(tasks),
+                "--out",
+                str(tmp_path / "predictions.jsonl"),
+            ]
+        )
+        == 2
+    )
+    assert not (tmp_path / "predictions.jsonl").exists()
+
+
+@pytest.mark.parametrize(
+    "missing_key",
+    [
+        "license_ref",
+        "official_scorer_ref",
+        "snapshot_sha256",
+    ],
+)
+def test_strict_validation_rejects_missing_reportable_metadata(
+    tmp_path: Path, missing_key: str
+) -> None:
+    task = _authorized_task()
+    task.pop(missing_key)
     tasks = _write_jsonl(tmp_path / "tasks.jsonl", [task])
 
     assert (
@@ -189,9 +230,15 @@ def test_local_dev_mode_accepts_public_dev_rows_without_authorizing_reportable_s
     rows = _jsonl_rows(predictions)
     assert rows[0]["benchmark_id"] == "multimodal_mmmu_pro_2026"
     assert rows[0]["prediction"] == "B"
+    assert rows[0]["prediction_scope"] == "diagnostic_local_public_dev"
+    assert rows[0]["diagnostic_prediction"] is True
+    assert rows[0]["reportable_prediction_candidate"] is False
     payload = json.loads(summary.read_text(encoding="utf-8"))
     assert payload["task_mode"] == "local_public_dev"
     assert payload["official_score"] is False
+    assert payload["prediction_scope_counts"] == {"diagnostic_local_public_dev": 1}
+    assert payload["diagnostic_predictions"] == 1
+    assert payload["reportable_prediction_candidates"] == 0
 
 
 def test_checkpoint_runner_reads_sanitized_stdin_and_writes_prediction(tmp_path: Path) -> None:
@@ -240,6 +287,10 @@ def test_checkpoint_runner_reads_sanitized_stdin_and_writes_prediction(tmp_path:
     row = _jsonl_rows(predictions)[0]
     assert row["prediction"] == "D"
     assert row["generation_metadata"]["generated_tokens"] == 3
+    assert row["prediction_scope"] == "reportable_candidate_model_output"
+    assert row["prediction_source"] == "model_backend"
+    assert row["diagnostic_prediction"] is False
+    assert row["reportable_prediction_candidate"] is True
 
 
 def test_prediction_validation_can_preserve_rejected_model_output_for_scoring() -> None:

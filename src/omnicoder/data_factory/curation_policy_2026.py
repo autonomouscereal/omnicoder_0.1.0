@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+import zlib
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,10 +62,23 @@ EVAL_HOLDOUT_MARKERS = (
     "blocked_until_review",
     "protected_eval",
 )
+EVAL_BENCHMARK_TEXT_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:benchmark(?:[_ -]?(?:id|task|suite|eval|materialized|holdout))?|public[_ -]?dev|"
+    r"answer[_ -]?key|protected[_ -]?eval|benchmark[_ -]?holdout|hella[_ -]?swag|hellaswag|"
+    r"arc[_ -]?agi[23]?|arc-agi[23]?|swe[_ -]?bench|terminal[_ -]?bench|mmmu(?:[_ -]?pro)?|mmlu(?:[_ -]?pro)?|"
+    r"human[_ -]?eval|humaneval|mbpp|gsm8k|gpqa(?:[_ -]?diamond)?|bfcl|berkeley[_ -]?function[_ -]?calling|"
+    r"live[_ -]?code[_ -]?bench|livecodebench|tau[_ -]?bench|web[_ -]?arena|webarena|browsergym|osworld|"
+    r"frontier[_ -]?math|frontiermath|fixture|smoke|canary)(?=$|[^A-Za-z0-9])",
+    re.IGNORECASE,
+)
 KNOWN_MODALITIES = {"text", "code", "tool", "image", "video", "audio", "music", "tts", "long_context", "math", "ocr"}
 MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts", "ocr"}
 GENERATION_MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts"}
 WORD_RE = re.compile(r"[A-Za-z0-9_]+")
+NEAR_DUP_MIN_NGRAMS = 12
+NEAR_DUP_MAX_NGRAMS = 384
+NEAR_DUP_MAX_INDEX_ROWS = 100_000
+NEAR_DUP_MAX_POSTINGS_PER_GRAM = 256
 REMOTE_REF_PREFIXES = ("http://", "https://", "s3://", "hf://")
 SCALAR_TARGET_RE = re.compile(r"(?i)^[+-]?(?:\d+(?:\.\d+)?|[a-z]|true|false|yes|no|null|none|nan)$")
 BARE_MEDIA_PATH_TARGET_RE = re.compile(
@@ -129,6 +143,10 @@ def stable_hash(value: Any) -> str:
     if not isinstance(value, str):
         value = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
     return hashlib.sha256(value.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def stable_gram_hash(value: str) -> int:
+    return zlib.crc32(value.encode("utf-8", errors="ignore")) & 0xFFFFFFFF
 
 
 def text_value(value: Any, *, limit: int = 32768) -> str:
@@ -426,7 +444,35 @@ def eval_holdout_hit(row: dict[str, Any], source_path: Path | str | None = None)
     for marker in EVAL_HOLDOUT_MARKERS:
         if marker in metadata:
             return marker
+    combined = f"{metadata}\n{text_value(row.get('benchmark_id'))}\n{text_value(row.get('reportability_scope'))}"
+    if EVAL_BENCHMARK_TEXT_RE.search(combined):
+        return "benchmark_or_eval_marker"
     return ""
+
+
+def near_dedupe_text(row: dict[str, Any], *, prompt: str, target: str, modality: str) -> str:
+    if modality in MEDIA_MODALITIES and target_json_has_media_payload(row):
+        return ""
+    return f"{prompt}\n{target}".strip()
+
+
+def ngram_fingerprint(text: str, *, ngram: int = 5) -> set[int]:
+    tokens = WORD_RE.findall(text.casefold())
+    if len(tokens) < max(1, ngram):
+        return set()
+    fingerprint = {
+        stable_gram_hash(" ".join(tokens[index : index + ngram]))
+        for index in range(0, len(tokens) - ngram + 1)
+    }
+    if len(fingerprint) <= NEAR_DUP_MAX_NGRAMS:
+        return fingerprint
+    return set(sorted(fingerprint)[:NEAR_DUP_MAX_NGRAMS])
+
+
+def jaccard(left: set[int], right: set[int]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / max(1, len(left | right))
 
 
 def artifact_quality(refs: list[str], modality: str, *, require_media_artifacts: bool) -> tuple[float, list[str]]:
@@ -686,6 +732,11 @@ def run_agent(args: argparse.Namespace) -> dict[str, Any]:
     accepted = 0
     rejected = 0
     seen_hashes: set[str] = set()
+    near_dedupe_enabled = bool(getattr(args, "near_dedupe", False))
+    near_dedupe_threshold = float(getattr(args, "near_dedupe_threshold", 0.92))
+    near_dedupe_ngram = int(getattr(args, "near_dedupe_ngram", 5))
+    near_duplicate_fingerprints: list[dict[str, Any]] = []
+    near_duplicate_inverted: dict[int, list[int]] = {}
     with out_path.open("w", encoding="utf-8", newline="\n") as out_handle, rejected_path.open("w", encoding="utf-8", newline="\n") as rej_handle:
         stop = False
         for input_item in args.input:
@@ -727,6 +778,50 @@ def run_agent(args: argparse.Namespace) -> dict[str, Any]:
                     audit["accepted"] = False
                     audit["reasons"] = sorted(set(list(audit.get("reasons") or []) + ["duplicate"]))
                 seen_hashes.add(dedupe_key)
+                if near_dedupe_enabled:
+                    fingerprint_text = near_dedupe_text(row, prompt=prompt, target=target, modality=modality)
+                    fingerprint = ngram_fingerprint(fingerprint_text, ngram=max(1, near_dedupe_ngram))
+                    if len(fingerprint) >= NEAR_DUP_MIN_NGRAMS:
+                        candidate_hits: Counter[int] = Counter()
+                        for gram in fingerprint:
+                            for candidate_index in near_duplicate_inverted.get(gram, ()):
+                                candidate_hits[candidate_index] += 1
+                        best_score = 0.0
+                        best: dict[str, Any] | None = None
+                        threshold = near_dedupe_threshold
+                        for candidate_index, shared in candidate_hits.most_common(24):
+                            other = near_duplicate_fingerprints[candidate_index]
+                            other_fp = other["fingerprint"]
+                            if shared / max(1, min(len(fingerprint), len(other_fp))) < threshold:
+                                continue
+                            score = jaccard(fingerprint, other_fp)
+                            if score > best_score:
+                                best_score = score
+                                best = other
+                        if best is not None and best_score >= threshold:
+                            audit["accepted"] = False
+                            audit["reasons"] = sorted(set(list(audit.get("reasons") or []) + ["near_duplicate_5gram"]))
+                            audit["near_duplicate_2026"] = {
+                                "score": round(best_score, 6),
+                                "match_type": f"{near_dedupe_ngram}gram_jaccard",
+                                "first_source_path": best.get("source_path"),
+                                "first_line_number": best.get("line_number"),
+                                "first_modality": best.get("modality"),
+                            }
+                        if len(near_duplicate_fingerprints) < NEAR_DUP_MAX_INDEX_ROWS:
+                            near_duplicate_index = len(near_duplicate_fingerprints)
+                            near_duplicate_fingerprints.append(
+                                {
+                                    "fingerprint": fingerprint,
+                                    "source_path": str(source_path),
+                                    "line_number": row.get("line_number"),
+                                    "modality": modality,
+                                }
+                            )
+                            for gram in fingerprint:
+                                postings = near_duplicate_inverted.setdefault(gram, [])
+                                if len(postings) < NEAR_DUP_MAX_POSTINGS_PER_GRAM:
+                                    postings.append(near_duplicate_index)
                 row["curation_policy_2026"] = audit
                 row["quality_score"] = max(float(row.get("quality_score") or 0.0), float(audit["quality"]["score"]))
                 counts[f"seen_{modality}"] += 1
@@ -752,6 +847,12 @@ def run_agent(args: argparse.Namespace) -> dict[str, Any]:
         "rejected_count": rejected,
         "counts": dict(sorted(counts.items())),
         "policy": cfg.__dict__ | {"media_modalities": sorted(cfg.media_modalities)},
+        "near_dedupe": {
+            "enabled": near_dedupe_enabled,
+            "ngram": near_dedupe_ngram,
+            "threshold": near_dedupe_threshold,
+            "indexed_fingerprints": len(near_duplicate_fingerprints),
+        },
         "integrity_policy_note": (
             "Rejects prompt-injection payloads, poisoning/backdoor/degradation cues, hidden Unicode/control payloads, "
             "AI watermark/provenance markers such as SynthID/C2PA/Content Credentials, and suspicious media metadata/artifact markers."
@@ -776,6 +877,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-integrity-artifact-scan", action="store_true", help="Skip local media byte marker scans; text/metadata integrity checks still run.")
     parser.add_argument("--max-integrity-artifact-bytes", type=int, default=64 * 1024 * 1024)
     parser.add_argument("--dedupe", action="store_true")
+    parser.add_argument("--near-dedupe", action="store_true", help="Reject near-duplicate train rows by 5-gram Jaccard similarity in addition to exact hash dedupe.")
+    parser.add_argument("--near-dedupe-threshold", type=float, default=0.92)
+    parser.add_argument("--near-dedupe-ngram", type=int, default=5)
     parser.add_argument("--max-records", type=int, default=0)
     args = parser.parse_args(argv)
     print(json.dumps(run_agent(args), ensure_ascii=True, sort_keys=True))
