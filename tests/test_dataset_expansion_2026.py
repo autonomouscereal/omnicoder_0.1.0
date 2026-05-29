@@ -312,6 +312,98 @@ def test_dataset_expansion_blocks_unknown_contamination_from_train(tmp_path: Pat
     assert research_rows[0]["contamination_status"] == "unknown"
 
 
+def test_dataset_expansion_quarantines_low_quality_and_row_rights_from_train(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    _write_jsonl(
+        root / "data" / "math.jsonl",
+        [
+            {
+                "problem": "Solve 5+7.",
+                "answer": "12 with concise reasoning.",
+                "uuid": "low-quality",
+                "contamination_status": "clean",
+                "source_date": "2026-05-28",
+                "quality_score": 0.2,
+            },
+            {
+                "problem": "Solve 9+4.",
+                "answer": "13 with concise reasoning.",
+                "uuid": "bad-rights",
+                "contamination_status": "clean",
+                "source_date": "2026-05-28",
+                "quality_score": 0.95,
+                "license": "unknown pending rights review",
+            },
+        ],
+    )
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "unit_low_quality_math",
+                    "family": "math_reasoning",
+                    "target_modality": "text",
+                    "local_jsonl": "data/math.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                    "field_map": {"prompt": ["problem"], "target": ["answer"], "id": ["uuid"]},
+                }
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": False, "no_streaming": False, "max_records_per_dataset": 0})(),
+    )
+
+    train_path = root / "weights" / "external" / "jsonl" / "train_all_external.jsonl"
+    research_rows = [
+        json.loads(line)
+        for line in (root / "weights" / "external" / "jsonl" / "research_internal_all_external.jsonl").read_text().splitlines()
+    ]
+    reasons = {reason for row in research_rows for reason in row.get("train_quarantine_reasons", [])}
+    assert manifest["records"].get("train", 0) == 0
+    assert train_path.read_text(encoding="utf-8") == ""
+    assert "quality_score_below_train_floor" in reasons
+    assert "unsafe_or_unreviewed_row_license" in reasons
+
+
+def test_dataset_expansion_quarantines_train_rows_that_only_use_generic_fallback_fields(tmp_path: Path) -> None:
+    plan = _training_profile(tmp_path)["training_plan"]
+    entry = {
+        "name": "unit_weak_mapping",
+        "family": "math_reasoning",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "field_map": {"prompt": ["problem"], "target": ["solution"]},
+        "contamination_status": "clean",
+        "source_date": "2026-05-28",
+        "quality_score": 0.95,
+    }
+    record = {
+        "prompt": "Fallback prompt should not count as mapped.",
+        "answer": "Fallback answer should not be train-promoted.",
+        "source_date": "2026-05-28",
+        "quality_score": 0.95,
+        "contamination_status": "clean",
+    }
+
+    row = expansion.record_to_training_row(entry, record, plan, 0)
+
+    assert row is not None
+    assert row["training_bucket"] == "research_internal"
+    assert "missing_explicit_field_map_prompt_or_target" in row["train_quarantine_reasons"]
+
+
 def test_dataset_expansion_falls_back_to_distillation_seeds_after_hf_failure(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))

@@ -760,7 +760,8 @@ train_group() {
     --seq_len "$SEQ_LEN"
     --steps "$STEPS"
     --lr "$LEARNING_RATE"
-    --max_records "$max_records"
+    --max_source_rows "$max_records"
+    --max_indexed_windows "$max_records"
     --precision "$PRECISION"
     --init_dtype "$INIT_DTYPE"
     --optimizer_in_backward_update lowmem_adafactor
@@ -805,6 +806,8 @@ eval_group() {
     --init-dtype "$INIT_DTYPE"
     --seq-len "$SEQ_LEN"
     --max-records-per-file "$max_records"
+    --max-indexed-windows-per-file "$max_records"
+    --training-window-eval
     --lm-loss-chunk-tokens "$LM_LOSS_CHUNK_TOKENS"
   )
   run_cmd "loss_${group}" "$LOG_DIR/${group}.loss.console.log" "${loss_cmd[@]}"

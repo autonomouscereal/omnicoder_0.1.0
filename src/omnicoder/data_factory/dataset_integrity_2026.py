@@ -463,6 +463,51 @@ def _row_has_structured_tool_payload(row: dict[str, Any]) -> bool:
     return False
 
 
+def _first_tool_container(row: dict[str, Any]) -> dict[str, Any]:
+    for container in (row, row.get("target_json"), row.get("output_json"), row.get("teacher_output")):
+        if isinstance(container, dict) and any(
+            container.get(key) not in (None, "", [], {})
+            for key in ("tool_calls", "tool_results", "function_call", "actions", "observations", "trajectory")
+        ):
+            return container
+    return row
+
+
+def _tool_schema_issues(row: dict[str, Any], modality: str = "") -> list[str]:
+    if not _row_has_structured_tool_payload(row) and (modality or "").strip().lower() not in {"tool", "agent_tool"}:
+        return []
+    container = _first_tool_container(row)
+    raw_calls = container.get("tool_calls")
+    if raw_calls in (None, "", [], {}) and container.get("function_call") not in (None, "", [], {}):
+        raw_calls = [container.get("function_call")]
+    if raw_calls in (None, "", [], {}) and container.get("actions") not in (None, "", [], {}):
+        raw_calls = container.get("actions")
+    if raw_calls in (None, "", [], {}) and container.get("trajectory") not in (None, "", [], {}):
+        raw_calls = container.get("trajectory")
+    calls = raw_calls if isinstance(raw_calls, list) else ([raw_calls] if isinstance(raw_calls, dict) else [])
+    issues: list[str] = []
+    valid_calls = 0
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        name = text_value(call.get("tool") or call.get("name") or call.get("function") or call.get("tool_name"), limit=256)
+        args = call.get("arguments") if "arguments" in call else call.get("args")
+        if args is None and isinstance(call.get("input"), dict):
+            args = call.get("input")
+        if name and isinstance(args, (dict, list)):
+            valid_calls += 1
+    if valid_calls <= 0:
+        issues.append("tool_missing_valid_call_schema")
+    raw_results = container.get("tool_results")
+    if raw_results in (None, "", [], {}) and container.get("observations") not in (None, "", [], {}):
+        raw_results = container.get("observations")
+    results = raw_results if isinstance(raw_results, list) else ([raw_results] if isinstance(raw_results, dict) else [])
+    has_result = bool(results) or container.get("verifier") not in (None, "", [], {}) or container.get("reward") not in (None, "", [], {})
+    if not has_result:
+        issues.append("tool_missing_result_or_verifier")
+    return issues
+
+
 def _modality_metadata(row: dict[str, Any], explicit: str = "") -> str:
     explicit_text = text_value(explicit, limit=256)
     if explicit_text and explicit_text.lower() not in {"unknown", "none", "null"}:
@@ -553,6 +598,26 @@ def _artifact_path(ref: str) -> Path | None:
         return None
     path = Path(ref)
     return path if path.is_absolute() else None
+
+
+def _media_artifact_ref_issues(refs: list[str] | None, modality: str) -> list[dict[str, Any]]:
+    if (modality or "").strip().lower() not in MEDIA_MODALITIES:
+        return []
+    issues: list[dict[str, Any]] = []
+    for ref in (refs or [])[:16]:
+        text = str(ref or "").strip()
+        if not text or _is_remote_ref(text) or text.startswith("data:") or text == "embedded_media_bytes":
+            continue
+        path = _artifact_path(text)
+        if path is None:
+            issues.append({"reason": "media_local_artifact_unresolved", "kind": "media_payload", "ref": text[:512]})
+            continue
+        try:
+            if not path.is_file() or path.stat().st_size <= 0:
+                issues.append({"reason": "media_local_artifact_missing_or_empty", "kind": "media_payload", "path": str(path)})
+        except OSError:
+            issues.append({"reason": "media_local_artifact_missing_or_empty", "kind": "media_payload", "path": str(path)})
+    return issues
 
 
 def scan_artifact_bytes(path: Path, *, max_bytes: int = 64 * 1024 * 1024) -> dict[str, Any]:
@@ -686,6 +751,12 @@ def audit_dataset_integrity(
     if url_only:
         reasons.append(url_only)
         issues.append({"reason": url_only, "kind": "media_payload"})
+    for issue in _media_artifact_ref_issues(refs, resolved_modality):
+        reasons.append(str(issue["reason"]))
+        issues.append(issue)
+    for reason in _tool_schema_issues(row, resolved_modality):
+        reasons.append(reason)
+        issues.append({"reason": reason, "kind": "tool_schema"})
 
     artifact_reports: list[dict[str, Any]] = []
     if scan_artifacts:

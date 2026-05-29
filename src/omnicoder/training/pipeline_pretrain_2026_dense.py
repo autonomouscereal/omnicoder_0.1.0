@@ -1242,19 +1242,43 @@ def _lm_loss_diagnostics(labels: torch.Tensor, optimized_target_tokens: int, ce_
 
 
 class WeightedTextJsonlDataset(torch.utils.data.Dataset):
-    def __init__(self, path: str, tokenizer: Any, seq_len: int, max_records: int = 0, vocab_size: int = 0):
+    def __init__(
+        self,
+        path: str,
+        tokenizer: Any,
+        seq_len: int,
+        max_records: int = 0,
+        vocab_size: int = 0,
+        *,
+        max_source_rows: int = 0,
+        max_indexed_windows: int = 0,
+    ):
         self.tokenizer = tokenizer
         self.seq_len = int(seq_len)
         self.vocab_size = int(vocab_size)
         self.records: list[tuple[Path, int, int, str]] = []
+        self._overflow_records: list[tuple[Path, int, int, str]] = []
+        self.source_row_keys: set[tuple[Path, int, str]] = set()
+        self.row_metadata: dict[tuple[Path, int, str], dict[str, Any]] = {}
+        self.source_rows_seen = 0
+        self.max_source_rows = int(max_source_rows) if int(max_source_rows) > 0 else 0
+        self.max_indexed_windows = int(max_indexed_windows) if int(max_indexed_windows) > 0 else int(max_records)
         self.fallback: tuple[list[int], list[int], float] = ([1] * self.seq_len, [1] * self.seq_len, 0.05)
-        limit = int(max_records) if int(max_records) > 0 else None
+        window_limit = int(self.max_indexed_windows) if int(self.max_indexed_windows) > 0 else None
+        source_limit = int(self.max_source_rows) if int(self.max_source_rows) > 0 else None
         p = Path(path)
         paths = sorted(p.rglob("*.jsonl")) + sorted(p.rglob("*.txt")) if p.is_dir() else [p]
         for src in paths:
-            if limit is not None and len(self.records) >= limit:
+            if window_limit is not None and len(self.records) >= window_limit:
                 break
-            self._index_path(src, limit)
+            if source_limit is not None and self.source_rows_seen >= source_limit:
+                break
+            self._index_path(src, window_limit=window_limit, source_limit=source_limit)
+        if window_limit is not None and len(self.records) < window_limit:
+            for entry in self._overflow_records:
+                if len(self.records) >= window_limit:
+                    break
+                self.records.append(entry)
 
     def _sanitize_id(self, value: int) -> int:
         token = int(value)
@@ -1319,15 +1343,84 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
             return False
         return bool(_content_to_text(obj.get("prompt")).strip())
 
-    def _index_path(self, path: Path, limit: int | None) -> None:
+    @staticmethod
+    def _row_modality(obj: dict[str, Any], path: Path) -> str:
+        for key in ("modality", "target_modality", "source_modality", "media_family", "kind", "training_kind"):
+            value = obj.get(key)
+            if value:
+                text = str(value).strip().lower()
+                for candidate in ("image", "video", "music", "tts", "speech", "audio", "ocr", "code", "tool", "math", "text"):
+                    if candidate in text:
+                        return "tts" if candidate == "speech" else ("music" if candidate == "audio" else candidate)
+                return text[:64]
+        target_json = obj.get("target_json")
+        if isinstance(target_json, dict):
+            route = _target_json_route(target_json)
+            if route:
+                return route
+        stem = str(path.stem).lower()
+        for candidate in ("image", "video", "music", "tts", "audio", "ocr", "code", "tool", "math", "text"):
+            if candidate in stem:
+                return "music" if candidate == "audio" else candidate
+        return "unknown"
+
+    @staticmethod
+    def _row_origin_group(obj: dict[str, Any], path: Path) -> str:
+        for key in ("origin_group", "proof_group", "group", "source_family", "dataset_name", "source_id"):
+            value = obj.get(key)
+            if value:
+                return str(value).strip()[:128]
+        return path.stem
+
+    def _register_source_row(
+        self,
+        path: Path,
+        offset: int,
+        kind: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> tuple[Path, int, str]:
+        key = (path, int(offset), str(kind))
+        if key not in self.source_row_keys:
+            self.source_row_keys.add(key)
+            self.source_rows_seen += 1
+        if metadata is not None:
+            self.row_metadata[key] = metadata
+        return key
+
+    def _append_row_first_chunks(self, path: Path, offset: int, kind: str, chunks: int, *, window_limit: int | None) -> None:
+        total = max(1, int(chunks))
+        if window_limit is None or len(self.records) < window_limit:
+            self.records.append((path, int(offset), 0, kind))
+        if total <= 1:
+            return
+        overflow = [(path, int(offset), chunk_index, kind) for chunk_index in range(1, total)]
+        if window_limit is None:
+            self.records.extend(overflow)
+        else:
+            self._overflow_records.extend(overflow)
+
+    def _index_path(self, path: Path, *, window_limit: int | None, source_limit: int | None) -> None:
         if not path.exists():
             return
         if path.suffix.lower() == ".txt":
+            if source_limit is not None and self.source_rows_seen >= source_limit:
+                return
             raw_len = path.stat().st_size
-            for chunk_index in range(self._estimate_chunks(raw_len)):
-                if limit is not None and len(self.records) >= limit:
-                    break
-                self.records.append((path, 0, chunk_index, "txt"))
+            chunks = self._estimate_chunks(raw_len)
+            self._register_source_row(
+                path,
+                0,
+                "txt",
+                metadata={
+                    "source_id": path.name,
+                    "origin_group": path.stem,
+                    "modality": "text",
+                    "kind": "txt",
+                    "estimated_chunks": int(chunks),
+                },
+            )
+            self._append_row_first_chunks(path, 0, "txt", chunks, window_limit=window_limit)
             return
         with path.open("rb") as handle:
             while True:
@@ -1335,16 +1428,34 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
                 raw = handle.readline()
                 if not raw:
                     break
-                if limit is not None and len(self.records) >= limit:
+                if window_limit is not None and len(self.records) >= window_limit:
+                    break
+                if source_limit is not None and self.source_rows_seen >= source_limit:
                     break
                 if not raw.strip():
                     continue
                 if not self._jsonl_line_has_possible_target(raw):
                     continue
-                for chunk_index in range(self._estimate_chunks(len(raw))):
-                    if limit is not None and len(self.records) >= limit:
-                        break
-                    self.records.append((path, offset, chunk_index, "jsonl"))
+                try:
+                    obj = json.loads(raw.decode("utf-8", errors="ignore"))
+                except Exception:
+                    obj = {}
+                if not isinstance(obj, dict):
+                    obj = {}
+                chunks = self._estimate_chunks(len(raw))
+                self._register_source_row(
+                    path,
+                    offset,
+                    "jsonl",
+                    metadata={
+                        "source_id": str(obj.get("source_id") or obj.get("id") or f"{path.name}:{offset}"),
+                        "origin_group": self._row_origin_group(obj, path),
+                        "modality": self._row_modality(obj, path),
+                        "kind": "jsonl",
+                        "estimated_chunks": int(chunks),
+                    },
+                )
+                self._append_row_first_chunks(path, offset, "jsonl", chunks, window_limit=window_limit)
 
     def __len__(self) -> int:
         return max(1, len(self.records))
@@ -1697,6 +1808,9 @@ def save_sharded_checkpoint(
             "lm_loss_chunk_tokens": int(getattr(args, "lm_loss_chunk_tokens", 0) or 0),
             "loss_token_stride": int(getattr(args, "loss_token_stride", 1) or 1),
             "max_loss_tokens_per_sample": int(getattr(args, "max_loss_tokens_per_sample", 0) or 0),
+            "max_records": int(getattr(args, "max_records", 0) or 0),
+            "max_source_rows": int(getattr(args, "max_source_rows", 0) or 0),
+            "max_indexed_windows": int(getattr(args, "max_indexed_windows", 0) or 0),
             "target_boundary_weight": float(getattr(args, "target_boundary_weight", 1.0) or 1.0),
             "target_prefix_weight": float(getattr(args, "target_prefix_weight", 1.0) or 1.0),
             "target_prefix_tokens": int(getattr(args, "target_prefix_tokens", 0) or 0),
@@ -1911,18 +2025,37 @@ def _dataset_source_summary(dataset: WeightedTextJsonlDataset | None) -> dict[st
         return {"available": False, "records": 0, "sources": {}, "kinds": {}}
     sources: dict[str, int] = {}
     kinds: dict[str, int] = {}
+    row_sources: dict[str, int] = {}
+    origin_groups: dict[str, int] = {}
+    modalities: dict[str, int] = {}
     for path, _offset, _chunk_index, kind in getattr(dataset, "records", []):
         source = str(path)
         sources[source] = int(sources.get(source, 0) + 1)
         kinds[str(kind)] = int(kinds.get(str(kind), 0) + 1)
+    row_metadata = getattr(dataset, "row_metadata", {}) or {}
+    for key in getattr(dataset, "source_row_keys", set()):
+        path, _offset, kind = key
+        row_sources[str(path)] = int(row_sources.get(str(path), 0) + 1)
+        metadata = row_metadata.get(key, {}) if isinstance(row_metadata, dict) else {}
+        origin_group = str(metadata.get("origin_group") or Path(path).stem)
+        modality = str(metadata.get("modality") or "unknown")
+        origin_groups[origin_group] = int(origin_groups.get(origin_group, 0) + 1)
+        modalities[modality] = int(modalities.get(modality, 0) + 1)
     return {
         "available": True,
         "records": int(len(getattr(dataset, "records", []))),
         "indexed_samples": int(len(dataset)),
+        "source_rows": int(len(getattr(dataset, "source_row_keys", set()))),
+        "max_source_rows": int(getattr(dataset, "max_source_rows", 0) or 0),
+        "max_indexed_windows": int(getattr(dataset, "max_indexed_windows", 0) or 0),
         "fallback_active": bool(not getattr(dataset, "records", [])),
         "sources": dict(sorted(sources.items(), key=lambda item: (-item[1], item[0]))[:32]),
+        "row_sources": dict(sorted(row_sources.items(), key=lambda item: (-item[1], item[0]))[:32]),
         "source_count": int(len(sources)),
+        "row_source_count": int(len(row_sources)),
         "kinds": dict(sorted(kinds.items())),
+        "origin_groups": dict(sorted(origin_groups.items())),
+        "modalities": dict(sorted(modalities.items())),
     }
 
 
@@ -2398,6 +2531,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--steps", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1.0e-6)
     parser.add_argument("--max_records", type=int, default=0)
+    parser.add_argument("--max_source_rows", type=int, default=0)
+    parser.add_argument("--max_indexed_windows", type=int, default=0)
     parser.add_argument("--skip_final_optimizer_update", action="store_true")
     parser.add_argument("--precision", default="fp32")
     parser.add_argument("--init_dtype", default="auto")
@@ -2555,10 +2690,41 @@ def main(argv: list[str] | None = None) -> int:
 
     tokenizer = get_text_tokenizer(prefer_hf=True) if rank == 0 else None
     if rank == 0:
-        _write_log(args.log_file, {"event": "dataset_index_start", "data": str(args.data), "seq_len": int(seq_len), "max_records": int(args.max_records)})
-    data = WeightedTextJsonlDataset(args.data, tokenizer, seq_len=seq_len, max_records=args.max_records, vocab_size=int(getattr(preset, "vocab_size", 0) or 0)) if rank == 0 else None
+        _write_log(
+            args.log_file,
+            {
+                "event": "dataset_index_start",
+                "data": str(args.data),
+                "seq_len": int(seq_len),
+                "max_records": int(args.max_records),
+                "max_source_rows": int(args.max_source_rows),
+                "max_indexed_windows": int(args.max_indexed_windows),
+            },
+        )
+    data = (
+        WeightedTextJsonlDataset(
+            args.data,
+            tokenizer,
+            seq_len=seq_len,
+            max_records=args.max_records,
+            max_source_rows=args.max_source_rows,
+            max_indexed_windows=args.max_indexed_windows,
+            vocab_size=int(getattr(preset, "vocab_size", 0) or 0),
+        )
+        if rank == 0
+        else None
+    )
     if rank == 0:
-        _write_log(args.log_file, {"event": "dataset_index_done", "samples": int(len(data) if data is not None else 0), "data": str(args.data), "seq_len": int(seq_len)})
+        _write_log(
+            args.log_file,
+            {
+                "event": "dataset_index_done",
+                "samples": int(len(data) if data is not None else 0),
+                "data": str(args.data),
+                "seq_len": int(seq_len),
+                "source_summary": _dataset_source_summary(data),
+            },
+        )
     loader = DataLoader(data, batch_size=batch_size, shuffle=bool(args.shuffle), drop_last=True) if rank == 0 else None
     it = iter(loader) if loader is not None else None
     source_summary_box: list[Any] = [_dataset_source_summary(data) if rank == 0 else None]

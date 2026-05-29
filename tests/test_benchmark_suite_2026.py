@@ -589,7 +589,10 @@ def test_smoke_command_result_is_diagnostic_only_even_when_command_passes(
 
     result = _jsonl_rows(tmp_path / "out" / "results.jsonl")[0]
     assert result["status"] == "passed"
-    assert result["score"] == 1.0
+    assert result["score"] is None
+    assert result["score_json"]["canonical_score"] is None
+    assert result["score_json"]["diagnostic_score"] == 1.0
+    assert result["score_json"]["score_claim_scope"] == "diagnostic_contract"
     assert result["diagnostic_only"] is True
     assert result["official_score"] is False
     assert result["reportability_scope"] == "diagnostic_only"
@@ -696,12 +699,15 @@ def test_summarize_reports_status_counts_and_latest_adapter_state(
     assert summary["total_results"] == 3
     assert summary["by_status"] == {"failed": 1, "passed": 2}
     assert summary["by_adapter"]["local_alpha"] == {
-        "latest_status": "passed",
-        "latest_mode": "smoke",
-        "latest_run_id": "new",
-        "latest_score": 1.0,
-        "reportable_score": False,
-    }
+            "latest_status": "passed",
+            "latest_mode": "smoke",
+            "latest_run_id": "new",
+            "latest_score": None,
+            "latest_reportable_score": None,
+            "latest_internal_score": None,
+            "score_claim_scope": None,
+            "reportable_score": False,
+        }
     assert summary["reportable_results"] == 1
     assert summary["contract_only_results"] == 0
 
@@ -831,17 +837,19 @@ def test_run_reportable_scores_arc_swe_and_mmmu_with_real_oracles(
 
     payload = _json_from_stdout(capsys)
     rows = _jsonl_rows(Path(payload["results"]))
-    assert payload["status"] == "ok"
-    assert payload["reportable"] == 3
+    assert payload["status"] == "needs_data"
+    assert payload["reportable"] == 0
     assert len(rows) == 3
     by_id = {row["benchmark_id"]: row for row in rows}
-    assert by_id["reasoning_arc_agi3_2026"]["score"] == 0.5
-    assert by_id["coding_swe_bench_live_2026"]["score"] == 1.0
-    assert by_id["multimodal_mmmu_pro_2026"]["score"] == 1.0
+    assert by_id["reasoning_arc_agi3_2026"]["score"] is None
+    assert by_id["reasoning_arc_agi3_2026"]["score_json"]["contract_score"] == 0.5
+    assert by_id["coding_swe_bench_live_2026"]["score_json"]["contract_score"] == 1.0
+    assert by_id["multimodal_mmmu_pro_2026"]["score_json"]["contract_score"] == 1.0
     for row in rows:
         assert row["mode"] == "reportable"
-        assert row["score_json"]["reportable_score"] is True
-        assert row["score_json"]["contract_only"] is False
+        assert row["status"] == "contract_only"
+        assert row["score_json"]["reportable_score"] is False
+        assert row["score_json"]["contract_only"] is True
 
 
 def test_run_reportable_rejects_reportable_true_without_authorized_snapshot(
@@ -961,8 +969,10 @@ def test_run_reportable_accepts_authorized_snapshot_descriptor(
     payload = _json_from_stdout(capsys)
     result = _jsonl_rows(Path(payload["results"]))[0]
     task_score = result["metrics_json"]["task_scores"][0]
-    assert payload["status"] == "ok"
-    assert result["score_json"]["reportable_score"] is True
+    assert payload["status"] == "needs_data"
+    assert result["status"] == "contract_only"
+    assert result["score_json"]["reportable_score"] is False
+    assert result["score_json"]["contract_only"] is True
     assert task_score["snapshot_id"] == "arc-agi3-authorized-descriptor"
 
 
@@ -1280,8 +1290,11 @@ def test_run_reportable_scores_hellaswag_with_descriptor_file_hash(
     payload = _json_from_stdout(capsys)
     result = _jsonl_rows(Path(payload["results"]))[0]
     task_score = result["metrics_json"]["task_scores"][0]
-    assert payload["status"] == "ok"
-    assert result["score"] == 1.0
-    assert result["score_json"]["reportable_score"] is True
+    assert payload["status"] == "needs_data"
+    assert result["status"] == "contract_only"
+    assert result["score"] is None
+    assert result["score_json"]["contract_score"] == 1.0
+    assert result["score_json"]["reportable_score"] is False
+    assert result["score_json"]["contract_only"] is True
     assert task_score["reportable_metadata"] is True
     assert task_score["has_model_output"] is True

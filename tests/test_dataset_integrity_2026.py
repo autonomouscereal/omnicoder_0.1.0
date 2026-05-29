@@ -400,6 +400,50 @@ def test_dataset_integrity_scans_local_artifact_metadata_bytes(tmp_path: Path) -
     assert "artifact_ai_generated_metadata" in audit["reasons"]
 
 
+def test_dataset_integrity_rejects_missing_local_media_artifact(tmp_path: Path) -> None:
+    missing = str(tmp_path / "omnicoder_missing_media_artifact_2026.png")
+    row = {
+        "prompt": "Generate the referenced image artifact.",
+        "response": "Image artifact metadata is attached.",
+        "modality": "image",
+        "artifact_refs": [missing],
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], modality="image", refs=[missing])
+
+    assert audit["accepted"] is False
+    assert "media_local_artifact_missing_or_empty" in audit["reasons"]
+
+
+def test_dataset_integrity_requires_tool_call_result_pairing() -> None:
+    row = {
+        "prompt": "Use a calculator tool.",
+        "response": "x",
+        "modality": "tool",
+        "tool_calls": [{"tool": "calculator", "arguments": {"expression": "2+2"}}],
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], modality="tool", refs=[])
+
+    assert audit["accepted"] is False
+    assert "tool_missing_result_or_verifier" in audit["reasons"]
+
+
+def test_dataset_integrity_accepts_well_formed_tool_call_result_pairing() -> None:
+    row = {
+        "prompt": "Use a calculator tool.",
+        "response": "tool result confirms four",
+        "modality": "tool",
+        "tool_calls": [{"tool": "calculator", "arguments": {"expression": "2+2"}}],
+        "tool_results": [{"tool": "calculator", "content": "4"}],
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], modality="tool", refs=[])
+
+    assert "tool_missing_valid_call_schema" not in audit["reasons"]
+    assert "tool_missing_result_or_verifier" not in audit["reasons"]
+
+
 def test_curation_policy_hard_rejects_dataset_integrity_issues() -> None:
     row = {
         "prompt": "Produce the correct answer.",

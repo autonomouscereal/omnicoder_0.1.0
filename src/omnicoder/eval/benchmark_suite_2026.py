@@ -448,14 +448,14 @@ def smoke_result(manifest: dict[str, Any], timeout_seconds: int) -> dict[str, An
     started_at = utc_now()
     command_info: dict[str, Any] | None = None
     mode = manifest["mode"]
-    score: float | None = None
+    diagnostic_score: float | None = None
     reportable_score = False
     diagnostic_only = True
     contract_only = True
     if mode == "command":
         command_info = run_command(manifest.get("command"), timeout_seconds)
         status = "passed" if command_info.get("ok") else "failed"
-        score = 1.0 if status == "passed" else 0.0
+        diagnostic_score = 1.0 if status == "passed" else 0.0
     elif mode == "smoke":
         status = "passed"
     else:
@@ -482,9 +482,11 @@ def smoke_result(manifest: dict[str, Any], timeout_seconds: int) -> dict[str, An
         "diagnostic_only": diagnostic_only,
         "official_score": False,
         "reportability_scope": "diagnostic_only",
-        "score": score,
+        "score": None,
         "score_json": {
-            "canonical_score": score,
+            "canonical_score": None,
+            "diagnostic_score": diagnostic_score,
+            "score_claim_scope": "diagnostic_contract",
             "reportable_score": reportable_score,
             "contract_only": contract_only,
             "diagnostic_only": diagnostic_only,
@@ -1019,9 +1021,13 @@ def reportable_result(
         score = sum(score_values) / len(score_values) if score_values else 0.0
         enough_tasks = len(task_scores) >= min_tasks
         metadata_ok = all(item["reportable_metadata"] for item in task_scores)
-        reportable_score = enough_tasks and metadata_ok
-        status = "passed" if reportable_score else "local_only"
-        reason = "" if reportable_score else "missing_reportable_metadata_or_min_task_count"
+        metadata_contract_ok = enough_tasks and metadata_ok
+        official_or_external_scorer = False
+        reportable_score = metadata_contract_ok and official_or_external_scorer
+        status = "passed" if reportable_score else ("contract_only" if metadata_contract_ok else "local_only")
+        reason = "" if reportable_score else (
+            "internal_contract_oracle_not_official_scorer" if metadata_contract_ok else "missing_reportable_metadata_or_min_task_count"
+        )
     task_revisions = sorted({str(task.get("dataset_revision") or task.get("task_revision") or "unknown") for task in tasks})
     result = {
         "type": "benchmark_result",
@@ -1044,20 +1050,22 @@ def reportable_result(
         "reason": reason,
         "diagnostic_only": False,
         "official_score": False,
-        "reportability_scope": "authorized_contract_oracle" if reportable_score else "local_or_incomplete",
+        "reportability_scope": "official_or_authorized_external_scorer" if reportable_score else "internal_contract_or_local_only",
         "model": model,
-        "score": round(score, 6) if score is not None else None,
+        "score": round(score, 6) if reportable_score and score is not None else None,
         "score_json": {
-            "canonical_score": round(score, 6) if score is not None else None,
+            "canonical_score": round(score, 6) if reportable_score and score is not None else None,
+            "contract_score": round(score, 6) if score is not None else None,
+            "score_claim_scope": "internal_contract_oracle",
             "reportable_score": reportable_score,
-            "contract_only": False,
+            "contract_only": bool(metadata_contract_ok and not reportable_score) if tasks else False,
             "diagnostic_only": False,
             "official_score": False,
             "scorer_kind": "authorized_contract_oracle",
             "task_count": len(task_scores),
             "min_tasks": min_tasks,
-            "reportable_scope": "official_or_authorized" if reportable_score else "local_or_incomplete",
-            "reportability_scope": "authorized_contract_oracle" if reportable_score else "local_or_incomplete",
+            "reportable_scope": "official_or_authorized_external_scorer" if reportable_score else "internal_contract_or_local_only",
+            "reportability_scope": "official_or_authorized_external_scorer" if reportable_score else "internal_contract_or_local_only",
         },
         "metrics": {
             "task_count": len(task_scores),
@@ -1120,7 +1128,20 @@ def row_contract_only(row: dict[str, Any]) -> bool:
 
 
 def row_canonical_score(row: dict[str, Any]) -> float | None:
+    if not row_reportable_score(row):
+        return None
     for value in (row.get("score"), row_score_json(row).get("canonical_score"), row.get("canonical_score")):
+        if value not in (None, ""):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def row_diagnostic_or_contract_score(row: dict[str, Any]) -> float | None:
+    score_json = row_score_json(row)
+    for value in (score_json.get("diagnostic_score"), score_json.get("contract_score")):
         if value not in (None, ""):
             try:
                 return float(value)
@@ -1360,6 +1381,9 @@ def cmd_summarize(args: argparse.Namespace) -> int:
             "latest_mode": row.get("mode"),
             "latest_run_id": row.get("run_id"),
             "latest_score": row_canonical_score(row),
+            "latest_reportable_score": row_canonical_score(row),
+            "latest_internal_score": row_diagnostic_or_contract_score(row),
+            "score_claim_scope": row_score_json(row).get("score_claim_scope"),
             "reportable_score": reportable,
         }
     summary = {

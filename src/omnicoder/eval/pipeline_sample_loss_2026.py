@@ -30,6 +30,8 @@ from omnicoder.eval.sample_loss_2026 import (
 from omnicoder.modeling.omnicoder2026 import OmniCoder2026Config
 from omnicoder.training.pipeline_pretrain_2026_dense import (
     OmniCoder2026PipelineShard,
+    WeightedTextJsonlDataset,
+    _dataset_source_summary,
     autocast_context,
     load_checkpoint_shard,
     rank_device,
@@ -365,6 +367,33 @@ def _chunks_pair(ids: list[int], labels: list[int], seq_len: int) -> list[tuple[
     return pairs
 
 
+def _training_window_pairs(
+    path: Path,
+    tokenizer: Any,
+    *,
+    seq_len: int,
+    max_source_rows: int,
+    max_indexed_windows: int,
+    vocab_size: int,
+) -> tuple[list[tuple[torch.Tensor, torch.Tensor, str]], dict[str, Any]]:
+    dataset = WeightedTextJsonlDataset(
+        str(path),
+        tokenizer,
+        seq_len=seq_len,
+        max_source_rows=max_source_rows,
+        max_indexed_windows=max_indexed_windows,
+        vocab_size=vocab_size,
+    )
+    pairs: list[tuple[torch.Tensor, torch.Tensor, str]] = []
+    for index, entry in enumerate(getattr(dataset, "records", [])):
+        ids, labels, _weight = dataset[index]
+        source_path, offset, _chunk_index, kind = entry
+        metadata = getattr(dataset, "row_metadata", {}).get((source_path, int(offset), kind), {})
+        modality = str(metadata.get("modality") or _record_modality({}, path.stem))
+        pairs.append((ids, labels, modality))
+    return pairs, _dataset_source_summary(dataset)
+
+
 def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
     _apply_checkpoint_loss_defaults(args)
     shard, device, d_model, vocab_size = _build_shard(args)
@@ -378,6 +407,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
     overall = _new_bucket()
     by_modality: dict[str, dict[str, Any]] = {}
     file_results: list[dict[str, Any]] = []
+    dataset_summaries: list[dict[str, Any]] = []
     if rank == 0:
         records_seen = 0
         chunks_seen = 0
@@ -385,26 +415,28 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
         started_at = time.time()
         for path in files:
             file_bucket = _new_bucket(str(path))
-            for record in _read_jsonl(path, int(args.max_records_per_file)):
-                modality = _record_modality(record, path.stem)
-                try:
-                    ids, labels, _weight = record_ids_labels_weight(record, tokenizer)
-                    ids, labels = _sanitize_ids_labels(ids, labels, vocab_size)
-                except Exception:
-                    ids = _record_ids(record, tokenizer, vocab_size)
-                    labels = [token if int(token) != 0 else -100 for token in ids]
-                if len(ids) < 2:
-                    continue
-                records_seen += 1
-                file_bucket["records"] += 1
-                overall["records"] += 1
-                modality_bucket = by_modality.setdefault(modality, _new_bucket())
-                modality_bucket["records"] += 1
-                file_modality = file_bucket["modalities"].setdefault(modality, _new_bucket())
-                file_modality["records"] += 1
-                for chunk, chunk_labels in _chunks_pair(ids, labels, int(args.seq_len)):
-                    batch = torch.tensor([chunk], dtype=torch.long, device=device)
-                    label_batch = torch.tensor([chunk_labels], dtype=torch.long, device=device)
+            if bool(getattr(args, "training_window_eval", False)):
+                training_pairs, dataset_summary = _training_window_pairs(
+                    path,
+                    tokenizer,
+                    seq_len=int(args.seq_len),
+                    max_source_rows=int(args.max_records_per_file),
+                    max_indexed_windows=int(args.max_indexed_windows_per_file or args.max_records_per_file),
+                    vocab_size=int(vocab_size),
+                )
+                dataset_summaries.append({"path": str(path), **dataset_summary})
+                for ids_tensor, label_tensor, modality in training_pairs:
+                    if ids_tensor.numel() < 2:
+                        continue
+                    records_seen += 1
+                    file_bucket["records"] += 1
+                    overall["records"] += 1
+                    modality_bucket = by_modality.setdefault(modality, _new_bucket())
+                    modality_bucket["records"] += 1
+                    file_modality = file_bucket["modalities"].setdefault(modality, _new_bucket())
+                    file_modality["records"] += 1
+                    batch = ids_tensor.unsqueeze(0).to(device=device, dtype=torch.long)
+                    label_batch = label_tensor.unsqueeze(0).to(device=device, dtype=torch.long)
                     batch, label_batch = _broadcast_batch_labels(batch, label_batch, device)
                     if batch is None or label_batch is None:
                         raise RuntimeError("rank 0 unexpectedly received evaluation stop marker")
@@ -425,23 +457,81 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
                     _add_loss(modality_bucket, loss_sum, token_count)
                     _add_loss(overall, loss_sum, token_count)
                     chunks_seen += 1
-                if progress_records and (records_seen % progress_records) == 0:
-                    elapsed = max(1e-6, time.time() - started_at)
-                    print(
-                        json.dumps(
-                            {
-                                "event": "pipeline_sample_loss_progress",
-                                "records": records_seen,
-                                "chunks": chunks_seen,
-                                "elapsed_sec": round(elapsed, 3),
-                                "records_per_sec": round(records_seen / elapsed, 6),
-                                "current_file": str(path),
-                                "modality": modality,
-                            },
-                            sort_keys=True,
-                        ),
-                        flush=True,
-                    )
+                    if progress_records and (records_seen % progress_records) == 0:
+                        elapsed = max(1e-6, time.time() - started_at)
+                        print(
+                            json.dumps(
+                                {
+                                    "event": "pipeline_sample_loss_progress",
+                                    "records": records_seen,
+                                    "chunks": chunks_seen,
+                                    "elapsed_sec": round(elapsed, 3),
+                                    "records_per_sec": round(records_seen / elapsed, 6),
+                                    "current_file": str(path),
+                                    "modality": modality,
+                                },
+                                sort_keys=True,
+                            ),
+                            flush=True,
+                        )
+            else:
+                for record in _read_jsonl(path, int(args.max_records_per_file)):
+                    modality = _record_modality(record, path.stem)
+                    try:
+                        ids, labels, _weight = record_ids_labels_weight(record, tokenizer)
+                        ids, labels = _sanitize_ids_labels(ids, labels, vocab_size)
+                    except Exception:
+                        ids = _record_ids(record, tokenizer, vocab_size)
+                        labels = [token if int(token) != 0 else -100 for token in ids]
+                    if len(ids) < 2:
+                        continue
+                    records_seen += 1
+                    file_bucket["records"] += 1
+                    overall["records"] += 1
+                    modality_bucket = by_modality.setdefault(modality, _new_bucket())
+                    modality_bucket["records"] += 1
+                    file_modality = file_bucket["modalities"].setdefault(modality, _new_bucket())
+                    file_modality["records"] += 1
+                    for chunk, chunk_labels in _chunks_pair(ids, labels, int(args.seq_len)):
+                        batch = torch.tensor([chunk], dtype=torch.long, device=device)
+                        label_batch = torch.tensor([chunk_labels], dtype=torch.long, device=device)
+                        batch, label_batch = _broadcast_batch_labels(batch, label_batch, device)
+                        if batch is None or label_batch is None:
+                            raise RuntimeError("rank 0 unexpectedly received evaluation stop marker")
+                        loss_sum, token_count = _pipeline_loss(
+                            shard,
+                            batch,
+                            label_batch,
+                            device=device,
+                            hidden_dtype=hidden_dtype,
+                            d_model=d_model,
+                            precision=str(args.precision),
+                            lm_loss_chunk_tokens=int(args.lm_loss_chunk_tokens),
+                            loss_token_stride=int(args.loss_token_stride),
+                            max_loss_tokens_per_sample=int(args.max_loss_tokens_per_sample),
+                        )
+                        _add_loss(file_bucket, loss_sum, token_count)
+                        _add_loss(file_modality, loss_sum, token_count)
+                        _add_loss(modality_bucket, loss_sum, token_count)
+                        _add_loss(overall, loss_sum, token_count)
+                        chunks_seen += 1
+                    if progress_records and (records_seen % progress_records) == 0:
+                        elapsed = max(1e-6, time.time() - started_at)
+                        print(
+                            json.dumps(
+                                {
+                                    "event": "pipeline_sample_loss_progress",
+                                    "records": records_seen,
+                                    "chunks": chunks_seen,
+                                    "elapsed_sec": round(elapsed, 3),
+                                    "records_per_sec": round(records_seen / elapsed, 6),
+                                    "current_file": str(path),
+                                    "modality": modality,
+                                },
+                                sort_keys=True,
+                            ),
+                            flush=True,
+                        )
             _finalize(file_bucket)
             file_results.append(file_bucket)
         _broadcast_batch_labels(None, None, device)
@@ -454,6 +544,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any] | None:
             "profile": str(args.preset),
             "seq_len": int(args.seq_len),
             "max_records_per_file": int(args.max_records_per_file),
+            "evaluation_mode": "training_windows" if bool(getattr(args, "training_window_eval", False)) else "jsonl_chunks",
+            "dataset_summaries": dataset_summaries,
             "loss_token_stride": int(args.loss_token_stride),
             "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample),
             "distributed": {"world_size": int(dist.get_world_size()), "pipeline_stage": True},
@@ -492,6 +584,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dist-timeout-seconds", "--dist_timeout_seconds", dest="dist_timeout_seconds", type=int, default=int(os.getenv("OMNICODER2026_DIST_TIMEOUT_SECONDS", "7200")))
     parser.add_argument("--seq-len", "--seq_len", dest="seq_len", type=int, default=1024)
     parser.add_argument("--max-records-per-file", "--max_records_per_file", dest="max_records_per_file", type=int, default=32)
+    parser.add_argument("--max-indexed-windows-per-file", "--max_indexed_windows_per_file", dest="max_indexed_windows_per_file", type=int, default=0)
+    parser.add_argument("--training-window-eval", "--training_window_eval", dest="training_window_eval", action="store_true")
     parser.add_argument("--precision", default="fp16", choices=["fp32", "fp16", "bf16"])
     parser.add_argument("--init-dtype", "--init_dtype", dest="init_dtype", default="auto", choices=["auto", "fp32", "fp16", "bf16"])
     parser.add_argument("--fake_quant", action="store_true")

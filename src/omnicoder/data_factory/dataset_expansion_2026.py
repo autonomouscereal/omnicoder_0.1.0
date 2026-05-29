@@ -22,6 +22,7 @@ SCHEMA_VERSION = "2026-05-28"
 DEFAULT_PROFILE = "profiles/dataset_curation_2026.json"
 DEFAULT_TRAINING_PROFILE = "profiles/training_orchestration_2026.json"
 DEFAULT_OUT_DIR = "weights/external_datasets_2026/latest"
+DEFAULT_MIN_TRAIN_QUALITY_SCORE = 0.70
 
 FAMILY_TO_MODALITY = {
     "math_reasoning": "text",
@@ -547,6 +548,36 @@ def has_quality_score_for_record(entry: dict[str, Any], record: dict[str, Any]) 
     return False
 
 
+def min_train_quality_score(entry: dict[str, Any]) -> float:
+    for key in ("min_train_quality_score", "min_quality_score", "quality_floor"):
+        value = entry.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            continue
+    return DEFAULT_MIN_TRAIN_QUALITY_SCORE
+
+
+def row_license_blob(entry: dict[str, Any], record: dict[str, Any]) -> str:
+    parts: list[str] = []
+    # Entry-level policy is handled by source_use_bucket(); this is a per-row
+    # quarantine for raw records whose own metadata contradicts the reviewed
+    # source policy.
+    for key in ("license", "license_tier", "rights", "usage_rights", "terms", "use_policy", "copyright"):
+        value = record.get(key)
+        if value not in (None, "", [], {}):
+            parts.append(str(value))
+    metadata = record.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("license", "rights", "usage_rights", "copyright"):
+            value = metadata.get(key)
+            if value not in (None, "", [], {}):
+                parts.append(str(value))
+    return " ".join(parts).lower()
+
+
 def train_quarantine_reasons(entry: dict[str, Any], record: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     status = contamination_status_for_record(entry, record)
@@ -559,6 +590,12 @@ def train_quarantine_reasons(entry: dict[str, Any], record: dict[str, Any]) -> l
         reasons.append("source_date_outside_2025_2026")
     if not has_quality_score_for_record(entry, record):
         reasons.append("missing_quality_score")
+    else:
+        quality_score = quality_score_for_record(entry, record)
+        if quality_score < min_train_quality_score(entry):
+            reasons.append("quality_score_below_train_floor")
+    if any(marker in row_license_blob(entry, record) for marker in UNSAFE_TRAIN_LICENSE_MARKERS):
+        reasons.append("unsafe_or_unreviewed_row_license")
     return reasons
 
 
@@ -1177,12 +1214,18 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
         "main_caption",
         "alt_caption",
     ]
-    prompt = field_conversation_text(record, prompt_fields, USER_ROLE_ALIASES) or field_text(record, prompt_fields)
-    target = field_conversation_text(record, target_fields, ASSISTANT_ROLE_ALIASES, reverse=True) or preference_pair_text(record) or fallback_target(entry, record)
+    prompt_from_map = field_conversation_text(record, prompt_fields, USER_ROLE_ALIASES) or field_text(record, prompt_fields)
+    target_from_map = field_conversation_text(record, target_fields, ASSISTANT_ROLE_ALIASES, reverse=True) or preference_pair_text(record)
+    prompt = prompt_from_map
+    target = target_from_map or fallback_target(entry, record)
+    used_fallback_prompt = False
+    used_fallback_target = not bool(target_from_map)
     if not prompt:
         prompt = fallback_prompt(entry, record)
+        used_fallback_prompt = True
     if not target and bool(entry.get("self_supervised_prompt_as_target")):
         target = field_text(record, field_map.get("prompt") or ["instruction", "question", "prompt", "problem"])
+        used_fallback_target = True
     if not target or len(target.strip()) < int(entry.get("min_target_chars") or 1):
         return None
     family = str(entry.get("family") or "external_dataset")
@@ -1247,8 +1290,11 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     row["contamination_status"] = contamination_status
     row["quality_score"] = quality_score
     quarantine_reasons = train_quarantine_reasons(entry, record) if source_use_bucket(entry) == "train" else []
+    if source_use_bucket(entry) == "train" and (used_fallback_prompt or used_fallback_target):
+        quarantine_reasons.append("missing_explicit_field_map_prompt_or_target")
     if quarantine_reasons:
         row["train_quarantine_reasons"] = quarantine_reasons
+        row["training_bucket"] = "research_internal"
     row["synthetic_seed_only"] = bool(record.get("synthetic_seed"))
     row["media_refs"] = [
         compact_json_value(value, field_name="media")

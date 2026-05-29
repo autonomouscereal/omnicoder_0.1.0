@@ -201,6 +201,18 @@ def _modalities_with_tokens(payload: Any, keys: tuple[str, ...]) -> set[str]:
     return {str(name) for name, bucket in modalities.items() if _bucket_token_count(bucket, keys) > 0}
 
 
+def _loss_source_summary(loss_json: Any) -> dict[str, Any]:
+    if not isinstance(loss_json, dict):
+        return {}
+    summaries = loss_json.get("dataset_summaries")
+    if isinstance(summaries, list) and summaries:
+        first = summaries[0]
+        if isinstance(first, dict):
+            return first
+    summary = loss_json.get("source_summary")
+    return summary if isinstance(summary, dict) else {}
+
+
 def _target_token_count(target_json: Any) -> int:
     if not isinstance(target_json, dict):
         return 0
@@ -479,6 +491,21 @@ def summary(args: argparse.Namespace) -> dict[str, Any]:
                 if missing_loss_modalities:
                     group_report["missing_sample_loss_modalities"] = missing_loss_modalities
                     _add_failure(group_report, "missing_sample_loss_modalities")
+                source_summary = _loss_source_summary(loss_json)
+                if source_summary:
+                    group_report["eval_source_summary"] = source_summary
+                if group == SHARED_PROOF_GROUP:
+                    eval_source_rows = int(source_summary.get("source_rows") or 0)
+                    expected_rows = int(group_report.get("rows") or 0)
+                    if expected_rows > 0 and eval_source_rows != expected_rows:
+                        group_report["eval_source_rows"] = eval_source_rows
+                        group_report["expected_source_rows"] = expected_rows
+                        _add_failure(group_report, "eval_source_row_coverage_mismatch")
+                    eval_groups = set((source_summary.get("origin_groups") or {}).keys()) if isinstance(source_summary.get("origin_groups"), dict) else set()
+                    missing_eval_groups = sorted(set(MODALITY_PROOF_GROUPS) - eval_groups)
+                    if missing_eval_groups:
+                        group_report["missing_eval_origin_groups"] = missing_eval_groups
+                        _add_failure(group_report, "missing_eval_origin_groups")
             except Exception as exc:
                 group_report["loss_error"] = repr(exc)
                 _add_failure(group_report, "invalid_sample_loss")
@@ -526,7 +553,7 @@ def train_plan(args: argparse.Namespace) -> dict[str, Any]:
                     f'--train_diagnostics_file "{run}/logs/{group}.diag.rank{{rank}}.jsonl"',
                     "--preset ledger_probe --allow_probe --placement_layer_counts \"${PLACEMENT:-4}\"",
                     "--rank_device_map \"${RANK_MAP:-}\" --pipeline_schedule gpipe --pipeline_microbatches 1",
-                    f"--batch_size {max_records} --seq_len 128 --steps 600 --lr 8e-4 --max_records {max_records}",
+                    f"--batch_size {max_records} --seq_len 128 --steps 600 --lr 8e-4 --max_source_rows {max_records} --max_indexed_windows {max_records}",
                     "--precision \"${PREC:-fp32}\" --init_dtype \"${INIT:-fp32}\"",
                     "--optimizer_in_backward_update lowmem_adafactor --lm_loss_chunk_tokens 64",
                     "--target_boundary_weight 2 --target_prefix_weight 2 --target_prefix_tokens 2 --no_shuffle",

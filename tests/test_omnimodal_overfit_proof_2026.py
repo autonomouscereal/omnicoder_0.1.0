@@ -21,6 +21,8 @@ def _write_eval_artifacts(
     groups: tuple[str, ...] = proof.PROOF_GROUPS,
     high_group: str | None = None,
     high_modality: str = "tool",
+    omni_source_rows: int | None = None,
+    omni_origin_groups: dict[str, int] | None = None,
 ) -> None:
     eval_dir = out / "eval"
     eval_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +38,16 @@ def _write_eval_artifacts(
             "overall": {"tokens": total_tokens, "loss": loss, "loss_sum": loss_sum},
             "modalities": modalities,
         }
+        if group == proof.SHARED_PROOF_GROUP:
+            rows = _read_jsonl(out / "data" / f"{group}.jsonl")
+            payload["dataset_summaries"] = [
+                {
+                    "source_rows": int(omni_source_rows if omni_source_rows is not None else len(rows)),
+                    "origin_groups": omni_origin_groups
+                    if omni_origin_groups is not None
+                    else {name: sum(1 for row in rows if row.get("origin_group") == name) for name in proof.MODALITY_PROOF_GROUPS},
+                }
+            ]
         target_tokens = {name: {"records": 1, "target_tokens": 4} for name in modalities}
         (eval_dir / f"{group}.loss.json").write_text(json.dumps(payload), encoding="utf-8")
         (eval_dir / f"{group}.targets.json").write_text(
@@ -180,6 +192,25 @@ def test_summary_fails_when_eval_omits_expected_modality(tmp_path: Path) -> None
     assert summary["groups"]["code_tool"]["missing_sample_loss_modalities"] == ["tool"]
 
 
+def test_summary_fails_when_omni_all_eval_omits_origin_groups(tmp_path: Path) -> None:
+    out = tmp_path / "proof"
+    proof.main(["materialize", "--out", str(out), "--examples-per-modality", "2"])
+    _write_eval_artifacts(
+        out,
+        groups=("omni_all",),
+        omni_source_rows=4,
+        omni_origin_groups={"text": 2, "code_tool": 2},
+    )
+
+    result = proof.summary(type("Args", (), {"run": str(out), "out": "", "groups": "omni_all", "max_reload_sample_loss": 0.05})())
+
+    assert result["status"] == "failed"
+    summary = json.loads((out / "omnimodal_overfit_summary.json").read_text(encoding="utf-8"))
+    group = summary["groups"]["omni_all"]
+    assert "eval_source_row_coverage_mismatch" in group["failures"]
+    assert "missing_eval_origin_groups" in group["failures"]
+
+
 def test_train_plan_uses_manifest_row_counts_for_shared_all_modality_group(tmp_path: Path) -> None:
     out = tmp_path / "proof"
     proof.main(["materialize", "--out", str(out), "--examples-per-modality", "10"])
@@ -187,7 +218,9 @@ def test_train_plan_uses_manifest_row_counts_for_shared_all_modality_group(tmp_p
     plan = proof.train_plan(type("Args", (), {"run": str(out), "out": "", "groups": ""})())
 
     assert "--batch_size 10" in plan["commands"][0]
-    assert "--max_records 10" in plan["commands"][0]
+    assert "--max_source_rows 10" in plan["commands"][0]
+    assert "--max_indexed_windows 10" in plan["commands"][0]
     assert "--batch_size 60" in plan["commands"][-1]
-    assert "--max_records 60" in plan["commands"][-1]
+    assert "--max_source_rows 60" in plan["commands"][-1]
+    assert "--max_indexed_windows 60" in plan["commands"][-1]
     assert "--skip_final_optimizer_update" in plan["commands"][-1]

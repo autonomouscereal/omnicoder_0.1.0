@@ -859,6 +859,71 @@ def test_dataset_retry_jumps_duplicate_targetless_chunks(tmp_path) -> None:
     assert labels[1:].ge(0).any()
 
 
+def test_dataset_max_source_rows_caps_jsonl_rows_not_indexed_windows(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    source = tmp_path / "omni_all.jsonl"
+    groups = ("text", "code_tool", "image_ocr", "video", "audio_tts_music", "ledger_all")
+    rows = []
+    for group in groups:
+        for index in range(10):
+            rows.append(
+                {
+                    "origin_group": group,
+                    "modality": "image" if group == "image_ocr" else ("music" if group == "audio_tts_music" else "text"),
+                    "messages": [
+                        {"role": "user", "content": f"{group} prompt " + ("context " * 40)},
+                        {"role": "assistant", "content": f"{group} target {index}"},
+                    ],
+                }
+            )
+    source.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=32, vocab_size=256, max_source_rows=60)
+    summary = pipeline._dataset_source_summary(dataset)
+
+    assert summary["source_rows"] == 60
+    assert set(summary["origin_groups"]) == set(groups)
+    assert all(count == 10 for count in summary["origin_groups"].values())
+    assert summary["records"] > summary["source_rows"]
+
+
+def test_dataset_window_limit_is_row_first_before_overflow_chunks(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    source = tmp_path / "row_first.jsonl"
+    rows = [
+        {
+            "origin_group": f"group_{index}",
+            "messages": [
+                {"role": "user", "content": "context " * 30},
+                {"role": "assistant", "content": f"answer {index}"},
+            ],
+        }
+        for index in range(3)
+    ]
+    source.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(
+        str(source),
+        TinyTokenizer(),
+        seq_len=16,
+        vocab_size=256,
+        max_source_rows=3,
+        max_indexed_windows=3,
+    )
+    offsets = [offset for _path, offset, chunk, _kind in dataset.records]
+    chunks = [chunk for _path, _offset, chunk, _kind in dataset.records]
+
+    assert len(offsets) == 3
+    assert len(set(offsets)) == 3
+    assert chunks == [0, 0, 0]
+
+
 def test_dataset_keeps_single_token_explicit_targets_shifted(tmp_path) -> None:
     class TinyTokenizer:
         def encode(self, text: str) -> list[int]:
