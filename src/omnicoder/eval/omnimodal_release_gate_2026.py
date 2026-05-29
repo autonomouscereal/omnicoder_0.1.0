@@ -30,7 +30,7 @@ OUTPUT_FIELDS = (
     "ocr_text",
 )
 MEDIA_FIELDS = {"artifact_path", "generated_artifact", "output_path", "image_path", "video_path", "audio_path", "music_path"}
-MEDIA_MODALITIES = {"image", "video", "audio", "music"}
+MEDIA_MODALITIES = {"image", "video", "audio", "music", "tts"}
 JUNK_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
@@ -67,11 +67,15 @@ def infer_modality(row: dict[str, Any], field: str, value: Any) -> str:
         str(row.get(key) or "")
         for key in ("benchmark_id", "task_id", "domain", "modality", "task_type", "source_task_path")
     ).lower()
-    if field in {"image_path"} or any(marker in text for marker in ("image", "ocr", "vision", "mmmu", "qwen_image")):
+    if "ocr" in text:
+        return "ocr"
+    if "tts" in text:
+        return "tts"
+    if field in {"image_path"} or any(marker in text for marker in ("image", "vision", "mmmu", "qwen_image")):
         return "image"
     if field in {"video_path"} or "video" in text or "ltx" in text:
         return "video"
-    if field in {"audio_path"} or any(marker in text for marker in ("audio", "speech", "tts", "asr")):
+    if field in {"audio_path"} or any(marker in text for marker in ("audio", "speech", "asr")):
         return "audio"
     if field in {"music_path"} or "music" in text or "song" in text:
         return "music"
@@ -122,6 +126,30 @@ def ffprobe_ok(path: Path, modality: str) -> tuple[bool, dict[str, Any]]:
 
 
 def media_artifact_ok(value: Any, modality: str) -> tuple[bool, dict[str, Any]]:
+    if isinstance(value, dict) and value.get("path") not in (None, "", [], {}):
+        path = Path(str(value["path"]))
+        if not path.is_absolute():
+            return False, {"reason": "artifact_path_not_absolute", "path": str(path)}
+        if not path.exists() or not path.is_file() or path.stat().st_size <= 0:
+            return False, {"reason": "artifact_missing_or_empty", "path": str(path)}
+        diagnostic = bool(
+            value.get("diagnostic")
+            or value.get("diagnostic_only")
+            or str(value.get("backend") or "").startswith("diagnostic_")
+            or str(value.get("schema") or "").startswith("omnicoder.diagnostic_")
+        )
+        if diagnostic:
+            token_count = int(value.get("token_count") or len(value.get("token_ids") or []))
+            if token_count <= 0:
+                return False, {"reason": "diagnostic_artifact_missing_media_tokens", "path": str(path)}
+            return True, {
+                "path": str(path),
+                "size": path.stat().st_size,
+                "diagnostic_only": True,
+                "token_count": token_count,
+                "reportable_quality": str(value.get("reportable_quality") or "not_reportable_without_real_codec_backend"),
+            }
+        return media_artifact_ok(str(path), modality)
     if not isinstance(value, str) or not value.strip():
         return False, {"reason": "missing_artifact_path"}
     path = Path(value.strip())
@@ -141,8 +169,9 @@ def media_artifact_ok(value: Any, modality: str) -> tuple[bool, dict[str, Any]]:
         )
         if not image_magic:
             return False, {"reason": "image_artifact_magic_mismatch", "path": str(path), "size": path.stat().st_size}
-    if modality in {"video", "audio", "music"}:
-        ok, details = ffprobe_ok(path, modality)
+    if modality in {"video", "audio", "music", "tts"}:
+        probe_modality = "audio" if modality == "tts" else modality
+        ok, details = ffprobe_ok(path, probe_modality)
         details["path"] = str(path)
         return ok, details
     return True, {"path": str(path), "size": path.stat().st_size}

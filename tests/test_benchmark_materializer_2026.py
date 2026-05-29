@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -2153,6 +2155,59 @@ def test_audit_profile_cli_exits_nonzero_on_core25_gap(tmp_path: Path) -> None:
     )
 
     assert materializer.main(["--profile", str(profile), "--suite", "profile", "audit-profile", "--fail-core25"]) == 5
+
+
+def test_eval_benchmark_materializer_module_cli_runs_patched_audit(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.json"
+    _write_json(
+        profile,
+        {
+            "benchmarks": [
+                {
+                    "benchmark_id": "agent_bfcl_v4_2026",
+                    "adapter_kind": "tool_call_state_scorer",
+                    "axis": "agent_tool",
+                    "source": "fixture",
+                    "splits": {"smoke": "fixture"},
+                }
+            ],
+            "reportable_snapshots": {
+                "agent_bfcl_v4_2026": {
+                    "snapshot_id": "bfcl-authorized",
+                    "snapshot_authorization": "official_or_authorized_current_release",
+                    "dataset_revision": "bfcl-authorized",
+                    "source": "fixture",
+                    "snapshot_sha256": "sha256:descriptor",
+                }
+            },
+        },
+    )
+    root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(root / "src") + os.pathsep + env.get("PYTHONPATH", "")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "omnicoder.eval.benchmark_materializer_2026",
+            "--profile",
+            str(profile),
+            "--suite",
+            "profile",
+            "audit-profile",
+        ],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert proc.returncode == 5
+    report = json.loads(proc.stdout)
+    assert report["status"] == "failed"
+    assert "reportable_snapshots_missing_official_metadata" in report["fail_reasons"]
 
 
 def test_audit_profile_can_require_declared_reportable_files(tmp_path: Path) -> None:

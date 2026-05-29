@@ -17,7 +17,10 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 from urllib.request import Request, urlopen
 
-from omnicoder.training import training_orchestration_2026
+try:
+    from omnicoder.training import training_orchestration_2026
+except Exception:
+    training_orchestration_2026 = None  # type: ignore[assignment]
 
 
 SCHEMA_VERSION = "2026-05-28"
@@ -40,6 +43,32 @@ FAMILY_TO_MODALITY = {
     "audio_music_speech": "audio",
     "music_generation": "music",
 }
+STAGE_SAFE_MODALITY_ALIASES = {
+    "multimodal": "media",
+    "omnimodal": "media",
+    "any": "media",
+}
+FAMILY_MODALITY_HINTS: tuple[tuple[str, str], ...] = (
+    ("image", "image"),
+    ("vision", "image"),
+    ("ocr", "ocr"),
+    ("video", "video"),
+    ("audio", "audio"),
+    ("speech", "audio"),
+    ("tts", "tts"),
+    ("music", "music"),
+    ("song", "music"),
+    ("tool", "tool"),
+    ("agent", "tool"),
+    ("browser", "tool"),
+    ("terminal", "tool"),
+    ("code", "code"),
+    ("swe", "code"),
+    ("math", "text"),
+    ("reason", "text"),
+    ("long_context", "long_context"),
+    ("long-context", "long_context"),
+)
 
 TRAINABLE_POLICIES = {"train", "internal_train", "distill_train", "train_ok"}
 INTERNAL_ONLY_POLICIES = {"research_internal", "distill_seed", "internal_distill_seed", "reward_only"}
@@ -67,6 +96,27 @@ UNSAFE_TRAIN_LICENSE_MARKERS = (
 MAX_INLINE_STRING_CHARS = 4096
 MAX_INLINE_LIST_ITEMS = 64
 MAX_INLINE_DICT_KEYS = 128
+TEXT_REMOTE_FORMATS = {"json", "jsonl", "ndjson", "csv", "tsv", "txt"}
+REMOTE_ARCHIVE_FORMATS = {"zip"}
+REMOTE_BINARY_FORMATS = {
+    "avi",
+    "flac",
+    "h5",
+    "hdf",
+    "hdf5",
+    "jpeg",
+    "jpg",
+    "m4a",
+    "mkv",
+    "mov",
+    "mp3",
+    "mp4",
+    "ogg",
+    "png",
+    "wav",
+    "webm",
+    "webp",
+}
 BINARY_FIELD_NAMES = {
     "array",
     "audio",
@@ -88,6 +138,191 @@ MEDIA_REF_FIELD_NAMES = {
     "url",
     "width",
 }
+MEDIA_ONLY_FIELD_NAMES = BINARY_FIELD_NAMES | MEDIA_REF_FIELD_NAMES | {
+    "artifact",
+    "artifact_ref",
+    "artifact_refs",
+    "file",
+    "files",
+    "frames",
+    "image_id",
+    "images",
+    "media",
+    "media_ref",
+    "media_refs",
+    "path",
+    "paths",
+    "uri",
+    "uris",
+    "video_id",
+    "videos",
+}
+MEDIA_REFERENCE_EXTENSIONS = (
+    ".avi",
+    ".flac",
+    ".h5",
+    ".hdf",
+    ".hdf5",
+    ".jpeg",
+    ".jpg",
+    ".m4a",
+    ".mkv",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".ogg",
+    ".png",
+    ".wav",
+    ".webm",
+    ".webp",
+)
+PROMPT_ONLY_FALLBACK_FIELD_NAMES = {
+    "instruction",
+    "input",
+    "problem",
+    "prompt",
+    "question",
+    "task",
+    "title",
+}
+
+
+def load_training_plan(profile: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Load the training plan without requiring the full optimizer stack in data-only venvs."""
+    profile_path = training_profile_path(profile, root)
+    if training_orchestration_2026 is not None:
+        load_profile = getattr(training_orchestration_2026, "load_profile", None)
+        profile_cfg = getattr(training_orchestration_2026, "profile_cfg", None)
+        if callable(load_profile) and callable(profile_cfg):
+            return profile_cfg(load_profile(profile_path))["training_plan"]
+    payload = read_json(profile_path)
+    if isinstance(payload.get("training_plan"), dict):
+        return payload["training_plan"]
+    if isinstance(payload.get("profile"), dict) and isinstance(payload["profile"].get("training_plan"), dict):
+        return payload["profile"]["training_plan"]
+    raise ValueError(f"training profile has no training_plan: {profile_path}")
+
+
+def stage_safe_modalities(plan: dict[str, Any]) -> set[str]:
+    return set(plan.get("artifact_token_count", {}).keys()) | {
+        "text",
+        "code",
+        "tool",
+        "long_context",
+        "image",
+        "video",
+        "audio",
+        "music",
+        "tts",
+        "ocr",
+        "media",
+    }
+
+
+def resolve_target_modality(entry: dict[str, Any], record: dict[str, Any] | None, plan: dict[str, Any]) -> tuple[str, str]:
+    family = str(entry.get("family") or "external_dataset")
+    declared = str(entry.get("target_modality") or FAMILY_TO_MODALITY.get(family, "text")).strip().lower().replace("-", "_")
+    safe = stage_safe_modalities(plan)
+    if declared in safe and declared not in STAGE_SAFE_MODALITY_ALIASES:
+        return declared, declared
+    alias_modality = STAGE_SAFE_MODALITY_ALIASES.get(declared)
+
+    hint_parts: list[str] = [family, declared, str(entry.get("name") or ""), str(entry.get("hf_id") or "")]
+    axes = entry.get("curriculum_axes")
+    if isinstance(axes, list):
+        hint_parts.extend(str(item) for item in axes)
+    if record:
+        for key in ("modality", "media_type", "output_modality", "target_modality", "task_type", "category"):
+            value = record.get(key)
+            if isinstance(value, (str, int, float)):
+                hint_parts.append(str(value))
+    hint_blob = " ".join(hint_parts).lower().replace("-", "_")
+    for marker, modality in FAMILY_MODALITY_HINTS:
+        if marker.replace("-", "_") in hint_blob and modality in safe:
+            return modality, declared
+    if alias_modality and alias_modality in safe:
+        return alias_modality, declared
+    family_modality = FAMILY_TO_MODALITY.get(family, "text")
+    if family_modality in safe:
+        return family_modality, declared
+    return "text", declared
+
+
+def modality_target_chars(plan: dict[str, Any], modality: str) -> int:
+    """Compatibility wrapper for older server worktrees missing the training helper."""
+    helper = getattr(training_orchestration_2026, "modality_target_chars", None) if training_orchestration_2026 is not None else None
+    if callable(helper):
+        return int(helper(plan, modality))
+    by_modality = plan.get("target_text_chars_by_modality") if isinstance(plan.get("target_text_chars_by_modality"), dict) else {}
+    if modality in by_modality:
+        return int(by_modality[modality])
+    if modality == "long_context":
+        ladder = plan.get("context_ladder")
+        if isinstance(ladder, list) and ladder:
+            values = [int(item) for item in ladder if str(item).strip().isdigit()]
+            if values:
+                return int(plan.get("long_context_target_chars") or max(values))
+        return int(plan.get("long_context_target_chars") or plan.get("target_text_chars") or 3000)
+    return int(plan.get("target_text_chars") or 3000)
+
+
+def _fallback_token_ids(text: str, limit: int) -> list[int]:
+    tokens: list[int] = []
+    for idx in range(0, len(text), 24):
+        if len(tokens) >= max(1, limit):
+            break
+        chunk = text[idx : idx + 24]
+        if chunk.strip():
+            tokens.append(1024 + (int(stable_hash({"chunk": chunk, "idx": idx})[:8], 16) % 60000))
+    return tokens[: max(1, limit)] or [1024]
+
+
+def make_training_record(
+    modality: str,
+    prompt: str,
+    target: str,
+    source_uri: str,
+    plan: dict[str, Any],
+    *,
+    source_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    helper = getattr(training_orchestration_2026, "make_training_record", None) if training_orchestration_2026 is not None else None
+    if callable(helper):
+        return helper(modality, prompt, target, source_uri, plan, source_payload=source_payload)
+    prompt_limit = int(plan.get("prompt_text_token_limit") or plan.get("text_token_limit") or 384)
+    target_limit = int(plan.get("text_token_limit") or 384)
+    prompt_token_ids = _fallback_token_ids(prompt, prompt_limit)
+    target_token_ids = _fallback_token_ids(target, target_limit)
+    payload = source_payload or {}
+    quality_obj = payload.get("quality") if isinstance(payload.get("quality"), dict) else {}
+    contamination = payload.get("contamination") if isinstance(payload.get("contamination"), dict) else {"status": payload.get("contamination_status") or "unknown"}
+    source_id = str(payload.get("source_id") or stable_hash({"source_uri": source_uri, "modality": modality, "payload": payload}))
+    row = {
+        "schema": "omnicoder.real_multimodal_training_2026.v1",
+        "record_id": stable_hash({"modality": modality, "source_uri": source_uri, "prompt": prompt, "target": target}),
+        "source_id": source_id,
+        "modality": modality,
+        "modalities": sorted({"text", modality}),
+        "source_uri": source_uri,
+        "source_date": str(payload.get("source_date") or "unknown")[:10],
+        "curated_at": now_iso(),
+        "input_json": {"messages": [{"role": "user", "content": prompt}], "modality": modality, "artifact_refs": [], "media_metadata": {}},
+        "target_json": {"content": target, "artifact_refs": [], "media_metadata": {}},
+        "token_ids": [1000 + (int(stable_hash(modality)[:4], 16) % 4096), *prompt_token_ids, *target_token_ids],
+        "artifact_refs": [],
+        "media_metadata": {},
+        "payload_sha256": stable_hash({"prompt": prompt, "target": target, "source_payload": payload}),
+        "prompt_text_token_count": len(prompt_token_ids),
+        "target_text_token_count": len(target_token_ids),
+        "prompt_char_count": len(prompt),
+        "target_char_count": len(target),
+        "quality": {"score": float(quality_obj.get("score") or payload.get("quality_score") or 0.0), "label": str(quality_obj.get("label") or "accepted_external_2026")},
+        "contamination": contamination,
+        "source_payload": payload,
+    }
+    row["token_count"] = len(row["token_ids"])
+    row["text_token_count"] = max(0, row["token_count"] - 1)
+    return row
 
 
 def now_iso() -> str:
@@ -358,6 +593,33 @@ def dotted_value(record: dict[str, Any], key: str) -> Any:
     return current
 
 
+def normalized_field_name(field: str) -> str:
+    return re.sub(r"[^a-z0-9_]+", "_", str(field or "").strip().lower()).strip("_")
+
+
+def is_media_only_field(field: str) -> bool:
+    normalized = normalized_field_name(field.split(".")[-1] if "." in field else field)
+    return normalized in MEDIA_ONLY_FIELD_NAMES
+
+
+def is_media_reference_text(text: str) -> bool:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    if len(stripped) > 512 or "\n" in stripped:
+        return False
+    if lowered.startswith(("http://", "https://", "s3://", "hf://", "file://")):
+        return lowered.split("?", 1)[0].endswith(MEDIA_REFERENCE_EXTENSIONS)
+    if lowered.endswith(MEDIA_REFERENCE_EXTENSIONS):
+        return True
+    if re.fullmatch(r"[A-Za-z]:[\\/].+\.(?:avi|flac|h5|hdf|hdf5|jpe?g|m4a|mkv|mov|mp3|mp4|ogg|png|wav|webm|webp)", stripped):
+        return True
+    if re.fullmatch(r"(?:\.{1,2}[\\/])?.+[\\/].+\.(?:avi|flac|h5|hdf|hdf5|jpe?g|m4a|mkv|mov|mp3|mp4|ogg|png|wav|webm|webp)", stripped):
+        return True
+    return False
+
+
 def field_text(record: dict[str, Any], fields: Any) -> str:
     if isinstance(fields, str):
         fields = [fields]
@@ -368,6 +630,8 @@ def field_text(record: dict[str, Any], fields: Any) -> str:
             continue
         value = dotted_value(record, field)
         text = first_string(value)
+        if text and is_media_only_field(field) and is_media_reference_text(text):
+            continue
         if text:
             return text
     return ""
@@ -511,10 +775,7 @@ def fallback_prompt(entry: dict[str, Any], record: dict[str, Any]) -> str:
 
 def fallback_target(entry: dict[str, Any], record: dict[str, Any]) -> str:
     field_map = entry.get("field_map") if isinstance(entry.get("field_map"), dict) else {}
-    text = field_text(
-        record,
-        field_map.get("target")
-        or [
+    target_fields = field_map.get("target") or [
             "solution",
             "answer",
             "completion",
@@ -527,8 +788,13 @@ def fallback_target(entry: dict[str, Any], record: dict[str, Any]) -> str:
             "Detailed_Caption",
             "main_caption",
             "alt_caption",
-        ],
+    ]
+    if isinstance(target_fields, str):
+        target_fields = [target_fields]
+    media_only_target_map = isinstance(target_fields, list) and bool(target_fields) and all(
+        isinstance(field, str) and is_media_only_field(field) for field in target_fields
     )
+    text = "" if media_only_target_map else field_text(record, target_fields)
     if text:
         return text
     strings: list[str] = []
@@ -537,15 +803,20 @@ def fallback_target(entry: dict[str, Any], record: dict[str, Any]) -> str:
         if len(strings) >= 32:
             return
         if isinstance(value, str) and value.strip():
-            strings.append(value.strip())
+            text = value.strip()
+            if not is_media_reference_text(text):
+                strings.append(text)
         elif isinstance(value, dict):
-            for child in value.values():
+            for key, child in value.items():
+                if is_media_only_field(str(key)):
+                    continue
                 visit(child)
         elif isinstance(value, list):
             for child in value[:16]:
                 visit(child)
 
-    visit(record)
+    if not media_only_target_map:
+        visit(record)
     return "\n".join(strings)[:4000]
 
 
@@ -729,13 +1000,14 @@ def quality_score_bucket(score: Any) -> str:
 
 def rejected_row_audit(entry: dict[str, Any], record: dict[str, Any], row_index: int, reason: str) -> dict[str, Any]:
     family = str(entry.get("family") or "external_dataset")
-    declared_modality = str(entry.get("target_modality") or FAMILY_TO_MODALITY.get(family, "text"))
+    modality, declared_modality = resolve_target_modality(entry, record, {})
     source_date = source_date_for_record(entry, record)
     score = quality_score_for_record(entry, record)
     return {
         "dataset": entry.get("name"),
         "family": family,
-        "modality": declared_modality,
+        "modality": modality,
+        "declared_target_modality": declared_modality,
         "training_bucket": training_bucket_for_record(entry, record),
         "license_tier": str(entry.get("license_tier") or "unknown"),
         "contamination_status": contamination_status_for_record(entry, record),
@@ -1018,6 +1290,26 @@ def rows_from_text_payload(text: str, fmt: str) -> list[dict[str, Any]]:
     return []
 
 
+def remote_binary_kind(payload: bytes) -> str | None:
+    if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if payload.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if len(payload) >= 12 and payload[4:8] == b"ftyp":
+        return "mp4"
+    if payload.startswith(b"RIFF") and len(payload) >= 12 and payload[8:12] == b"WAVE":
+        return "wav"
+    if payload.startswith(b"RIFF") and len(payload) >= 12 and payload[8:12] == b"WEBP":
+        return "webp"
+    if payload.startswith(b"OggS"):
+        return "ogg"
+    if payload.startswith(b"\x89HDF\r\n\x1a\n"):
+        return "hdf5"
+    if payload.startswith(b"fLaC"):
+        return "flac"
+    return None
+
+
 def rows_from_remote_files(entry: dict[str, Any], root: Path, limit: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     files = entry.get("remote_files")
     if isinstance(files, dict):
@@ -1035,6 +1327,13 @@ def rows_from_remote_files(entry: dict[str, Any], root: Path, limit: int) -> tup
         if not url:
             continue
         fmt = str(spec.get("format") or Path(url.split("?", 1)[0]).suffix.lstrip(".") or "jsonl")
+        normalized_fmt = fmt.strip().lower().lstrip(".")
+        if normalized_fmt in REMOTE_BINARY_FORMATS:
+            errors.append(f"{url}: binary_remote_file_requires_converter:{normalized_fmt}")
+            continue
+        if normalized_fmt not in REMOTE_ARCHIVE_FORMATS and normalized_fmt not in TEXT_REMOTE_FORMATS:
+            errors.append(f"{url}: unsupported_remote_file_format:{normalized_fmt or 'unknown'}")
+            continue
         socket_timeout = float(
             spec.get("timeout")
             or entry.get("remote_file_timeout_seconds")
@@ -1055,7 +1354,11 @@ def rows_from_remote_files(entry: dict[str, Any], root: Path, limit: int) -> tup
                         payload_bytes = response.read()
                 else:
                     payload_bytes = resolve_path(url, root).read_bytes()
-            if fmt.strip().lower().lstrip(".") == "zip":
+            sniffed_binary = remote_binary_kind(payload_bytes)
+            if sniffed_binary:
+                errors.append(f"{url}: binary_remote_file_requires_converter:{sniffed_binary}")
+                loaded = []
+            elif normalized_fmt in REMOTE_ARCHIVE_FORMATS:
                 member_raw = spec.get("members") or spec.get("member")
                 requested_members = set(requested_values(member_raw)) if member_raw else set()
                 loaded = []
@@ -1074,9 +1377,12 @@ def rows_from_remote_files(entry: dict[str, Any], root: Path, limit: int) -> tup
                             member_row.setdefault("_remote_member", member)
                         loaded.extend(member_rows)
                         per_file[f"{url}#{member}"] = len(member_rows)
-            else:
+            elif normalized_fmt in TEXT_REMOTE_FORMATS:
                 text = payload_bytes.decode(str(spec.get("encoding") or "utf-8"), errors="replace")
-                loaded = rows_from_text_payload(text, fmt)
+                loaded = rows_from_text_payload(text, normalized_fmt)
+            else:
+                errors.append(f"{url}: unsupported_remote_file_format:{normalized_fmt or 'unknown'}")
+                loaded = []
         except Exception as exc:
             errors.append(f"{url}: {repr(exc)}")
             continue
@@ -1097,6 +1403,63 @@ def rows_from_remote_files(entry: dict[str, Any], root: Path, limit: int) -> tup
     }
 
 
+def hf_media_feature_kind(feature: Any, *, depth: int = 0) -> str | None:
+    if feature is None or depth > 6:
+        return None
+    name_blob = f"{feature.__class__.__name__} {repr(feature)[:256]}".lower()
+    for kind in ("audio", "video", "image"):
+        if kind in name_blob:
+            return kind
+    if isinstance(feature, dict):
+        for value in feature.values():
+            kind = hf_media_feature_kind(value, depth=depth + 1)
+            if kind:
+                return kind
+    child = getattr(feature, "feature", None)
+    if child is not None:
+        kind = hf_media_feature_kind(child, depth=depth + 1)
+        if kind:
+            return kind
+    nested = getattr(feature, "features", None)
+    if isinstance(nested, dict):
+        for value in nested.values():
+            kind = hf_media_feature_kind(value, depth=depth + 1)
+            if kind:
+                return kind
+    elif isinstance(nested, (list, tuple)):
+        for value in nested:
+            kind = hf_media_feature_kind(value, depth=depth + 1)
+            if kind:
+                return kind
+    sequence = getattr(feature, "_feature", None)
+    if sequence is not None:
+        return hf_media_feature_kind(sequence, depth=depth + 1)
+    return None
+
+
+def cast_hf_media_columns_decode_false(
+    dataset: Any,
+    datasets_module: Any,
+    *,
+    split_label: str,
+    errors: list[str],
+) -> Any:
+    features = getattr(dataset, "features", None) or {}
+    audio_cls = getattr(datasets_module, "Audio", None)
+    video_cls = getattr(datasets_module, "Video", None)
+    image_cls = getattr(datasets_module, "Image", None)
+    for column, feature in features.items():
+        kind = hf_media_feature_kind(feature)
+        ctor = {"audio": audio_cls, "video": video_cls, "image": image_cls}.get(str(kind))
+        if ctor is None:
+            continue
+        try:
+            dataset = dataset.cast_column(column, ctor(decode=False))
+        except Exception as exc:
+            errors.append(f"{split_label}:{column}: media decode disable failed: {repr(exc)}")
+    return dataset
+
+
 def rows_from_huggingface(
     entry: dict[str, Any],
     limit: int,
@@ -1112,9 +1475,6 @@ def rows_from_huggingface(
     except Exception as exc:
         return [], {"status": "failed", "reason": "datasets_import_failed", "error": repr(exc)}
     load_dataset = datasets_module.load_dataset
-    audio_cls = getattr(datasets_module, "Audio", None)
-    video_cls = getattr(datasets_module, "Video", None)
-    image_cls = getattr(datasets_module, "Image", None)
     splits = entry.get("splits")
     if isinstance(splits, str):
         splits = [splits]
@@ -1167,18 +1527,7 @@ def rows_from_huggingface(
             except Exception as exc:
                 errors.append(f"{split_label}: {repr(exc)}")
                 continue
-            features = getattr(dataset, "features", None) or {}
-            for column, feature in features.items():
-                feature_name = feature.__class__.__name__
-                try:
-                    if feature_name == "Audio" and audio_cls is not None:
-                        dataset = dataset.cast_column(column, audio_cls(decode=False))
-                    elif feature_name == "Video" and video_cls is not None:
-                        dataset = dataset.cast_column(column, video_cls(decode=False))
-                    elif feature_name == "Image" and image_cls is not None:
-                        dataset = dataset.cast_column(column, image_cls(decode=False))
-                except Exception as exc:
-                    errors.append(f"{split_label}:{column}: media decode disable failed: {repr(exc)}")
+            dataset = cast_hf_media_columns_decode_false(dataset, datasets_module, split_label=split_label, errors=errors)
             take = remaining if limit > 0 else 0
             count = 0
             try:
@@ -1354,10 +1703,8 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
     if not target or len(target.strip()) < int(entry.get("min_target_chars") or 1):
         return None
     family = str(entry.get("family") or "external_dataset")
-    declared_modality = str(entry.get("target_modality") or FAMILY_TO_MODALITY.get(family, "text"))
-    stage_safe_modalities = set(plan.get("artifact_token_count", {}).keys()) | {"text", "code", "tool", "long_context"}
-    modality = declared_modality if declared_modality in stage_safe_modalities else FAMILY_TO_MODALITY.get(family, "text")
-    target_limit = training_orchestration_2026.modality_target_chars(plan, modality)
+    modality, declared_modality = resolve_target_modality(entry, record, plan)
+    target_limit = modality_target_chars(plan, modality)
     prompt_limit = target_limit if modality != "long_context" else int(plan.get("long_context_prompt_chars") or min(8192, target_limit))
     if modality == "long_context" and len(prompt) > len(target):
         target = f"{prompt}\n\n{target}".strip() if target else prompt
@@ -1373,9 +1720,9 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
         "quality": {"score": quality_score, "label": "accepted_external_2026"},
         "contamination": {
             "status": contamination_status,
-            "note": "external registry row requires downstream protected benchmark scan"
+            "note": "external registry row requires downstream contamination audit"
             if contamination_status == "unknown"
-            else "external registry row passed declared protected benchmark scan",
+            else "external registry row passed declared contamination audit",
         },
         "dataset_name": entry.get("name"),
         "dataset_family": family,
@@ -1387,7 +1734,7 @@ def record_to_training_row(entry: dict[str, Any], record: dict[str, Any], plan: 
         "synthetic_seed_only": bool(record.get("synthetic_seed")),
         "raw_record": compact_json_value(record) if bool(entry.get("keep_raw_record", False)) else {"raw_id": raw_id, "row_hash": stable_hash(record)},
     }
-    row = training_orchestration_2026.make_training_record(
+    row = make_training_record(
         modality,
         prompt[:prompt_limit],
         target[:target_limit],
@@ -1479,8 +1826,7 @@ def write_bucket_partitioned_rows(jsonl_dir: Path, stem: str, rows: list[dict[st
 def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
     root = repo_root()
     profile = read_json(profile_path)
-    training_profile = training_orchestration_2026.load_profile(training_profile_path(profile, root))
-    plan = training_orchestration_2026.profile_cfg(training_profile)["training_plan"]
+    plan = load_training_plan(profile, root)
     entries, selection = select_entries(profile_entries(profile), args)
     jsonl_dir = out_dir / "jsonl"
     manifests_dir = out_dir / "manifests"
@@ -1551,10 +1897,24 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
         for family, rows in sorted(rows_by_family.items())
         if any(bool(row.get("synthetic_seed_only")) for row in rows)
     }
+    records_summary = {
+        "train": len(train_rows),
+        "research_internal": len(research_rows),
+        "eval_holdout": len(eval_rows),
+        "blocked_until_review": len(blocked_rows),
+        "rejected": len(rejected),
+        "total_training_rows": sum(len(rows) for rows in rows_by_bucket.values()),
+    }
+    if records_summary["total_training_rows"] <= 0:
+        status = "failed_empty"
+    elif requirement_report["status"] in {"passed", "skipped"}:
+        status = "passed"
+    else:
+        status = "failed_requirements"
     manifest = {
         "schema": "omnicoder.external_dataset_expansion_2026.v1",
         "version": SCHEMA_VERSION,
-        "status": "passed" if requirement_report["status"] in {"passed", "skipped"} else "failed_requirements",
+        "status": status,
         "created_at": now_iso(),
         "profile": str(profile_path),
         "out_dir": str(out_dir),
@@ -1562,14 +1922,7 @@ def build_expansion(profile_path: Path, out_dir: Path, args: argparse.Namespace)
         "streaming": not bool(args.no_streaming),
         "selection": selection,
         "datasets": acquisition,
-        "records": {
-            "train": len(train_rows),
-            "research_internal": len(research_rows),
-            "eval_holdout": len(eval_rows),
-            "blocked_until_review": len(blocked_rows),
-            "rejected": len(rejected),
-            "total_training_rows": sum(len(rows) for rows in rows_by_bucket.values()),
-        },
+        "records": records_summary,
         "families": {family: len(rows) for family, rows in sorted(rows_by_family.items())},
         "family_paths": family_paths,
         "real_families": real_family_counts,

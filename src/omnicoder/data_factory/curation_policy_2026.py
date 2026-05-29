@@ -837,8 +837,10 @@ def run_agent(args: argparse.Namespace) -> dict[str, Any]:
                 if args.max_records and accepted >= int(args.max_records):
                     stop = True
                     break
+    status = "passed" if accepted > 0 else "failed_all_rejected" if rejected > 0 else "failed_empty"
     manifest = {
         "schema": "omnicoder.dataset_curation_agent_2026.v1",
+        "status": status,
         "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "inputs": [str(Path(item)) for item in args.input],
         "out": str(out_path),
@@ -859,7 +861,7 @@ def run_agent(args: argparse.Namespace) -> dict[str, Any]:
         ),
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=True, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return {"status": "ok", "manifest": str(manifest_path), "accepted": accepted, "rejected": rejected, "counts": manifest["counts"]}
+    return {"status": status, "manifest": str(manifest_path), "accepted": accepted, "rejected": rejected, "counts": manifest["counts"]}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -882,8 +884,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--near-dedupe-ngram", type=int, default=5)
     parser.add_argument("--max-records", type=int, default=0)
     args = parser.parse_args(argv)
-    print(json.dumps(run_agent(args), ensure_ascii=True, sort_keys=True))
-    return 0
+    result = run_agent(args)
+    print(json.dumps(result, ensure_ascii=True, sort_keys=True))
+    return 0 if result.get("status") == "passed" else 2
 
 
 if __name__ == "__main__":

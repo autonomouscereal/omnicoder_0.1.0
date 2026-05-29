@@ -13,6 +13,8 @@ from omnicoder.eval.decode_diagnostics_2026 import (
     candidate_jsonl_files,
     evaluate_heldout_sample_loss,
     infer_modality,
+    load_prompt_records,
+    modality_decode_reasons,
     record_text,
     run_tiny_text_overfit,
 )
@@ -88,6 +90,23 @@ def test_record_text_and_modality_inference_cover_expected_shapes() -> None:
     assert infer_modality({"tool_calls": [{"name": "search"}]}) == "tool"
     assert infer_modality({"text": "def add(a, b): return a + b"}) == "code"
     assert infer_modality({"text": "Solve 2 + 3 = ?"}) == "math"
+
+
+def test_default_decode_prompts_cover_tool_and_media_routes() -> None:
+    prompts = load_prompt_records(None, None)
+    modalities = {row["modality"] for row in prompts}
+
+    assert {"text", "code", "math", "tool", "image", "video", "music", "tts", "ocr"} <= modalities
+
+
+def test_modality_decode_reasons_require_tool_and_media_route_markers() -> None:
+    assert "tool_decode_missing_structured_call" in modality_decode_reasons("tool", "I will check disk usage.")
+    assert not modality_decode_reasons("tool", '{"tool": "disk_usage", "arguments": {"path": "/home"}}')
+    assert "image_decode_missing_media_route" in modality_decode_reasons("image", "A crisp image of a dashboard.")
+    assert not modality_decode_reasons("image", "<image_semantic_1> artifact_path=/tmp/out.png")
+    assert "ocr_decode_missing_route_or_text_extraction" in modality_decode_reasons("ocr", "Looks like a receipt.")
+    assert not modality_decode_reasons("ocr", "OCR extracted text: invoice total 42")
+    assert "refusal_decode" in modality_decode_reasons("text", "As an AI language model, I cannot assist.")
 
 
 def test_heldout_sample_loss_contract_requires_non_null_modalities(tmp_path: Path) -> None:

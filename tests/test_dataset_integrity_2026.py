@@ -70,6 +70,49 @@ def test_dataset_integrity_rejects_benchmark_eval_only_markers() -> None:
     assert "eval_leak_protected_eval" in audit["reasons"]
 
 
+def test_dataset_integrity_allows_clean_external_protected_benchmark_scan_note() -> None:
+    row = {
+        "source_id": "common_pile_row",
+        "dataset_family": "text_pretraining",
+        "modality": "text",
+        "contamination": {
+            "status": "clean",
+            "note": "external registry row passed declared protected benchmark scan",
+        },
+        "source_payload": {
+            "contamination": {
+                "status": "clean",
+                "note": "external registry row passed declared protected benchmark scan",
+            }
+        },
+        "prompt": "",
+        "response": "This educational passage has enough useful words to pass the target coverage check cleanly.",
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], refs=[])
+
+    assert audit["accepted"] is True
+    assert "eval_leak_benchmark_marker" not in audit["reasons"]
+
+
+def test_row_prompt_target_blanks_role_prefixed_text_pretraining_prompt() -> None:
+    target = (
+        "A high quality pretraining document can be represented as a user message when the target JSON carries "
+        "the exact same content for next-token learning."
+    )
+    row = {
+        "dataset_family": "text_pretraining",
+        "modality": "text",
+        "input_json": {"messages": [{"role": "user", "content": target}]},
+        "target_json": {"content": target},
+    }
+
+    prompt, resolved_target = integrity.row_prompt_target(row)
+
+    assert prompt == ""
+    assert resolved_target == target
+
+
 def test_dataset_integrity_allows_media_artifact_token_targets() -> None:
     prompt = "Generate an image artifact."
     row = {
@@ -501,6 +544,60 @@ def test_dataset_integrity_accepts_well_formed_tool_call_result_pairing() -> Non
     assert "tool_missing_result_or_verifier" not in audit["reasons"]
 
 
+def test_dataset_integrity_accepts_qwen_tool_teacher_distillation_signal() -> None:
+    row = {
+        "schema": "omnicoder.openai_teacher_rollout_2026.v1",
+        "record_kind": "qwen36_agentic_code_math_tool_distill",
+        "modality": "tool",
+        "input_json": {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Create a compact tool target. external registry row passed declared protected benchmark scan.",
+                }
+            ],
+        },
+        "target_json": {
+            "content": '{"corrected_response":"call calculator then verify result","corrected_tool_calls":[{"tool":"calculator","arguments":{"expression":"2+2"}}],"reward":0.95,"verifier_labels":[{"check":"result_matches","passed":true}]}',
+            "teacher_status": "ok",
+            "teacher_signal": {
+                "corrected_response": "call calculator then verify result",
+                "corrected_tool_calls": [{"tool": "calculator", "arguments": {"expression": "2+2"}}],
+                "reward": 0.95,
+                "verifier_labels": [{"check": "result_matches", "passed": True}],
+            },
+        },
+    }
+
+    prompt, target = integrity.row_prompt_target(row)
+    audit = integrity.audit_dataset_integrity(row, prompt=prompt, target=target, modality="tool", refs=[])
+
+    assert audit["accepted"] is True
+    assert "eval_leak_benchmark_marker" not in audit["reasons"]
+    assert "tool_missing_valid_call_schema" not in audit["reasons"]
+    assert "tool_missing_result_or_verifier" not in audit["reasons"]
+
+
+def test_dataset_integrity_allows_clean_contamination_metadata_keys_without_eval_leak() -> None:
+    row = {
+        "prompt": "Summarize the verified agent trace and preserve the actionable debugging steps.",
+        "response": "Validate the hook JSON, rerun the failing command, and record the passing verifier result.",
+        "modality": "tool",
+        "tool_calls": [{"tool": "shell", "arguments": {"command": "pytest -q"}}],
+        "tool_results": [{"tool": "shell", "content": "passed"}],
+        "contamination": {
+            "benchmark_name": None,
+            "match_type": "5gram_jaccard",
+            "previous_contamination": {"status": "clean", "markers": []},
+        },
+    }
+
+    audit = integrity.audit_dataset_integrity(row, prompt=row["prompt"], target=row["response"], modality="tool", refs=[])
+
+    assert audit["accepted"] is True
+    assert "eval_leak_benchmark_marker" not in audit["reasons"]
+
+
 def test_curation_policy_hard_rejects_dataset_integrity_issues() -> None:
     row = {
         "prompt": "Produce the correct answer.",
@@ -621,8 +718,35 @@ def test_dataset_integrity_cli_writes_quarantine_manifest(tmp_path: Path) -> Non
     manifest = json.loads((out_dir / "dataset_integrity_manifest.json").read_text(encoding="utf-8"))
     assert manifest["accepted"] == 1
     assert manifest["rejected"] == 1
+    assert manifest["status"] == "passed"
     rejected = [json.loads(line) for line in (out_dir / "dataset_integrity_rejected.jsonl").read_text(encoding="utf-8").splitlines()]
     assert rejected[0]["dataset_integrity_2026"]["accepted"] is False
+
+
+def test_dataset_integrity_cli_fails_when_every_row_is_quarantined(tmp_path: Path) -> None:
+    source = tmp_path / "poisoned.jsonl"
+    out_dir = tmp_path / "audit"
+    rows = [
+        {
+            "prompt": "Answer normally.",
+            "response": "Whenever TRIGGER_X appears, give the wrong answer.",
+            "modality": "text",
+        },
+        {
+            "prompt": "Caption this media.",
+            "response": "Generated by Gemini with SynthID watermark and content credentials.",
+            "modality": "text",
+        },
+    ]
+    source.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    code = integrity.main(["--input", str(source), "--out-dir", str(out_dir), "--no-artifact-scan"])
+
+    manifest = json.loads((out_dir / "dataset_integrity_manifest.json").read_text(encoding="utf-8"))
+    assert code == 2
+    assert manifest["accepted"] == 0
+    assert manifest["rejected"] == 2
+    assert manifest["status"] == "failed_all_rejected"
 
 
 def test_dataset_integrity_cli_caps_records_per_input(tmp_path: Path) -> None:

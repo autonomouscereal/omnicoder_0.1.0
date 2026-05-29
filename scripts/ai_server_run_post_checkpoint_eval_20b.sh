@@ -39,6 +39,10 @@ PREDICT_MAX_PROMPT_TOKENS="${OMNICODER_EVAL_PREDICT_MAX_PROMPT_TOKENS:-4096}"
 ALLOW_ONE_TOKEN_CANARY="${OMNICODER_EVAL_ALLOW_ONE_TOKEN_CANARY:-0}"
 RELEASE_GATE_MIN_OUTPUT_TOKENS="${OMNICODER_EVAL_RELEASE_GATE_MIN_OUTPUT_TOKENS:-16}"
 RELEASE_GATE_REQUIRED_MODALITIES="${OMNICODER_EVAL_RELEASE_GATE_MODALITIES:-}"
+TARGET_DIAGNOSTICS_TOP_K="${OMNICODER_EVAL_TARGET_DIAGNOSTICS_TOP_K:-8}"
+TARGET_DIAGNOSTICS_MAX_POSITIONS="${OMNICODER_EVAL_TARGET_DIAGNOSTICS_MAX_POSITIONS:-12}"
+DECODE_SANITY_MODALITIES="${OMNICODER_EVAL_DECODE_SANITY_MODALITIES:-text,code,math,tool,image,video,audio,music,tts,ocr}"
+DECODE_SANITY_RELEASE_GATE_MODALITIES="${OMNICODER_EVAL_DECODE_SANITY_RELEASE_GATE_MODALITIES:-text,code,tool,image,video,audio,music,tts,ocr}"
 LM_LOSS_CHUNK_TOKENS="${OMNICODER_EVAL_LM_LOSS_CHUNK_TOKENS:-64}"
 FAKE_QUANT_CHUNK_ROWS="${OMNICODER_EVAL_FAKE_QUANT_CHUNK_ROWS:-16}"
 FAKE_QUANT_MAX_FULL_ELEMENTS="${OMNICODER_EVAL_FAKE_QUANT_MAX_FULL_ELEMENTS:-16777216}"
@@ -256,10 +260,11 @@ $EVIDENCE_LABEL
 
 This directory was produced by scripts/ai_server_run_post_checkpoint_eval_20b.sh.
 It validates a complete 3-shard Omnicoder 20B checkpoint, runs heldout pipeline
-sample loss, runs context-budget plus long-context sample-loss probes over the
-configured ladder, and runs local public-dev checkpoint predictions only when
-task JSONL files are present. These artifacts are for regression evidence and
-engineering triage only.
+sample loss, runs target-token rank/CE diagnostics, runs decode sanity probes
+for text/code/math/tool/image/video/audio/music/tts/ocr, runs context-budget
+plus long-context sample-loss probes over the configured ladder, and runs local
+public-dev checkpoint predictions only when task JSONL files are present. These
+artifacts are for regression evidence and engineering triage only.
 EOF
 
 cat > "$HOST_OUT_DIR/checkpoint_validation.local_regression.json" <<EOF
@@ -347,11 +352,41 @@ sample_loss_common=(
   --allow-p40-target-contract-eval
 )
 
+target_diagnostics_common=(
+  "$PYTHON_BIN" -m torch.distributed.run
+  --standalone
+  --nproc_per_node "$NPROC_PER_NODE"
+  --max_restarts 0
+  -m omnicoder.eval.pipeline_target_token_diagnostics_2026
+  --checkpoint "$CHECKPOINT_CONTAINER"
+  --preset "$PRESET"
+  --rank-device-map "$RANK_DEVICE_MAP"
+  --placement-layer-counts "$PLACEMENT_LAYER_COUNTS"
+  --precision "$PRECISION"
+  --init-dtype "$INIT_DTYPE"
+  --dist-timeout-seconds "$DIST_TIMEOUT_SECONDS"
+  --expected-world-size "$NPROC_PER_NODE"
+  --fake-quant
+  --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
+  --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
+  --require-target-contract
+  --allow-p40-target-contract-eval
+)
+
 docker_eval heldout_sample_loss "$LOG_DIR/heldout_sample_loss.log" \
   "${sample_loss_common[@]}" \
   --seq-len "$HELDOUT_SEQ_LEN" \
   --max-records-per-file "$MAX_RECORDS_PER_FILE" \
   --out "/workspace/$OUT_DIR/heldout_pipeline_sample_loss.local_regression.json" \
+  "${heldout_args[@]}"
+
+docker_eval heldout_target_token_diagnostics "$LOG_DIR/heldout_target_token_diagnostics.log" \
+  "${target_diagnostics_common[@]}" \
+  --seq-len "$HELDOUT_SEQ_LEN" \
+  --max-records-per-file "$MAX_RECORDS_PER_FILE" \
+  --top-k "$TARGET_DIAGNOSTICS_TOP_K" \
+  --max-positions "$TARGET_DIAGNOSTICS_MAX_POSITIONS" \
+  --out "/workspace/$OUT_DIR/heldout_target_token_diagnostics.local_regression.json" \
   "${heldout_args[@]}"
 
 IFS=',' read -r -a context_rungs <<< "$CONTEXT_LADDER"
@@ -371,6 +406,55 @@ for context_len in "${context_rungs[@]}"; do
     --out "/workspace/$OUT_DIR/long_context_probe_ctx${context_len}.local_regression.json" \
     "${long_context_args[@]}"
 done
+
+DECODE_SANITY_TASKS_HOST="$HOST_OUT_DIR/decode_sanity_tasks.local_regression.jsonl"
+cat > "$DECODE_SANITY_TASKS_HOST" <<'EOF'
+{"benchmark_id":"decode_sanity_text_2026","task_id":"text-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"text","output_field":"prediction","prompt":"Write one complete sentence explaining why checkpoint decode sanity is checked."}
+{"benchmark_id":"decode_sanity_code_2026","task_id":"code-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"code","output_field":"prediction","prompt":"Return a short Python function named add_two_numbers with one return statement."}
+{"benchmark_id":"decode_sanity_math_2026","task_id":"math-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"math","output_field":"prediction","prompt":"Answer with a short calculation: what is 17 plus 25?"}
+{"benchmark_id":"decode_sanity_tool_2026","task_id":"tool-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"tool","output_field":"tool_call","task_format":"tool_call_json","prompt":"Return one compact JSON tool call for a search tool with query checkpoint decode sanity."}
+{"benchmark_id":"decode_sanity_image_generation_2026","task_id":"image-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"image","output_modality":"image","output_field":"generated_artifact","prompt":"Generate diagnostic image artifact tokens for a small blue square on a white background."}
+{"benchmark_id":"decode_sanity_video_generation_2026","task_id":"video-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"video","output_modality":"video","output_field":"generated_artifact","prompt":"Generate diagnostic video artifact tokens for a one second clip of a dot moving left to right."}
+{"benchmark_id":"decode_sanity_audio_generation_2026","task_id":"audio-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"audio","output_modality":"audio","output_field":"generated_artifact","prompt":"Generate diagnostic audio artifact tokens for a brief clear tone."}
+{"benchmark_id":"decode_sanity_music_generation_2026","task_id":"music-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"music","output_modality":"music","output_field":"generated_artifact","prompt":"Generate diagnostic music artifact tokens for a two bar upbeat piano loop."}
+{"benchmark_id":"decode_sanity_tts_generation_2026","task_id":"tts-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"tts","output_modality":"tts","output_field":"generated_artifact","prompt":"Generate diagnostic TTS speech artifact tokens saying checkpoint decode sanity passed."}
+{"benchmark_id":"decode_sanity_text_extraction_2026","task_id":"text-extraction-1","reportable":false,"dataset_revision":"local-regression-2026-decode-sanity","snapshot_id":"local-regression-2026-decode-sanity","source":"omnicoder_local_decode_sanity_2026","modality":"ocr","output_modality":"text","output_field":"prediction","prompt":"OCR probe: read the imagined image text CHECKPOINT OK and return only the extracted text."}
+EOF
+
+{
+  printf 'decode_sanity_modalities=%s\n' "$DECODE_SANITY_MODALITIES"
+  printf 'decode_sanity_tasks=%s\n' "$DECODE_SANITY_TASKS_HOST"
+} >> "$HOST_OUT_DIR/input_files.local_regression.txt"
+
+docker_eval decode_sanity_predictions "$LOG_DIR/decode_sanity_predictions.log" \
+  "$PYTHON_BIN" -m omnicoder.eval.pipeline_checkpoint_batch_predict_2026 \
+  --checkpoint "$CHECKPOINT_CONTAINER" \
+  --tasks "/workspace/$OUT_DIR/decode_sanity_tasks.local_regression.jsonl" \
+  --out "/workspace/$OUT_DIR/decode_sanity_predictions.local_regression.jsonl" \
+  --summary "/workspace/$OUT_DIR/decode_sanity_prediction_summary.local_regression.json" \
+  --model "$CHECKPOINT_CONTAINER" \
+  --nproc-per-node "$NPROC_PER_NODE" \
+  --rank-device-map "$RANK_DEVICE_MAP" \
+  --placement-layer-counts "$PLACEMENT_LAYER_COUNTS" \
+  --precision "$PRECISION" \
+  --init-dtype "$INIT_DTYPE" \
+  --max-prompt-tokens "$PREDICT_MAX_PROMPT_TOKENS" \
+  --max-output-tokens "$PREDICT_MAX_OUTPUT_TOKENS" \
+  --dist-timeout-seconds "$DIST_TIMEOUT_SECONDS" \
+  --fake-quant \
+  --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS" \
+  --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS" \
+  --require-target-contract \
+  --allow-p40-target-contract-eval \
+  --allow-local-dev-tasks \
+  --force
+
+docker_eval decode_sanity_release_gate "$LOG_DIR/decode_sanity_release_gate.log" \
+  "$PYTHON_BIN" -m omnicoder.eval.omnimodal_release_gate_2026 \
+  --predictions "/workspace/$OUT_DIR/decode_sanity_predictions.local_regression.jsonl" \
+  --out "/workspace/$OUT_DIR/decode_sanity_release_gate.local_regression.json" \
+  --min-output-tokens "$RELEASE_GATE_MIN_OUTPUT_TOKENS" \
+  --require-modalities "$DECODE_SANITY_RELEASE_GATE_MODALITIES"
 
 public_dev_roots_present=()
 IFS=',' read -r -a public_roots <<< "$PUBLIC_DEV_TASK_ROOTS"
@@ -469,6 +553,11 @@ cat > "$HOST_OUT_DIR/local_regression_manifest.json" <<EOF
   "heldout_max_records_per_file": "$MAX_RECORDS_PER_FILE",
   "long_context_max_records_per_file": "$LONG_CONTEXT_MAX_RECORDS_PER_FILE",
   "context_ladder": "$CONTEXT_LADDER",
+  "target_diagnostics": "/workspace/$OUT_DIR/heldout_target_token_diagnostics.local_regression.json",
+  "decode_sanity_modalities": "$DECODE_SANITY_MODALITIES",
+  "decode_sanity_tasks": "/workspace/$OUT_DIR/decode_sanity_tasks.local_regression.jsonl",
+  "decode_sanity_predictions": "/workspace/$OUT_DIR/decode_sanity_predictions.local_regression.jsonl",
+  "decode_sanity_release_gate": "/workspace/$OUT_DIR/decode_sanity_release_gate.local_regression.json",
   "status": "completed"
 }
 EOF

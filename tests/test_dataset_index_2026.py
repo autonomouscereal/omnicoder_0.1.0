@@ -94,6 +94,7 @@ def test_dataset_index_separates_reportable_and_diagnostic_benchmark_rows(tmp_pa
                 "modality": "text",
                 "training_bucket": "train",
                 "use_policy": "train",
+                "contamination_status": "clean",
                 "target": "Useful training target with enough words.",
             },
             {
@@ -312,6 +313,41 @@ def test_dataset_index_rejects_train_rows_missing_source_or_policy(tmp_path: Pat
     }
 
 
+def test_dataset_index_rejects_unknown_contamination_in_train_bucket(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "unknown-contamination",
+                "source_id": "fineweb_edu",
+                "modality": "text",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "quality_score": 0.95,
+                "target": "Useful train rows must carry an explicit clean contamination status before promotion.",
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert "blocked_or_rejected_train_rows" in payload["fail_reasons"]
+    assert payload["blocked_train_examples"][0]["reason"] == "contamination_status:unknown"
+
+
+def test_dataset_index_rejects_zero_row_inputs(tmp_path: Path) -> None:
+    data = tmp_path / "empty.jsonl"
+    data.write_text("", encoding="utf-8")
+
+    payload = indexer.build_index([data])
+
+    assert payload["status"] == "failed"
+    assert "zero_rows" in payload["fail_reasons"]
+    assert payload["counts"]["zero_rows"] == 1
+
+
 def test_dataset_index_flags_empty_prompt_leak_and_url_only_media(tmp_path: Path) -> None:
     data = tmp_path / "train.jsonl"
     prompt = "Explain the exact artifact generation prompt, camera, lighting, and safety provenance."
@@ -517,6 +553,7 @@ def test_dataset_index_counts_structured_target_json_content(tmp_path: Path) -> 
                 "target_modality": "text",
                 "split": "train",
                 "use_policy": "train",
+                "contamination_status": "clean",
                 "target_json": {"content": "Useful structured target text."},
             }
         ],
@@ -541,6 +578,7 @@ def test_dataset_index_counts_target_json_when_input_messages_are_prompt_only(tm
                 "modality": "text",
                 "split": "train",
                 "use_policy": "train",
+                "contamination_status": "clean",
                 "input_json": {"messages": [{"role": "user", "content": "Pretraining chunk prompt"}]},
                 "target_json": {"content": "Pretraining chunk target"},
             }
@@ -565,6 +603,7 @@ def test_dataset_index_counts_assistant_messages_as_target_tokens(tmp_path: Path
                 "modality": "code",
                 "training_bucket": "train",
                 "use_policy": "train",
+                "contamination_status": "clean",
                 "quality_score": 0.9,
                 "messages": [
                     {"role": "user", "content": "Write a deterministic parser."},
@@ -599,6 +638,7 @@ def test_dataset_index_does_not_flag_text_pretraining_self_supervision_as_prompt
                 "modality": "text",
                 "split": "train",
                 "use_policy": "train",
+                "contamination_status": "clean",
                 "dataset_family": "text_pretraining",
                 "training_kind": "text_pretraining",
                 "text": target,
@@ -612,6 +652,44 @@ def test_dataset_index_does_not_flag_text_pretraining_self_supervision_as_prompt
     assert payload["status"] == "passed"
     assert payload["counts"]["prompt_target_leakage"] == 0
     assert payload["counts"]["one_token_junk_rows"] == 0
+
+
+def test_dataset_index_allows_role_prefixed_external_pretraining_with_clean_scan_note(tmp_path: Path) -> None:
+    data = tmp_path / "train.jsonl"
+    target = (
+        "A clean external pretraining row can carry the same document in a user message and target JSON content "
+        "when the dataset family explicitly marks it as next-token learning."
+    )
+    _write_jsonl(
+        data,
+        [
+            {
+                "record_id": "external-pretrain-role-prefix",
+                "source_id": "common_pile",
+                "dataset_name": "Common Pile v0.1",
+                "dataset_family": "text_pretraining",
+                "modality": "text",
+                "split": "train",
+                "training_bucket": "train",
+                "use_policy": "train",
+                "contamination_status": "clean",
+                "contamination": {
+                    "status": "clean",
+                    "note": "external registry row passed declared protected benchmark scan",
+                },
+                "quality_score": 0.94,
+                "input_json": {"messages": [{"role": "user", "content": target}]},
+                "target_json": {"content": target},
+            }
+        ],
+    )
+
+    payload = indexer.build_index([data], expected_split="train", scan_dataset_integrity=True, min_quality_score=0.55)
+
+    assert payload["status"] == "passed"
+    assert payload["counts"]["prompt_target_leakage"] == 0
+    assert payload["counts"]["train_eval_leakage_markers"] == 0
+    assert payload["counts"]["dataset_integrity_rejected_rows"] == 0
 
 
 def test_dataset_index_allows_short_text_only_when_structured_tool_payload_exists(tmp_path: Path) -> None:

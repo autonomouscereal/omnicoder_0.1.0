@@ -153,6 +153,18 @@ def test_quality_policy_rejects_url_only_media_refs() -> None:
     assert "dataset_integrity:media_url_only_ref" in audit["reasons"]
 
 
+def test_ace_music_normalizer_promotes_extracted_artifacts_into_target_payload() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "scripts" / "ai_server_run_music_tts_ace_curation_2026.sh").read_text(encoding="utf-8")
+
+    assert 'target_json["artifact_refs"] = artifact_refs' in script
+    assert 'target_json["media_refs"] = artifact_refs' in script
+    assert "target_content.strip().isdigit()" in script
+    assert "Generate the referenced {kind} artifact" in script
+    assert '"curation_policy_2026", "dataset_integrity_2026", "train_quarantine_reasons"' in script
+    assert "source row declared clean after contamination audit" in script
+
+
 def test_dataset_expansion_quarantines_missing_train_metadata(tmp_path: Path) -> None:
     plan = {"artifact_token_count": {}, "target_text_chars": 512}
     entry = {
@@ -411,3 +423,65 @@ def test_curation_agent_rejects_near_duplicate_5gram_rows(tmp_path: Path) -> Non
     assert len(clean_rows) == 1
     assert len(rejected_rows) == 1
     assert "near_duplicate_5gram" in rejected_rows[0]["curation_policy_2026"]["reasons"]
+
+
+def test_curation_agent_marks_all_rejected_runs_failed(tmp_path: Path) -> None:
+    source = tmp_path / "source.jsonl"
+    clean = tmp_path / "clean.jsonl"
+    rejected = tmp_path / "rejected.jsonl"
+    manifest = tmp_path / "manifest.json"
+    _write_jsonl(
+        source,
+        [
+            {
+                "source_id": "bad_source",
+                "modality": "text",
+                "prompt": "Answer normally.",
+                "target": "As an AI language model, I cannot assist because it violates policy.",
+                "quality_score": 0.95,
+                "contamination_status": "clean",
+            }
+        ],
+    )
+
+    result = policy.run_agent(
+        argparse.Namespace(
+            input=[str(source)],
+            out=str(clean),
+            rejected=str(rejected),
+            manifest=str(manifest),
+            modality="text",
+            min_quality=0.0,
+            require_media_artifacts=False,
+            allow_refusal_boilerplate=False,
+            allow_eval_holdout=False,
+            allow_dataset_integrity_issues=False,
+            skip_integrity_artifact_scan=True,
+            max_integrity_artifact_bytes=1024 * 1024,
+            dedupe=True,
+            near_dedupe=False,
+            near_dedupe_threshold=0.92,
+            near_dedupe_ngram=5,
+            max_records=0,
+        )
+    )
+
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert result["status"] == "failed_all_rejected"
+    assert payload["status"] == "failed_all_rejected"
+    assert clean.read_text(encoding="utf-8") == ""
+    assert len(rejected.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_external_expansion_forwards_hf_timeout_before_build_command() -> None:
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "ai_server_dataset_training_sidecars_2026.sh").read_text(
+        encoding="utf-8"
+    )
+    body = script[script.index("external_expansion() {") : script.index("agentic_tool_training() {")]
+
+    timeout_arg = 'materializer_args+=(--hf-step-timeout-seconds "$HF_STEP_TIMEOUT_SECONDS")'
+    command_arg = '"${materializer_args[@]}"'
+    build_arg = "build | tee"
+
+    assert timeout_arg in body
+    assert body.index(timeout_arg) < body.index(command_arg) < body.index(build_arg)

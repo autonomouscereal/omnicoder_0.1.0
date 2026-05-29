@@ -27,6 +27,7 @@ open-clip-torch>=2.20.0
 scikit-image>=0.20.0
 opencv-python>=4.8.0
 pillow>=10.0.0
+h5py>=3.11.0
 
 # --- The Heavy Backend ---
 # Pinning AllenNLP to a version that actually works with Python 3.10

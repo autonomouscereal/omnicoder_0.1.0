@@ -273,3 +273,7 @@ def _patched_base() -> Iterator[None]:
 def main(argv: list[str] | None = None) -> int:
     with _patched_base():
         return _BASE_MAIN(argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -80,7 +80,7 @@ services:
       - HF_TOKEN=${HF_TOKEN}
     command: >-
       bash -lc "apt-get update && apt-get install -y --no-install-recommends aria2 unzip p7zip-full unrar ffmpeg libsndfile1 || true && \
-      python3 -m pip install --no-cache-dir datasets torchcodec 'imageio[ffmpeg]' pandas pyarrow && \
+      python3 -m pip install --no-cache-dir datasets torchcodec 'imageio[ffmpeg]' pandas pyarrow pillow h5py && \
       python3 -m omnicoder.tools.autofetch_datasets --limit ${OMNICODER_FETCH_LIMIT:-2000} | tee /workspace/tests_logs/autofetch.json"
 
   fetch_nonhf:

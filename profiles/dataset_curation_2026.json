@@ -31167,6 +31167,96 @@
         }
       },
       {
+        "name": "GPT-NL Public Corpus",
+        "family": "text_pretraining",
+        "hf_id": "GPT-NL/GPT-NL_Public_Corpus",
+        "url": "https://huggingface.co/datasets/GPT-NL/GPT-NL_Public_Corpus",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirtieth_wave_multilingual_text_hardening_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 32768,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "CC-BY corpus with per-record source license metadata",
+        "license_tier": "attribution_per_record",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.92,
+        "source_review_status": "public_train_reviewed_2026_05_29",
+        "materialization_note": "Use as a multilingual high-quality text supplement only when per-record source/license metadata is present; quarantine rows without clear provenance.",
+        "curriculum_axes": [
+          "multilingual_text",
+          "dutch_text",
+          "open_license_pretraining",
+          "source_license_metadata"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "source",
+            "url"
+          ],
+          "prompt": [
+            "source",
+            "language",
+            "license",
+            "url"
+          ],
+          "target": [
+            "text",
+            "content"
+          ]
+        }
+      },
+      {
+        "name": "German Commons",
+        "family": "text_pretraining",
+        "hf_id": "coral-nlp/german-commons",
+        "url": "https://huggingface.co/datasets/coral-nlp/german-commons",
+        "source_year": 2025,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirtieth_wave_multilingual_text_hardening_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 32768,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "ODC-BY aggregation with per-record document licenses",
+        "license_tier": "attribution_per_record",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.91,
+        "source_review_status": "public_train_reviewed_2026_05_29",
+        "materialization_note": "Use as a German text supplement only when document source/license fields survive curation; reject rows missing provenance or quality metadata.",
+        "curriculum_axes": [
+          "multilingual_text",
+          "german_text",
+          "open_license_pretraining",
+          "source_license_metadata"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "url",
+            "source"
+          ],
+          "prompt": [
+            "source",
+            "license",
+            "domain",
+            "language"
+          ],
+          "target": [
+            "text",
+            "content"
+          ]
+        }
+      },
+      {
         "name": "MathX-5M",
         "family": "math_reasoning",
         "hf_id": "Modotte/MathX-5M",
@@ -32116,10 +32206,728 @@
             "image_path"
           ]
         }
+      },
+      {
+        "name": "FineTranslations",
+        "family": "text_pretraining",
+        "hf_id": "HuggingFaceFW/finetranslations",
+        "url": "https://huggingface.co/datasets/HuggingFaceFW/finetranslations",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_first_wave_verified_text_code_agent_eval_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "ODC-By-1.0",
+        "license_tier": "attribution_per_record",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.92,
+        "source_review_status": "public_train_reviewed_2026_05_29",
+        "materialization_note": "2026 Hugging Face FineData multilingual translation corpus. Use text-only rows with language/source metadata, dedupe against eval translations, and keep attribution/source URLs in row payloads.",
+        "curriculum_axes": [
+          "multilingual",
+          "translation",
+          "text_pretraining",
+          "parallel_text"
+        ],
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "prompt": [
+            "og_full_text",
+            "og_chunks",
+            "url"
+          ],
+          "target": [
+            "translated_text",
+            "translated_chunks"
+          ]
+        }
+      },
+      {
+        "name": "FineTranslations Edu",
+        "family": "text_pretraining",
+        "hf_id": "HuggingFaceFW/finetranslations-edu",
+        "url": "https://huggingface.co/datasets/HuggingFaceFW/finetranslations-edu",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_first_wave_verified_text_code_agent_eval_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "ODC-By-1.0",
+        "license_tier": "attribution_per_record",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.94,
+        "source_review_status": "public_train_reviewed_2026_05_29",
+        "materialization_note": "Educationally filtered FineTranslations subset. Prefer this for high-quality multilingual instruction and translation signal; keep original language, quality, and source URL metadata for attribution and dedupe.",
+        "curriculum_axes": [
+          "multilingual",
+          "translation",
+          "educational_text",
+          "parallel_text"
+        ],
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "prompt": [
+            "og_full_text",
+            "og_chunks",
+            "url"
+          ],
+          "target": [
+            "translated_text",
+            "translated_chunks"
+          ]
+        }
+      },
+      {
+        "name": "FineData DCLM 100BT",
+        "family": "text_pretraining",
+        "hf_id": "HuggingFaceFW/dclm_100BT",
+        "url": "https://huggingface.co/datasets/HuggingFaceFW/dclm_100BT",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_first_wave_verified_text_code_agent_eval_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "text",
+        "use_policy": "research_internal",
+        "license": "ODC-By-1.0",
+        "license_tier": "research_internal_attribution_opt-out_review",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.86,
+        "source_review_status": "research_internal_until_source_opt_out_scan_2026_05_29",
+        "materialization_note": "DCLM 100BT is a useful FineData comparator and high-score web-text candidate, but keep research_internal until opt-out/source-domain review and duplicate scan pass on sampled rows.",
+        "curriculum_axes": [
+          "text_pretraining",
+          "quality_filtered_web_text",
+          "finedata_comparator"
+        ],
+        "field_map": {
+          "id": [
+            "id"
+          ],
+          "prompt": [
+            "text",
+            "url"
+          ],
+          "target": [
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "OpenCoder FineWeb Math Corpus",
+        "family": "math_reasoning",
+        "hf_id": "OpenCoder-LLM/opc-fineweb-math-corpus",
+        "url": "https://huggingface.co/datasets/OpenCoder-LLM/opc-fineweb-math-corpus",
+        "source_year": 2025,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_first_wave_verified_text_code_agent_eval_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "target_modality": "text",
+        "use_policy": "train",
+        "license": "ODC-By-1.0",
+        "license_tier": "attribution_per_record",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.91,
+        "source_review_status": "public_train_reviewed_2026_05_29",
+        "materialization_note": "OpenCoder/Open Cookbook math-related FineWeb slice recalled for pretraining. Deduplicate against protected math benchmarks and preserve source URL/dump metadata.",
+        "curriculum_axes": [
+          "math_reasoning",
+          "pretraining",
+          "opencoder",
+          "web_math"
+        ],
+        "field_map": {
+          "id": [
+            "url",
+            "file_path"
+          ],
+          "prompt": [
+            "text",
+            "url"
+          ],
+          "target": [
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "SWE-bench-Live Official",
+        "family": "coding_agentic",
+        "hf_id": "SWE-bench-Live/SWE-bench-Live",
+        "url": "https://huggingface.co/datasets/SWE-bench-Live/SWE-bench-Live",
+        "source_year": 2025,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_first_wave_verified_text_code_agent_eval_2026_05_29",
+        "splits": [
+          "verified",
+          "lite"
+        ],
+        "max_records": 2000,
+        "target_modality": "code",
+        "use_policy": "eval_only",
+        "license": "MIT",
+        "license_tier": "permissive_eval_holdout",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "eval_holdout_only",
+        "quality_score": 0.95,
+        "source_review_status": "official_eval_holdout_2026_05_29",
+        "materialization_note": "Canonical continuously updated SWE-bench-Live benchmark. Do not train on gold patches or tests; use only for reportable/diagnostic coding-agent eval with official scorer artifacts.",
+        "curriculum_axes": [
+          "swe_bench_live",
+          "coding_agentic_eval",
+          "protected_benchmark",
+          "contamination_resistant"
+        ],
+        "field_map": {
+          "id": [
+            "instance_id"
+          ],
+          "prompt": [
+            "problem_statement",
+            "repo",
+            "base_commit"
+          ],
+          "target": [
+            "patch",
+            "test_patch",
+            "FAIL_TO_PASS",
+            "PASS_TO_PASS"
+          ],
+          "trajectory": [
+            "test_cmds",
+            "log_parser"
+          ]
+        }
+      },
+      {
+        "name": "WebArena Verified",
+        "family": "terminal_browser_agents",
+        "hf_id": "AmineHA/WebArena-Verified",
+        "url": "https://huggingface.co/datasets/AmineHA/WebArena-Verified",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_first_wave_verified_text_code_agent_eval_2026_05_29",
+        "splits": [
+          "full",
+          "hard"
+        ],
+        "max_records": 1070,
+        "target_modality": "tool",
+        "use_policy": "eval_only",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_eval_holdout",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "eval_holdout_only",
+        "quality_score": 0.95,
+        "source_review_status": "official_eval_holdout_2026_05_29",
+        "materialization_note": "Verified WebArena task set with deterministic evaluator metadata. Keep out of training; use to validate web-navigation, retrieval, and tool-call execution with official environment/scorer outputs.",
+        "curriculum_axes": [
+          "webarena_verified",
+          "browser_agent_eval",
+          "tool_use_eval",
+          "protected_benchmark"
+        ],
+        "field_map": {
+          "id": [
+            "task_id",
+            "intent_template_id"
+          ],
+          "prompt": [
+            "intent",
+            "start_urls",
+            "sites"
+          ],
+          "target": [
+            "eval",
+            "intent_template",
+            "instantiation_dict"
+          ],
+          "trajectory": [
+            "eval",
+            "start_urls",
+            "sites"
+          ]
+        }
+      },
+      {
+        "name": "FinePDFs Edu DCLM FineWeb 100BT Mix",
+        "family": "long_context",
+        "hf_id": "HuggingFaceFW/finepdfs_edu_50BT-dclm_30BT-fineweb_edu_20BT",
+        "url": "https://huggingface.co/datasets/HuggingFaceFW/finepdfs_edu_50BT-dclm_30BT-fineweb_edu_20BT",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 8192,
+        "target_modality": "long_context",
+        "use_policy": "train",
+        "license": "ODC-By-1.0",
+        "license_tier": "attribution_per_record",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.93,
+        "source_review_status": "public_train_reviewed_2026_05_29",
+        "materialization_note": "High-signal FineData blend for long-context text packing. Preserve source URLs and filter by date, language, 5-gram dedupe, and protected benchmark overlap.",
+        "curriculum_axes": [
+          "long_context",
+          "educational_text",
+          "finepdfs",
+          "dclm",
+          "fineweb_edu"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "url"
+          ],
+          "prompt": [
+            "text",
+            "url"
+          ],
+          "target": [
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "FinePDFs Edu",
+        "family": "long_context",
+        "hf_id": "HuggingFaceFW/finepdfs-edu",
+        "url": "https://huggingface.co/datasets/HuggingFaceFW/finepdfs-edu",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "long_context",
+        "use_policy": "train",
+        "license": "ODC-By-1.0",
+        "license_tier": "attribution_per_record",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.92,
+        "source_review_status": "public_train_reviewed_2026_05_29",
+        "materialization_note": "Educational PDF-derived long-context source. Promote only rows with clean source URL/date metadata and no OCR/provenance watermark artifacts.",
+        "curriculum_axes": [
+          "long_context",
+          "pdf_text",
+          "educational_text"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "url"
+          ],
+          "prompt": [
+            "text",
+            "url"
+          ],
+          "target": [
+            "text"
+          ]
+        }
+      },
+      {
+        "name": "Open R1 Codeforces CoTs",
+        "family": "coding_agentic",
+        "hf_id": "open-r1/codeforces-cots",
+        "url": "https://huggingface.co/datasets/open-r1/codeforces-cots",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "code",
+        "use_policy": "train",
+        "license": "CC-BY-4.0",
+        "license_tier": "attribution_per_record",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.91,
+        "source_review_status": "public_train_reviewed_2026_05_29",
+        "materialization_note": "Reasoning-rich competitive-programming trajectories. Decontaminate against LiveCodeBench, HumanEval, MBPP, and protected Codeforces eval splits before training.",
+        "curriculum_axes": [
+          "coding",
+          "rlvr",
+          "chain_of_thought",
+          "competitive_programming"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "problem_id",
+            "contest_id"
+          ],
+          "prompt": [
+            "problem",
+            "statement",
+            "prompt"
+          ],
+          "target": [
+            "solution",
+            "reasoning",
+            "cot",
+            "answer",
+            "code"
+          ]
+        }
+      },
+      {
+        "name": "Open R1 Verifiable Coding Problems Python",
+        "family": "coding_agentic",
+        "hf_id": "open-r1/verifiable-coding-problems-python",
+        "url": "https://huggingface.co/datasets/open-r1/verifiable-coding-problems-python",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "code",
+        "use_policy": "research_internal",
+        "license": "license missing from public dataset API at review time",
+        "license_tier": "research_internal_license_review",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.89,
+        "source_review_status": "research_internal_until_license_card_review_2026_05_29",
+        "materialization_note": "Use for internal verifier/reward-shaping experiments until license card and benchmark-overlap review are complete.",
+        "curriculum_axes": [
+          "coding",
+          "verifier",
+          "unit_tests",
+          "rlvr"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "task_id"
+          ],
+          "prompt": [
+            "problem",
+            "prompt",
+            "description"
+          ],
+          "target": [
+            "solution",
+            "code",
+            "tests",
+            "verifier"
+          ]
+        }
+      },
+      {
+        "name": "Open R1 Codeforces",
+        "family": "coding_agentic",
+        "hf_id": "open-r1/codeforces",
+        "url": "https://huggingface.co/datasets/open-r1/codeforces",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "code",
+        "use_policy": "research_internal",
+        "license": "CC-BY-4.0",
+        "license_tier": "research_internal_benchmark_overlap_review",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.88,
+        "source_review_status": "research_internal_until_livecodebench_overlap_review_2026_05_29",
+        "materialization_note": "Problem/test corpus for verifier setup. Keep internal until protected benchmark overlap scan proves it cannot leak coding eval answers.",
+        "curriculum_axes": [
+          "coding",
+          "competitive_programming",
+          "verifier"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "problem_id"
+          ],
+          "prompt": [
+            "problem",
+            "statement"
+          ],
+          "target": [
+            "solution",
+            "answer",
+            "tests"
+          ]
+        }
+      },
+      {
+        "name": "Yana FT LLM 2026 OCR Dataset",
+        "family": "omnimodal_understanding",
+        "hf_id": "Yana/ft-llm-2026-ocr-dataset",
+        "url": "https://huggingface.co/datasets/Yana/ft-llm-2026-ocr-dataset",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "ocr",
+        "use_policy": "train",
+        "license": "Apache-2.0",
+        "license_tier": "permissive_apache2",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.90,
+        "source_review_status": "public_train_reviewed_2026_05_29",
+        "materialization_note": "Finance/document OCR rows. Require PII/domain scan, OCR target text, and image metadata-only decode before promotion.",
+        "curriculum_axes": [
+          "ocr",
+          "document_understanding",
+          "finance_docs",
+          "image_to_text"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "filename"
+          ],
+          "prompt": [
+            "question",
+            "instruction",
+            "image"
+          ],
+          "target": [
+            "text",
+            "ocr_text",
+            "answer",
+            "transcript"
+          ],
+          "media": [
+            "image",
+            "image_path"
+          ]
+        }
+      },
+      {
+        "name": "Tarsier2 Recap 585K",
+        "family": "video_generation",
+        "hf_id": "omni-research/Tarsier2-Recap-585K",
+        "url": "https://huggingface.co/datasets/omni-research/Tarsier2-Recap-585K",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "video",
+        "use_policy": "research_internal",
+        "license": "Apache-2.0 metadata; source media rights require audit",
+        "license_tier": "research_internal_media_rights_review",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.90,
+        "source_review_status": "research_internal_until_media_rights_audit_2026_05_29",
+        "materialization_note": "High-value video recap/caption metadata. Use for internal video-language alignment until media rights and watermark scans pass.",
+        "curriculum_axes": [
+          "video_understanding",
+          "video_captioning",
+          "temporal_recap"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "video_id"
+          ],
+          "prompt": [
+            "video",
+            "question",
+            "prompt"
+          ],
+          "target": [
+            "caption",
+            "recap",
+            "description",
+            "answer"
+          ],
+          "media": [
+            "video",
+            "video_path",
+            "url"
+          ]
+        }
+      },
+      {
+        "name": "LAION AI Music Aesthetics Udio Snippets",
+        "family": "music_generation",
+        "hf_id": "laion/ai-music-aesthetics-annotations-for-udio-snippets",
+        "url": "https://huggingface.co/datasets/laion/ai-music-aesthetics-annotations-for-udio-snippets",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 2048,
+        "target_modality": "music",
+        "use_policy": "research_internal",
+        "license": "Apache-2.0 metadata; generated-audio provenance requires review",
+        "license_tier": "research_internal_generated_audio_provenance_review",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.88,
+        "source_review_status": "research_internal_reward_only_until_audio_provenance_review_2026_05_29",
+        "materialization_note": "Use as reward/preference signal for music quality, not raw audio training, until generated-audio provenance and watermark scans pass.",
+        "curriculum_axes": [
+          "music_reward",
+          "aesthetic_preference",
+          "audio_quality"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "clip_id"
+          ],
+          "prompt": [
+            "prompt",
+            "caption",
+            "tags"
+          ],
+          "target": [
+            "rating",
+            "score",
+            "aesthetic_score",
+            "preference"
+          ],
+          "media": [
+            "audio",
+            "path",
+            "url"
+          ]
+        }
+      },
+      {
+        "name": "Mozilla Common Voice 25 Official English",
+        "family": "speech_audio",
+        "url": "https://commonvoice.mozilla.org/data",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 4096,
+        "target_modality": "audio",
+        "use_policy": "blocked_until_review",
+        "license": "CC0 public corpus; official download terms and non-rehost constraints require operator-side fetch",
+        "license_tier": "manual_official_download_blocked_until_review",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.92,
+        "source_review_status": "manual_download_required_2026_05_29",
+        "materialization_note": "Prefer official Mozilla source over HF mirrors. Do not count as train until the official archive is fetched locally with terms preserved and speaker/client splits audited.",
+        "curriculum_axes": [
+          "asr",
+          "speech",
+          "common_voice_25",
+          "cc0"
+        ],
+        "field_map": {
+          "id": [
+            "client_id",
+            "path"
+          ],
+          "prompt": [
+            "sentence",
+            "locale",
+            "accent"
+          ],
+          "target": [
+            "sentence",
+            "audio"
+          ],
+          "media": [
+            "audio",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "Farmerline Twi TTS 2026",
+        "family": "speech_audio",
+        "hf_id": "FarmerlineML/Twi_TTS2026_dataset",
+        "url": "https://huggingface.co/datasets/FarmerlineML/Twi_TTS2026_dataset",
+        "source_year": 2026,
+        "last_verified": "2026-05-29",
+        "registry_wave": "thirty_second_wave_high_signal_data_expansion_2026_05_29",
+        "splits": [
+          "train"
+        ],
+        "max_records": 1024,
+        "target_modality": "tts",
+        "use_policy": "research_internal",
+        "license": "license missing from public dataset API at review time",
+        "license_tier": "research_internal_license_review",
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "quality_score": 0.86,
+        "source_review_status": "research_internal_until_license_review_2026_05_29",
+        "materialization_note": "Low-resource TTS candidate. Keep internal until speaker consent, license, and audio watermark/provenance scans pass.",
+        "curriculum_axes": [
+          "tts",
+          "low_resource_speech",
+          "twi"
+        ],
+        "field_map": {
+          "id": [
+            "id",
+            "path"
+          ],
+          "prompt": [
+            "text",
+            "sentence"
+          ],
+          "target": [
+            "audio",
+            "text",
+            "sentence"
+          ],
+          "media": [
+            "audio",
+            "path"
+          ]
+        }
       }
     ],
     "enabled": true,
-    "last_updated": "2026-05-28",
+    "last_updated": "2026-05-29",
     "out_dir": "weights/external_datasets_2026/latest",
     "policy": "download when license and split policy permit; otherwise create internal distillation seeds and keep official eval rows quarantined",
     "required_real_family_min_records": {

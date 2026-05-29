@@ -241,7 +241,6 @@ external_expansion() {
   if [[ "$ENFORCE_DATASET_MINIMA" == "1" || "$ENFORCE_DATASET_MINIMA" == "true" ]]; then
     requirement_args+=(--enforce-requirements)
   fi
-  materializer_args+=(--hf-step-timeout-seconds "$HF_STEP_TIMEOUT_SECONDS")
   if truthy "$MATERIALIZE_DEFERRED_SOURCES"; then
     materializer_args+=(--materialize-deferred-sources)
     log "external dataset expansion will materialize deferred live-download sources by override"
@@ -250,6 +249,7 @@ external_expansion() {
     materializer_args+=(--materialize-hf-sources)
     log "external dataset expansion will allow live Hugging Face materialization by override"
   fi
+  materializer_args+=(--hf-step-timeout-seconds "$HF_STEP_TIMEOUT_SECONDS")
   if [[ -n "$DATASET_INCLUDE_WAVES" ]]; then
     local old_ifs="$IFS"
     IFS=","
@@ -355,13 +355,15 @@ if rejected > 0 and rejected_path.exists():
             except Exception:
                 continue
             payload = json.dumps(row, ensure_ascii=True, sort_keys=True, default=str, separators=(",", ":"))
+            integrity = row.get("dataset_integrity_2026")
+            integrity_reasons = integrity.get("reasons") if isinstance(integrity, dict) else None
             audit = {
                 "record_id": row.get("record_id") or row.get("id") or row.get("source_id"),
                 "source_id": row.get("source_id"),
                 "split": row.get("split"),
                 "modality": row.get("modality"),
                 "payload_sha256": row.get("payload_sha256") or row.get("sha256") or hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest(),
-                "rejection_reasons": row.get("rejection_reasons") or row.get("reasons") or row.get("integrity_reasons"),
+                "rejection_reasons": row.get("rejection_reasons") or row.get("reasons") or row.get("integrity_reasons") or integrity_reasons,
             }
             dst.write(json.dumps(audit, ensure_ascii=True, sort_keys=True) + "\n")
     rejected_path.unlink()

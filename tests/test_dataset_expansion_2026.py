@@ -7,6 +7,7 @@ import zipfile
 from pathlib import Path
 
 from omnicoder.data_factory import dataset_expansion_2026 as expansion
+from omnicoder.data_factory import dataset_integrity_2026 as integrity
 from omnicoder.training import training_orchestration_2026 as orch
 
 
@@ -45,6 +46,86 @@ def _reviewed_train_record(**extra: object) -> dict:
     }
     row.update(extra)
     return row
+
+
+def test_dataset_expansion_target_char_fallback_survives_old_training_module(monkeypatch) -> None:
+    monkeypatch.delattr(expansion.training_orchestration_2026, "modality_target_chars")
+    plan = {
+        "target_text_chars": 512,
+        "target_text_chars_by_modality": {"code": 1024},
+        "long_context_target_chars": 12000,
+        "context_ladder": [8192, 32768],
+    }
+    assert expansion.modality_target_chars(plan, "code") == 1024
+    assert expansion.modality_target_chars(plan, "text") == 512
+    assert expansion.modality_target_chars(plan, "long_context") == 12000
+
+
+def test_dataset_expansion_training_record_fallback_survives_missing_training_harness(monkeypatch) -> None:
+    monkeypatch.setattr(expansion, "training_orchestration_2026", None)
+    row = expansion.make_training_record(
+        "text",
+        "Explain why clean high-quality data matters for model training.",
+        "Clean, verified data improves gradient signal, reduces memorized junk, and makes evaluation regressions easier to isolate.",
+        "unit://source",
+        {"text_token_limit": 64},
+        source_payload={
+            "source_id": "unit-source",
+            "source_date": "2026-05-29",
+            "quality": {"score": 0.91, "label": "accepted_external_2026"},
+            "contamination": {"status": "clean"},
+        },
+    )
+    assert row["source_id"] == "unit-source"
+    assert row["target_text_token_count"] > 0
+    assert row["quality"]["score"] == 0.91
+    assert row["contamination"]["status"] == "clean"
+
+
+def test_dataset_expansion_build_plan_fallback_survives_missing_training_harness(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    _write_jsonl(
+        root / "data" / "text.jsonl",
+        [
+            {
+                "prompt": "Explain clean data gates.",
+                "answer": "Clean gates prevent junk, poisoned, or malformed rows from becoming optimizer signal.",
+                "contamination_status": "clean",
+                "source_date": "2026-05-29",
+                "quality_score": 0.93,
+            }
+        ],
+    )
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "unit_text",
+                    "family": "omnimodal_understanding",
+                    "target_modality": "text",
+                    "local_jsonl": "data/text.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                    "field_map": {"prompt": ["prompt"], "target": ["answer"]},
+                }
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+    monkeypatch.setattr(expansion, "training_orchestration_2026", None)
+
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external",
+        type("Args", (), {"download": False, "no_streaming": False, "max_records_per_dataset": 0, "enforce_requirements": False})(),
+    )
+
+    assert manifest["status"] == "passed"
+    assert manifest["records"]["train"] == 1
 
 
 def test_dataset_expansion_materializes_license_tiered_rows(tmp_path: Path, monkeypatch) -> None:
@@ -106,6 +187,40 @@ def test_dataset_expansion_materializes_license_tiered_rows(tmp_path: Path, monk
     assert train_row["training_bucket"] == "train"
     assert train_row["license_tier"] == "permissive"
     assert train_row["contamination_status"] == "clean"
+
+
+def test_dataset_expansion_contamination_note_does_not_trip_eval_leak_scan(tmp_path: Path) -> None:
+    plan = _training_profile(tmp_path)
+    entry = {
+        "name": "unit_text",
+        "family": "text_pretraining",
+        "target_modality": "text",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "field_map": {"prompt": ["text"], "target": ["text"], "id": ["id"]},
+    }
+    record = _reviewed_train_record(
+        id="row-1",
+        text=(
+            "A reviewed educational passage with enough substance to train next-token behavior "
+            "while preserving provenance and answer quality for model learning."
+        ),
+    )
+
+    row = expansion.record_to_training_row(entry, record, plan, 1)
+
+    assert row is not None
+    note = row["source_payload"]["contamination"]["note"]
+    assert "benchmark" not in note.lower()
+    audit = integrity.audit_dataset_integrity(
+        row,
+        prompt=row["input_json"]["messages"][0]["content"],
+        target=row["target_json"]["content"],
+        modality=row["modality"],
+        refs=[],
+    )
+    assert "eval_leak_benchmark_marker" not in audit["reasons"]
 
 
 def test_dataset_expansion_writes_curation_quality_audit_artifact(tmp_path: Path, monkeypatch) -> None:
@@ -207,6 +322,38 @@ def test_dataset_expansion_writes_curation_quality_audit_artifact(tmp_path: Path
     assert audit["synthetic_ratio"] == {"accepted": 0.5, "rejected": 0.0}
     assert audit["accepted_rejected_by"]["family"]["coding_agentic"] == {"accepted": 0, "rejected": 1}
     assert audit["accepted_rejected_by"]["family"]["math_reasoning"] == {"accepted": 1, "rejected": 0}
+
+
+def test_dataset_expansion_manifest_marks_zero_row_runs_failed(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path
+    _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
+    profile = {
+        "external_dataset_registry_2026": {
+            "training_profile": "profiles/training_orchestration_2026.json",
+            "datasets": [
+                {
+                    "name": "missing_train_source",
+                    "family": "math_reasoning",
+                    "target_modality": "text",
+                    "local_jsonl": "data/missing.jsonl",
+                    "license": "Apache-2.0",
+                    "license_tier": "permissive",
+                    "use_policy": "train",
+                }
+            ],
+        }
+    }
+    _write_json(root / "profiles" / "dataset_curation_2026.json", profile)
+    monkeypatch.setattr(expansion, "repo_root", lambda: root)
+
+    manifest = expansion.build_expansion(
+        root / "profiles" / "dataset_curation_2026.json",
+        root / "weights" / "external_empty",
+        type("Args", (), {"download": False, "no_streaming": False, "max_records_per_dataset": 0, "enforce_requirements": False})(),
+    )
+
+    assert manifest["records"]["total_training_rows"] == 0
+    assert manifest["status"] == "failed_empty"
 
 
 def test_dataset_expansion_splits_conversation_prompt_and_target(tmp_path: Path) -> None:
@@ -808,6 +955,51 @@ def test_dataset_expansion_downloads_remote_tsv_rows(tmp_path: Path, monkeypatch
     assert rows[0]["trajectory"] == ['["Crop", "Flip"]']
 
 
+def test_dataset_expansion_remote_binary_files_require_converter(tmp_path: Path) -> None:
+    media = tmp_path / "clip.mp4"
+    media.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00binary-video")
+    entry = {
+        "name": "unit_video_binary",
+        "remote_files": [{"url": str(media), "format": "mp4"}],
+    }
+
+    rows, status = expansion.rows_from_remote_files(entry, tmp_path, 4)
+
+    assert rows == []
+    assert status["status"] == "failed"
+    assert "binary_remote_file_requires_converter:mp4" in status["errors"][0]
+
+
+def test_dataset_expansion_sniffs_mp4_even_when_format_is_text(tmp_path: Path) -> None:
+    media = tmp_path / "clip.txt"
+    media.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00binary-video")
+    entry = {
+        "name": "unit_video_binary_sniff",
+        "remote_files": [{"url": str(media), "format": "jsonl"}],
+    }
+
+    rows, status = expansion.rows_from_remote_files(entry, tmp_path, 4)
+
+    assert rows == []
+    assert status["status"] == "failed"
+    assert "binary_remote_file_requires_converter:mp4" in status["errors"][0]
+
+
+def test_dataset_expansion_hdf5_remote_files_require_converter(tmp_path: Path) -> None:
+    hdf = tmp_path / "ocr.hdf5"
+    hdf.write_bytes(b"\x89HDF\r\n\x1a\n\x00\x00opaque-hdf5")
+    entry = {
+        "name": "unit_ocr_hdf5",
+        "remote_files": [{"url": str(hdf), "format": "hdf5"}],
+    }
+
+    rows, status = expansion.rows_from_remote_files(entry, tmp_path, 4)
+
+    assert rows == []
+    assert status["status"] == "failed"
+    assert "binary_remote_file_requires_converter:hdf5" in status["errors"][0]
+
+
 def test_dataset_expansion_materializes_remote_zip_json_members_for_eval_only(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     _write_json(root / "profiles" / "training_orchestration_2026.json", _training_profile(root))
@@ -1193,6 +1385,32 @@ def test_dataset_expansion_summarizes_inline_media_payloads() -> None:
     assert row["media_refs"][0]["array_summary"]["truncated_items"] == 9992
 
 
+def test_dataset_expansion_media_paths_do_not_become_target_text() -> None:
+    plan = _training_profile(Path("."))["training_plan"]
+    entry = {
+        "name": "media_path_target_guard",
+        "family": "image_generation_editing",
+        "target_modality": "image",
+        "license": "Apache-2.0",
+        "license_tier": "permissive",
+        "use_policy": "train",
+        "min_target_chars": 4,
+        "field_map": {"prompt": ["prompt"], "target": ["image", "path"], "media": ["image"]},
+    }
+    record = {
+        "prompt": "Generate the image artifact.",
+        "image": {"path": "samples/generated.png", "bytes": b"not-real-png"},
+        "path": "samples/generated.png",
+        "contamination_status": "clean",
+        "source_date": "2026-05-29",
+        "quality_score": 0.95,
+    }
+
+    row = expansion.record_to_training_row(entry, record, plan, 1)
+
+    assert row is None
+
+
 def test_huggingface_iteration_errors_do_not_abort_expansion(monkeypatch) -> None:
     class BrokenDataset:
         def __iter__(self):
@@ -1283,6 +1501,48 @@ def test_huggingface_media_columns_are_cast_to_metadata_only(monkeypatch) -> Non
     assert rows[0]["image"] == {"path": "frame.png"}
     assert [name for name, _ in cast_calls] == ["reference_audio", "video", "image"]
     assert all(getattr(feature, "decode") is False for _, feature in cast_calls)
+    assert status["status"] == "ok"
+
+
+def test_huggingface_nested_media_features_are_cast_to_metadata_only(monkeypatch) -> None:
+    cast_calls: list[tuple[str, object]] = []
+
+    class FakeImageFeature:
+        def __repr__(self):
+            return "Image(decode=True)"
+
+    class FakeSequence:
+        def __init__(self, feature):
+            self.feature = feature
+
+    class FakeDataset:
+        features = {"frames": FakeSequence(FakeImageFeature())}
+
+        def cast_column(self, column, feature):
+            cast_calls.append((column, feature))
+            return self
+
+        def __iter__(self):
+            yield {"prompt": "describe frames", "target": "frame metadata only", "frames": [{"path": "frame.png"}]}
+
+    class Image:
+        def __init__(self, decode=False):
+            self.decode = decode
+
+    module = types.ModuleType("datasets")
+    module.load_dataset = lambda *args, **kwargs: FakeDataset()
+    module.Image = Image
+    monkeypatch.setitem(sys.modules, "datasets", module)
+
+    rows, status = expansion.rows_from_huggingface(
+        {"hf_id": "unit/nested-media", "splits": ["train"]},
+        limit=1,
+        streaming=True,
+    )
+
+    assert len(rows) == 1
+    assert [name for name, _ in cast_calls] == ["frames"]
+    assert getattr(cast_calls[0][1], "decode") is False
     assert status["status"] == "ok"
 
 
@@ -3000,6 +3260,157 @@ def test_dataset_expansion_honors_explicit_zero_max_records_and_skips_blocked_by
     statuses = {dataset["name"]: dataset for dataset in manifest["datasets"]}
     assert statuses["blocked_should_not_download"]["reason"] == "blocked_until_review_not_materialized"
     assert statuses["explicit_zero_should_not_download"]["reason"] == "explicit_max_records_zero"
+
+
+def test_repo_dataset_registry_covers_thirtieth_wave_multilingual_text_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "thirtieth_wave_multilingual_text_hardening_2026_05_29"
+
+    for name, hf_id, source_year in (
+        ("GPT-NL Public Corpus", "GPT-NL/GPT-NL_Public_Corpus", 2026),
+        ("German Commons", "coral-nlp/german-commons", 2025),
+    ):
+        entry = by_name[name]
+        assert wave in expansion.entry_registry_waves(entry)
+        assert entry["hf_id"] == hf_id
+        assert entry["source_year"] == source_year
+        assert entry["use_policy"] == "train"
+        assert entry["target_modality"] == "text"
+        assert entry["family"] == "text_pretraining"
+        assert entry["contamination_status"] == "clean"
+        assert entry["protected_benchmark_scan"] == "clean"
+        assert entry["license_tier"] == "attribution_per_record"
+        assert entry["quality_score"] >= 0.90
+        assert expansion.source_use_bucket(entry) == "train"
+        assert expansion.training_bucket_for_record(entry, _reviewed_train_record()) == "train"
+
+
+def test_repo_dataset_registry_covers_thirty_first_wave_verified_text_code_agent_eval_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "thirty_first_wave_verified_text_code_agent_eval_2026_05_29"
+
+    expected = {
+        "FineTranslations": ("HuggingFaceFW/finetranslations", "train"),
+        "FineTranslations Edu": ("HuggingFaceFW/finetranslations-edu", "train"),
+        "FineData DCLM 100BT": ("HuggingFaceFW/dclm_100BT", "research_internal"),
+        "OpenCoder FineWeb Math Corpus": ("OpenCoder-LLM/opc-fineweb-math-corpus", "train"),
+        "SWE-bench-Live Official": ("SWE-bench-Live/SWE-bench-Live", "eval_holdout"),
+        "WebArena Verified": ("AmineHA/WebArena-Verified", "eval_holdout"),
+    }
+    for name, (hf_id, bucket) in expected.items():
+        entry = by_name[name]
+        assert wave in expansion.entry_registry_waves(entry)
+        assert entry["hf_id"] == hf_id
+        assert entry["last_verified"] == "2026-05-29"
+        assert expansion.source_use_bucket(entry) == bucket
+        if bucket == "train":
+            assert entry["contamination_status"] == "clean"
+            assert entry["protected_benchmark_scan"] == "clean"
+            assert entry["source_review_status"] == "public_train_reviewed_2026_05_29"
+            assert expansion.training_bucket_for_record(entry, _reviewed_train_record()) == "train"
+
+    assert by_name["FineTranslations"]["license_tier"] == "attribution_per_record"
+    assert by_name["FineTranslations Edu"]["quality_score"] >= by_name["FineTranslations"]["quality_score"]
+    assert by_name["FineData DCLM 100BT"]["use_policy"] == "research_internal"
+    assert "opt-out" in by_name["FineData DCLM 100BT"]["license_tier"]
+    assert by_name["OpenCoder FineWeb Math Corpus"]["family"] == "math_reasoning"
+    assert "Open Cookbook" in by_name["OpenCoder FineWeb Math Corpus"]["materialization_note"]
+    assert by_name["SWE-bench-Live Official"]["splits"] == ["verified", "lite"]
+    assert by_name["SWE-bench-Live Official"]["use_policy"] == "eval_only"
+    assert "official scorer" in by_name["SWE-bench-Live Official"]["materialization_note"]
+    assert by_name["WebArena Verified"]["splits"] == ["full", "hard"]
+    assert by_name["WebArena Verified"]["use_policy"] == "eval_only"
+    assert "official environment" in by_name["WebArena Verified"]["materialization_note"]
+
+
+def test_multimodal_target_modality_resolves_to_real_media_bucket() -> None:
+    plan = {"artifact_token_count": {"image": 8, "video": 8, "audio": 8, "music": 8, "tts": 8, "ocr": 8}}
+    base = {
+        "use_policy": "train",
+        "source_year": 2026,
+        "quality_score": 0.95,
+        "contamination_status": "clean",
+        "protected_benchmark_scan": "clean",
+        "license_tier": "permissive_public_domain",
+        "field_map": {"prompt": ["prompt"], "target": ["caption"]},
+    }
+
+    image_entry = {
+        **base,
+        "name": "Open-MM-RL",
+        "family": "omnimodal_understanding",
+        "target_modality": "multimodal",
+        "curriculum_axes": ["multimodal_reasoning", "image_grounding"],
+    }
+    image_row = expansion.record_to_training_row(
+        image_entry,
+        {"id": "img-1", "prompt": "Describe the image", "caption": "The image contains a terminal window."},
+        plan,
+        0,
+    )
+
+    assert image_row is not None
+    assert image_row["modality"] == "image"
+    assert image_row["declared_target_modality"] == "multimodal"
+
+    video_entry = {
+        **base,
+        "name": "Video multimodal route",
+        "family": "omnimodal_understanding",
+        "target_modality": "multimodal",
+        "curriculum_axes": ["video_understanding"],
+    }
+    video_row = expansion.record_to_training_row(
+        video_entry,
+        {"id": "vid-1", "prompt": "Describe the clip", "caption": "The video shows a robot arm sorting parts."},
+        plan,
+        0,
+    )
+
+    assert video_row is not None
+    assert video_row["modality"] == "video"
+
+
+def test_repo_dataset_registry_covers_thirty_second_wave_high_signal_sources() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads((root / "profiles" / "dataset_curation_2026.json").read_text(encoding="utf-8"))
+    entries = profile["external_dataset_registry_2026"]["datasets"]
+    by_name = {entry["name"]: entry for entry in entries}
+    wave = "thirty_second_wave_high_signal_data_expansion_2026_05_29"
+
+    expected = {
+        "FinePDFs Edu DCLM FineWeb 100BT Mix": ("HuggingFaceFW/finepdfs_edu_50BT-dclm_30BT-fineweb_edu_20BT", "train"),
+        "FinePDFs Edu": ("HuggingFaceFW/finepdfs-edu", "train"),
+        "Open R1 Codeforces CoTs": ("open-r1/codeforces-cots", "train"),
+        "Open R1 Verifiable Coding Problems Python": ("open-r1/verifiable-coding-problems-python", "research_internal"),
+        "Open R1 Codeforces": ("open-r1/codeforces", "research_internal"),
+        "Yana FT LLM 2026 OCR Dataset": ("Yana/ft-llm-2026-ocr-dataset", "train"),
+        "Tarsier2 Recap 585K": ("omni-research/Tarsier2-Recap-585K", "research_internal"),
+        "LAION AI Music Aesthetics Udio Snippets": ("laion/ai-music-aesthetics-annotations-for-udio-snippets", "research_internal"),
+        "Farmerline Twi TTS 2026": ("FarmerlineML/Twi_TTS2026_dataset", "research_internal"),
+    }
+    for name, (hf_id, bucket) in expected.items():
+        entry = by_name[name]
+        assert wave in expansion.entry_registry_waves(entry)
+        assert entry["hf_id"] == hf_id
+        assert entry["last_verified"] == "2026-05-29"
+        assert expansion.source_use_bucket(entry) == bucket
+        assert entry["source_year"] in {2025, 2026}
+        assert entry["quality_score"] >= 0.86
+
+    common_voice = by_name["Mozilla Common Voice 25 Official English"]
+    assert wave in expansion.entry_registry_waves(common_voice)
+    assert common_voice["use_policy"] == "blocked_until_review"
+    assert expansion.source_use_bucket(common_voice) == "blocked_until_review"
+    assert "official Mozilla source" in common_voice["materialization_note"]
+    assert by_name["Yana FT LLM 2026 OCR Dataset"]["target_modality"] == "ocr"
+    assert by_name["Farmerline Twi TTS 2026"]["target_modality"] == "tts"
 
 
 def test_repo_dataset_registry_promotes_reviewed_train_rows_after_clean_scan() -> None:

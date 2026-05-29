@@ -28,7 +28,47 @@ DEFAULT_DECODE_PROMPTS = (
     {"id": "plain_text", "modality": "text", "prompt": "Write one clear sentence about decode diagnostics."},
     {"id": "code", "modality": "code", "prompt": "Write a Python function name and one short comment for adding two numbers."},
     {"id": "math", "modality": "math", "prompt": "Answer in words: what is two plus three?"},
+    {
+        "id": "tool_call",
+        "modality": "tool",
+        "prompt": "Return one compact JSON tool call with a tool name and arguments for checking disk usage.",
+    },
+    {
+        "id": "image_route",
+        "modality": "image",
+        "prompt": "Return a compact image generation route with an artifact token marker and output artifact field.",
+    },
+    {
+        "id": "video_route",
+        "modality": "video",
+        "prompt": "Return a compact video generation route with an artifact token marker and output artifact field.",
+    },
+    {
+        "id": "music_route",
+        "modality": "music",
+        "prompt": "Return a compact music generation route with an audio artifact token marker and output artifact field.",
+    },
+    {
+        "id": "tts_route",
+        "modality": "tts",
+        "prompt": "Return a compact TTS generation route with a speech artifact token marker and output artifact field.",
+    },
+    {
+        "id": "ocr_route",
+        "modality": "ocr",
+        "prompt": "Return a compact OCR route that reads an image artifact and outputs extracted text.",
+    },
 )
+REFUSAL_DECODE_RE = re.compile(
+    r"\b(?:as an ai(?: language)? model|cannot assist|can't assist|unable to assist|violates? (?:the )?policy|must refuse)\b",
+    re.IGNORECASE,
+)
+TOOL_DECODE_RE = re.compile(r"(\{[^{}]{2,}\}|\"(?:tool|name|arguments)\"|\b(?:tool|function|arguments?|parameters?)\b)", re.IGNORECASE)
+MEDIA_ROUTE_RE = re.compile(
+    r"(<(?:image|video|audio|music|tts|speech|media)[^>]{0,80}>|\b(?:artifact|artifact_path|output_path|media_token|route|decoder?|output_route)\b)",
+    re.IGNORECASE,
+)
+OCR_ROUTE_RE = re.compile(r"\b(?:ocr|extracted text|recognized text|read text|transcription|image artifact)\b", re.IGNORECASE)
 
 
 def _json_default(value: Any) -> Any:
@@ -506,6 +546,21 @@ def analyze_decode_text(
     }
 
 
+def modality_decode_reasons(modality: str, text: str) -> list[str]:
+    normalized = str(modality or "text").strip().lower().replace("-", "_")
+    stripped = str(text or "").strip()
+    reasons: list[str] = []
+    if REFUSAL_DECODE_RE.search(stripped):
+        reasons.append("refusal_decode")
+    if normalized in {"tool", "agent", "function_call"} and not TOOL_DECODE_RE.search(stripped):
+        reasons.append("tool_decode_missing_structured_call")
+    if normalized in {"image", "video", "audio", "music", "tts", "speech"} and not MEDIA_ROUTE_RE.search(stripped):
+        reasons.append(f"{normalized}_decode_missing_media_route")
+    if normalized == "ocr" and not (OCR_ROUTE_RE.search(stripped) or MEDIA_ROUTE_RE.search(stripped)):
+        reasons.append("ocr_decode_missing_route_or_text_extraction")
+    return reasons
+
+
 def _decode_tokenizer(tokenizer: Any, ids: torch.Tensor | list[int]) -> str:
     if isinstance(ids, torch.Tensor):
         raw_ids = ids.detach().cpu().tolist()
@@ -607,6 +662,13 @@ def run_decode_sanity(
             temperature=temperature,
         )
         analysis = analyze_decode_text(generated, min_chars=min_chars, min_words=min_words)
+        modality_reasons = modality_decode_reasons(str(item.get("modality") or "text"), generated)
+        if modality_reasons:
+            analysis = {
+                **analysis,
+                "passed": False,
+                "reasons": [*analysis.get("reasons", []), *modality_reasons],
+            }
         rows.append(
             {
                 "id": str(item.get("id") or f"prompt_{index + 1}"),
