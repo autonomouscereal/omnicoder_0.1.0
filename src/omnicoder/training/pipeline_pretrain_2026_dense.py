@@ -1149,6 +1149,31 @@ def _encode_segments_with_mask(tokenizer: Any, segments: list[tuple[str, bool]])
                 hi = min(len(char_mask), int(end))
                 mask.append(1.0 if any(char_mask[lo:hi]) else 0.0)
             return ids, mask
+        if ids:
+            mask = [0.0] * len(ids)
+            cursor = 0
+            while cursor < len(char_mask):
+                if not char_mask[cursor]:
+                    cursor += 1
+                    continue
+                start = cursor
+                while cursor < len(char_mask) and char_mask[cursor]:
+                    cursor += 1
+                end = cursor
+                # Offset-less tokenizers still need full-string tokenization so
+                # merges across prompt/assistant boundaries stay intact. Map
+                # target character spans to token spans by re-encoding bounded
+                # prefixes instead of falling back to per-segment tokenization.
+                try:
+                    token_start = len([int(x) for x in tokenizer.encode(full_text[:start])])
+                    token_end = len([int(x) for x in tokenizer.encode(full_text[:end])])
+                except Exception:
+                    token_start = token_end = 0
+                if token_end <= token_start:
+                    token_end = min(len(ids), token_start + 1)
+                for index in range(max(0, token_start), min(len(ids), token_end)):
+                    mask[index] = 1.0
+            return ids, mask
     ids: list[int] = []
     mask: list[float] = []
     for text, is_target in segments:
