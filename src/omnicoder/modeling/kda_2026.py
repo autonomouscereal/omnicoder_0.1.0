@@ -74,12 +74,23 @@ def _optional_gate(
     return torch.sigmoid(current) if sigmoid else current
 
 
+def _prepare_gate(gate: Optional[torch.Tensor], like: torch.Tensor, *, sigmoid: bool) -> torch.Tensor | float:
+    if gate is None:
+        return 1.0
+    if gate.ndim == 3:
+        gate = gate.unsqueeze(-1)
+    elif gate.ndim != 4:
+        raise ValueError(f"gate must have shape (batch, time, heads) or (batch, time, heads, 1); got {tuple(gate.shape)}")
+    gate = gate.to(device=like.device, dtype=torch.float32)
+    return torch.sigmoid(gate) if sigmoid else gate
+
+
 def _read(q_t: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
-    return torch.einsum("bhd,bhdv->bhv", q_t, state)
+    return torch.matmul(q_t.unsqueeze(-2), state).squeeze(-2)
 
 
 def _outer(k_t: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
-    return torch.einsum("bhd,bhv->bhdv", k_t, residual)
+    return k_t.unsqueeze(-1) * residual.unsqueeze(-2)
 
 
 def kda_pytorch(
@@ -113,19 +124,22 @@ def kda_pytorch(
     k_f = F.normalize(k.float(), dim=-1)
     v_f = v.float()
     state = _initial_state(q, v.shape[-1], initial_state)
-    outputs = []
+    outputs = torch.empty_like(v_f)
+    beta_f = _prepare_gate(beta, v_f, sigmoid=False)
+    forget_f = _prepare_gate(forget, v_f, sigmoid=False)
 
     for step in range(q.shape[1]):
         q_t = q_f[:, step]
         k_t = k_f[:, step]
         v_t = v_f[:, step]
-        write = _optional_gate(beta, step, v_t, sigmoid=False)
-        retain = _optional_gate(forget, step, v_t, sigmoid=False)
+        write = beta_f[:, step] if isinstance(beta_f, torch.Tensor) else beta_f
+        retain = forget_f[:, step] if isinstance(forget_f, torch.Tensor) else forget_f
         prediction = _read(k_t, state)
-        state = retain.unsqueeze(-2) * state + _outer(k_t, write * (v_t - prediction))
-        outputs.append(_read(q_t, state))
+        update = _outer(k_t, write * (v_t - prediction))
+        state = (retain.unsqueeze(-2) * state if isinstance(retain, torch.Tensor) else state * float(retain)) + update
+        outputs[:, step] = _read(q_t, state)
 
-    return torch.stack(outputs, dim=1).to(dtype=v.dtype), state
+    return outputs.to(dtype=v.dtype), state
 
 
 def gated_deltanet2_pytorch(
@@ -149,19 +163,22 @@ def gated_deltanet2_pytorch(
     k_f = F.normalize(k.float(), dim=-1)
     v_f = v.float()
     state = _initial_state(q, v.shape[-1], initial_state)
-    outputs = []
+    outputs = torch.empty_like(v_f)
+    write_f = _prepare_gate(write_gate, v_f, sigmoid=True)
+    forget_f = _prepare_gate(forget_gate, v_f, sigmoid=True)
 
     for step in range(q.shape[1]):
         q_t = q_f[:, step]
         k_t = k_f[:, step]
         v_t = v_f[:, step]
-        write = _optional_gate(write_gate, step, v_t, sigmoid=True)
-        retain = _optional_gate(forget_gate, step, v_t, sigmoid=True)
+        write = write_f[:, step] if isinstance(write_f, torch.Tensor) else write_f
+        retain = forget_f[:, step] if isinstance(forget_f, torch.Tensor) else forget_f
         prediction = _read(k_t, state)
-        state = retain.unsqueeze(-2) * state + _outer(k_t, write * (v_t - prediction))
-        outputs.append(_read(q_t, state))
+        update = _outer(k_t, write * (v_t - prediction))
+        state = (retain.unsqueeze(-2) * state if isinstance(retain, torch.Tensor) else state * float(retain)) + update
+        outputs[:, step] = _read(q_t, state)
 
-    return torch.stack(outputs, dim=1).to(dtype=v.dtype), state
+    return outputs.to(dtype=v.dtype), state
 
 
 def kaczmarz_linear_attention_pytorch(
@@ -187,19 +204,20 @@ def kaczmarz_linear_attention_pytorch(
     k_f = k.float()
     v_f = v.float()
     state = _initial_state(q, v.shape[-1], initial_state)
-    outputs = []
+    outputs = torch.empty_like(v_f)
+    relaxation_f = _prepare_gate(relaxation, v_f, sigmoid=False)
 
     for step in range(q.shape[1]):
         q_t = q_f[:, step]
         k_t = k_f[:, step]
         v_t = v_f[:, step]
-        eta = _optional_gate(relaxation, step, v_t, sigmoid=False)
+        eta = relaxation_f[:, step] if isinstance(relaxation_f, torch.Tensor) else relaxation_f
         denom = k_t.square().sum(dim=-1, keepdim=True).clamp_min(float(eps))
         residual = v_t - _read(k_t, state)
         state = state + _outer(k_t, eta * residual / denom)
-        outputs.append(_read(q_t, state))
+        outputs[:, step] = _read(q_t, state)
 
-    return torch.stack(outputs, dim=1).to(dtype=v.dtype), state
+    return outputs.to(dtype=v.dtype), state
 
 
 @dataclass(frozen=True)

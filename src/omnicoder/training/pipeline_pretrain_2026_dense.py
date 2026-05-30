@@ -218,13 +218,54 @@ class OmniCoder2026PipelineShard(nn.Module):
         self.last_reasoning_diagnostics: dict[str, Any] = {}
         self.profile_block_timing = False
         self.profile_block_cuda_sync = False
+        self.profile_record_functions = False
+        self.sanitize_input_ids = False
+        self.pipeline_reasoning_effort: int | str | None = None
         self.block_timing_records: list[dict[str, Any]] = []
         self._block_timing_call_index = 0
         reset_omnicoder2026_parameters(self, cfg)
 
+    def _configured_reasoning_effort(self) -> int | str | None:
+        effort = getattr(self, "pipeline_reasoning_effort", None)
+        if effort is not None:
+            return effort
+        raw_effort = os.getenv("OMNICODER2026_PIPELINE_REASONING_EFFORT", str(int(self.cfg.reasoning_default_steps)))
+        try:
+            return int(raw_effort or 0)
+        except ValueError:
+            return str(raw_effort or "")
+
+    def _embed_input_ids(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dtype != torch.long:
+            x = x.to(dtype=torch.long)
+        if bool(getattr(self, "sanitize_input_ids", False)):
+            x = x.remainder(int(self.cfg.vocab_size))
+        return self.embed(x)
+
+    def _forward_fast(self, x: torch.Tensor) -> torch.Tensor:
+        if self.spec.has_embed:
+            x = self._embed_input_ids(x)
+        for index in range(self.spec.layer_start, self.spec.layer_end):
+            block = self.blocks[index]
+            if self.checkpoint_blocks and self.training and torch.is_grad_enabled():
+                from torch.utils.checkpoint import checkpoint
+
+                x = checkpoint(block, x, use_reentrant=False)
+            else:
+                x = block(x)
+        if self.spec.has_head:
+            if isinstance(self.latent_reasoner, AdaptiveLatentReasoner):
+                x, _controls = self.latent_reasoner(x, effort=self._configured_reasoning_effort(), return_controls=False)
+                self.last_reasoning_diagnostics = dict(self.latent_reasoner.last_diagnostics)
+            x = self.norm(x)
+        return x
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         profile_blocks = bool(getattr(self, "profile_block_timing", False))
         block_cuda_sync = bool(getattr(self, "profile_block_cuda_sync", False))
+        profile_records = bool(getattr(self, "profile_record_functions", False))
+        if not profile_blocks and not profile_records:
+            return self._forward_fast(x)
         block_spans: list[dict[str, Any]] = []
 
         @contextlib.contextmanager
@@ -232,7 +273,8 @@ class OmniCoder2026PipelineShard(nn.Module):
             rf_name = f"omnicoder.pipeline.{name}"
             if "layer_index" in metadata:
                 rf_name = f"{rf_name}.{int(metadata['layer_index']):03d}"
-            with record_function(rf_name):
+            record_context = record_function(rf_name) if profile_records else contextlib.nullcontext()
+            with record_context:
                 if not profile_blocks:
                     yield
                     return
@@ -254,10 +296,7 @@ class OmniCoder2026PipelineShard(nn.Module):
         call_started = _monotonic()
         if self.spec.has_embed:
             with block_span("embed", layer_start=int(self.spec.layer_start), layer_end=int(self.spec.layer_end)):
-                if x.dtype != torch.long:
-                    x = x.to(dtype=torch.long)
-                x = x.remainder(int(self.cfg.vocab_size))
-                x = self.embed(x)
+                x = self._embed_input_ids(x)
         for index in range(self.spec.layer_start, self.spec.layer_end):
             block = self.blocks[index]
             with block_span("block", layer_index=int(index), checkpointed=bool(self.checkpoint_blocks and self.training and torch.is_grad_enabled())):
@@ -270,13 +309,7 @@ class OmniCoder2026PipelineShard(nn.Module):
         if self.spec.has_head:
             if isinstance(self.latent_reasoner, AdaptiveLatentReasoner):
                 with block_span("latent_reasoner"):
-                    raw_effort = os.getenv("OMNICODER2026_PIPELINE_REASONING_EFFORT", str(int(self.cfg.reasoning_default_steps)))
-                    effort: int | str
-                    try:
-                        effort = int(raw_effort or 0)
-                    except ValueError:
-                        effort = str(raw_effort or "")
-                    x, _controls = self.latent_reasoner(x, effort=effort, return_controls=False)
+                    x, _controls = self.latent_reasoner(x, effort=self._configured_reasoning_effort(), return_controls=False)
                     self.last_reasoning_diagnostics = dict(self.latent_reasoner.last_diagnostics)
             with block_span("norm"):
                 x = self.norm(x)
@@ -309,6 +342,20 @@ class OmniCoder2026PipelineShard(nn.Module):
         target_prefix_tokens: int = 0,
         collect_diagnostics: bool = True,
     ) -> torch.Tensor:
+        if not bool(getattr(self, "profile_record_functions", False)):
+            return self._chunked_lm_loss_impl(
+                hidden,
+                labels,
+                chunk_tokens,
+                sample_weights,
+                loss_token_stride,
+                max_loss_tokens_per_sample,
+                loss_mask,
+                target_boundary_weight,
+                target_prefix_weight,
+                target_prefix_tokens,
+                collect_diagnostics,
+            )
         with record_function("omnicoder.pipeline.chunked_lm_loss"):
             return self._chunked_lm_loss_impl(
                 hidden,
@@ -2983,9 +3030,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--step_timing_file", default=os.getenv("OMNICODER2026_STEP_TIMING_FILE", ""))
     parser.add_argument("--block_timing_file", default=os.getenv("OMNICODER2026_BLOCK_TIMING_FILE", ""))
     parser.add_argument("--step_timing_interval", type=int, default=int(os.getenv("OMNICODER2026_STEP_TIMING_INTERVAL", "1") or 1))
+    parser.add_argument("--detailed_event_log_interval", type=int, default=int(os.getenv("OMNICODER2026_DETAILED_EVENT_LOG_INTERVAL", "0") or 0))
     parser.add_argument("--timing_cuda_sync", action="store_true", default=(os.getenv("OMNICODER2026_TIMING_CUDA_SYNC", "0") == "1"))
     parser.add_argument("--block_timing", action="store_true", default=(os.getenv("OMNICODER2026_BLOCK_TIMING", "0") == "1"))
     parser.add_argument("--block_timing_cuda_sync", action="store_true", default=(os.getenv("OMNICODER2026_BLOCK_TIMING_CUDA_SYNC", "0") == "1"))
+    parser.add_argument("--record_functions", action="store_true", default=(os.getenv("OMNICODER2026_RECORD_FUNCTIONS", "0") == "1"))
     parser.add_argument("--rank_skew_interval", type=int, default=int(os.getenv("OMNICODER2026_RANK_SKEW_INTERVAL", "0") or 0))
     parser.add_argument("--loss_diagnostics_interval", type=int, default=int(os.getenv("OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL", "1") or 1))
     parser.add_argument("--diagnostics_grad_norm", action="store_true", default=(os.getenv("OMNICODER2026_DIAGNOSTICS_GRAD_NORM", "0") == "1"))
@@ -3023,6 +3072,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--optimizer_in_backward_adafactor_decay_rate", type=float, default=-0.8)
     parser.add_argument("--optimizer_in_backward_adafactor_eps1", type=float, default=1.0e-30)
     parser.add_argument("--activation_checkpointing", action="store_true")
+    parser.add_argument("--sanitize_input_ids", action="store_true", default=(os.getenv("OMNICODER2026_SANITIZE_INPUT_IDS", "0") == "1"))
+    parser.add_argument("--pipeline_reasoning_effort", default=os.getenv("OMNICODER2026_PIPELINE_REASONING_EFFORT", ""))
     parser.add_argument("--fake_quant", action="store_true")
     parser.add_argument("--fake_quant_chunk_rows", type=int, default=0)
     parser.add_argument("--fake_quant_max_full_elements", type=int, default=0)
@@ -3107,6 +3158,16 @@ def main(argv: list[str] | None = None) -> int:
             shard = OmniCoder2026PipelineShard(cfg, spec, checkpoint_blocks=bool(args.activation_checkpointing)).to(device)
             shard.profile_block_timing = bool(args.block_timing)
             shard.profile_block_cuda_sync = bool(args.block_timing_cuda_sync)
+            shard.profile_record_functions = bool(args.record_functions)
+            shard.sanitize_input_ids = bool(args.sanitize_input_ids)
+            raw_effort = str(args.pipeline_reasoning_effort or "").strip()
+            if raw_effort:
+                try:
+                    shard.pipeline_reasoning_effort = int(raw_effort)
+                except ValueError:
+                    shard.pipeline_reasoning_effort = raw_effort
+            else:
+                shard.pipeline_reasoning_effort = int(cfg.reasoning_default_steps)
         print(json.dumps({"event": "model_build_done", "rank": int(rank), "layer_start": int(spec.layer_start), "layer_end": int(spec.layer_end)}), flush=True)
     finally:
         torch.set_default_dtype(old_dtype)
@@ -3233,6 +3294,7 @@ def main(argv: list[str] | None = None) -> int:
         log_step_timing = _should_log_interval(int(args.step_timing_interval), global_step)
         collect_loss_diagnostics = _should_log_interval(int(args.loss_diagnostics_interval), global_step)
         collect_rank_skew = _should_log_interval(int(args.rank_skew_interval), global_step)
+        log_detail_events = _should_log_interval(int(args.detailed_event_log_interval), global_step)
         _reset_cuda_peak_memory(device)
         if (local_step % gradient_accumulation_steps) == 0:
             optimizer.zero_grad(set_to_none=True)
@@ -3240,7 +3302,8 @@ def main(argv: list[str] | None = None) -> int:
                 optimizer.reset_step_stats()
         losses: list[torch.Tensor] = []
         if rank == 0:
-            _write_log(args.log_file, {"event": "batch_fetch_start", "local_step": int(local_step + 1), "global_step": int(global_step)})
+            if log_detail_events:
+                _write_log(args.log_file, {"event": "batch_fetch_start", "local_step": int(local_step + 1), "global_step": int(global_step)})
             debug_event("rank0_fetch_batch_start")
             with step_timer.span("batch_fetch_sec"):
                 try:
@@ -3255,7 +3318,8 @@ def main(argv: list[str] | None = None) -> int:
                 batch_weights = batch_weights.to(device, non_blocking=True).float()
             debug_event("rank0_fetch_batch_done")
             sample_weight_mean = float(batch_weights.detach().mean().cpu()) if collect_loss_diagnostics else None
-            _write_log(args.log_file, {"event": "batch_fetch_done", "local_step": int(local_step + 1), "global_step": int(global_step), "sample_weight_mean": sample_weight_mean})
+            if log_detail_events:
+                _write_log(args.log_file, {"event": "batch_fetch_done", "local_step": int(local_step + 1), "global_step": int(global_step), "sample_weight_mean": sample_weight_mean})
         else:
             with step_timer.span("host_to_device_sec"):
                 batch = torch.empty((batch_size, seq_len), dtype=torch.long, device=device)
@@ -3273,7 +3337,8 @@ def main(argv: list[str] | None = None) -> int:
         with step_timer.span("schedule_step_sec"):
             with autocast_context(device, str(args.precision)):
                 if rank == 0:
-                    _write_log(args.log_file, {"event": "schedule_step_start", "local_step": int(local_step + 1), "global_step": int(global_step), "rank": int(rank)})
+                    if log_detail_events:
+                        _write_log(args.log_file, {"event": "schedule_step_start", "local_step": int(local_step + 1), "global_step": int(global_step), "rank": int(rank)})
                     debug_event("schedule_step_rank0_start")
                     schedule.step(batch, target=batch_labels, losses=losses)
                     debug_event("schedule_step_rank0_done")
@@ -3281,15 +3346,17 @@ def main(argv: list[str] | None = None) -> int:
                     debug_event("schedule_step_nonzero_start")
                     schedule.step(target=batch_labels, losses=losses)
                     debug_event("schedule_step_nonzero_done")
-        if rank == 0:
+        if rank == 0 and log_detail_events:
             _write_log(args.log_file, {"event": "schedule_step_done", "local_step": int(local_step + 1), "global_step": int(global_step), "rank": int(rank)})
         if spec.has_head and losses:
-            loss_value = float(torch.stack([loss.detach().float() for loss in losses]).mean().cpu())
-            last_loss = loss_value
-        loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
+            loss_tensor = torch.stack([loss.detach().float() for loss in losses]).mean().to(device=device)
+        else:
+            loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
         with step_timer.span("loss_broadcast_sec"):
             dist.broadcast(loss_tensor, src=world_size - 1)
-        if bool(args.require_target_contract) and float(loss_tensor.detach().cpu()) <= 0.0:
+        loss_value_for_log = float(loss_tensor.detach().cpu())
+        last_loss = loss_value_for_log
+        if bool(args.require_target_contract) and loss_value_for_log <= 0.0:
             raise RuntimeError(
                 "target contract produced a non-positive training loss; "
                 "check assistant/media target coverage before continuing"
@@ -3305,7 +3372,7 @@ def main(argv: list[str] | None = None) -> int:
                 optimizer.step()
         with step_timer.span("grad_norm_post_sec"):
             grad_norm_post_clip = _module_grad_norm(shard, enabled=bool(args.diagnostics_grad_norm) and should_update and collect_loss_diagnostics)
-        if rank == 0:
+        if rank == 0 and log_detail_events:
             _write_log(
                 args.log_file,
                 {
@@ -3331,11 +3398,27 @@ def main(argv: list[str] | None = None) -> int:
             )
             _append_pipeline_telemetry(telemetry_path, memory_record)
         with step_timer.span("diagnostics_broadcast_sec"):
-            loss_diagnostics_box: list[Any] = [getattr(shard, "last_lm_loss_diagnostics", {}) if spec.has_head else None]
-            dist.broadcast_object_list(loss_diagnostics_box, src=world_size - 1)
-        loss_diagnostics = loss_diagnostics_box[0] if isinstance(loss_diagnostics_box[0], dict) else {}
+            if collect_loss_diagnostics:
+                loss_diagnostics_box: list[Any] = [getattr(shard, "last_lm_loss_diagnostics", {}) if spec.has_head else None]
+                dist.broadcast_object_list(loss_diagnostics_box, src=world_size - 1)
+                loss_diagnostics = loss_diagnostics_box[0] if isinstance(loss_diagnostics_box[0], dict) else {}
+            else:
+                raw_diag = getattr(shard, "last_lm_loss_diagnostics", {}) if spec.has_head else {}
+                diag_counts = torch.tensor(
+                    [
+                        int(raw_diag.get("valid_target_tokens", 0) or 0) if isinstance(raw_diag, dict) else 0,
+                        int(raw_diag.get("optimized_target_tokens", 0) or 0) if isinstance(raw_diag, dict) else 0,
+                    ],
+                    dtype=torch.long,
+                    device=device,
+                )
+                dist.broadcast(diag_counts, src=world_size - 1)
+                loss_diagnostics = {
+                    "valid_target_tokens": int(diag_counts[0].detach().cpu().item()),
+                    "optimized_target_tokens": int(diag_counts[1].detach().cpu().item()),
+                    "diagnostics_skipped": True,
+                }
         step_elapsed_sec = step_timer.elapsed()
-        loss_value_for_log = float(loss_tensor.detach().cpu())
         with step_timer.span("diagnostics_write_sec"):
             _append_pipeline_telemetry(
                 train_diagnostics_path,

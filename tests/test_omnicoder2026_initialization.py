@@ -202,3 +202,25 @@ def test_pipeline_reasoner_accepts_named_effort(monkeypatch) -> None:
 
     assert out.shape == x.shape
     assert shard.last_reasoning_diagnostics["steps"] == cfg.reasoning_max_steps
+
+
+def test_pipeline_fast_forward_matches_record_function_path() -> None:
+    torch.manual_seed(123)
+    cfg = _tiny_native_cfg()
+    cfg.n_layers = 2
+    cfg.reasoning_max_steps = 2
+    cfg.reasoning_default_steps = 1
+    ranges = stage_ranges(cfg.n_layers, "1,1")
+    fast = OmniCoder2026PipelineShard(cfg, shard_spec(1, ranges))
+    profiled = OmniCoder2026PipelineShard(cfg, shard_spec(1, ranges))
+    profiled.load_state_dict(fast.state_dict())
+    profiled.profile_record_functions = True
+    fast.pipeline_reasoning_effort = 1
+    profiled.pipeline_reasoning_effort = 1
+    x = torch.randn(1, 6, cfg.d_model)
+
+    fast_out = fast(x)
+    profiled_out = profiled(x)
+
+    torch.testing.assert_close(fast_out, profiled_out, atol=0.0, rtol=0.0)
+    assert fast.last_reasoning_diagnostics["steps"] == 1

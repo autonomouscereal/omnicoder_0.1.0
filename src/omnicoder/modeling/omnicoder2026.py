@@ -388,14 +388,46 @@ class RotaryEmbedding(nn.Module):
         self.base = float(base)
         inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2, dtype=torch.float32) / max(1, self.dim)))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
+        self._cache_key: tuple[str, int | None, torch.dtype, int] | None = None
+        self._cache_value: tuple[torch.Tensor, torch.Tensor] | None = None
+        self._cache_max_tokens = max(0, _env_int("OMNICODER2026_ROPE_CACHE_MAX_TOKENS", 8192))
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
         t = x.shape[-2]
+        if positions is None and self._cache_max_tokens > 0 and int(t) <= self._cache_max_tokens:
+            key = (x.device.type, x.device.index, x.dtype, int(t))
+            if self._cache_key == key and self._cache_value is not None:
+                return self._cache_value
+        else:
+            key = None
         if positions is None:
             positions = torch.arange(t, device=x.device, dtype=self.inv_freq.dtype)
-        freqs = torch.einsum("i,j->ij", positions.to(self.inv_freq.dtype), self.inv_freq.to(x.device))
+        freqs = torch.outer(positions.to(self.inv_freq.dtype), self.inv_freq.to(x.device))
         emb = torch.cat((freqs, freqs), dim=-1).to(dtype=x.dtype)
-        return emb.cos(), emb.sin()
+        value = (emb.cos(), emb.sin())
+        if positions is not None and key is not None:
+            self._cache_key = key
+            self._cache_value = value
+        return value
+
+
+def _cached_tril_mask(owner: nn.Module, ref: torch.Tensor, rows: int, cols: int, diagonal: int) -> torch.Tensor:
+    rows = int(rows)
+    cols = int(cols)
+    diagonal = int(diagonal)
+    key = (ref.device.type, ref.device.index, rows, cols, diagonal)
+    cache = getattr(owner, "_tril_mask_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        setattr(owner, "_tril_mask_cache", cache)
+    cached = cache.get(key)
+    if isinstance(cached, torch.Tensor) and cached.device == ref.device:
+        return cached
+    mask = torch.ones((rows, cols), dtype=torch.bool, device=ref.device).tril(diagonal=diagonal)
+    if len(cache) >= 16:
+        cache.clear()
+    cache[key] = mask
+    return mask
 
 
 def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
@@ -497,7 +529,7 @@ class LocalCausalAttention(nn.Module):
             qi = q[:, :, start:end, :]
             ki = k[:, :, left:end, :]
             vi = v[:, :, left:end, :]
-            mask = torch.ones((end - start, end - left), dtype=torch.bool, device=q.device).tril(diagonal=start - left)
+            mask = _cached_tril_mask(self, q, end - start, end - left, start - left)
             parts.append(F.scaled_dot_product_attention(qi, ki, vi, attn_mask=mask, dropout_p=0.0))
         return torch.cat(parts, dim=2)
 
@@ -595,7 +627,7 @@ class SparseLatentAttention(nn.Module):
             qi = q[:, :, start:end, :]
             ki = k[:, :, left:end, :]
             vi = v[:, :, left:end, :]
-            mask = torch.ones((end - start, end - left), dtype=torch.bool, device=q.device).tril(diagonal=start - left)
+            mask = _cached_tril_mask(self, q, end - start, end - left, start - left)
             parts.append(F.scaled_dot_product_attention(qi, ki, vi, attn_mask=mask, dropout_p=0.0))
         return torch.cat(parts, dim=2)
 
@@ -624,11 +656,15 @@ class SparseLatentAttention(nn.Module):
         if self.mode == "csa":
             top_k = min(max(1, int(self.cfg.csa_top_k_blocks)), n_blocks)
             left = max(0, first_block - top_k + 1)
-            recent = torch.arange(left, min(n_blocks, last_block + 1), device=device)
-            prefix = torch.arange(0, min(4, n_blocks), device=device)
-            if recent.numel() == 0:
-                return prefix
-            return torch.unique(torch.cat((prefix, recent)), sorted=True)
+            prefix_end = min(4, n_blocks)
+            recent_end = min(n_blocks, last_block + 1)
+            if recent_end <= prefix_end:
+                return torch.arange(0, max(prefix_end, recent_end), device=device)
+            if left <= prefix_end:
+                return torch.arange(0, recent_end, device=device)
+            prefix = torch.arange(0, prefix_end, device=device)
+            recent = torch.arange(left, recent_end, device=device)
+            return torch.cat((prefix, recent), dim=0)
         return torch.arange(0, min(n_blocks, last_block + 1), device=device)
 
     def _global_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, block_size: int) -> torch.Tensor:
@@ -665,7 +701,7 @@ class SparseLatentAttention(nn.Module):
         mask: torch.Tensor,
     ) -> torch.Tensor:
         scale = 1.0 / math.sqrt(float(self.cfg.head_dim))
-        scores = torch.einsum("bhtd,bksd->bhts", q, k) * scale
+        scores = torch.matmul(q, k.transpose(-1, -2)) * scale
         scores = scores.masked_fill(~mask.view(1, 1, mask.shape[0], mask.shape[1]), torch.finfo(scores.dtype).min)
         max_scores = scores.amax(dim=-1, keepdim=True)
         sink = self.sink_logits.to(dtype=scores.dtype, device=scores.device).view(1, self.cfg.n_heads, 1, -1)
@@ -674,7 +710,7 @@ class SparseLatentAttention(nn.Module):
         exp_scores = torch.exp(scores - denom_max)
         exp_sinks = torch.exp(sink - denom_max).sum(dim=-1, keepdim=True)
         probs = exp_scores / (exp_scores.sum(dim=-1, keepdim=True) + exp_sinks).clamp_min(1e-9)
-        return torch.einsum("bhts,bksd->bhtd", probs, v)
+        return torch.matmul(probs, v)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, t, _ = x.shape
@@ -772,12 +808,14 @@ class BlockAttentionResidual(nn.Module):
         q = self.q(update)
         k = self.k(summaries)
         block_positions = summary_positions.view(1, 1, -1)
-        residual_chunks: list[torch.Tensor] = []
+        residual_context = update.new_empty(update.shape)
         chunk_tokens = max(1, _env_int("OMNICODER2026_BLOCK_ATTNRES_CHUNK_TOKENS", self.chunk_tokens))
+        k_t = k.transpose(-1, -2)
+        inv_scale = 1.0 / math.sqrt(max(1, q.shape[-1]))
         for start in range(0, x.shape[1], chunk_tokens):
             end = min(x.shape[1], start + chunk_tokens)
             q_chunk = q[:, start:end, :]
-            scores = torch.einsum("btd,bsd->bts", q_chunk, k) / math.sqrt(max(1, q.shape[-1]))
+            scores = torch.matmul(q_chunk, k_t) * inv_scale
             token_blocks = torch.div(
                 torch.arange(start, end, device=x.device),
                 self.block_size,
@@ -785,8 +823,7 @@ class BlockAttentionResidual(nn.Module):
             ).view(1, -1, 1)
             scores = scores.masked_fill(block_positions > token_blocks, torch.finfo(scores.dtype).min)
             weights = torch.softmax(scores.float(), dim=-1).to(dtype=x.dtype)
-            residual_chunks.append(torch.einsum("bts,bsd->btd", weights, summaries))
-        residual_context = torch.cat(residual_chunks, dim=1) if residual_chunks else update.new_zeros(update.shape)
+            residual_context[:, start:end, :] = torch.matmul(weights, summaries)
         gate = torch.sigmoid(self.update_gate(x)).to(dtype=x.dtype)
         scale = self.scale.to(device=x.device, dtype=x.dtype)
         return x + update + torch.tanh(scale) * gate * residual_context

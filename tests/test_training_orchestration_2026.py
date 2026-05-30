@@ -2122,6 +2122,9 @@ def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args
     assert 'LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"' in script
     assert 'FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-256}"' in script
     assert 'MAX_LOSS_TOKENS_PER_SAMPLE="${OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE:-64}"' in script
+    assert 'STEP_TIMING_INTERVAL="${OMNICODER2026_STEP_TIMING_INTERVAL:-8}"' in script
+    assert 'RANK_SKEW_INTERVAL="${OMNICODER2026_RANK_SKEW_INTERVAL:-32}"' in script
+    assert 'DETAILED_EVENT_LOG_INTERVAL="${OMNICODER2026_DETAILED_EVENT_LOG_INTERVAL:-0}"' in script
     assert '-e PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"' in script
     assert '-e OMNICODER2026_LM_LOSS_CHUNK_TOKENS="$LM_LOSS_CHUNK_TOKENS"' in script
     assert '-e OMNICODER2026_FFN_CHUNK_TOKENS="$FFN_CHUNK_TOKENS"' in script
