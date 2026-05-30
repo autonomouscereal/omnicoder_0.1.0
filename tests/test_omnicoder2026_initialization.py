@@ -5,7 +5,14 @@ import pytest
 pytest.importorskip("torch")
 import torch
 
-from omnicoder.modeling.omnicoder2026 import AdaptiveLatentReasoner, BlockAttentionResidual, OmniCoder2026, OmniCoder2026Config
+from omnicoder.modeling.omnicoder2026 import (
+    AdaptiveLatentReasoner,
+    BlockAttentionResidual,
+    LocalCausalAttention,
+    OmniCoder2026,
+    OmniCoder2026Config,
+    SwiGLU,
+)
 from omnicoder.tokenization.native_segments_2026 import build_native_segment_packet
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 from omnicoder.training.pipeline_pretrain_2026_dense import OmniCoder2026PipelineShard, shard_spec, stage_ranges
@@ -224,3 +231,37 @@ def test_pipeline_fast_forward_matches_record_function_path() -> None:
 
     torch.testing.assert_close(fast_out, profiled_out, atol=0.0, rtol=0.0)
     assert fast.last_reasoning_diagnostics["steps"] == 1
+
+
+def test_fused_local_attention_loads_legacy_qkv_projection_state() -> None:
+    torch.manual_seed(321)
+    cfg = _tiny_native_cfg()
+    layer = LocalCausalAttention(cfg)
+    reference = LocalCausalAttention(cfg)
+    legacy = layer.state_dict()
+    inner = cfg.n_heads * cfg.head_dim
+    qkv = legacy.pop("qkv_proj.weight")
+    q_w, k_w, v_w = qkv.split(inner, dim=0)
+    legacy["q_proj.weight"] = q_w
+    legacy["k_proj.weight"] = k_w
+    legacy["v_proj.weight"] = v_w
+    reference.load_state_dict(legacy, strict=True)
+    x = torch.randn(2, 11, cfg.d_model)
+
+    torch.testing.assert_close(reference(x), layer(x), atol=0.0, rtol=0.0)
+
+
+def test_fused_swiglu_loads_legacy_gate_up_projection_state() -> None:
+    torch.manual_seed(654)
+    cfg = _tiny_native_cfg()
+    layer = SwiGLU(cfg)
+    reference = SwiGLU(cfg)
+    legacy = layer.state_dict()
+    gate_up = legacy.pop("gate_up.weight")
+    gate_w, up_w = gate_up.split(cfg.mlp_dim, dim=0)
+    legacy["gate.weight"] = gate_w
+    legacy["up.weight"] = up_w
+    reference.load_state_dict(legacy, strict=True)
+    x = torch.randn(2, 7, cfg.d_model)
+
+    torch.testing.assert_close(reference(x), layer(x), atol=0.0, rtol=0.0)

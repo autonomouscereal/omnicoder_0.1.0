@@ -236,16 +236,17 @@ class RecurrentLinearAttentionConfig:
 
 
 class _BaseRecurrentLinearAttention(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, head_dim: Optional[int] = None) -> None:
+    def __init__(self, d_model: int, n_heads: int, head_dim: Optional[int] = None, *, create_qkv: bool = True) -> None:
         super().__init__()
         self.cfg = RecurrentLinearAttentionConfig(d_model=d_model, n_heads=n_heads, head_dim=head_dim)
         self.d_model = int(d_model)
         self.n_heads = int(n_heads)
         self.head_dim = self.cfg.key_dim
         inner = self.n_heads * self.head_dim
-        self.q_proj = nn.Linear(self.d_model, inner, bias=False)
-        self.k_proj = nn.Linear(self.d_model, inner, bias=False)
-        self.v_proj = nn.Linear(self.d_model, inner, bias=False)
+        if create_qkv:
+            self.q_proj = nn.Linear(self.d_model, inner, bias=False)
+            self.k_proj = nn.Linear(self.d_model, inner, bias=False)
+            self.v_proj = nn.Linear(self.d_model, inner, bias=False)
         self.o_proj = nn.Linear(inner, self.d_model, bias=False)
 
     def _shape(self, x: torch.Tensor) -> torch.Tensor:
@@ -290,9 +291,90 @@ class GatedDeltaNet2(_BaseRecurrentLinearAttention):
     """Module wrapper for :func:`gated_deltanet2_pytorch` over (batch, time, d_model)."""
 
     def __init__(self, d_model: int, n_heads: int, head_dim: Optional[int] = None) -> None:
-        super().__init__(d_model, n_heads, head_dim)
-        self.write_gate_proj = nn.Linear(self.d_model, self.n_heads, bias=True)
-        self.forget_gate_proj = nn.Linear(self.d_model, self.n_heads, bias=True)
+        super().__init__(d_model, n_heads, head_dim, create_qkv=False)
+        inner = self.n_heads * self.head_dim
+        self.in_proj = nn.Linear(self.d_model, 3 * inner + 2 * self.n_heads, bias=True)
+        with torch.no_grad():
+            self.in_proj.bias[: 3 * inner].zero_()
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        local_metadata: dict,
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        q_key = prefix + "q_proj.weight"
+        k_key = prefix + "k_proj.weight"
+        v_key = prefix + "v_proj.weight"
+        write_key = prefix + "write_gate_proj.weight"
+        write_bias_key = prefix + "write_gate_proj.bias"
+        forget_key = prefix + "forget_gate_proj.weight"
+        forget_bias_key = prefix + "forget_gate_proj.bias"
+        in_weight_key = prefix + "in_proj.weight"
+        in_bias_key = prefix + "in_proj.bias"
+        qkv_weight_key = prefix + "qkv_proj.weight"
+        gate_weight_key = prefix + "gate_proj.weight"
+        gate_bias_key = prefix + "gate_proj.bias"
+        inner = self.n_heads * self.head_dim
+        if in_weight_key not in state_dict:
+            if all(key in state_dict for key in (q_key, k_key, v_key, write_key, forget_key)):
+                state_dict[in_weight_key] = torch.cat(
+                    (
+                        state_dict[q_key],
+                        state_dict[k_key],
+                        state_dict[v_key],
+                        state_dict[write_key],
+                        state_dict[forget_key],
+                    ),
+                    dim=0,
+                )
+            elif qkv_weight_key in state_dict and gate_weight_key in state_dict:
+                state_dict[in_weight_key] = torch.cat((state_dict[qkv_weight_key], state_dict[gate_weight_key]), dim=0)
+        if in_bias_key not in state_dict:
+            if all(key in state_dict for key in (write_bias_key, forget_bias_key)):
+                state_dict[in_bias_key] = torch.cat(
+                    (
+                        torch.zeros(3 * inner, dtype=state_dict[write_bias_key].dtype, device=state_dict[write_bias_key].device),
+                        state_dict[write_bias_key],
+                        state_dict[forget_bias_key],
+                    ),
+                    dim=0,
+                )
+            elif gate_bias_key in state_dict:
+                state_dict[in_bias_key] = torch.cat(
+                    (
+                        torch.zeros(3 * inner, dtype=state_dict[gate_bias_key].dtype, device=state_dict[gate_bias_key].device),
+                        state_dict[gate_bias_key],
+                    ),
+                    dim=0,
+                )
+        for legacy_key in (
+            q_key,
+            k_key,
+            v_key,
+            write_key,
+            write_bias_key,
+            forget_key,
+            forget_bias_key,
+            qkv_weight_key,
+            gate_weight_key,
+            gate_bias_key,
+        ):
+            if legacy_key in state_dict:
+                state_dict.pop(legacy_key)
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def forward(
         self,
@@ -301,12 +383,17 @@ class GatedDeltaNet2(_BaseRecurrentLinearAttention):
         initial_state: Optional[torch.Tensor] = None,
         return_state: bool = False,
     ) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
+        inner = self.n_heads * self.head_dim
+        q_raw, k_raw, v_raw, write_gate, forget_gate = self.in_proj(x).split(
+            (inner, inner, inner, self.n_heads, self.n_heads),
+            dim=-1,
+        )
         y, state = gated_deltanet2_pytorch(
-            self._shape(self.q_proj(x)),
-            self._shape(self.k_proj(x)),
-            self._shape(self.v_proj(x)),
-            write_gate=self.write_gate_proj(x),
-            forget_gate=self.forget_gate_proj(x),
+            self._shape(q_raw),
+            self._shape(k_raw),
+            self._shape(v_raw),
+            write_gate=write_gate,
+            forget_gate=forget_gate,
             initial_state=initial_state,
         )
         out = self.o_proj(self._merge(y))

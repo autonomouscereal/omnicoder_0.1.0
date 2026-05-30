@@ -341,6 +341,7 @@ class OmniCoder2026PipelineShard(nn.Module):
         target_prefix_weight: float = 1.0,
         target_prefix_tokens: int = 0,
         collect_diagnostics: bool = True,
+        labels_are_sparse: bool | None = None,
     ) -> torch.Tensor:
         if not bool(getattr(self, "profile_record_functions", False)):
             return self._chunked_lm_loss_impl(
@@ -355,6 +356,7 @@ class OmniCoder2026PipelineShard(nn.Module):
                 target_prefix_weight,
                 target_prefix_tokens,
                 collect_diagnostics,
+                labels_are_sparse,
             )
         with record_function("omnicoder.pipeline.chunked_lm_loss"):
             return self._chunked_lm_loss_impl(
@@ -369,6 +371,7 @@ class OmniCoder2026PipelineShard(nn.Module):
                 target_prefix_weight,
                 target_prefix_tokens,
                 collect_diagnostics,
+                labels_are_sparse,
             )
 
     def _chunked_lm_loss_impl(
@@ -384,6 +387,7 @@ class OmniCoder2026PipelineShard(nn.Module):
         target_prefix_weight: float = 1.0,
         target_prefix_tokens: int = 0,
         collect_diagnostics: bool = True,
+        labels_are_sparse: bool | None = None,
     ) -> torch.Tensor:
         if not self.spec.has_head:
             raise RuntimeError("LM loss can only be computed on the final pipeline stage")
@@ -391,7 +395,7 @@ class OmniCoder2026PipelineShard(nn.Module):
             labels = labels.to(hidden.device, non_blocking=True)
         shifted_hidden = hidden[:, :-1, :]
         shifted_labels = labels[:, 1:]
-        sparse_target_labels = bool(labels.eq(-100).any())
+        sparse_target_labels = bool(labels_are_sparse) if labels_are_sparse is not None else bool(labels.eq(-100).any())
         target_mask = shifted_labels.ge(0)
         if loss_mask is not None:
             if loss_mask.device != hidden.device:
@@ -409,20 +413,11 @@ class OmniCoder2026PipelineShard(nn.Module):
         prefix_tokens = max(0, int(target_prefix_tokens or 0))
         prefix_mask = torch.zeros_like(target_mask, dtype=torch.bool)
         if prefix_tokens > 0:
-            for batch_index in range(int(target_mask.shape[0])):
-                positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()
-                if positions.numel() == 0:
-                    continue
-                starts = torch.nonzero(boundary_mask[batch_index], as_tuple=False).flatten()
-                for start in starts.detach().cpu().tolist():
-                    start_pos = int(start)
-                    start_matches = torch.nonzero(positions == start_pos, as_tuple=False).flatten()
-                    if start_matches.numel() == 0:
-                        continue
-                    begin = int(start_matches[0].item())
-                    prefix_positions = positions[begin: begin + prefix_tokens]
-                    if prefix_positions.numel() > 0:
-                        prefix_mask[batch_index, prefix_positions] = True
+            target_rank = target_mask.long().cumsum(dim=1)
+            boundary_rank = target_rank * boundary_mask.long()
+            last_boundary_rank = torch.cummax(boundary_rank, dim=1).values
+            prefix_index = target_rank - last_boundary_rank
+            prefix_mask = target_mask & last_boundary_rank.gt(0) & prefix_index.lt(prefix_tokens)
 
         def _token_weight(mask: torch.Tensor, boundary: torch.Tensor, prefix: torch.Tensor) -> torch.Tensor:
             weights = torch.ones_like(mask, dtype=torch.float32)
@@ -3059,6 +3054,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max_records", type=int, default=0)
     parser.add_argument("--max_source_rows", type=int, default=0)
     parser.add_argument("--max_indexed_windows", type=int, default=0)
+    parser.add_argument("--dataloader_num_workers", type=int, default=int(os.getenv("OMNICODER2026_DATALOADER_NUM_WORKERS", "0") or 0))
+    parser.add_argument("--dataloader_prefetch_factor", type=int, default=int(os.getenv("OMNICODER2026_DATALOADER_PREFETCH_FACTOR", "2") or 2))
+    parser.add_argument("--dataloader_pin_memory", action="store_true", default=(os.getenv("OMNICODER2026_DATALOADER_PIN_MEMORY", "auto").lower() in {"1", "true", "yes", "auto"}))
+    parser.add_argument("--no_dataloader_pin_memory", dest="dataloader_pin_memory", action="store_false")
+    parser.add_argument("--dataloader_persistent_workers", action="store_true", default=(os.getenv("OMNICODER2026_DATALOADER_PERSISTENT_WORKERS", "0") == "1"))
     parser.add_argument("--skip_final_optimizer_update", action="store_true")
     parser.add_argument("--precision", default="fp32")
     parser.add_argument("--init_dtype", default="auto")
@@ -3224,6 +3224,7 @@ def main(argv: list[str] | None = None) -> int:
             target_prefix_weight=float(args.target_prefix_weight),
             target_prefix_tokens=int(args.target_prefix_tokens),
             collect_diagnostics=bool(current_sample_weights.get("collect_loss_diagnostics", True)),
+            labels_are_sparse=bool(current_sample_weights.get("labels_are_sparse", True)),
         )
         * float(current_sample_weights.get("loss_scale") or 1.0)
     ) if spec.has_head else _unused_nonfinal_loss
@@ -3274,7 +3275,20 @@ def main(argv: list[str] | None = None) -> int:
                 "source_summary": _dataset_source_summary(data),
             },
         )
-    loader = DataLoader(data, batch_size=batch_size, shuffle=bool(args.shuffle), drop_last=True) if rank == 0 else None
+    loader_kwargs: dict[str, Any] = {
+        "batch_size": batch_size,
+        "shuffle": bool(args.shuffle),
+        "drop_last": True,
+    }
+    if rank == 0:
+        num_workers = max(0, int(args.dataloader_num_workers or 0))
+        pin_memory = bool(args.dataloader_pin_memory) and device.type == "cuda"
+        loader_kwargs["num_workers"] = num_workers
+        loader_kwargs["pin_memory"] = pin_memory
+        if num_workers > 0:
+            loader_kwargs["persistent_workers"] = bool(args.dataloader_persistent_workers)
+            loader_kwargs["prefetch_factor"] = max(1, int(args.dataloader_prefetch_factor or 1))
+    loader = DataLoader(data, **loader_kwargs) if rank == 0 else None
     it = iter(loader) if loader is not None else None
     source_summary_box: list[Any] = [_dataset_source_summary(data) if rank == 0 else None]
     dist.broadcast_object_list(source_summary_box, src=0)
@@ -3333,6 +3347,7 @@ def main(argv: list[str] | None = None) -> int:
         current_sample_weights["weights"] = batch_weights
         current_sample_weights["loss_scale"] = 1.0 / float(gradient_accumulation_steps)
         current_sample_weights["collect_loss_diagnostics"] = collect_loss_diagnostics
+        current_sample_weights["labels_are_sparse"] = True
         debug_event("broadcast_done")
         with step_timer.span("schedule_step_sec"):
             with autocast_context(device, str(args.precision)):
@@ -3403,19 +3418,9 @@ def main(argv: list[str] | None = None) -> int:
                 dist.broadcast_object_list(loss_diagnostics_box, src=world_size - 1)
                 loss_diagnostics = loss_diagnostics_box[0] if isinstance(loss_diagnostics_box[0], dict) else {}
             else:
-                raw_diag = getattr(shard, "last_lm_loss_diagnostics", {}) if spec.has_head else {}
-                diag_counts = torch.tensor(
-                    [
-                        int(raw_diag.get("valid_target_tokens", 0) or 0) if isinstance(raw_diag, dict) else 0,
-                        int(raw_diag.get("optimized_target_tokens", 0) or 0) if isinstance(raw_diag, dict) else 0,
-                    ],
-                    dtype=torch.long,
-                    device=device,
-                )
-                dist.broadcast(diag_counts, src=world_size - 1)
                 loss_diagnostics = {
-                    "valid_target_tokens": int(diag_counts[0].detach().cpu().item()),
-                    "optimized_target_tokens": int(diag_counts[1].detach().cpu().item()),
+                    "valid_target_tokens": 0,
+                    "optimized_target_tokens": 0,
                     "diagnostics_skipped": True,
                 }
         step_elapsed_sec = step_timer.elapsed()

@@ -367,6 +367,10 @@ def reset_omnicoder2026_parameters(module: nn.Module, cfg: OmniCoder2026Config) 
             nn.init.normal_(child.weight, mean=0.0, std=std)
             if child.bias is not None:
                 nn.init.zeros_(child.bias)
+        elif isinstance(child, nn.Linear):
+            nn.init.normal_(child.weight, mean=0.0, std=std)
+            if child.bias is not None:
+                nn.init.zeros_(child.bias)
         elif isinstance(child, AdaptiveLatentReasoner):
             nn.init.normal_(child.slot_embeddings, mean=0.0, std=std)
 
@@ -430,14 +434,36 @@ def _cached_tril_mask(owner: nn.Module, ref: torch.Tensor, rows: int, cols: int,
     return mask
 
 
+def _cached_arange(owner: nn.Module, ref: torch.Tensor, length: int, *, name: str = "_arange_cache") -> torch.Tensor:
+    length = max(0, int(length))
+    key = (ref.device.type, ref.device.index, length)
+    cache = getattr(owner, name, None)
+    if not isinstance(cache, dict):
+        cache = {}
+        setattr(owner, name, cache)
+    cached = cache.get(key)
+    if isinstance(cached, torch.Tensor) and cached.device == ref.device:
+        return cached
+    values = torch.arange(length, device=ref.device)
+    if len(cache) >= 16:
+        cache.clear()
+    cache[key] = values
+    return values
+
+
 def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
     d = cos.shape[-1]
     x_rot, x_pass = x[..., :d], x[..., d:]
-    x1 = x_rot[..., ::2]
-    x2 = x_rot[..., 1::2]
-    rot = torch.stack((-x2, x1), dim=-1).flatten(-2)
+    rot = torch.empty_like(x_rot)
+    rot[..., ::2] = -x_rot[..., 1::2]
+    rot[..., 1::2] = x_rot[..., ::2]
     out = (x_rot * cos) + (rot * sin)
-    return torch.cat((out, x_pass), dim=-1) if x_pass.numel() else out
+    if not x_pass.numel():
+        return out
+    result = torch.empty_like(x)
+    result[..., :d] = out
+    result[..., d:] = x_pass
+    return result
 
 
 def apply_rope_tail(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
@@ -445,21 +471,56 @@ def apply_rope_tail(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> to
     if d <= 0:
         return x
     x_pass, x_rot = x[..., :-d], x[..., -d:]
-    x1 = x_rot[..., ::2]
-    x2 = x_rot[..., 1::2]
-    rot = torch.stack((-x2, x1), dim=-1).flatten(-2)
+    rot = torch.empty_like(x_rot)
+    rot[..., ::2] = -x_rot[..., 1::2]
+    rot[..., 1::2] = x_rot[..., ::2]
     out = (x_rot * cos) + (rot * sin)
-    return torch.cat((x_pass, out), dim=-1) if x_pass.numel() else out
+    if not x_pass.numel():
+        return out
+    result = torch.empty_like(x)
+    result[..., :-d] = x_pass
+    result[..., -d:] = out
+    return result
 
 
 class SwiGLU(nn.Module):
     def __init__(self, cfg: OmniCoder2026Config):
         super().__init__()
         lin = lambda i, o: QuantAwareLinear(i, o, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
-        self.gate = lin(cfg.d_model, cfg.mlp_dim)
-        self.up = lin(cfg.d_model, cfg.mlp_dim)
+        self.gate_up = lin(cfg.d_model, 2 * cfg.mlp_dim)
         self.down = lin(cfg.mlp_dim, cfg.d_model)
         self.chunk_tokens = max(0, _env_int("OMNICODER2026_FFN_CHUNK_TOKENS", 0))
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        local_metadata: dict,
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        gate_key = prefix + "gate.weight"
+        up_key = prefix + "up.weight"
+        gate_up_key = prefix + "gate_up.weight"
+        if gate_up_key not in state_dict and gate_key in state_dict and up_key in state_dict:
+            state_dict[gate_up_key] = torch.cat((state_dict[gate_key], state_dict[up_key]), dim=0)
+        state_dict.pop(gate_key, None)
+        state_dict.pop(up_key, None)
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
+    def _project(self, x: torch.Tensor) -> torch.Tensor:
+        gate, up = self.gate_up(x).chunk(2, dim=-1)
+        return F.silu(gate) * up
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.chunk_tokens > 0 and x.shape[-2] > self.chunk_tokens:
@@ -467,13 +528,13 @@ class SwiGLU(nn.Module):
             for start in range(0, x.shape[-2], self.chunk_tokens):
                 end = min(x.shape[-2], start + self.chunk_tokens)
                 x_chunk = x[..., start:end, :]
-                piece = self.down(F.silu(self.gate(x_chunk)) * self.up(x_chunk))
+                piece = self.down(self._project(x_chunk))
                 if output is None:
                     output = piece.new_empty((*piece.shape[:-2], x.shape[-2], piece.shape[-1]))
                 output[..., start:end, :] = piece
             if output is not None:
                 return output
-        return self.down(F.silu(self.gate(x)) * self.up(x))
+        return self.down(self._project(x))
 
 
 class GatedDeltaLayer(nn.Module):
@@ -506,13 +567,40 @@ class LocalCausalAttention(nn.Module):
         self.cfg = cfg
         inner = cfg.n_heads * cfg.head_dim
         lin = lambda i, o: QuantAwareLinear(i, o, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
-        self.q_proj = lin(cfg.d_model, inner)
-        self.k_proj = lin(cfg.d_model, inner)
-        self.v_proj = lin(cfg.d_model, inner)
+        self.qkv_proj = lin(cfg.d_model, 3 * inner)
         self.o_proj = lin(inner, cfg.d_model)
         self.q_norm = RMSNorm(cfg.head_dim, cfg.rms_norm_eps)
         self.k_norm = RMSNorm(cfg.head_dim, cfg.rms_norm_eps)
         self.rope = RotaryEmbedding(min(cfg.rope_dim, cfg.head_dim))
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        local_metadata: dict,
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        q_key = prefix + "q_proj.weight"
+        k_key = prefix + "k_proj.weight"
+        v_key = prefix + "v_proj.weight"
+        qkv_key = prefix + "qkv_proj.weight"
+        if qkv_key not in state_dict and all(key in state_dict for key in (q_key, k_key, v_key)):
+            state_dict[qkv_key] = torch.cat((state_dict[q_key], state_dict[k_key], state_dict[v_key]), dim=0)
+        state_dict.pop(q_key, None)
+        state_dict.pop(k_key, None)
+        state_dict.pop(v_key, None)
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def _shape(self, x: torch.Tensor) -> torch.Tensor:
         b, t, _ = x.shape
@@ -535,9 +623,11 @@ class LocalCausalAttention(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, t, _ = x.shape
-        q = self.q_norm(self._shape(self.q_proj(x)))
-        k = self.k_norm(self._shape(self.k_proj(x)))
-        v = self._shape(self.v_proj(x))
+        inner = self.cfg.n_heads * self.cfg.head_dim
+        q_raw, k_raw, v_raw = self.qkv_proj(x).split(inner, dim=-1)
+        q = self.q_norm(self._shape(q_raw))
+        k = self.k_norm(self._shape(k_raw))
+        v = self._shape(v_raw)
         cos, sin = self.rope(q)
         q = apply_rope(q, cos.view(1, 1, t, -1), sin.view(1, 1, t, -1))
         k = apply_rope(k, cos.view(1, 1, t, -1), sin.view(1, 1, t, -1))
@@ -651,6 +741,10 @@ class SparseLatentAttention(nn.Module):
         return causal
 
     def _selected_blocks(self, start: int, end: int, n_blocks: int, block_size: int, device: torch.device) -> torch.Tensor:
+        ref = self.sink_logits
+        if ref.device != device:
+            ref = ref.to(device=device)
+        all_blocks = _cached_arange(self, ref, n_blocks, name="_sparse_block_arange_cache")
         first_block = start // max(1, block_size)
         last_block = max(0, (end - 1) // max(1, block_size))
         if self.mode == "csa":
@@ -659,13 +753,13 @@ class SparseLatentAttention(nn.Module):
             prefix_end = min(4, n_blocks)
             recent_end = min(n_blocks, last_block + 1)
             if recent_end <= prefix_end:
-                return torch.arange(0, max(prefix_end, recent_end), device=device)
+                return all_blocks[: max(prefix_end, recent_end)]
             if left <= prefix_end:
-                return torch.arange(0, recent_end, device=device)
-            prefix = torch.arange(0, prefix_end, device=device)
-            recent = torch.arange(left, recent_end, device=device)
+                return all_blocks[:recent_end]
+            prefix = all_blocks[:prefix_end]
+            recent = all_blocks[left:recent_end]
             return torch.cat((prefix, recent), dim=0)
-        return torch.arange(0, min(n_blocks, last_block + 1), device=device)
+        return all_blocks[: min(n_blocks, last_block + 1)]
 
     def _global_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, block_size: int) -> torch.Tensor:
         t = q.shape[2]
@@ -677,7 +771,7 @@ class SparseLatentAttention(nn.Module):
             selected = self._selected_blocks(start, end, n_blocks, block_size, q.device)
             k_sel = k.index_select(2, selected)
             v_sel = v.index_select(2, selected)
-            positions = torch.arange(start, end, device=q.device)
+            positions = _cached_arange(self, q, t, name="_sparse_position_arange_cache")[start:end]
             q_block = torch.div(positions, int(block_size), rounding_mode="floor")
             # Strictly exclude the query token's current compressed block. That
             # summary may include future tokens inside the block and would let
@@ -809,18 +903,19 @@ class BlockAttentionResidual(nn.Module):
         k = self.k(summaries)
         block_positions = summary_positions.view(1, 1, -1)
         residual_context = update.new_empty(update.shape)
-        chunk_tokens = max(1, _env_int("OMNICODER2026_BLOCK_ATTNRES_CHUNK_TOKENS", self.chunk_tokens))
+        chunk_tokens = self.chunk_tokens
         k_t = k.transpose(-1, -2)
         inv_scale = 1.0 / math.sqrt(max(1, q.shape[-1]))
+        token_blocks_all = torch.div(
+            _cached_arange(self, x, x.shape[1], name="_attnres_token_arange_cache"),
+            self.block_size,
+            rounding_mode="floor",
+        )
         for start in range(0, x.shape[1], chunk_tokens):
             end = min(x.shape[1], start + chunk_tokens)
             q_chunk = q[:, start:end, :]
             scores = torch.matmul(q_chunk, k_t) * inv_scale
-            token_blocks = torch.div(
-                torch.arange(start, end, device=x.device),
-                self.block_size,
-                rounding_mode="floor",
-            ).view(1, -1, 1)
+            token_blocks = token_blocks_all[start:end].view(1, -1, 1)
             scores = scores.masked_fill(block_positions > token_blocks, torch.finfo(scores.dtype).min)
             weights = torch.softmax(scores.float(), dim=-1).to(dtype=x.dtype)
             residual_context[:, start:end, :] = torch.matmul(weights, summaries)
@@ -869,12 +964,12 @@ class NativeContinuousMediaBridge(nn.Module):
         features = self._fit_last_dim(features, self.feature_dim)
         x = self.feature_proj(features)
         if type_ids is None:
-            type_ids = torch.zeros(features.shape[:2], dtype=torch.long, device=features.device)
-        x = x + self.type_embed(type_ids.to(features.device).long().remainder(self.type_embed.num_embeddings))
-        if positions is None:
-            positions = torch.zeros((*features.shape[:2], self.position_dim), dtype=features.dtype, device=features.device)
-        positions = self._fit_last_dim(positions.to(features.device, dtype=features.dtype), self.position_dim)
-        x = x + self.position_proj(positions)
+            x = x + self.type_embed.weight[0].to(device=features.device, dtype=x.dtype).view(1, 1, -1)
+        else:
+            x = x + self.type_embed(type_ids.to(features.device).long().remainder(self.type_embed.num_embeddings))
+        if positions is not None:
+            positions = self._fit_last_dim(positions.to(features.device, dtype=features.dtype), self.position_dim)
+            x = x + self.position_proj(positions)
         return self.norm(x)
 
     def reconstruct(self, hidden: torch.Tensor) -> torch.Tensor:
@@ -972,9 +1067,11 @@ class AdaptiveLatentReasoner(nn.Module):
         update = self.output_up(F.silu(self.output_down(slot_summary))).unsqueeze(1)
         scale_param = self.output_scale.to(device=x.device, dtype=x.dtype)
         x = x + update.to(dtype=x.dtype) * scale_param
-        controls_tensor = self.control_head(slot_summary)
         names = ("difficulty", "halt_continue", "answer_readiness", "verifier_margin", "tool_readiness")
-        controls = {name: controls_tensor[:, index] for index, name in enumerate(names)}
+        controls = None
+        if return_controls:
+            controls_tensor = self.control_head(slot_summary)
+            controls = {name: controls_tensor[:, index] for index, name in enumerate(names)}
         self.last_diagnostics = {
             "schema": "omnicoder.latent_reasoner_diagnostics_2026.v1",
             "enabled": True,
@@ -983,7 +1080,7 @@ class AdaptiveLatentReasoner(nn.Module):
             "pool_tokens": int(context.shape[1]),
             "control_names": list(names),
         }
-        return x, controls if return_controls else None
+        return x, controls
 
 
 class OmniCoder2026Block(nn.Module):
@@ -1397,8 +1494,7 @@ class OmniCoder2026(nn.Module):
             native_media_token_count = int(media_x.shape[1])
             if native_media_token_count > x.shape[1]:
                 raise ValueError("native media feature tokens cannot exceed input_ids length in aligned mode")
-            x = x.clone()
-            x[:, :native_media_token_count, :] = x[:, :native_media_token_count, :] + media_x.to(device=x.device, dtype=x.dtype)
+            x[:, :native_media_token_count, :].add_(media_x.to(device=x.device, dtype=x.dtype))
         for block in self.blocks:
             block_device = self._module_device(block)
             if x.device != block_device:
@@ -1497,7 +1593,7 @@ class OmniCoder2026(nn.Module):
             "dense": True,
             "moe": False,
             "kda": {
-                "variant": "gated_deltanet2_pytorch_correctness_path",
+                "variant": "gated_deltanet2_packed_projection_pytorch_recurrence_path",
                 "kernel_size": int(cfg.kda_kernel_size),
                 "state_dtype": cfg.kda_state_dtype,
                 "role": "dominant recurrent-linear memory path with no per-token KV cache",

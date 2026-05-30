@@ -1,5 +1,6 @@
 import pytest
 import torch
+import torch.nn.functional as F
 
 from omnicoder.modeling.kda_2026 import (
     GatedDeltaNet2,
@@ -84,3 +85,33 @@ def test_recurrent_modules_tiny_backward(device, module_cls):
     grads = [p.grad for p in layer.parameters() if p.requires_grad]
     assert grads
     assert all(g is not None and torch.isfinite(g).all() for g in grads)
+
+
+@pytest.mark.parametrize("device", _devices())
+def test_gated_deltanet2_loads_legacy_unfused_projection_state(device):
+    torch.manual_seed(19)
+    d_model, heads, head_dim = 16, 4, 4
+    inner = heads * head_dim
+    legacy = {
+        "q_proj.weight": torch.randn(inner, d_model, device=device) * 0.02,
+        "k_proj.weight": torch.randn(inner, d_model, device=device) * 0.02,
+        "v_proj.weight": torch.randn(inner, d_model, device=device) * 0.02,
+        "write_gate_proj.weight": torch.randn(heads, d_model, device=device) * 0.02,
+        "write_gate_proj.bias": torch.randn(heads, device=device) * 0.02,
+        "forget_gate_proj.weight": torch.randn(heads, d_model, device=device) * 0.02,
+        "forget_gate_proj.bias": torch.randn(heads, device=device) * 0.02,
+        "o_proj.weight": torch.randn(d_model, inner, device=device) * 0.02,
+    }
+    layer = GatedDeltaNet2(d_model=d_model, n_heads=heads, head_dim=head_dim).to(device)
+    layer.load_state_dict(dict(legacy), strict=True)
+    x = torch.randn(2, 5, d_model, device=device) * 0.1
+
+    q = F.linear(x, legacy["q_proj.weight"]).view(2, 5, heads, head_dim)
+    k = F.linear(x, legacy["k_proj.weight"]).view(2, 5, heads, head_dim)
+    v = F.linear(x, legacy["v_proj.weight"]).view(2, 5, heads, head_dim)
+    write_gate = F.linear(x, legacy["write_gate_proj.weight"], legacy["write_gate_proj.bias"])
+    forget_gate = F.linear(x, legacy["forget_gate_proj.weight"], legacy["forget_gate_proj.bias"])
+    y, _state = gated_deltanet2_pytorch(q, k, v, write_gate=write_gate, forget_gate=forget_gate)
+    expected = F.linear(y.reshape(2, 5, inner), legacy["o_proj.weight"])
+
+    torch.testing.assert_close(layer(x), expected, atol=1e-6, rtol=1e-6)
