@@ -280,7 +280,7 @@ def launch_variant(repo: Path, matrix_root: Path, matrix_tag: str, variant: dict
     if args.curation_manifest:
         env["OMNICODER_CURATION_MANIFEST"] = args.curation_manifest
     launcher = repo / "scripts" / "ai_server_fast_pipeline_20b.sh"
-    launch = run([str(launcher)], cwd=repo, env=env, timeout=120)
+    launch = run(["bash", str(launcher)], cwd=repo, env=env, timeout=120)
     result: dict[str, Any] = {
         "variant": name,
         "requested_env": {key: env[key] for key in sorted(env) if key.startswith("OMNICODER") or key.startswith("NCCL_")},
