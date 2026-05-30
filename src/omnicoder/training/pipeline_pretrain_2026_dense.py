@@ -261,21 +261,51 @@ class OmniCoder2026PipelineShard(nn.Module):
                     positions = positions[::loss_token_stride]
                     if positions.numel() == 0:
                         positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()[-1:]
-                if not sparse_target_labels and max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
-                    pick = torch.linspace(
-                        0,
-                        positions.numel() - 1,
-                        steps=max_loss_tokens_per_sample,
-                        device=positions.device,
-                        dtype=torch.float32,
-                    ).round().long().unique(sorted=True)
-                    positions = positions[pick]
                 boundary_positions = torch.nonzero(boundary_mask[batch_index], as_tuple=False).flatten()
                 if boundary_positions.numel() > 0:
                     positions = torch.unique(torch.cat((positions, boundary_positions)), sorted=True)
                 prefix_positions = torch.nonzero(prefix_mask[batch_index], as_tuple=False).flatten()
                 if prefix_positions.numel() > 0:
                     positions = torch.unique(torch.cat((positions, prefix_positions)), sorted=True)
+                if max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
+                    priority_positions = torch.unique(torch.cat((boundary_positions, prefix_positions)), sorted=True)
+                    if sparse_target_labels and priority_positions.numel() > 0:
+                        if priority_positions.numel() >= max_loss_tokens_per_sample:
+                            pick = torch.linspace(
+                                0,
+                                priority_positions.numel() - 1,
+                                steps=max_loss_tokens_per_sample,
+                                device=priority_positions.device,
+                                dtype=torch.float32,
+                            ).round().long().unique(sorted=True)
+                            positions = priority_positions[pick]
+                        else:
+                            pick = torch.linspace(
+                                0,
+                                positions.numel() - 1,
+                                steps=max_loss_tokens_per_sample,
+                                device=positions.device,
+                                dtype=torch.float32,
+                            ).round().long().unique(sorted=True)
+                            positions = torch.unique(torch.cat((priority_positions, positions[pick])), sorted=True)
+                            if positions.numel() > max_loss_tokens_per_sample:
+                                pick = torch.linspace(
+                                    0,
+                                    positions.numel() - 1,
+                                    steps=max_loss_tokens_per_sample,
+                                    device=positions.device,
+                                    dtype=torch.float32,
+                                ).round().long().unique(sorted=True)
+                                positions = positions[pick]
+                    else:
+                        pick = torch.linspace(
+                            0,
+                            positions.numel() - 1,
+                            steps=max_loss_tokens_per_sample,
+                            device=positions.device,
+                            dtype=torch.float32,
+                        ).round().long().unique(sorted=True)
+                        positions = positions[pick]
                 selected_hidden.append(shifted_hidden[batch_index, positions, :])
                 selected_labels.append(shifted_labels[batch_index, positions])
                 selected_batches.append(torch.full((positions.numel(),), batch_index, dtype=torch.long, device=hidden.device))

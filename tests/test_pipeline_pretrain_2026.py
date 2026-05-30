@@ -434,11 +434,34 @@ def test_final_stage_selected_ce_treats_first_label_sentinel_as_sparse() -> None
         loss_token_stride=4,
         max_loss_tokens_per_sample=1,
     )
-    expected_positions = torch.arange(0, 6)
+    expected_positions = torch.tensor([0])
     logits = final.lm_head(processed[0, expected_positions, :])
     expected = F.cross_entropy(logits, labels[0, expected_positions + 1], reduction="mean")
 
     assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+
+
+def test_final_stage_sparse_target_cap_keeps_boundaries_and_samples_tail() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(1, 8, cfg.d_model, requires_grad=True)
+    labels = torch.tensor([[-100, -100, 5, 6, -100, 7, 8, 9]], dtype=torch.long)
+
+    processed = final(hidden)
+    loss = final.chunked_lm_loss(
+        processed,
+        labels,
+        chunk_tokens=2,
+        max_loss_tokens_per_sample=3,
+    )
+    expected_positions = torch.tensor([1, 4, 6])
+    logits = final.lm_head(processed[0, expected_positions, :])
+    expected = F.cross_entropy(logits, labels[0, expected_positions + 1], reduction="mean")
+
+    assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+    assert final.last_lm_loss_diagnostics["valid_target_tokens"] == 5
+    assert final.last_lm_loss_diagnostics["optimized_target_tokens"] == 3
 
 
 def test_final_stage_prefix_weight_upweights_target_anchor_tokens() -> None:
