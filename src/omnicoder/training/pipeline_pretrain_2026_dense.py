@@ -1353,7 +1353,7 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
                 text = str(value).strip().lower()
                 for candidate in ("image", "video", "music", "tts", "speech", "audio", "ocr", "code", "tool", "math", "text"):
                     if candidate in text:
-                        return "tts" if candidate == "speech" else ("music" if candidate == "audio" else candidate)
+                        return "tts" if candidate == "speech" else candidate
                 return text[:64]
         target_json = obj.get("target_json")
         if isinstance(target_json, dict):
@@ -1363,7 +1363,7 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         stem = str(path.stem).lower()
         for candidate in ("image", "video", "music", "tts", "audio", "ocr", "code", "tool", "math", "text"):
             if candidate in stem:
-                return "music" if candidate == "audio" else candidate
+                return candidate
         return "unknown"
 
     @staticmethod

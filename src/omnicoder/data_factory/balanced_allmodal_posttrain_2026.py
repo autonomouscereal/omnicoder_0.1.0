@@ -151,14 +151,14 @@ def row_modalities(row: dict[str, Any]) -> list[str]:
 
 
 def infer_modality(row: dict[str, Any], source_path: Path, source_hint: str = "") -> str:
-    source_modality = normalize_modality(source_hint)
-    if source_modality:
-        return source_modality
-    file_hint = normalize_modality(" ".join([source_path.name, source_path.parent.name]))
     candidates = row_modalities(row)
     for preferred in MODALITY_PRIORITY:
         if preferred in candidates:
             return preferred
+    source_modality = normalize_modality(source_hint)
+    if source_modality:
+        return source_modality
+    file_hint = normalize_modality(" ".join([source_path.name, source_path.parent.name]))
     if file_hint:
         return file_hint
     return "text"

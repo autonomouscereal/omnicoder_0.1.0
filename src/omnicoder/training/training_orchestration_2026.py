@@ -18,7 +18,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
-from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity
+from omnicoder.data_factory.dataset_integrity_2026 import audit_dataset_integrity, row_prompt_target
 from omnicoder.eval.checkpoint_readiness_2026 import (
     ReadinessThresholds,
     checkpoint_fingerprint,
@@ -1769,6 +1769,9 @@ def collect_media(
 
 
 def row_prompt(row: dict[str, Any]) -> str:
+    prompt, _target = row_prompt_target(row)
+    if prompt:
+        return prompt.strip()[:1000]
     input_json = row.get("input_json") if isinstance(row.get("input_json"), dict) else {}
     messages = input_json.get("messages") if isinstance(input_json.get("messages"), list) else []
     for message in messages:
@@ -1778,6 +1781,9 @@ def row_prompt(row: dict[str, Any]) -> str:
 
 
 def row_target(row: dict[str, Any]) -> str:
+    _prompt, target = row_prompt_target(row)
+    if target:
+        return target.strip()[:3000]
     target_json = row.get("target_json") if isinstance(row.get("target_json"), dict) else {}
     content = target_json.get("content")
     if isinstance(content, str) and content.strip():
@@ -2628,6 +2634,44 @@ def build_real_corpus(profile: dict[str, Any], out_dir: Path) -> dict[str, Any]:
         out_dir,
         label="real_corpus_training_bound",
     )
+    if manifest["dataset_integrity_preflight"]["status"] != "passed":
+        manifest["status"] = "failed"
+    write_json(out_dir / "manifests" / "curation_manifest.json", manifest)
+    require_integrity_preflight(manifest["dataset_integrity_preflight"])
+    return manifest
+
+
+def load_or_build_real_corpus(profile: dict[str, Any], out_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
+    explicit = str(arg_value(args, "curation_manifest", "") or "").strip()
+    if not explicit:
+        return build_real_corpus(profile, out_dir)
+    manifest_path = resolve_path(explicit, repo_root())
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"curation manifest does not exist: {manifest_path}")
+    manifest = read_json(manifest_path)
+    train_paths = training_bound_jsonl_paths_from_manifest(manifest)
+    missing = [str(path) for path in train_paths if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"curation manifest references missing training JSONL paths: {missing[:8]}")
+    if not manifest.get("train_all_jsonl") or not isinstance(manifest.get("per_modality_jsonl"), dict):
+        raise ValueError("curation manifest must provide train_all_jsonl and per_modality_jsonl for run-full")
+    manifest = dict(manifest)
+    manifest.setdefault("schema", "omnicoder.real_training_curation_manifest_2026.v1")
+    manifest["external_curation_manifest"] = str(manifest_path)
+    manifest["loaded_existing_curation_manifest"] = True
+    manifest.setdefault("status", "ok")
+    manifest.setdefault("created_at", now_iso())
+    manifest.setdefault("records", sum(1 for _ in iter_jsonl(manifest["train_all_jsonl"])))
+    manifest.setdefault("modalities", manifest_modalities(manifest))
+    preflight_max_records = int(os.environ.get("OMNICODER_EXTERNAL_CURATION_PREFLIGHT_MAX_RECORDS", "4096") or 0)
+    manifest["dataset_integrity_preflight"] = run_integrity_preflight(
+        train_paths,
+        out_dir,
+        label="external_curation_manifest_training_bound",
+        max_records=preflight_max_records,
+    )
+    manifest["external_curation_preflight_bounded"] = preflight_max_records > 0
+    manifest["external_curation_preflight_max_records_per_file"] = preflight_max_records
     if manifest["dataset_integrity_preflight"]["status"] != "passed":
         manifest["status"] = "failed"
     write_json(out_dir / "manifests" / "curation_manifest.json", manifest)
@@ -5762,7 +5806,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     cfg = profile_cfg(profile)
     out_dir = Path(args.out_dir or cfg.get("work_dir") or DEFAULT_OUT_DIR)
     release_contract = release_training_contract_report(cfg, args)
-    manifest = build_real_corpus(profile, out_dir)
+    manifest = load_or_build_real_corpus(profile, out_dir, args)
     pretrain = run_training_stages(profile, manifest, out_dir, args)
     current_checkpoint = pretrain.get("final_checkpoint")
     pre_long_context_gate = (
@@ -5871,7 +5915,7 @@ def inventory(args: argparse.Namespace) -> dict[str, Any]:
 def curate_real(args: argparse.Namespace) -> dict[str, Any]:
     profile = load_profile(args.profile)
     out_dir = Path(args.out_dir or profile_cfg(profile).get("work_dir") or DEFAULT_OUT_DIR)
-    return build_real_corpus(profile, out_dir)
+    return load_or_build_real_corpus(profile, out_dir, args)
 
 
 def mix_plan(args: argparse.Namespace) -> dict[str, Any]:
@@ -5893,7 +5937,7 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
     cfg = profile_cfg(profile)
     out_dir = Path(args.out_dir or cfg.get("work_dir") or DEFAULT_OUT_DIR)
     release_contract = release_training_contract_report(cfg, args)
-    manifest = build_real_corpus(profile, out_dir)
+    manifest = load_or_build_real_corpus(profile, out_dir, args)
     training = run_training_stages(profile, manifest, out_dir, args)
     pre_long_context_gate = (
         run_checkpoint_benchmark_gate(profile, manifest, out_dir, training.get("final_checkpoint"), "pre_long_context_short_context", args)
@@ -5966,7 +6010,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("validate").set_defaults(func=validate)
     sub.add_parser("inventory").set_defaults(func=inventory)
-    sub.add_parser("curate-real").set_defaults(func=curate_real)
+    curate = sub.add_parser("curate-real")
+    curate.add_argument("--curation-manifest", default="")
+    curate.set_defaults(func=curate_real)
     mix = sub.add_parser("mix-plan")
     mix.add_argument("--curation-manifest", default="")
     mix.add_argument("--external-manifest", default="")
@@ -5983,6 +6029,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--device", default="")
     run.add_argument("--fake-quant", action="store_true")
     run.add_argument("--resume-checkpoint", default="")
+    run.add_argument("--curation-manifest", default="")
     run.add_argument("--start-stage", default="", help="Start dense pretraining at this 1-based stage index or modality name")
     run.add_argument("--stage-order", default="", help="Comma-separated dense pretraining stage order override")
     run.add_argument("--context-ladder", dest="context_ladder", default="", help="Comma-separated real long-context curriculum ladder; defaults to the 8K..1M profile ladder")
@@ -6198,6 +6245,7 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--device", default="")
     full.add_argument("--fake-quant", action="store_true")
     full.add_argument("--resume-checkpoint", default="")
+    full.add_argument("--curation-manifest", default="")
     full.add_argument("--start-stage", default="", help="Start dense pretraining at this 1-based stage index or modality name")
     full.add_argument("--stage-order", default="", help="Comma-separated dense pretraining stage order override")
     full.add_argument("--context-ladder", dest="context_ladder", default="", help="Comma-separated real long-context curriculum ladder; defaults to the 8K..1M profile ladder")

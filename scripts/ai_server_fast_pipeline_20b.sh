@@ -9,6 +9,7 @@ set -euo pipefail
 
 REPO="${OMNICODER_REPO:-/home/cereal/omnicoder_2026_work}"
 WEIGHTS_ROOT="${OMNICODER_WEIGHTS_ROOT:-/home/cereal/omnicoder_2026_work/weights}"
+AI_DATA_ROOT="${OMNICODER_AI_DATA_ROOT:-/mnt/ai_data}"
 IMAGE="${OMNICODER_DOCKER_IMAGE:-omnicoder:cuda-posttrain-2026}"
 RUN_TAG="${OMNICODER_RUN_TAG:-$(date -u +%Y%m%dT%H%M%SZ)}"
 CONTAINER_NAME="${OMNICODER_CONTAINER_NAME:-omnicoder_target20b_fast_${RUN_TAG}}"
@@ -316,12 +317,15 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --fake-quant
   )
 else
+  curation_manifest_args=()
+  append_nonempty_arg curation_manifest_args --curation-manifest "$CURATION_MANIFEST"
   common_args=(
     --profile "$PROFILE"
     --out-dir "$OUT_DIR"
     "$MODE"
     --preset omnicoder2026_20b_1m
     "${resume_args[@]}"
+    "${curation_manifest_args[@]}"
     --start-stage "$START_STAGE"
     --stage-order "$STAGE_ORDER"
     --steps-per-stage "$STEPS_PER_STAGE"
@@ -391,6 +395,10 @@ docker_args=(
   -v /home/cereal:/home/cereal:ro
   -w /workspace
 )
+
+if [[ -d "$AI_DATA_ROOT" ]]; then
+  docker_args+=(-v "$AI_DATA_ROOT:/mnt/ai_data")
+fi
 
 if [[ -n "$BENCHMARK_PREDICTION_API_KEY_ENV" && -n "${!BENCHMARK_PREDICTION_API_KEY_ENV:-}" ]]; then
   docker_args+=(-e "$BENCHMARK_PREDICTION_API_KEY_ENV")

@@ -360,6 +360,7 @@ def _runtime_args(**overrides):
         "benchmark_prediction_max_output_tokens": 0,
         "reportable_official_scorer_artifacts": [],
         "require_reportable_gate": False,
+        "curation_manifest": "",
         "checkpoint_readiness_report": "",
         "checkpoint_topk_probe": "",
         "checkpoint_sample_loss": "",
@@ -1934,6 +1935,8 @@ def test_run_long_context_cli_blocks_when_short_context_gate_fails(tmp_path, mon
 def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args():
     script = (Path(__file__).resolve().parents[1] / "scripts" / "ai_server_fast_pipeline_20b.sh").read_text(encoding="utf-8")
     assert 'OMNICODER_CURATION_MANIFEST' in script
+    assert 'AI_DATA_ROOT="${OMNICODER_AI_DATA_ROOT:-/mnt/ai_data}"' in script
+    assert '-v "$AI_DATA_ROOT:/mnt/ai_data"' in script
     assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"' in script
     assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-16}"' in script
     assert 'LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"' in script
@@ -1955,6 +1958,8 @@ def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args
     assert '--posttrain-steps' not in branch
     assert '--start-stage' not in branch
     assert '--distill-profile' not in branch
+    full_branch = script.split('else\n  curation_manifest_args=()', 1)[1].split('docker_args=(', 1)[0]
+    assert '--curation-manifest "$CURATION_MANIFEST"' in full_branch
 
 
 def test_posttrain_start_algorithm_unknown_fails_before_training(tmp_path, monkeypatch):
@@ -2097,6 +2102,71 @@ def test_run_full_summarizes_all_major_training_phases(tmp_path, monkeypatch):
     assert result["final_checkpoint"] == str(final_checkpoint)
     assert result["artifacts"]["final_checkpoint"] == str(final_checkpoint)
     assert (out_dir / "full_training_summary.json").exists()
+
+
+def test_load_or_build_real_corpus_uses_external_manifest_and_preserves_modalities(tmp_path, monkeypatch):
+    profile = _profile(tmp_path)
+    out_dir = tmp_path / "out"
+    train_all = tmp_path / "clean" / "train_all.jsonl"
+    text_train = tmp_path / "clean" / "text.train.jsonl"
+    audio_train = tmp_path / "clean" / "audio.train.jsonl"
+    audio_artifact = tmp_path / "clean" / "audio.wav"
+    audio_artifact.parent.mkdir(parents=True, exist_ok=True)
+    audio_artifact.write_bytes(b"clean audio bytes")
+    rows = [
+        {"prompt": "Explain this clean text row.", "answer": "It is a training target.", "modality": "text", **QUALITY_META},
+        {
+            "prompt": "Caption this clean audio row.",
+            "answer": "It contains a spoken target.",
+            "modality": "audio",
+            "artifact_refs": [str(audio_artifact)],
+            **QUALITY_META,
+        },
+    ]
+    _write_jsonl(train_all, rows)
+    _write_jsonl(text_train, [rows[0]])
+    _write_jsonl(audio_train, [rows[1]])
+    manifest_path = tmp_path / "clean" / "manifest.json"
+    orch.write_json(
+        manifest_path,
+        {
+            "schema": "omnicoder.full_training_ready_manifest_2026.v2",
+            "status": "ok",
+            "train_all_jsonl": str(train_all),
+            "curated_jsonl": str(train_all),
+            "per_modality_jsonl": {"text": str(text_train), "audio": str(audio_train)},
+            "records": 2,
+            "modalities": {"text": 1, "audio": 1},
+            "dataset_index_2026": {"status": "passed"},
+            "promotion_index": {"status": "passed"},
+            "integrity_rewrite": {"status": "rewritten_clean"},
+        },
+    )
+    monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)
+
+    loaded = orch.load_or_build_real_corpus(profile, out_dir, _runtime_args(curation_manifest=str(manifest_path)))
+
+    assert loaded["loaded_existing_curation_manifest"] is True
+    assert loaded["external_curation_preflight_bounded"] is True
+    assert loaded["modalities"]["audio"] == 1
+    assert loaded["per_modality_jsonl"]["audio"] == str(audio_train)
+    assert (out_dir / "manifests" / "curation_manifest.json").exists()
+
+
+def test_training_integrity_prompt_target_uses_top_level_messages():
+    row = {
+        "schema": "omnicoder.full_training_ready_manifest_2026.test",
+        "modality": "code",
+        "messages": [
+            {"role": "user", "content": "Repair this parser without changing tests."},
+            {"role": "assistant", "content": "Update the tokenizer branch and keep the fixture contract intact."},
+        ],
+        "quality_score": 0.9,
+        "contamination_status": "clean",
+    }
+
+    assert orch.row_prompt(row) == "user: Repair this parser without changing tests."
+    assert orch.row_target(row) == "Update the tokenizer branch and keep the fixture contract intact."
 
 
 def test_distillation_curriculum_uses_train_all_instead_of_combined_curated(tmp_path, monkeypatch):

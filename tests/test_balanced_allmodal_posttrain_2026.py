@@ -42,26 +42,35 @@ def _image_row(record_id: str, prompt: str, target: str, source_id: str) -> dict
     }
 
 
+def test_infer_modality_prefers_row_modality_over_source_hint(tmp_path: Path) -> None:
+    source = tmp_path / "mixed_qwen_rows.clean.jsonl"
+
+    assert balanced.infer_modality({"modality": "audio"}, source, "music") == "audio"
+    assert balanced.infer_modality({"media_family": "qwen_image_edit"}, source, "text") == "image"
+
+
 def test_source_floor_keeps_late_qwen_image_edit_rows_after_image_cap_is_full(tmp_path: Path, monkeypatch) -> None:
     profile = tmp_path / "profiles" / "training_orchestration_2026.json"
     base_images = tmp_path / "base_image.clean.jsonl"
     qwen_edits = tmp_path / "qwen_image_edit.clean.jsonl"
+    image_artifact = tmp_path / "image_artifact.png"
+    image_artifact.write_bytes(b"clean image bytes")
     out_dir = tmp_path / "out"
     _write_json(profile, _training_profile())
     _write_jsonl(
         base_images,
         [
-            _image_row("base-1", "Describe base image 1.", "Base image caption 1 is clean.", "base_image.clean.jsonl"),
-            _image_row("base-2", "Describe base image 2.", "Base image caption 2 is clean.", "base_image.clean.jsonl"),
-            _image_row("base-3", "Describe base image 3.", "Base image caption 3 is clean.", "base_image.clean.jsonl"),
+                {**_image_row("base-1", "Describe base image 1.", "Base image caption 1 is clean.", "base_image.clean.jsonl"), "artifact_refs": [str(image_artifact)]},
+                {**_image_row("base-2", "Describe base image 2.", "Base image caption 2 is clean.", "base_image.clean.jsonl"), "artifact_refs": [str(image_artifact)]},
+                {**_image_row("base-3", "Describe base image 3.", "Base image caption 3 is clean.", "base_image.clean.jsonl"), "artifact_refs": [str(image_artifact)]},
         ],
     )
     _write_jsonl(
         qwen_edits,
         [
-            _image_row("qwen-edit-1", "Plan a clean image edit 1.", "Preserve the subject and update the background.", "qwen_image_edit.clean.jsonl"),
-            _image_row("qwen-edit-2", "Plan a clean image edit 2.", "Preserve the lighting and remove the distractor.", "qwen_image_edit.clean.jsonl"),
-            _image_row("qwen-edit-3", "Plan a clean image edit 3.", "Preserve the composition and adjust the color.", "qwen_image_edit.clean.jsonl"),
+                {**_image_row("qwen-edit-1", "Plan a clean image edit 1.", "Preserve the subject and update the background.", "qwen_image_edit.clean.jsonl"), "artifact_refs": [str(image_artifact)]},
+                {**_image_row("qwen-edit-2", "Plan a clean image edit 2.", "Preserve the lighting and remove the distractor.", "qwen_image_edit.clean.jsonl"), "artifact_refs": [str(image_artifact)]},
+                {**_image_row("qwen-edit-3", "Plan a clean image edit 3.", "Preserve the composition and adjust the color.", "qwen_image_edit.clean.jsonl"), "artifact_refs": [str(image_artifact)]},
         ],
     )
     monkeypatch.setattr(balanced, "repo_root", lambda: tmp_path)

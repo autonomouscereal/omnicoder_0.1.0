@@ -946,6 +946,31 @@ def test_dataset_max_source_rows_caps_jsonl_rows_not_indexed_windows(tmp_path) -
     assert summary["records"] > summary["source_rows"]
 
 
+def test_dataset_source_summary_preserves_audio_music_tts_modalities(tmp_path) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    source = tmp_path / "audio_tts_music.jsonl"
+    rows = [
+        {
+            "origin_group": "audio_tts_music",
+            "modality": modality,
+            "messages": [
+                {"role": "user", "content": f"{modality} prompt " + ("context " * 20)},
+                {"role": "assistant", "content": f"{modality} target"},
+            ],
+        }
+        for modality in ("audio", "music", "tts")
+    ]
+    source.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=32, vocab_size=256, max_source_rows=3)
+    summary = pipeline._dataset_source_summary(dataset)
+
+    assert summary["modalities"] == {"audio": 1, "music": 1, "tts": 1}
+
+
 def test_dataset_window_limit_is_row_first_before_overflow_chunks(tmp_path) -> None:
     class TinyTokenizer:
         def encode(self, text: str) -> list[int]:
