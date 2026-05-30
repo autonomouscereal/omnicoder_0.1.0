@@ -46,6 +46,7 @@ FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-256}"
 LOSS_TOKEN_STRIDE="${OMNICODER_LOSS_TOKEN_STRIDE:-1}"
 MAX_LOSS_TOKENS_PER_SAMPLE="${OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE:-16}"
 OPTIMIZER_ADAFACTOR_CHUNK_ROWS="${OMNICODER_OPTIMIZER_IN_BACKWARD_ADAFACTOR_CHUNK_ROWS:-256}"
+OPTIMIZER_IN_BACKWARD="${OMNICODER_OPTIMIZER_IN_BACKWARD:-0}"
 DIST_TIMEOUT_SECONDS="${OMNICODER2026_DIST_TIMEOUT_SECONDS:-7200}"
 CHECKPOINT_SYNC_BACKEND="${OMNICODER2026_CHECKPOINT_SYNC_BACKEND:-filesystem}"
 CHECKPOINT_MARKER_TIMEOUT_SECONDS="${OMNICODER2026_CHECKPOINT_MARKER_TIMEOUT_SECONDS:-14400}"
@@ -138,6 +139,11 @@ append_nonempty_arg() {
     target_array+=("$flag" "$value")
   fi
 }
+
+optimizer_in_backward_args=()
+if truthy "$OPTIMIZER_IN_BACKWARD"; then
+  optimizer_in_backward_args+=(--optimizer-in-backward)
+fi
 
 if [[ -n "$RESUME_CHECKPOINT" && -z "$CHECKPOINT_READINESS_REPORT" && -z "$CHECKPOINT_MEDIA_ROUTE_PROBE" ]] && truthy "$AUTO_CHECKPOINT_MEDIA_ROUTE_PROBE"; then
   CHECKPOINT_MEDIA_ROUTE_PROBE="$OUT_DIR/readiness/media_route_probe.json"
@@ -250,7 +256,7 @@ if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then
     --precision fp16
     --init-dtype fp16
     --optimizer adafactor
-    --optimizer-in-backward
+    "${optimizer_in_backward_args[@]}"
     --optimizer-in-backward-update lowmem_adafactor
     --optimizer-in-backward-grad-clip 1.0
     --optimizer-in-backward-clip-mode rms
@@ -302,7 +308,7 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --precision fp16
     --init-dtype fp16
     --optimizer adafactor
-    --optimizer-in-backward
+    "${optimizer_in_backward_args[@]}"
     --optimizer-in-backward-update lowmem_adafactor
     --optimizer-in-backward-grad-clip 1.0
     --optimizer-in-backward-clip-mode rms
@@ -346,7 +352,7 @@ else
     --precision fp16
     --init-dtype fp16
     --optimizer adafactor
-    --optimizer-in-backward
+    "${optimizer_in_backward_args[@]}"
     --optimizer-in-backward-update lowmem_adafactor
     --optimizer-in-backward-grad-clip 1.0
     --optimizer-in-backward-clip-mode rms
