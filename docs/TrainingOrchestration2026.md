@@ -103,12 +103,19 @@ AI-server Docker path against the `omnicoder2026_20b_1m` profile, writes a
 tiny run-scoped profiling corpus unless an explicit curation manifest is
 supplied, disables checkpoint writes by default, and summarizes:
 
-- per-rank step timing JSONL,
+- per-rank step timing JSONL plus an aggregate `phase_timing_summary` for every
+  recorded span (`batch_fetch`, `host_to_device`, `broadcast_inputs`,
+  `schedule_step`, `loss_broadcast`, `optimizer_step`, telemetry, and rank
+  skew when collected),
 - staged loss JSONL,
 - optional block timing JSONL,
 - container exit status and log tail,
 - q4/fake-quant settings, activation checkpointing, pipeline schedule, and
-  target-token budget used for the variant.
+  target-token budget used for the variant,
+- final target-token coverage (`optimized_target_tokens / valid_target_tokens`)
+  from the staged loss log, and
+- `no_checkpoint_written`, with any `.complete.json` checkpoint marker treated
+  as a profile-matrix failure because this lane is intentionally no-checkpoint.
 
 The intended comparison set is narrow and diagnostic: q4 fake-quant chunk
 sizes, fake-quant-off profiling, activation checkpointing on/off, pipeline
@@ -615,6 +622,10 @@ For complete `.complete.json` checkpoints, the bounded sidecar entry point is
 probes, heldout sample loss, target-token diagnostics, token top-k sanity, and
 local decode sanity predictions. These sidecar outputs are diagnostic; official
 benchmark claims still require authorized task snapshots and scorer manifests.
+The route probe artifact is broader than media despite the legacy module name:
+it now records text, code, math, structured tool, image, video, audio, music,
+TTS, and OCR route decisions so a readiness bundle can prove both text-like and
+artifact-decoder paths.
 
 Live posttraining on pipeline checkpoints also stays distributed. When
 `--live-posttraining` receives a sharded checkpoint directory, the orchestrator

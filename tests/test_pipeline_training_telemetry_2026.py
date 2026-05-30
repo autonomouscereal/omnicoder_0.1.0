@@ -22,6 +22,26 @@ def test_module_grad_norm_streams_chunks(monkeypatch) -> None:
     assert actual == pytest.approx(expected)
 
 
+def test_ce_accumulator_defers_scalar_materialization_until_finalize() -> None:
+    accumulator = pipeline._new_ce_accumulator()
+    labels = torch.tensor([17, 132_096, 214_016, 999_999], dtype=torch.long)
+    losses = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32)
+    weights = torch.tensor([1.0, 0.5, 0.0, 2.0], dtype=torch.float32)
+
+    pipeline._accumulate_ce_by_token_family(accumulator, labels, losses, weights)
+
+    assert isinstance(accumulator["text"]["loss_sum"], torch.Tensor)
+    ce_by_family, ce_by_modality, counts = pipeline._finalize_ce_accumulator(accumulator)
+    assert counts["text"] == 1
+    assert counts["vision_semantic"] == 1
+    assert counts["vision_residual"] == 0
+    assert counts["unknown"] == 1
+    assert ce_by_family["text"] == pytest.approx(1.0)
+    assert ce_by_family["vision_semantic"] == pytest.approx(2.0)
+    assert ce_by_family["unknown"] == pytest.approx(4.0)
+    assert ce_by_modality["vision"] == pytest.approx(2.0)
+
+
 def _args(tmp_path, **overrides) -> argparse.Namespace:
     values = {
         "out": str(tmp_path / "checkpoint"),

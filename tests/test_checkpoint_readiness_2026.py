@@ -206,3 +206,32 @@ def test_media_route_probe_generates_all_core_media_routes() -> None:
     assert routes["ocr"]["output_field"] == "prediction"
     assert routes["ocr"]["output_modality"] == "text"
     assert routes["ocr"]["requires_artifact_decoder"] is False
+
+
+def test_route_probe_generates_text_code_tool_math_and_media_routes() -> None:
+    report = build_media_route_probe(model_vocab_size=330000)
+
+    assert report["probe_scope"] == "text_code_tool_math_media_route_readiness"
+    assert {
+        "text",
+        "code",
+        "math",
+        "tool",
+        "image",
+        "video",
+        "audio",
+        "music",
+        "tts",
+        "ocr",
+    } <= set(report["covered_target_modalities"])
+    routes = {row["modality"]: row["output_route"] for row in report["rows"]}
+
+    assert routes["text"]["name"] == "text"
+    assert routes["text"]["requires_artifact_decoder"] is False
+    assert routes["code"]["output_modality"] == "code"
+    assert routes["code"]["token_ranges"][0]["name"] == "text"
+    assert routes["math"]["output_modality"] == "text"
+    assert routes["math"]["token_ranges"][0]["name"] == "text"
+    assert routes["tool"]["name"] == "tool_text_structured"
+    assert routes["tool"]["requires_artifact_decoder"] is False
+    assert routes["image"]["requires_artifact_decoder"] is True

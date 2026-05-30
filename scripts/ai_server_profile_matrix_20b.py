@@ -264,6 +264,26 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _float_or_none(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _summarize_numeric(values: list[float]) -> dict[str, Any]:
+    if not values:
+        return {"count": 0}
+    ordered = [float(value) for value in values]
+    return {
+        "count": len(ordered),
+        "min_sec": min(ordered),
+        "max_sec": max(ordered),
+        "mean_sec": sum(ordered) / float(len(ordered)),
+    }
+
+
 def parse_launch_output(stdout: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for line in stdout.splitlines():
@@ -330,6 +350,12 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
         summary["last_global_step"] = step_rows[-1].get("step")
         summary["last_optimized_target_tokens"] = step_rows[-1].get("optimized_target_tokens")
         summary["last_valid_target_tokens"] = step_rows[-1].get("valid_target_tokens")
+        valid_tokens = _float_or_none(step_rows[-1].get("valid_target_tokens"))
+        optimized_tokens = _float_or_none(step_rows[-1].get("optimized_target_tokens"))
+        if valid_tokens and valid_tokens > 0.0 and optimized_tokens is not None:
+            summary["last_target_token_coverage"] = optimized_tokens / valid_tokens
+        else:
+            summary["last_target_token_coverage"] = None
         summary["last_seq_len"] = step_rows[-1].get("seq_len")
         summary["max_loss_tokens_per_sample"] = step_rows[-1].get("max_loss_tokens_per_sample")
         summary["loss_diagnostics_collected"] = step_rows[-1].get("loss_diagnostics_collected")
@@ -339,12 +365,26 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
     diag_dir = host_out_dir / "diagnostics"
     timing_files = sorted(diag_dir.glob("*_step_timing.rank*.jsonl"))
     timings: list[dict[str, Any]] = []
+    phase_values: dict[str, list[float]] = {}
+    rank_skews: list[float] = []
     for path in timing_files:
         rank_match = re.search(r"\.rank(\d+)\.", path.name)
         rank = int(rank_match.group(1)) if rank_match else None
         rows = [row for row in load_jsonl(path) if row.get("event") == "pipeline_step_timing"]
         if not rows:
             continue
+        for row in rows:
+            total = _float_or_none(row.get("total_sec"))
+            if total is not None:
+                phase_values.setdefault("total_sec", []).append(total)
+            skew = _float_or_none(row.get("rank_skew_sec"))
+            if skew is not None:
+                rank_skews.append(skew)
+            spans = row.get("spans") if isinstance(row.get("spans"), dict) else {}
+            for key, value in spans.items():
+                numeric = _float_or_none(value)
+                if numeric is not None:
+                    phase_values.setdefault(str(key), []).append(numeric)
         last = rows[-1]
         spans = last.get("spans") if isinstance(last.get("spans"), dict) else {}
         opt = last.get("optimizer_diagnostics") if isinstance(last.get("optimizer_diagnostics"), dict) else {}
@@ -359,10 +399,15 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
                 "broadcast_inputs_sec": spans.get("broadcast_inputs_sec"),
                 "telemetry_sec": spans.get("telemetry_sec"),
                 "rank_skew_sec": last.get("rank_skew_sec"),
+                "phase_spans": spans,
                 "optimizer_diagnostics": opt,
             }
         )
     summary["rank_timing"] = timings
+    summary["phase_timing_files"] = [str(path) for path in timing_files]
+    summary["phase_timing_summary"] = {key: _summarize_numeric(values) for key, values in sorted(phase_values.items())}
+    if rank_skews:
+        summary["rank_skew_summary"] = _summarize_numeric(rank_skews)
     if timings:
         totals = [float(item["total_sec"]) for item in timings if isinstance(item.get("total_sec"), (int, float))]
         schedules = [float(item["schedule_step_sec"]) for item in timings if isinstance(item.get("schedule_step_sec"), (int, float))]
@@ -395,6 +440,7 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
         summary["block_timing_summary"] = block_summary
     checkpoint_files = list(host_out_dir.rglob("*.complete.json")) if host_out_dir.exists() else []
     summary["checkpoint_complete_files"] = [str(path) for path in checkpoint_files]
+    summary["no_checkpoint_written"] = not checkpoint_files
     logs_proc = run(["docker", "logs", "--tail", "80", container], cwd=repo, timeout=60)
     summary["container_log_tail"] = logs_proc.stdout[-12000:] if logs_proc.stdout else logs_proc.stderr[-12000:]
     return summary
@@ -450,8 +496,17 @@ def launch_variant(repo: Path, matrix_root: Path, matrix_tag: str, variant: dict
     result["container_state"] = state
     host_out_dir = Path(parsed.get("host_out_dir") or (matrix_root / name))
     result.update(summarize_run(host_out_dir, container, repo))
+    result["no_checkpoint_requested"] = (
+        env.get("OMNICODER_SAVE_INTERVAL") == "0" and env.get("OMNICODER2026_SKIP_FINAL_SAVE") == "1"
+    )
+    checkpoint_violation = bool(result["no_checkpoint_requested"] and result.get("checkpoint_complete_files"))
+    if checkpoint_violation:
+        result["no_checkpoint_violation"] = True
+        result["failure_reason"] = "checkpoint_written_in_no_checkpoint_profile"
     if state.get("timed_out"):
         result["status"] = "timed_out"
+    elif checkpoint_violation:
+        result["status"] = "failed"
     elif state.get("exit_code") == 0:
         result["status"] = "passed"
     else:

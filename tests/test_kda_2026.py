@@ -6,6 +6,7 @@ from omnicoder.modeling.kda_2026 import (
     GatedDeltaNet2,
     KDA,
     KaczmarzLinearAttention,
+    _gated_deltanet2_compiled_chunks,
     gated_deltanet2_pytorch,
     kaczmarz_linear_attention_pytorch,
     kda_pytorch,
@@ -115,3 +116,90 @@ def test_gated_deltanet2_loads_legacy_unfused_projection_state(device):
     expected = F.linear(y.reshape(2, 5, inner), legacy["o_proj.weight"])
 
     torch.testing.assert_close(layer(x), expected, atol=1e-6, rtol=1e-6)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="compiled GDN2 fast path is CUDA-only")
+@pytest.mark.parametrize("time", [1, 2, 5, 17])
+def test_gated_deltanet2_compiled_chunks_match_reference_cuda(time):
+    if not hasattr(torch, "compile"):
+        pytest.skip("torch.compile is unavailable")
+    major, minor = torch.cuda.get_device_capability(torch.device("cuda"))
+    if (major, minor) < (7, 5):
+        pytest.skip("compiled GDN2 path is only enabled on fast-card CUDA runtimes")
+    import omnicoder.modeling.kda_2026 as kda_module
+
+    torch.manual_seed(31 + time)
+    kda_module._COMPILED_GDN2_SCAN = None
+    kda_module._GDN2_COMPILE_DISABLED = False
+    batch, heads, key_dim, value_dim = 1, 2, 4, 4
+    q = torch.randn(batch, time, heads, key_dim, device="cuda", dtype=torch.float16) * 0.1
+    k = torch.randn(batch, time, heads, key_dim, device="cuda", dtype=torch.float16) * 0.1
+    v = torch.randn(batch, time, heads, value_dim, device="cuda", dtype=torch.float16) * 0.1
+    write = torch.randn(batch, time, heads, device="cuda", dtype=torch.float16) * 0.1
+    forget = torch.randn(batch, time, heads, device="cuda", dtype=torch.float16) * 0.1
+    initial_state = torch.randn(batch, heads, key_dim, value_dim, device="cuda", dtype=torch.float32) * 0.01
+
+    expected, expected_state = gated_deltanet2_pytorch(
+        q,
+        k,
+        v,
+        write_gate=write,
+        forget_gate=forget,
+        initial_state=initial_state,
+    )
+    actual, actual_state = _gated_deltanet2_compiled_chunks(
+        q,
+        k,
+        v,
+        write_gate=write,
+        forget_gate=forget,
+        initial_state=initial_state,
+        chunk_size=min(time, 4),
+    )
+
+    assert not kda_module._GDN2_COMPILE_DISABLED
+    assert kda_module._COMPILED_GDN2_SCAN is not None
+    torch.testing.assert_close(actual, expected, atol=2e-4, rtol=2e-3)
+    torch.testing.assert_close(actual_state, expected_state, atol=2e-4, rtol=2e-3)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="compiled GDN2 fast path is CUDA-only")
+def test_gated_deltanet2_module_compiled_chunks_gradient_parity_cuda(monkeypatch):
+    if not hasattr(torch, "compile"):
+        pytest.skip("torch.compile is unavailable")
+    major, minor = torch.cuda.get_device_capability(torch.device("cuda"))
+    if (major, minor) < (7, 5):
+        pytest.skip("compiled GDN2 path is only enabled on fast-card CUDA runtimes")
+    import omnicoder.modeling.kda_2026 as kda_module
+
+    torch.manual_seed(37)
+    kda_module._COMPILED_GDN2_SCAN = None
+    kda_module._GDN2_COMPILE_DISABLED = False
+    monkeypatch.setenv("OMNICODER2026_GDN2_COMPILED_CHUNKS", "1")
+    monkeypatch.setenv("OMNICODER2026_GDN2_COMPILED_CHUNK_TOKENS", "4")
+    eager = GatedDeltaNet2(d_model=16, n_heads=4, head_dim=4).cuda()
+    compiled = GatedDeltaNet2(d_model=16, n_heads=4, head_dim=4).cuda()
+    compiled.load_state_dict(eager.state_dict())
+    x_eager = torch.randn(2, 9, 16, device="cuda", dtype=torch.float16, requires_grad=True)
+    x_compiled = x_eager.detach().clone().requires_grad_(True)
+    eager = eager.to(dtype=torch.float16)
+    compiled = compiled.to(dtype=torch.float16)
+
+    monkeypatch.setenv("OMNICODER2026_GDN2_COMPILED_CHUNKS", "0")
+    y_eager, state_eager = eager(x_eager, return_state=True)
+    eager_loss = y_eager.float().square().mean() + state_eager.square().mean() * 1e-3
+    eager_loss.backward()
+
+    monkeypatch.setenv("OMNICODER2026_GDN2_COMPILED_CHUNKS", "1")
+    y_compiled, state_compiled = compiled(x_compiled, return_state=True)
+    compiled_loss = y_compiled.float().square().mean() + state_compiled.square().mean() * 1e-3
+    compiled_loss.backward()
+
+    assert not kda_module._GDN2_COMPILE_DISABLED
+    torch.testing.assert_close(y_compiled, y_eager, atol=3e-4, rtol=3e-3)
+    torch.testing.assert_close(state_compiled, state_eager, atol=3e-4, rtol=3e-3)
+    torch.testing.assert_close(x_compiled.grad, x_eager.grad, atol=3e-4, rtol=3e-3)
+    for compiled_param, eager_param in zip(compiled.parameters(), eager.parameters(), strict=True):
+        assert compiled_param.grad is not None
+        assert eager_param.grad is not None
+        torch.testing.assert_close(compiled_param.grad, eager_param.grad, atol=4e-4, rtol=5e-3)

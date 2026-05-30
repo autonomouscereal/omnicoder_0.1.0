@@ -332,6 +332,12 @@ token top-k sanity, decode sanity, media route probes, native media
 reconstruction checks, and benchmark adapter handoff. These are engineering
 readiness probes, not public benchmark scores.
 
+The static route probe intentionally covers text, code, math, structured tool,
+and media artifact routes in one JSON artifact. Media rows still prove decoder
+handoff for image, video, audio, music, TTS, and OCR, while text/code/math/tool
+rows prove those probes stay on text-token ranges and do not require artifact
+decoders.
+
 ## Data Gates
 
 The training stack now treats data quality as part of the architecture contract.
@@ -358,8 +364,8 @@ Diagnostic gates:
 - Target-token diagnostics.
 - Heldout sample loss with non-null loss/perplexity.
 - Batch decode probes.
-- Media route and artifact parsing for image, video, audio, music, TTS, and
-  OCR.
+- Route and artifact parsing for text, code, math, tool, image, video, audio,
+  music, TTS, and OCR.
 - Native media reconstruction checks.
 
 Reportable gates:
@@ -373,6 +379,16 @@ Reportable gates:
 
 The benchmark suite is allowed to fail closed when official scorers or
 authorized snapshots are not present.
+
+## Optimization Status
+
+The KDA/GatedDeltaNet-2 path now has an opt-in compiled tensor-scan oracle
+behind `OMNICODER2026_GDN2_COMPILED_CHUNKS=1`. It preserves the fp32 recurrent
+state and exact gate/update equations and has CUDA output/state/gradient parity
+tests. It is not a default training path yet: isolated cached calls can be
+faster after very expensive compilation, but the real 20B seq-256 profile did
+not beat the eager recurrent path, so full training keeps the eager oracle
+unless a longer-run benchmark proves the compile cost amortizes safely.
 
 ## Runtime And Export
 

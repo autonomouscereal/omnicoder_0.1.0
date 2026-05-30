@@ -13,6 +13,7 @@ Triton or fused chunkwise kernels are unavailable.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Optional, Tuple
 
 import torch
@@ -91,6 +92,154 @@ def _read(q_t: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
 
 def _outer(k_t: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
     return k_t.unsqueeze(-1) * residual.unsqueeze(-2)
+
+
+def _truthy_env(name: str, default: str = "0") -> bool:
+    return str(os.environ.get(name, default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except Exception:
+        return int(default)
+
+
+def _gdn2_tensor_scan(
+    q_f: torch.Tensor,
+    k_f: torch.Tensor,
+    v_f: torch.Tensor,
+    write_f: torch.Tensor,
+    forget_f: torch.Tensor,
+    state: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Branch-free tensor recurrence used by the compiled fast path.
+
+    Inputs are already fp32, keys are normalized, and gates are sigmoid outputs.
+    The math intentionally mirrors ``gated_deltanet2_pytorch`` exactly.
+    """
+
+    outputs = torch.empty_like(v_f)
+    for step in range(q_f.shape[1]):
+        q_t = q_f[:, step]
+        k_t = k_f[:, step]
+        v_t = v_f[:, step]
+        write = write_f[:, step]
+        retain = forget_f[:, step]
+        prediction = _read(k_t, state)
+        update = _outer(k_t, write * (v_t - prediction))
+        state = retain.unsqueeze(-2) * state + update
+        outputs[:, step] = _read(q_t, state)
+    return outputs, state
+
+
+_COMPILED_GDN2_SCAN: object | None = None
+_GDN2_COMPILE_DISABLED = False
+
+
+def _compiled_gdn2_scan(
+    q_f: torch.Tensor,
+    k_f: torch.Tensor,
+    v_f: torch.Tensor,
+    write_f: torch.Tensor,
+    forget_f: torch.Tensor,
+    state: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    global _COMPILED_GDN2_SCAN
+    if _COMPILED_GDN2_SCAN is None:
+        _COMPILED_GDN2_SCAN = torch.compile(_gdn2_tensor_scan, mode="reduce-overhead", fullgraph=True)  # type: ignore[attr-defined]
+    compiled = _COMPILED_GDN2_SCAN
+    return compiled(q_f, k_f, v_f, write_f, forget_f, state)  # type: ignore[operator]
+
+
+def _gdn2_compile_available(ref: torch.Tensor) -> bool:
+    global _GDN2_COMPILE_DISABLED
+    if _GDN2_COMPILE_DISABLED:
+        return False
+    if not _truthy_env("OMNICODER2026_GDN2_COMPILED_CHUNKS", "0"):
+        return False
+    if not ref.is_cuda:
+        return False
+    if not hasattr(torch, "compile"):
+        return False
+    try:
+        major, minor = torch.cuda.get_device_capability(ref.device)
+    except Exception:
+        return False
+    return (major, minor) >= (7, 5)
+
+
+def _gated_deltanet2_compiled_chunks(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    *,
+    write_gate: torch.Tensor,
+    forget_gate: torch.Tensor,
+    initial_state: Optional[torch.Tensor] = None,
+    chunk_size: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Optional compiled-chunk GDN2 path for fast CUDA cards.
+
+    This is not an approximation. It uses the same fp32 recurrence as the
+    reference path, split into fixed chunks so Dynamo/Inductor can remove Python
+    overhead while the eager function remains the correctness fallback.
+    """
+
+    global _GDN2_COMPILE_DISABLED
+    _check_qkv(q, k, v)
+    if write_gate is None or forget_gate is None:
+        raise ValueError("compiled GDN2 path requires tensor write and forget gates")
+    q_f = q.float()
+    k_f = F.normalize(k.float(), dim=-1)
+    v_f = v.float()
+    write_f = _prepare_gate(write_gate, v_f, sigmoid=True)
+    forget_f = _prepare_gate(forget_gate, v_f, sigmoid=True)
+    if not isinstance(write_f, torch.Tensor) or not isinstance(forget_f, torch.Tensor):
+        raise ValueError("compiled GDN2 path requires tensor gates")
+    state = _initial_state(q, v.shape[-1], initial_state)
+    chunk = max(1, int(chunk_size if chunk_size is not None else _env_int("OMNICODER2026_GDN2_COMPILED_CHUNK_TOKENS", 32)))
+    mode = str(os.environ.get("OMNICODER2026_GDN2_COMPILED_MODE", "full")).strip().lower()
+    if mode in {"full", "fullscan", "scan"}:
+        try:
+            y, state = _compiled_gdn2_scan(q_f, k_f, v_f, write_f, forget_f, state)
+            return y.to(dtype=v.dtype), state
+        except Exception:
+            _GDN2_COMPILE_DISABLED = True
+            return gated_deltanet2_pytorch(
+                q,
+                k,
+                v,
+                write_gate=write_gate,
+                forget_gate=forget_gate,
+                initial_state=initial_state,
+            )
+    outputs: list[torch.Tensor] = []
+    for start in range(0, q_f.shape[1], chunk):
+        end = min(q_f.shape[1], start + chunk)
+        q_chunk = q_f[:, start:end]
+        k_chunk = k_f[:, start:end]
+        v_chunk = v_f[:, start:end]
+        write_chunk = write_f[:, start:end]
+        forget_chunk = forget_f[:, start:end]
+        if end - start != chunk:
+            y_chunk, state = _gdn2_tensor_scan(q_chunk, k_chunk, v_chunk, write_chunk, forget_chunk, state)
+            outputs.append(y_chunk)
+            continue
+        try:
+            y_chunk, state = _compiled_gdn2_scan(q_chunk, k_chunk, v_chunk, write_chunk, forget_chunk, state)
+        except Exception:
+            _GDN2_COMPILE_DISABLED = True
+            return gated_deltanet2_pytorch(
+                q,
+                k,
+                v,
+                write_gate=write_gate,
+                forget_gate=forget_gate,
+                initial_state=initial_state,
+            )
+        outputs.append(y_chunk)
+    return torch.cat(outputs, dim=1).to(dtype=v.dtype), state
 
 
 def kda_pytorch(
@@ -388,14 +537,27 @@ class GatedDeltaNet2(_BaseRecurrentLinearAttention):
             (inner, inner, inner, self.n_heads, self.n_heads),
             dim=-1,
         )
-        y, state = gated_deltanet2_pytorch(
-            self._shape(q_raw),
-            self._shape(k_raw),
-            self._shape(v_raw),
-            write_gate=write_gate,
-            forget_gate=forget_gate,
-            initial_state=initial_state,
-        )
+        q = self._shape(q_raw)
+        k = self._shape(k_raw)
+        v = self._shape(v_raw)
+        if _gdn2_compile_available(q):
+            y, state = _gated_deltanet2_compiled_chunks(
+                q,
+                k,
+                v,
+                write_gate=write_gate,
+                forget_gate=forget_gate,
+                initial_state=initial_state,
+            )
+        else:
+            y, state = gated_deltanet2_pytorch(
+                q,
+                k,
+                v,
+                write_gate=write_gate,
+                forget_gate=forget_gate,
+                initial_state=initial_state,
+            )
         out = self.o_proj(self._merge(y))
         return (out, state) if return_state else out
 
@@ -431,6 +593,7 @@ __all__ = [
     "KDA",
     "KaczmarzLinearAttention",
     "RecurrentLinearAttentionConfig",
+    "_gated_deltanet2_compiled_chunks",
     "gated_deltanet2_pytorch",
     "kaczmarz_linear_attention_pytorch",
     "kda_pytorch",

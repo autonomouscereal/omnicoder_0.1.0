@@ -551,12 +551,13 @@ class OmniCoder2026PipelineShard(nn.Module):
                 mask = target_mask[:, start:end].float()
                 mask = mask * _token_weight(target_mask[:, start:end], boundary_mask[:, start:end], prefix_mask[:, start:end])
                 if collect_diagnostics:
-                    optimized_target_tokens += int(target_mask[:, start:end].long().sum().detach().cpu().item())
                     _accumulate_ce_by_token_family(ce_accumulator, shifted_labels[:, start:end], token_losses, mask)
                 per_sample_sum = per_sample_sum + (token_losses * mask).sum(dim=1)
                 per_sample_tokens = per_sample_tokens + mask.sum(dim=1)
             per_sample = per_sample_sum / per_sample_tokens.clamp_min(1.0)
-            if not collect_diagnostics:
+            if collect_diagnostics:
+                optimized_target_tokens = int(target_mask.sum().detach().cpu().item())
+            else:
                 optimized_target_tokens = int(shifted_labels.numel())
             self.last_lm_loss_diagnostics = _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(optimized_target_tokens)
             return (per_sample * weights).mean().to(dtype=hidden.dtype)
@@ -568,10 +569,11 @@ class OmniCoder2026PipelineShard(nn.Module):
             logits = self.lm_head(shifted_hidden[:, start:end, :])
             token_losses = F.cross_entropy(logits.transpose(1, 2), shifted_labels[:, start:end], reduction="none").float()
             if collect_diagnostics:
-                optimized_target_tokens += int(target_mask[:, start:end].long().sum().detach().cpu().item())
                 _accumulate_ce_by_token_family(ce_accumulator, shifted_labels[:, start:end], token_losses, total_mask[:, start:end])
             loss_sum = loss_sum + (token_losses * total_mask[:, start:end]).sum()
-        if not collect_diagnostics:
+        if collect_diagnostics:
+            optimized_target_tokens = int(target_mask.sum().detach().cpu().item())
+        else:
             optimized_target_tokens = int(shifted_labels.numel())
         self.last_lm_loss_diagnostics = _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(optimized_target_tokens)
         return loss_sum / total_tokens.to(dtype=loss_sum.dtype)
@@ -1485,17 +1487,17 @@ def _token_family_counts(labels: torch.Tensor | None) -> dict[str, int]:
             target_labels = target_labels[1:]
         if target_labels.numel() == 0:
             return counts
-        flat = target_labels.reshape(-1)
+        flat = target_labels.reshape(-1).to(device="cpu")
         valid = flat.ge(0)
-        if not bool(valid.any()):
+        if int(valid.sum().item()) <= 0:
             return counts
         assigned = torch.zeros_like(valid, dtype=torch.bool)
         for token_range in DEFAULT_LEDGER.ranges:
             mask = valid & flat.ge(int(token_range.begin)) & flat.lt(int(token_range.end))
-            count = int(mask.sum().detach().cpu().item())
+            count = int(mask.sum().item())
             counts[token_range.name] = count
             assigned = assigned | mask
-        counts["unknown"] = int((valid & ~assigned).sum().detach().cpu().item())
+        counts["unknown"] = int((valid & ~assigned).sum().item())
     return counts
 
 
@@ -1507,14 +1509,35 @@ def _modality_counts_from_token_families(family_counts: dict[str, int | float]) 
     return counts
 
 
-def _new_ce_accumulator() -> dict[str, dict[str, float]]:
+def _new_ce_accumulator() -> dict[str, dict[str, Any]]:
     acc = {token_range.name: {"loss_sum": 0.0, "weight_sum": 0.0, "tokens": 0.0} for token_range in DEFAULT_LEDGER.ranges}
     acc["unknown"] = {"loss_sum": 0.0, "weight_sum": 0.0, "tokens": 0.0}
     return acc
 
 
+def _accumulator_add(bucket: dict[str, Any], key: str, value: torch.Tensor | float) -> None:
+    current = bucket.get(key, 0.0)
+    if isinstance(value, torch.Tensor):
+        detached = value.detach()
+        if isinstance(current, torch.Tensor):
+            bucket[key] = current + detached.to(device=current.device)
+        else:
+            bucket[key] = detached + detached.new_tensor(float(current or 0.0))
+        return
+    if isinstance(current, torch.Tensor):
+        bucket[key] = current + current.new_tensor(float(value or 0.0))
+    else:
+        bucket[key] = float(current or 0.0) + float(value or 0.0)
+
+
+def _accumulator_float(value: Any) -> float:
+    if isinstance(value, torch.Tensor):
+        return float(value.detach().float().cpu().item())
+    return float(value or 0.0)
+
+
 def _accumulate_ce_by_token_family(
-    accumulator: dict[str, dict[str, float]],
+    accumulator: dict[str, dict[str, Any]],
     target_labels: torch.Tensor,
     token_losses: torch.Tensor,
     token_weights: torch.Tensor | None = None,
@@ -1543,33 +1566,31 @@ def _accumulate_ce_by_token_family(
         assigned = torch.zeros_like(valid, dtype=torch.bool)
         for token_range in DEFAULT_LEDGER.ranges:
             mask = valid & labels.ge(int(token_range.begin)) & labels.lt(int(token_range.end))
-            if bool(mask.any()):
-                weight_sum = float(weights[mask].sum().detach().cpu().item())
-                loss_sum = float((losses[mask] * weights[mask]).sum().detach().cpu().item())
-                bucket = accumulator[token_range.name]
-                bucket["loss_sum"] += loss_sum
-                bucket["weight_sum"] += weight_sum
-                bucket["tokens"] += float(mask.sum().detach().cpu().item())
+            weight_sum = weights[mask].sum()
+            loss_sum = (losses[mask] * weights[mask]).sum()
+            bucket = accumulator[token_range.name]
+            _accumulator_add(bucket, "loss_sum", loss_sum)
+            _accumulator_add(bucket, "weight_sum", weight_sum)
+            _accumulator_add(bucket, "tokens", mask.sum().to(dtype=torch.float32))
             assigned = assigned | mask
         unknown_mask = valid & ~assigned
-        if bool(unknown_mask.any()):
-            weight_sum = float(weights[unknown_mask].sum().detach().cpu().item())
-            loss_sum = float((losses[unknown_mask] * weights[unknown_mask]).sum().detach().cpu().item())
-            bucket = accumulator["unknown"]
-            bucket["loss_sum"] += loss_sum
-            bucket["weight_sum"] += weight_sum
-            bucket["tokens"] += float(unknown_mask.sum().detach().cpu().item())
+        weight_sum = weights[unknown_mask].sum()
+        loss_sum = (losses[unknown_mask] * weights[unknown_mask]).sum()
+        bucket = accumulator["unknown"]
+        _accumulator_add(bucket, "loss_sum", loss_sum)
+        _accumulator_add(bucket, "weight_sum", weight_sum)
+        _accumulator_add(bucket, "tokens", unknown_mask.sum().to(dtype=torch.float32))
 
 
-def _finalize_ce_accumulator(accumulator: dict[str, dict[str, float]]) -> tuple[dict[str, float | None], dict[str, float | None], dict[str, int]]:
+def _finalize_ce_accumulator(accumulator: dict[str, dict[str, Any]]) -> tuple[dict[str, float | None], dict[str, float | None], dict[str, int]]:
     ce_by_family: dict[str, float | None] = {}
     family_counts: dict[str, int] = {}
     modality_loss_sum: dict[str, float] = {}
     modality_weight_sum: dict[str, float] = {}
     for family, stats in accumulator.items():
-        weight_sum = float(stats.get("weight_sum", 0.0) or 0.0)
-        loss_sum = float(stats.get("loss_sum", 0.0) or 0.0)
-        token_count = int(stats.get("tokens", 0.0) or 0)
+        weight_sum = _accumulator_float(stats.get("weight_sum", 0.0))
+        loss_sum = _accumulator_float(stats.get("loss_sum", 0.0))
+        token_count = int(_accumulator_float(stats.get("tokens", 0.0)))
         family_counts[family] = token_count
         ce_by_family[family] = (loss_sum / weight_sum) if weight_sum > 0.0 else None
         modality = TOKEN_FAMILY_TO_MODALITY.get(str(family), "unknown")
@@ -1582,7 +1603,7 @@ def _finalize_ce_accumulator(accumulator: dict[str, dict[str, float]]) -> tuple[
     return ce_by_family, ce_by_modality, family_counts
 
 
-def _lm_loss_diagnostics(labels: torch.Tensor, optimized_target_tokens: int, ce_accumulator: dict[str, dict[str, float]]) -> dict[str, Any]:
+def _lm_loss_diagnostics(labels: torch.Tensor, optimized_target_tokens: int, ce_accumulator: dict[str, dict[str, Any]]) -> dict[str, Any]:
     target_counts = _token_family_counts(labels)
     ce_by_family, ce_by_modality, optimized_counts = _finalize_ce_accumulator(ce_accumulator)
     return {
@@ -2559,7 +2580,7 @@ def _module_grad_norm(model: nn.Module, *, enabled: bool) -> float | None:
         chunk_elems = max(1, int(os.getenv("OMNICODER2026_GRAD_NORM_CHUNK_ELEMS", "262144")))
     except ValueError:
         chunk_elems = 262_144
-    total_sq = 0.0
+    total_sq: torch.Tensor | None = None
     found = False
     with torch.no_grad():
         for parameter in model.parameters():
@@ -2572,10 +2593,11 @@ def _module_grad_norm(model: nn.Module, *, enabled: bool) -> float | None:
             for start in range(0, flat.numel(), chunk_elems):
                 chunk = flat[start : start + chunk_elems].float()
                 param_sq = param_sq + torch.sum(chunk * chunk)
-            total_sq += float(param_sq.detach().cpu().item())
+            total_sq = param_sq if total_sq is None else total_sq + param_sq.to(device=total_sq.device)
     if not found:
         return None
-    return float(math.sqrt(max(0.0, total_sq)))
+    total_sq_value = float(total_sq.detach().cpu().item()) if isinstance(total_sq, torch.Tensor) else 0.0
+    return float(math.sqrt(max(0.0, total_sq_value)))
 
 
 def _runtime_rank_memory_from_telemetry(record: dict[str, Any]) -> dict[str, Any]:
@@ -3315,6 +3337,7 @@ def main(argv: list[str] | None = None) -> int:
             if hasattr(optimizer, "reset_step_stats"):
                 optimizer.reset_step_stats()
         losses: list[torch.Tensor] = []
+        sample_weight_mean: float | None = None
         if rank == 0:
             if log_detail_events:
                 _write_log(args.log_file, {"event": "batch_fetch_start", "local_step": int(local_step + 1), "global_step": int(global_step)})
@@ -3452,7 +3475,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         if rank == 0:
             with step_timer.span("log_write_sec"):
-                _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": loss_value_for_log, "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": float(batch_weights.detach().mean().cpu()) if collect_loss_diagnostics else None, "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle), "train_diagnostics_file": str(train_diagnostics_path), "step_timing_file": str(step_timing_path), "loss_diagnostics_collected": bool(collect_loss_diagnostics), "valid_target_tokens": int((loss_diagnostics.get("valid_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0), "optimized_target_tokens": int((loss_diagnostics.get("optimized_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0)})
+                _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": loss_value_for_log, "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": sample_weight_mean, "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle), "train_diagnostics_file": str(train_diagnostics_path), "step_timing_file": str(step_timing_path), "loss_diagnostics_collected": bool(collect_loss_diagnostics), "valid_target_tokens": int((loss_diagnostics.get("valid_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0), "optimized_target_tokens": int((loss_diagnostics.get("optimized_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0)})
         if log_step_timing:
             rank_elapsed: list[float] = []
             if collect_rank_skew:
