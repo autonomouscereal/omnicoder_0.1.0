@@ -86,6 +86,12 @@ class OmniCoder2026Config:
     layer_pattern: tuple[BlockKind, ...] = DEFAULT_LAYER_PATTERN
     tie_embeddings: bool = True
     mtp_heads: int = 2
+    reasoning_slots: int = 8
+    reasoning_max_steps: int = 8
+    reasoning_default_steps: int = 0
+    reasoning_cell_rank: int = 512
+    reasoning_pool_tokens: int = 1024
+    reasoning_output_scale: float = 0.05
     flow_latent_dim: int = 1024
     native_media_feature_dim: int = 3072
     native_media_position_dim: int = 4
@@ -133,6 +139,11 @@ class OmniCoder2026Config:
             o_groups=2,
             index_head_dim=32,
             flow_latent_dim=256,
+            reasoning_slots=4,
+            reasoning_max_steps=4,
+            reasoning_default_steps=0,
+            reasoning_cell_rank=64,
+            reasoning_pool_tokens=128,
             block_attnres_rank=32,
             block_attnres_chunk_tokens=512,
             fake_quant_group_size=64,
@@ -192,6 +203,11 @@ class OmniCoder2026Config:
             o_lora_rank=1024,
             o_groups=8,
             flow_latent_dim=1024,
+            reasoning_slots=8,
+            reasoning_max_steps=8,
+            reasoning_default_steps=0,
+            reasoning_cell_rank=512,
+            reasoning_pool_tokens=1024,
             residual_mode="block_attnres",
             block_attnres_rank=256,
             block_attnres_chunk_tokens=2048,
@@ -213,6 +229,11 @@ class OmniCoder2026Config:
             hca_block_size=131_072,
             latent_dim=512,
             flow_latent_dim=1024,
+            reasoning_slots=8,
+            reasoning_max_steps=8,
+            reasoning_default_steps=0,
+            reasoning_cell_rank=512,
+            reasoning_pool_tokens=1024,
         )
 
 
@@ -346,6 +367,8 @@ def reset_omnicoder2026_parameters(module: nn.Module, cfg: OmniCoder2026Config) 
             nn.init.normal_(child.weight, mean=0.0, std=std)
             if child.bias is not None:
                 nn.init.zeros_(child.bias)
+        elif isinstance(child, AdaptiveLatentReasoner):
+            nn.init.normal_(child.slot_embeddings, mean=0.0, std=std)
 
 
 class RMSNorm(nn.Module):
@@ -821,6 +844,111 @@ class NativeContinuousMediaBridge(nn.Module):
         return self.reconstruction_head(hidden)
 
 
+class AdaptiveLatentReasoner(nn.Module):
+    """Shared latent deliberation cell for effort-controlled reasoning.
+
+    The cell adds compute-depth without adding vocab heads. It pools long
+    sequences into a bounded hidden workspace, refines a small set of continuous
+    slots for a caller-selected number of steps, then broadcasts a low-rank
+    update back into the trunk stream. The slots are hidden states, not public
+    text chain-of-thought tokens.
+    """
+
+    def __init__(self, cfg: OmniCoder2026Config):
+        super().__init__()
+        self.cfg = cfg
+        self.slots = max(0, int(cfg.reasoning_slots or 0))
+        self.max_steps = max(0, int(cfg.reasoning_max_steps or 0))
+        self.default_steps = max(0, min(self.max_steps, int(cfg.reasoning_default_steps or 0)))
+        self.pool_tokens = max(1, int(cfg.reasoning_pool_tokens or 1))
+        rank = max(1, min(int(cfg.reasoning_cell_rank or 1), int(cfg.d_model)))
+        self.enabled = self.slots > 0 and self.max_steps > 0 and rank > 0
+        self.slot_embeddings = nn.Parameter(torch.empty(max(1, self.slots), cfg.d_model))
+        self.input_norm = RMSNorm(cfg.d_model, cfg.rms_norm_eps)
+        self.slot_norm = RMSNorm(cfg.d_model, cfg.rms_norm_eps)
+        self.cell_down = QuantAwareLinear(cfg.d_model, rank, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.cell_up = QuantAwareLinear(rank, cfg.d_model, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.output_down = QuantAwareLinear(cfg.d_model, rank, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.output_up = QuantAwareLinear(rank, cfg.d_model, bias=False, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.control_head = QuantAwareLinear(cfg.d_model, 5, bias=True, fake_quant=cfg.fake_quant, group_size=cfg.fake_quant_group_size)
+        self.output_scale = nn.Parameter(torch.tensor(float(cfg.reasoning_output_scale), dtype=torch.float32))
+        self.last_diagnostics: dict[str, Any] = {}
+
+    def _steps_from_effort(self, effort: int | str | None) -> int:
+        if not self.enabled:
+            return 0
+        if effort is None:
+            return self.default_steps
+        if isinstance(effort, str):
+            key = effort.strip().lower()
+            if key in {"off", "none", "0"}:
+                return 0
+            if key in {"low", "1"}:
+                return min(self.max_steps, 1)
+            if key in {"medium", "med"}:
+                return min(self.max_steps, max(2, self.max_steps // 2))
+            if key in {"high", "hard"}:
+                return min(self.max_steps, max(4, self.max_steps))
+            try:
+                effort = int(key)
+            except ValueError:
+                return self.default_steps
+        return max(0, min(self.max_steps, int(effort)))
+
+    def _pooled_context(self, x: torch.Tensor) -> torch.Tensor:
+        if x.shape[1] <= self.pool_tokens:
+            return self.input_norm(x)
+        chunk_count = min(self.pool_tokens, int(x.shape[1]))
+        chunk_size = int(math.ceil(float(x.shape[1]) / float(chunk_count)))
+        pad = chunk_count * chunk_size - int(x.shape[1])
+        pooled = F.pad(x, (0, 0, 0, pad)) if pad > 0 else x
+        pooled = pooled.reshape(x.shape[0], chunk_count, chunk_size, x.shape[-1]).mean(dim=2)
+        return self.input_norm(pooled)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        *,
+        effort: int | str | None = None,
+        return_controls: bool = False,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
+        steps = self._steps_from_effort(effort)
+        if steps <= 0:
+            self.last_diagnostics = {
+                "schema": "omnicoder.latent_reasoner_diagnostics_2026.v1",
+                "enabled": bool(self.enabled),
+                "steps": 0,
+                "slots": int(self.slots),
+                "pool_tokens": int(min(self.pool_tokens, int(x.shape[1]))),
+            }
+            return x, None
+        context = self._pooled_context(x)
+        slots = self.slot_embeddings[: self.slots].to(device=x.device, dtype=x.dtype).unsqueeze(0).expand(x.shape[0], -1, -1)
+        scale = 1.0 / math.sqrt(float(x.shape[-1]))
+        for _ in range(steps):
+            slot_q = self.slot_norm(slots)
+            attn = torch.matmul(slot_q, context.transpose(-1, -2)) * scale
+            attn = torch.softmax(attn, dim=-1)
+            slot_context = torch.matmul(attn, context)
+            slots = slots + self.cell_up(F.silu(self.cell_down(slot_context)))
+        slot_summary = slots.mean(dim=1)
+        update = self.output_up(F.silu(self.output_down(slot_summary))).unsqueeze(1)
+        scale_param = self.output_scale.to(device=x.device, dtype=x.dtype)
+        x = x + update.to(dtype=x.dtype) * scale_param
+        controls_tensor = self.control_head(slot_summary)
+        names = ("difficulty", "halt_continue", "answer_readiness", "verifier_margin", "tool_readiness")
+        controls = {name: controls_tensor[:, index] for index, name in enumerate(names)}
+        self.last_diagnostics = {
+            "schema": "omnicoder.latent_reasoner_diagnostics_2026.v1",
+            "enabled": True,
+            "steps": int(steps),
+            "slots": int(self.slots),
+            "pool_tokens": int(context.shape[1]),
+            "control_names": list(names),
+        }
+        return x, controls if return_controls else None
+
+
 class OmniCoder2026Block(nn.Module):
     def __init__(self, cfg: OmniCoder2026Config, kind: BlockKind):
         super().__init__()
@@ -878,6 +1006,7 @@ class OmniCoder2026(nn.Module):
                 blocks.append(OmniCoder2026Block(cfg, pattern[i % len(pattern)]))
         self.blocks = nn.ModuleList(blocks)
         with _default_device_scope(init_head_device):
+            self.latent_reasoner = AdaptiveLatentReasoner(cfg)
             self.norm = RMSNorm(cfg.d_model, cfg.rms_norm_eps)
         # The tied 330k-token output matrix is too large to fake-quantize on
         # every forward pass at the 20B target scale; keep it trainable in
@@ -902,6 +1031,7 @@ class OmniCoder2026(nn.Module):
         self._weighted_device_map: dict[str, object] | None = None
         self._weighted_pipeline_stages: list[tuple[torch.device, int, int]] = []
         self._checkpoint_blocks = bool(checkpoint_blocks)
+        self.last_reasoning_diagnostics: dict[str, Any] = {}
 
     @staticmethod
     def _module_device(module: nn.Module) -> torch.device:
@@ -963,6 +1093,28 @@ class OmniCoder2026(nn.Module):
         for block in self.blocks[start:end]:
             x = self._run_block(block, x)
         return x
+
+    def _weighted_reasoning_effort(self) -> int | str | None:
+        raw = os.environ.get("OMNICODER2026_WEIGHTED_REASONING_EFFORT", "")
+        if not raw:
+            return int(self.cfg.reasoning_default_steps)
+        try:
+            return int(raw)
+        except ValueError:
+            return raw
+
+    def _apply_latent_reasoning(
+        self,
+        x: torch.Tensor,
+        *,
+        effort: int | str | None = None,
+        return_controls: bool = False,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
+        if isinstance(self.latent_reasoner, AdaptiveLatentReasoner):
+            x, controls = self.latent_reasoner(x, effort=effort, return_controls=return_controls)
+            self.last_reasoning_diagnostics = dict(self.latent_reasoner.last_diagnostics)
+            return x, controls
+        return x, None
 
     def _forward_weighted_hidden(self, input_ids: torch.Tensor) -> torch.Tensor:
         embed_device = self._module_device(self.embed)
@@ -1034,6 +1186,7 @@ class OmniCoder2026(nn.Module):
             x = self._forward_weighted_hidden(input_chunk)
             if x.device != head_device:
                 x = x.to(head_device, non_blocking=True)
+            x, _controls = self._apply_latent_reasoning(x, effort=self._weighted_reasoning_effort())
             hidden = self.norm(x)
             loss_sum, tokens = self._chunked_lm_loss_sum(hidden, label_chunk)
             loss_sums.append(loss_sum)
@@ -1106,6 +1259,7 @@ class OmniCoder2026(nn.Module):
                             head_stream.wait_event(ready_event)
                             if x.device != head_device:
                                 x = x.to(head_device, non_blocking=True)
+                            x, _controls = self._apply_latent_reasoning(x, effort=self._weighted_reasoning_effort())
                             hidden = self.norm(x)
                             loss_sum, _ = self._chunked_lm_loss_sum(hidden, label_chunks[microbatch_index])
                             loss_sums[microbatch_index] = loss_sum
@@ -1144,6 +1298,7 @@ class OmniCoder2026(nn.Module):
         for block, device in zip(self.blocks, layer_devices, strict=True):
             block.to(device)
         self.norm.to(head_device)
+        self.latent_reasoner.to(head_device)
         self.mtp_heads.to(head_device)
         self.flow_head.to(head_device)
         self.native_media_bridge.to(embed_device)
@@ -1184,6 +1339,7 @@ class OmniCoder2026(nn.Module):
         return_aux: bool = False,
         return_logits: bool = True,
         return_hidden: bool = True,
+        reasoning_effort: int | str | None = None,
     ) -> dict[str, torch.Tensor | list[torch.Tensor] | None]:
         if input_ids.shape[1] > self.max_seq_len:
             raise ValueError(f"sequence length {input_ids.shape[1]} exceeds native context {self.max_seq_len}")
@@ -1214,6 +1370,8 @@ class OmniCoder2026(nn.Module):
         head_device = self._module_device(self.norm)
         if x.device != head_device:
             x = x.to(head_device, non_blocking=True)
+        reasoner_controls: dict[str, torch.Tensor] | None = None
+        x, reasoner_controls = self._apply_latent_reasoning(x, effort=reasoning_effort, return_controls=bool(return_aux))
         loss = None
         hidden = self.norm(x)
         logits = None
@@ -1284,6 +1442,9 @@ class OmniCoder2026(nn.Module):
         if return_aux:
             result["grounding"] = self.grounding_head(hidden)
             result["sync"] = self.sync_head(hidden).squeeze(-1)
+            if reasoner_controls is not None:
+                for name, tensor in reasoner_controls.items():
+                    result[f"reasoning_{name}"] = tensor
         return result
 
     def architecture_manifest(self) -> dict:
@@ -1340,6 +1501,17 @@ class OmniCoder2026(nn.Module):
                 "chunk_tokens": int(cfg.block_attnres_chunk_tokens),
                 "memory_rule": "compressed causal residual block summaries; no full depth-token history",
             },
+            "adaptive_latent_reasoning": {
+                "mode": "shared_low_rank_hidden_deliberation_slots",
+                "slots": int(cfg.reasoning_slots),
+                "max_steps": int(cfg.reasoning_max_steps),
+                "default_steps": int(cfg.reasoning_default_steps),
+                "cell_rank": int(cfg.reasoning_cell_rank),
+                "pool_tokens": int(cfg.reasoning_pool_tokens),
+                "controls": ["difficulty", "halt_continue", "answer_readiness", "verifier_margin", "tool_readiness"],
+                "public_cot": False,
+                "rule": "adds compute-depth by reusing one latent cell; does not add full-vocab verifier heads",
+            },
             "native_continuous_media": {
                 "mode": "shared_sensenova_style_patch_segment_flow",
                 "feature_dim": int(cfg.native_media_feature_dim),
@@ -1349,7 +1521,7 @@ class OmniCoder2026(nn.Module):
                 "no_in_trunk_modality_adapters": True,
             },
             "generation_modes": ["autoregressive_tokens", "continuous_latent_flow", "native_continuous_patch_segment_flow", "codec_bridge_tokens"],
-            "omni_heads": ["shared_lm_head", "mtp_heads", "flow_head", "native_media_reconstruction_head", "grounding_head", "sync_head"],
+            "omni_heads": ["shared_lm_head", "mtp_heads", "latent_reasoner_controls", "flow_head", "native_media_reconstruction_head", "grounding_head", "sync_head"],
             "token_ranges": {k: [int(v[0]), int(v[1])] for k, v in cfg.token_ranges.items()},
             "quantization": {
                 "weights": cfg.weight_quant_target,

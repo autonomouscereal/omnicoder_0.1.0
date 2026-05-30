@@ -5,7 +5,7 @@ import pytest
 pytest.importorskip("torch")
 import torch
 
-from omnicoder.modeling.omnicoder2026 import BlockAttentionResidual, OmniCoder2026, OmniCoder2026Config
+from omnicoder.modeling.omnicoder2026 import AdaptiveLatentReasoner, BlockAttentionResidual, OmniCoder2026, OmniCoder2026Config
 from omnicoder.tokenization.native_segments_2026 import build_native_segment_packet
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 from omnicoder.training.pipeline_pretrain_2026_dense import OmniCoder2026PipelineShard, shard_spec, stage_ranges
@@ -129,3 +129,76 @@ def test_native_continuous_media_features_train_through_shared_trunk() -> None:
     assert out["native_media_loss"] is not None
     assert torch.isfinite(out["native_media_loss"])
     assert out["native_media_reconstruction"].shape == targets.shape
+
+
+def test_adaptive_latent_reasoner_outputs_effort_controls() -> None:
+    cfg = OmniCoder2026Config.probe()
+    cfg.vocab_size = 256
+    cfg.d_model = 64
+    cfg.n_heads = 4
+    cfg.head_dim = 16
+    cfg.num_key_value_heads = 1
+    cfg.mlp_dim = 128
+    cfg.n_layers = 2
+    cfg.layer_pattern = ("kda", "local")
+    cfg.max_seq_len = 16
+    cfg.reasoning_slots = 2
+    cfg.reasoning_max_steps = 3
+    cfg.reasoning_default_steps = 0
+    cfg.reasoning_cell_rank = 8
+    cfg.reasoning_pool_tokens = 4
+    cfg.tie_embeddings = True
+    model = OmniCoder2026(cfg)
+    input_ids = torch.randint(0, cfg.vocab_size, (2, 8), dtype=torch.long)
+    labels = input_ids.clone()
+
+    out = model(
+        input_ids,
+        labels=labels,
+        return_aux=True,
+        return_logits=False,
+        return_hidden=False,
+        reasoning_effort=2,
+    )
+
+    assert out["loss"] is not None
+    assert torch.isfinite(out["loss"])
+    for key in (
+        "reasoning_difficulty",
+        "reasoning_halt_continue",
+        "reasoning_answer_readiness",
+        "reasoning_verifier_margin",
+        "reasoning_tool_readiness",
+    ):
+        assert key in out
+        assert out[key].shape == (2,)
+        assert torch.isfinite(out[key]).all()
+    assert model.last_reasoning_diagnostics["steps"] == 2
+    manifest = model.architecture_manifest()
+    assert manifest["adaptive_latent_reasoning"]["mode"] == "shared_low_rank_hidden_deliberation_slots"
+    assert manifest["adaptive_latent_reasoning"]["max_steps"] == 3
+    assert manifest["adaptive_latent_reasoning"]["public_cot"] is False
+
+
+def test_adaptive_latent_reasoner_preserves_zero_output_scale() -> None:
+    cfg = _tiny_native_cfg()
+    cfg.reasoning_output_scale = 0.0
+    reasoner = AdaptiveLatentReasoner(cfg)
+
+    assert float(reasoner.output_scale.detach().item()) == 0.0
+
+
+def test_pipeline_reasoner_accepts_named_effort(monkeypatch) -> None:
+    cfg = _tiny_native_cfg()
+    cfg.n_layers = 2
+    cfg.reasoning_max_steps = 3
+    cfg.reasoning_default_steps = 0
+    ranges = stage_ranges(cfg.n_layers, "1,1")
+    shard = OmniCoder2026PipelineShard(cfg, shard_spec(1, ranges))
+    monkeypatch.setenv("OMNICODER2026_PIPELINE_REASONING_EFFORT", "high")
+    x = torch.randn(1, 6, cfg.d_model)
+
+    out = shard(x)
+
+    assert out.shape == x.shape
+    assert shard.last_reasoning_diagnostics["steps"] == cfg.reasoning_max_steps

@@ -113,6 +113,95 @@ def test_real_corpus_builder_covers_modalities(tmp_path, monkeypatch):
         assert Path(manifest["per_modality_jsonl"][modality]).exists()
 
 
+def test_pipeline_diagnostics_args_wire_step_timing_and_profile_skip_final_save(tmp_path, monkeypatch) -> None:
+    cfg = {"training_plan": {"distributed_training": {"mode": "pipeline_stage"}}}
+    args = argparse.Namespace(distributed="")
+    cmd: list[str] = []
+
+    orch.append_pipeline_train_diagnostics_args(cmd, cfg, args, tmp_path / "out", "profile run")
+    assert "--step_timing_file" in cmd
+    assert "--skip_final_save" not in cmd
+
+    monkeypatch.setenv("OMNICODER2026_SKIP_FINAL_SAVE", "1")
+    cmd = []
+    orch.append_pipeline_train_diagnostics_args(cmd, cfg, args, tmp_path / "out", "profile run")
+    assert "--step_timing_file" in cmd
+    assert "--skip_final_save" in cmd
+
+
+def test_no_checkpoint_profile_training_stage_passes_without_checkpoint(tmp_path, monkeypatch) -> None:
+    train = tmp_path / "text_train.jsonl"
+    _write_jsonl(train, [{"messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}], **QUALITY_META}])
+    profile = {
+        "training_plan": {
+            "stage_order": ["text"],
+            "required_modalities": ["text"],
+            "min_records_per_modality": 1,
+            "distributed_training": {"mode": "pipeline_stage", "nproc_per_node": 3},
+            "resume_between_stages": True,
+        },
+        "modalities": {"text": {"enabled": True}},
+    }
+    manifest = {
+        "per_modality_split_jsonl": {"text": {"train": str(train)}},
+        "per_modality_jsonl": {"text": str(train)},
+        "modalities": {"text": 1},
+        "split_counts": {"text": {"train": 1}},
+    }
+    args = argparse.Namespace(
+        stage_order="text",
+        start_stage="",
+        device="cpu",
+        steps_per_stage=1,
+        seq_len=16,
+        batch_size=1,
+        lr=1.0e-5,
+        save_interval=0,
+        resume_checkpoint="",
+        fake_quant=False,
+        distributed="",
+        nproc_per_node=0,
+        precision="",
+        init_dtype="",
+        optimizer="",
+        optimizer_in_backward=False,
+        optimizer_in_backward_update="",
+        optimizer_in_backward_grad_clip=0.0,
+        optimizer_in_backward_clip_mode="",
+        optimizer_in_backward_adafactor_chunk_rows=0,
+        optimizer_in_backward_adafactor_clip_threshold=0.0,
+        optimizer_in_backward_adafactor_decay_rate=0.0,
+        optimizer_in_backward_adafactor_eps1=0.0,
+        rank_device_map="",
+        placement_layer_counts="",
+        placement="",
+        placement_devices="",
+        placement_head_device=-1,
+        placement_schedule="",
+        activation_checkpointing=False,
+        cpu_offload=False,
+        fake_quant_chunk_rows=0,
+        fake_quant_max_full_elements=0,
+        allow_verifier_preset=False,
+    )
+
+    monkeypatch.setenv("OMNICODER2026_SKIP_FINAL_SAVE", "1")
+    monkeypatch.setattr(orch, "run_integrity_preflight", lambda *a, **k: {"status": "passed"})
+    monkeypatch.setattr(orch, "require_integrity_preflight", lambda report: None)
+    monkeypatch.setattr(orch, "pretrain_launcher", lambda cfg, args: ["python", "-m", "trainer"])
+    monkeypatch.setattr(orch, "append_pretrain_runtime_args", lambda cmd, cfg, args: None)
+    monkeypatch.setattr(orch, "run_command", lambda *a, **k: 0)
+    monkeypatch.setattr(orch, "parse_losses", lambda _path: [20.0, 19.0])
+
+    report = orch.run_training_stages(profile, manifest, tmp_path / "out", args)
+
+    assert report["status"] == "passed"
+    assert report["profiling_no_checkpoint"] is True
+    assert report["final_checkpoint"] is None
+    assert report["stages"][0]["reason"] == "profiling_no_checkpoint_requested"
+    assert report["stages"][0]["checkpoint_complete"] is False
+
+
 def test_media_records_include_ledger_token_ids(tmp_path, monkeypatch):
     profile = _profile(tmp_path)
     monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)

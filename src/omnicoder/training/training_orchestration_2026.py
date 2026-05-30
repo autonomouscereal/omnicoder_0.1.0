@@ -3097,6 +3097,10 @@ def checkpoint_is_complete(path: str | Path, expected_world_size: int | None = N
     return True
 
 
+def no_checkpoint_profile_enabled() -> bool:
+    return truthy_value(os.getenv("OMNICODER2026_SKIP_FINAL_SAVE", ""))
+
+
 def checkpoint_readiness_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
     raw = cfg.get("checkpoint_readiness")
     return raw if isinstance(raw, dict) else {}
@@ -3763,9 +3767,14 @@ def append_pipeline_train_diagnostics_args(cmd: list[str], cfg: dict[str, Any], 
             str(diagnostics_dir / f"{safe_stem}_telemetry.jsonl"),
             "--train_diagnostics_file",
             str(diagnostics_dir / f"{safe_stem}_train_diagnostics.jsonl"),
-            "--diagnostics_grad_norm",
+            "--step_timing_file",
+            str(diagnostics_dir / f"{safe_stem}_step_timing.jsonl"),
         ]
     )
+    if truthy_value(os.getenv("OMNICODER2026_DIAGNOSTICS_GRAD_NORM", "")):
+        cmd.append("--diagnostics_grad_norm")
+    if truthy_value(os.getenv("OMNICODER2026_SKIP_FINAL_SAVE", "")):
+        cmd.append("--skip_final_save")
 
 
 def pipeline_sample_loss_launcher(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> list[str]:
@@ -3916,6 +3925,7 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
     initial_checkpoint_path: Path | None = Path(initial_checkpoint) if initial_checkpoint else None
     previous_checkpoint: Path | None = initial_checkpoint_path
     pipeline_stage_trainer = uses_pipeline_stage_trainer(cfg, args)
+    no_checkpoint_profile = pipeline_stage_trainer and no_checkpoint_profile_enabled()
     checkpoint_expected_world_size = expected_pipeline_world_size(cfg, args)
     if previous_checkpoint is not None and not previous_checkpoint.exists():
         raise FileNotFoundError(f"initial_checkpoint does not exist: {previous_checkpoint}")
@@ -4122,13 +4132,22 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
                 stage_report["reason"] = "heldout_sample_loss_failed"
             else:
                 stage_report["status"] = "passed"
+        elif no_checkpoint_profile:
+            stage_report["status"] = "passed"
+            stage_report["reason"] = "profiling_no_checkpoint_requested"
+            stage_report["checkpoint_complete"] = False
+            stage_report["profiling_no_checkpoint"] = True
+            stage_report["completion_marker"] = str(checkpoint_complete_marker(checkpoint))
         else:
             stage_report["status"] = "failed"
             stage_report["reason"] = "checkpoint_missing_or_incomplete_after_trainer_success"
             stage_report["completion_marker"] = str(checkpoint_complete_marker(checkpoint))
         if stage_report["status"] == "passed":
-            previous_checkpoint = checkpoint
+            if not no_checkpoint_profile:
+                previous_checkpoint = checkpoint
         stage_reports.append(stage_report)
+        if no_checkpoint_profile and stage_report.get("status") == "passed":
+            break
         if stage_report.get("status") == "failed" and modality in required:
             break
 
@@ -4143,6 +4162,7 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
         "target_cuda_visible_devices": cuda_visible_report,
         "checkpoint_readiness_gate": initial_readiness_gate,
         "failed_required_stages": failed_required,
+        "profiling_no_checkpoint": bool(no_checkpoint_profile),
         "stages": stage_reports,
         "final_checkpoint": str(previous_checkpoint) if previous_checkpoint is not None else None,
     }
@@ -4264,6 +4284,7 @@ def run_long_context_curriculum_stage(
     device = str(arg_value(args, "device", "") or plan.get("device") or ("cuda" if torch_available() else "cpu"))
     save_interval = resolve_save_interval(args, plan.get("save_interval"))
     pipeline_stage_trainer = uses_pipeline_stage_trainer(cfg, args)
+    no_checkpoint_profile = pipeline_stage_trainer and no_checkpoint_profile_enabled()
     expected_world_size = expected_pipeline_world_size(cfg, args)
     resume_completed = resume_completed_stages_enabled(plan, args)
     fake_quant = bool(arg_value(args, "fake_quant", False) or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled"))
@@ -4383,18 +4404,24 @@ def run_long_context_curriculum_stage(
             else:
                 report["status"] = "passed"
                 current_checkpoint = checkpoint_out
+        elif code == 0 and no_checkpoint_profile:
+            report["status"] = "passed"
+            report["reason"] = "profiling_no_checkpoint_requested"
+            report["profiling_no_checkpoint"] = True
         else:
             report["status"] = "failed"
             report["reason"] = "long_context_trainer_returned_nonzero_or_incomplete_checkpoint"
         rung_reports.append(report)
-        if report.get("status") != "passed":
+        if report.get("status") != "passed" or (no_checkpoint_profile and report.get("profiling_no_checkpoint")):
             break
     status = "failed" if any(row.get("status") != "passed" for row in rung_reports) else "passed"
     benchmark_gate = (
         run_checkpoint_benchmark_gate(profile, manifest, out_dir, current_checkpoint, "long_context_curriculum_final", namespace_with(args, benchmark_seq_len=int(ladder[-1])))
-        if status == "passed" and current_checkpoint
+        if status == "passed" and current_checkpoint and not no_checkpoint_profile
         else {"status": "skipped", "reason": "long_context_curriculum_failed"}
     )
+    if status == "passed" and no_checkpoint_profile:
+        benchmark_gate = {"status": "skipped", "reason": "profiling_no_checkpoint_requested"}
     if benchmark_gate.get("status") == "failed":
         status = "failed"
     return {
@@ -4662,6 +4689,7 @@ def run_posttraining_stages(
     lr = float(arg_value(args, "posttrain_lr", 0.0) or rl.get("posttrain_learning_rate") or 1e-6)
     max_records = int(arg_value(args, "posttrain_max_records", 0) or rl.get("posttrain_max_records") or 0)
     save_interval = resolve_save_interval(args, cfg.get("training_plan", {}).get("save_interval"))
+    no_checkpoint_profile = no_checkpoint_profile_enabled()
     stop_on_failure = bool(rl.get("stop_on_posttrain_failure", True))
     retention = posttrain_retention_cfg(rl)
     replay_final_checkpoint: Path | None = current_checkpoint
@@ -4835,8 +4863,13 @@ def run_posttraining_stages(
                                 retention,
                             )
                     else:
-                        report["status"] = "failed"
-                        report["reason"] = "pipeline_reward_replay_returned_nonzero_or_incomplete_checkpoint"
+                        if replay_code == 0 and no_checkpoint_profile:
+                            report["status"] = "passed"
+                            report["reason"] = "profiling_no_checkpoint_requested"
+                            report["profiling_no_checkpoint"] = True
+                        else:
+                            report["status"] = "failed"
+                            report["reason"] = "pipeline_reward_replay_returned_nonzero_or_incomplete_checkpoint"
             else:
                 checkpoint_value = str(bridge_execution.get("checkpoint") or "")
                 replay_out = Path(checkpoint_value) if checkpoint_value else out_dir / "posttrain" / safe_name / "checkpoints" / f"{safe_name}_live_replay.pt"
@@ -4872,6 +4905,8 @@ def run_posttraining_stages(
                     report["status"] = "failed"
                     report["reason"] = "posttrain_bridge_live_optimizer_failed"
         reports.append(report)
+        if no_checkpoint_profile and report.get("profiling_no_checkpoint"):
+            break
         if stop_on_failure and report.get("status") == "failed":
             for blocked in algorithms[index:]:
                 reports.append(
@@ -4891,6 +4926,7 @@ def run_posttraining_stages(
         "posttrain_input_route_map": {key: str(value) for key, value in sorted(routed_inputs.items())},
         "mode": "posttrain_bridge_live_optimizer" if live_replay else "bridge_dry_run",
         "stages": reports,
+        "profiling_no_checkpoint": bool(no_checkpoint_profile),
         "initial_checkpoint": str(current_checkpoint) if current_checkpoint is not None else None,
         "final_checkpoint": str(replay_final_checkpoint) if replay_final_checkpoint is not None else None,
     }
@@ -5516,6 +5552,7 @@ def run_final_finetune_stage(
     device = str(arg_value(args, "device", "") or plan.get("device") or ("cuda" if torch_available() else "cpu"))
     save_interval = resolve_save_interval(args, plan.get("save_interval"))
     pipeline_stage_trainer = uses_pipeline_stage_trainer(cfg, args)
+    no_checkpoint_profile = pipeline_stage_trainer and no_checkpoint_profile_enabled()
     cmd = pretrain_launcher(cfg, args) + [
         "--preset",
         preset,
@@ -5551,14 +5588,16 @@ def run_final_finetune_stage(
     code = run_command(cmd, out_dir / "logs" / "99_final_all_modality_finetune_command.log")
     losses = parse_losses(train_log)
     checkpoint_complete = checkpoint_is_complete(checkpoint_out, expected_world_size=expected_world_size)
+    passed = (code == 0 and checkpoint_complete) or (code == 0 and no_checkpoint_profile)
     report = {
         "schema": "omnicoder.final_finetune_stage_2026.v1",
-        "status": "passed" if code == 0 and checkpoint_complete else "failed",
+        "status": "passed" if passed else "failed",
         "returncode": code,
         "initial_checkpoint": str(checkpoint),
         "checkpoint": str(checkpoint_out),
         "final_checkpoint": str(checkpoint_out) if checkpoint_complete else str(checkpoint),
         "checkpoint_complete": checkpoint_complete,
+        "profiling_no_checkpoint": bool(no_checkpoint_profile),
         "train_jsonl": str(data_path),
         "integrity_preflight": preflight,
         "loss_log": str(train_log),
@@ -5566,8 +5605,11 @@ def run_final_finetune_stage(
         "loss_first": losses[0] if losses else None,
         "loss_last": losses[-1] if losses else None,
     }
-    if report["status"] == "passed":
+    if report["status"] == "passed" and checkpoint_complete:
         report["heldout_benchmark_gate"] = run_checkpoint_benchmark_gate(profile, manifest, out_dir, checkpoint_out, "final_finetune", args)
+    elif report["status"] == "passed" and no_checkpoint_profile:
+        report["reason"] = "profiling_no_checkpoint_requested"
+        report["heldout_benchmark_gate"] = {"status": "skipped", "reason": "profiling_no_checkpoint_requested"}
     return report
 
 

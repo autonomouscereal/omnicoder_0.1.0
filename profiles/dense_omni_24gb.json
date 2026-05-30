@@ -6,7 +6,7 @@
   "native_context_target": 1048576,
   "deployment_truth_path": "omnicoder2026 native runtime with KDA recurrent state plus CSA/HCA sparse latent KV",
   "adoption_bridge": "qwen3-compatible GGUF for shorter-context LM Studio/llama.cpp adoption",
-  "primary_parameter_target": "20B-class dense target with mlp_dim=15360, estimated ~=19.57B trunk params and ~=22.57B including enabled MTP/residual/media heads, ~=10.51 GiB q4 weights, sized by native-1M 24GB headroom rather than a fixed round number",
+  "primary_parameter_target": "20B-class dense target with mlp_dim=15360, estimated ~=19.57B trunk params and ~=22.58B including enabled MTP/residual/media/reasoning heads, ~=10.51 GiB q4 weights, sized by native-1M 24GB headroom rather than a fixed round number",
   "stretch_parameter_target": "larger than 20B only after TurboQuant native-state validation proves 24GB headroom on RTX 3090",
   "verified_source_map": {
     "deepseek_v4": {
@@ -34,9 +34,9 @@
   "model": {
     "primary_20b": {
       "preset": "omnicoder2026_20b_1m",
-      "estimated_params_b": 22.57,
+      "estimated_params_b": 22.58,
       "trunk_params_b": 19.57,
-      "auxiliary_params_b": 3.0,
+      "auxiliary_params_b": 3.01,
       "q4_weight_gib_estimate": 10.51,
       "native_1m_total_gib_estimate": 13.13,
       "n_layers": 64,
@@ -57,6 +57,12 @@
       "latent_dim": 512,
       "tie_embeddings": true,
       "mtp_heads": 2,
+      "reasoning_slots": 8,
+      "reasoning_max_steps": 8,
+      "reasoning_default_steps": 0,
+      "reasoning_cell_rank": 512,
+      "reasoning_pool_tokens": 1024,
+      "reasoning_output_scale": 0.05,
       "flow_latent_dim": 1024,
       "contract": "fit 24GB at q4 with compressed native state, TurboQuant path, full 330k omnimodal ledger, native 1M context, and intentional 15360-MLP headroom for block residual attention, native media heads, and OOM margin"
     },
@@ -130,7 +136,7 @@
   "omnimodal_policy": {
     "shared_trunk": "text, code, tool calls, media ledger tokens, timing tokens, and continuous flow targets share the same dense trunk",
     "edge_codecs_required": ["image/video tokenizer", "audio/speech codec", "music/audio latent codec", "file format decoders"],
-    "heads": ["shared_lm_head", "flow_head", "grounding_head", "sync_head"],
+    "heads": ["shared_lm_head", "mtp_heads", "latent_reasoner_controls", "flow_head", "native_media_reconstruction_head", "grounding_head", "sync_head"],
     "teacher_distillation": ["Qwen3.6 27B local", "Qwen3-Omni", "Qwen Image/Edit", "LTX 2.3", "ACE-Step 1.5", "gpt-image-2 where licensed/API-available"]
   },
   "quantization": {

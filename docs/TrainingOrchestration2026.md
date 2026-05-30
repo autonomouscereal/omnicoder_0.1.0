@@ -86,6 +86,15 @@ device capability, visible-device mapping, and local rank. OpenAI-compatible
 teacher rollout jobs are launched as HTTP clients with `CUDA_VISIBLE_DEVICES=""`
 so P40 service processes, not rollout clients, own GPU memory.
 
+The profiling lane records per-step phase timing for `batch_fetch`,
+`host_to_device`, `broadcast_inputs`, `schedule_step`, `loss_broadcast`,
+`optimizer_step`, diagnostics, telemetry, log writes, and optional rank skew.
+Checkpoint saves write per-rank `checkpoint_io.rankXXXXX.jsonl` files with
+state-dict collection time, CPU copy/save time, marker waits, manifest writes,
+bytes written, and throughput. Use `OMNICODER_SAVE_INTERVAL=0` plus
+`OMNICODER2026_SKIP_FINAL_SAVE=1` only for bounded profiling runs that should
+not write any checkpoint at all.
+
 ## Orchestration Ladder
 
 1. Collect immutable 2025-2026 traces and media manifests.
@@ -569,6 +578,12 @@ at the active stage sequence length. Configure this with
 ranks cannot wait forever in distributed send/recv. Pipeline eval prints rank-0
 record/chunk progress for new runs; older already-running containers may not
 show this progress until relaunched.
+
+For complete `.complete.json` checkpoints, the bounded sidecar entry point is
+`omnicoder.eval.checkpoint_eval_sidecar_2026`. It plans or runs media-route
+probes, heldout sample loss, target-token diagnostics, token top-k sanity, and
+local decode sanity predictions. These sidecar outputs are diagnostic; official
+benchmark claims still require authorized task snapshots and scorer manifests.
 
 Live posttraining on pipeline checkpoints also stays distributed. When
 `--live-posttraining` receives a sharded checkpoint directory, the orchestrator

@@ -22,9 +22,9 @@ reportable public benchmark scores.
   tokens, and native media segment alignment.
 - Assistant/media target masking so loss is paid on answer and media artifact
   tokens, not arbitrary prompt positions.
-- MTP heads, q4-aware training hooks, and GGUF export plumbing are wired for
-  validation, with production claims gated on measured quality and runtime
-  checks.
+- Adaptive latent reasoning slots, MTP heads, q4-aware training hooks, and GGUF
+  export plumbing are wired for validation, with production claims gated on
+  measured quality and runtime checks.
 
 For the full layer-by-layer contract, see
 [docs/ARCHITECTURE_CURRENT.md](docs/ARCHITECTURE_CURRENT.md).
@@ -37,6 +37,8 @@ Implemented in the repository:
 - KDA/CSA/HCA layer scheduling for the 1M-context runtime target.
 - Block residual attention and native continuous media bridge code paths.
 - Target-token diagnostics for assistant, tool, and media-token coverage.
+- Phase-timing, checkpoint-I/O, and checkpoint-sidecar eval hooks for finding
+  slow internal phases before resuming large runs.
 - Data curation gates for quality, contamination, fixture leakage, and
   benchmark-holdout separation.
 - Benchmark adapters that separate diagnostic canaries from reportable scores.

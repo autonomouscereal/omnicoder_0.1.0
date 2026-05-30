@@ -44,6 +44,12 @@ class Omnicoder2026Preset:
     layer_pattern: tuple[BlockKind, ...] = DEFAULT_LAYER_PATTERN
     tie_embeddings: bool = True
     mtp_heads: int = 2
+    reasoning_slots: int = 8
+    reasoning_max_steps: int = 8
+    reasoning_default_steps: int = 0
+    reasoning_cell_rank: int = 512
+    reasoning_pool_tokens: int = 1024
+    reasoning_output_scale: float = 0.05
     flow_latent_dim: int = 1024
     native_media_feature_dim: int = 3072
     native_media_position_dim: int = 4
@@ -80,6 +86,11 @@ def get_omnicoder2026_preset(name: str) -> Omnicoder2026Preset:
             o_groups=2,
             index_head_dim=32,
             flow_latent_dim=256,
+            reasoning_slots=4,
+            reasoning_max_steps=4,
+            reasoning_default_steps=0,
+            reasoning_cell_rank=64,
+            reasoning_pool_tokens=128,
             block_attnres_rank=32,
             block_attnres_chunk_tokens=512,
             fake_quant_group_size=64,
@@ -109,6 +120,11 @@ def get_omnicoder2026_preset(name: str) -> Omnicoder2026Preset:
             o_groups=2,
             index_head_dim=32,
             flow_latent_dim=256,
+            reasoning_slots=4,
+            reasoning_max_steps=4,
+            reasoning_default_steps=0,
+            reasoning_cell_rank=64,
+            reasoning_pool_tokens=128,
             block_attnres_rank=32,
             block_attnres_chunk_tokens=512,
             fake_quant_group_size=64,
@@ -143,6 +159,11 @@ def get_omnicoder2026_preset(name: str) -> Omnicoder2026Preset:
             hca_block_size=131072,
             latent_dim=512,
             flow_latent_dim=1024,
+            reasoning_slots=8,
+            reasoning_max_steps=8,
+            reasoning_default_steps=0,
+            reasoning_cell_rank=512,
+            reasoning_pool_tokens=1024,
             block_attnres_rank=256,
             block_attnres_chunk_tokens=2048,
             notes=(
@@ -239,6 +260,12 @@ def preset_to_model_kwargs(preset: Omnicoder2026Preset) -> dict:
         "layer_pattern": preset.layer_pattern,
         "tie_embeddings": preset.tie_embeddings,
         "mtp_heads": preset.mtp_heads,
+        "reasoning_slots": preset.reasoning_slots,
+        "reasoning_max_steps": preset.reasoning_max_steps,
+        "reasoning_default_steps": preset.reasoning_default_steps,
+        "reasoning_cell_rank": preset.reasoning_cell_rank,
+        "reasoning_pool_tokens": preset.reasoning_pool_tokens,
+        "reasoning_output_scale": preset.reasoning_output_scale,
         "flow_latent_dim": preset.flow_latent_dim,
         "native_media_feature_dim": preset.native_media_feature_dim,
         "native_media_position_dim": preset.native_media_position_dim,

@@ -114,6 +114,11 @@ def test_dense_profile_matches_implemented_20b_contract() -> None:
 
     assert model["mlp_dim"] == preset.mlp_dim == 15360
     assert model["mtp_heads"] == preset.mtp_heads == 2
+    assert model["reasoning_slots"] == preset.reasoning_slots == 8
+    assert model["reasoning_max_steps"] == preset.reasoning_max_steps == 8
+    assert model["reasoning_default_steps"] == preset.reasoning_default_steps == 0
+    assert model["reasoning_cell_rank"] == preset.reasoning_cell_rank == 512
+    assert model["reasoning_pool_tokens"] == preset.reasoning_pool_tokens == 1024
     assert round(float(model["estimated_params_b"]), 2) == round(budget.params_b, 2)
     assert round(float(model["q4_weight_gib_estimate"]), 2) == round(budget.weight_gib_q4, 2)
     assert round(float(model["native_1m_total_gib_estimate"]), 2) == round(budget.total_native_estimate_gib, 2)

@@ -59,6 +59,17 @@ def estimate_param_breakdown_for_preset(p) -> dict[str, float]:
     else:
         residual = 0
 
+    reasoning_slots = max(0, int(getattr(p, "reasoning_slots", 0) or 0))
+    reasoning_rank = max(0, min(int(getattr(p, "reasoning_cell_rank", 0) or 0), d_model))
+    latent_reasoner = (
+        reasoning_slots * d_model
+        + 4 * d_model * reasoning_rank
+        + 2 * d_model
+        + d_model * 5
+        + 5
+        + 1
+    ) if reasoning_slots > 0 and reasoning_rank > 0 else 0
+
     mtp = int(getattr(p, "mtp_heads", 0)) * p.vocab_size * d_model
     flow = d_model + d_model * int(getattr(p, "flow_latent_dim", 0))
     native_media_feature_dim = int(getattr(p, "native_media_feature_dim", 0))
@@ -85,6 +96,7 @@ def estimate_param_breakdown_for_preset(p) -> dict[str, float]:
         "block_norms": float(norms),
         "final_norm": float(final_norm),
         "block_attention_residual": float(residual),
+        "adaptive_latent_reasoner": float(latent_reasoner),
         "mtp_heads": float(mtp),
         "flow_head": float(flow),
         "native_media_bridge": float(native_media),
@@ -103,6 +115,7 @@ def estimate_budget(profile: str, context: int = 1_048_576) -> Budget:
     auxiliary_keys = {
         "final_norm",
         "block_attention_residual",
+        "adaptive_latent_reasoner",
         "mtp_heads",
         "flow_head",
         "native_media_bridge",
@@ -147,6 +160,7 @@ def estimate_budget(profile: str, context: int = 1_048_576) -> Budget:
         notes=(
             "Dense full-KV numbers are the rejected baseline.",
             "Parameter estimate includes the shared trunk plus enabled MTP, residual-attention, flow, native-media, grounding, and sync heads.",
+            "Adaptive latent reasoning is parameter-shared compute depth; it adds slots/control heads, not another vocab projection.",
             "Native estimate assumes KDA recurrent state plus resident q8-like CSA/HCA shared K=V latent state.",
             "CSA attention computes only a selected prefix/recent sparse gather per query chunk; it does not materialize a 1M x 262k score matrix.",
             "Real 1M serving still needs chunked prefill, paged state, and offload validation.",

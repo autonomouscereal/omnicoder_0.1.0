@@ -104,9 +104,9 @@ Core pieces:
 
 The active contract target is 20B-ish, not a fixed vanity size. The current
 profile keeps `omnicoder2026_20b_1m` at `mlp_dim=15360`, about 19.57B trunk
-parameters and about 22.57B total parameters once the enabled MTP heads, block
-residual modules, native media bridge, flow head, grounding head, and sync head
-are counted. That is about 10.51 GiB of Q4 weights and about 13.13 GiB total
+parameters and about 22.58B total parameters once the enabled MTP heads, block
+residual modules, native media bridge, adaptive latent reasoner, flow head,
+grounding head, and sync head are counted. That is about 10.51 GiB of Q4 weights and about 13.13 GiB total
 native-state estimate for 1M context. The intentional MLP reduction from the
 earlier wider MLP budget preserves 24GB headroom for full block residual
 attention, native media heads, runtime scratch, and TurboQuant/compressed-state

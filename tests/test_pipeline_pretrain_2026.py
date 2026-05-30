@@ -516,6 +516,54 @@ def test_final_stage_sparse_media_targets_get_optimizer_update() -> None:
     assert not torch.equal(before, final.lm_head.weight.detach())
 
 
+def test_final_stage_can_skip_expensive_loss_diagnostics_without_changing_loss() -> None:
+    cfg = tiny_cfg(n_layers=3)
+    ranges = stage_ranges(3, "1,1,1")
+    final = OmniCoder2026PipelineShard(cfg, shard_spec(2, ranges))
+    hidden = torch.randn(1, 8, cfg.d_model, requires_grad=True)
+    labels = torch.tensor([[-100, -100, 5, 6, -100, 7, 8, 9]], dtype=torch.long)
+
+    processed = final(hidden)
+    full_loss = final.chunked_lm_loss(
+        processed,
+        labels,
+        chunk_tokens=2,
+        loss_token_stride=3,
+        max_loss_tokens_per_sample=3,
+        collect_diagnostics=True,
+    )
+    full_diagnostics = dict(final.last_lm_loss_diagnostics)
+    skipped_loss = final.chunked_lm_loss(
+        processed,
+        labels,
+        chunk_tokens=2,
+        loss_token_stride=3,
+        max_loss_tokens_per_sample=3,
+        collect_diagnostics=False,
+    )
+    skipped_diagnostics = dict(final.last_lm_loss_diagnostics)
+
+    assert torch.allclose(skipped_loss.float(), full_loss.float(), atol=1e-5)
+    assert not bool(full_diagnostics.get("diagnostics_skipped", False))
+    assert skipped_diagnostics["diagnostics_skipped"] is True
+    assert skipped_diagnostics["optimized_target_tokens"] == full_diagnostics["optimized_target_tokens"]
+
+
+def test_checkpoint_data_integrity_manifest_policy_does_not_hash_training_file(tmp_path, monkeypatch) -> None:
+    args = checkpoint_args(tmp_path)
+    args.checkpoint_data_hash_policy = "manifest"
+
+    def fail_hash(_path: str) -> str:
+        raise AssertionError("manifest policy should not re-read/hash the full data file")
+
+    monkeypatch.setattr(pipeline, "_sha256_file", fail_hash)
+    report = pipeline._checkpoint_data_integrity(args)
+
+    assert report["hash_policy"] == "manifest"
+    assert report["sha256"] is None
+    assert report["hash_source"] == "skipped"
+
+
 def test_weighted_pipeline_dataset_uses_tool_reward_rows(tmp_path) -> None:
     class TinyTokenizer:
         def encode(self, text: str) -> list[int]:
@@ -1234,3 +1282,10 @@ def test_save_sharded_checkpoint_filesystem_sync_finalizes_without_barrier(tmp_p
     assert complete["status"] == "complete"
     assert complete["checkpoint_attempt_id"] == attempt_id
     assert complete["rank_files"] == ["rank00000.pt", "rank00001.pt", "rank00002.pt"]
+    io_log = checkpoint / "checkpoint_io.rank00000.jsonl"
+    assert io_log.exists()
+    io_record = json.loads(io_log.read_text(encoding="utf-8").splitlines()[-1])
+    assert io_record["schema"] == pipeline.CHECKPOINT_IO_SCHEMA
+    assert io_record["data"]["hash_policy"] == "manifest"
+    assert io_record["data"]["hash_source"] == "skipped"
+    assert io_record["bytes"]["rank_file_bytes"] > 0

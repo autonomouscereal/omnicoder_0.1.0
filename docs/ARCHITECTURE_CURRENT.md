@@ -72,7 +72,7 @@ The primary training target is `omnicoder2026_20b_1m`, defined in
 | MLP | SwiGLU |
 | MLP hidden | 15360 |
 | Estimated trunk parameters | ~=19.57B |
-| Estimated total parameters with MTP/media/residual heads | ~=22.57B |
+| Estimated total parameters with MTP/media/residual/reasoning heads | ~=22.58B |
 | q4 weight estimate | ~=10.51 GiB |
 | Typed ledger vocab | 330000 |
 | Native context target | 1048576 tokens |
@@ -94,8 +94,9 @@ dispatch in the current 20B target.
 
 The MLP hidden width is intentionally held at 15360 rather than the earlier
 wider MLP budget. This keeps the dense trunk at ~=19.57B parameters while the
-enabled MTP heads, block residual modules, native media bridge, flow head,
-grounding head, and sync head bring the honest target footprint to ~=22.57B
+enabled MTP heads, block residual modules, native media bridge, adaptive latent
+reasoner, flow head, grounding head, and sync head bring the honest target
+footprint to ~=22.58B
 parameters and a ~=10.51 GiB q4 weight estimate. The point of the 15360 MLP is
 not to shrink the model into a weak target; it preserves the headroom needed for
 full residual attention, native media heads, and OOM margin instead of chasing a
@@ -146,6 +147,40 @@ attention cache over every token and every layer would be too expensive for the
 1M-context/24GB contract. The implemented path is the current hardware-aware
 variant: it keeps a residual selection signal while bounding memory by summary
 blocks instead of by sequence length times depth.
+
+## Adaptive Latent Reasoning
+
+The current trunk now includes a shared latent reasoner cell for optional
+internal deliberation. This is separate from MTP. MTP predicts future tokens for
+speed/speculative decoding; the reasoner adds repeated continuous hidden-state
+refinement before the final norm/head.
+
+Configuration in the 20B target:
+
+- Latent slots: 8.
+- Maximum internal steps: 8.
+- Default steps: 0, so normal training/inference stays at baseline cost unless
+  a run requests reasoning effort.
+- Cell rank: 512 low-rank bottleneck.
+- Pool tokens: 1024 bounded context summaries.
+- Control heads: difficulty, halt/continue, answer-readiness, verifier margin,
+  and tool-readiness.
+
+Mechanism:
+
+1. The current sequence hidden state is pooled into a bounded context summary.
+2. Shared learned slots attend to that pooled context through a small low-rank
+   update cell.
+3. The same cell is reused for 0 to 8 latent steps depending on requested
+   reasoning effort.
+4. The refined slots produce a low-rank broadcast update back into the hidden
+   stream.
+5. The learned output scale starts small, keeping the path near identity until
+   training teaches it useful effort-dependent behavior.
+
+This keeps reasoning as parameter-shared compute depth rather than adding
+another full-vocab verifier head. A 4096-by-330k extra head would be too large
+for the 24GB q4 target unless capacity were removed elsewhere.
 
 ## Omnimodal Representation
 
