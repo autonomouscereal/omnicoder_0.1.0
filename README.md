@@ -1,24 +1,23 @@
 # OmniCoder 2026
 
-OmniCoder 2026 is an experimental dense, one-trunk omnimodal agent model. The
-project is aimed at a single shared model that can learn text, code, tool use,
-OCR, image, video, speech/TTS, audio, and music through one core token and
-weight space, with media codecs, renderers, and runtime bridges kept at the
-edges.
+OmniCoder 2026 is an experimental dense, one-trunk omnimodal agent model. It is
+being built around one shared token/weight space for text, code, tools, OCR,
+image, video, speech/TTS, audio, and music, while codecs, renderers, artifact
+decoders, and deployment bridges stay at the edges.
 
-This repository contains the architecture, data curation, training
-orchestration, benchmark plumbing, and export/runtime work needed to build and
-validate that model. It does not currently publish release-ready weights or
-reportable public benchmark scores.
+This repository contains the model architecture, data curation stack, training
+orchestration, diagnostics, benchmark gates, and export/runtime bridge work for
+that target. It does not currently publish release-ready weights or reportable
+public benchmark scores.
 
-## Architecture Highlights
+## Architecture
 
 - Dense 20B-class decoder trunk targeting q4 deployment on 24GB-class GPUs.
 - Native 1M-context target using KDA recurrent state, CSA/HCA compressed sparse
   attention, and block residual attention instead of full quadratic attention.
 - SenseNova-U1-inspired native continuous media path for direct image, video,
   audio, music, TTS, and OCR patch/segment supervision.
-- Shared typed ledger for text, code, tools, route markers, media artifact
+- Shared typed ledger for text, code, tools, media route tokens, media artifact
   tokens, and native media segment alignment.
 - Assistant/media target masking so loss is paid on answer and media artifact
   tokens, not arbitrary prompt positions.
@@ -29,21 +28,24 @@ reportable public benchmark scores.
 For the full layer-by-layer contract, see
 [docs/ARCHITECTURE_CURRENT.md](docs/ARCHITECTURE_CURRENT.md).
 
-## Current Status
+## Current Readiness
 
 Implemented in the repository:
 
 - `omnicoder2026_20b_1m` architecture profile and dense pipeline trainer.
 - KDA/CSA/HCA layer scheduling for the 1M-context runtime target.
 - Block residual attention and native continuous media bridge code paths.
-- Target-token diagnostics for assistant, tool, and media-token coverage.
+- Adaptive latent reasoner controls and MTP heads for reasoning/speed
+  experiments.
+- Target-token diagnostics for assistant, tool, route, and media-token
+  coverage.
 - Phase-timing, checkpoint-I/O, and checkpoint-sidecar eval hooks for finding
   slow internal phases before resuming large runs.
 - Data curation gates for quality, contamination, fixture leakage, and
   benchmark-holdout separation.
 - Benchmark adapters that separate diagnostic canaries from reportable scores.
 
-Still being proven:
+Not yet proven:
 
 - Release-quality omnimodal generation.
 - Scored public benchmark results.
@@ -102,6 +104,7 @@ Inspect core entry points:
 
 ```bash
 pretrain-2026-dense --help
+python scripts/ai_server_profile_matrix_20b.py --help
 python -m omnicoder.eval.pipeline_sample_loss_2026 --help
 python -m omnicoder.eval.pipeline_target_token_diagnostics_2026 --help
 python -m omnicoder.export.gguf_bridge_2026 --help

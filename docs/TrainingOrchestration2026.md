@@ -95,6 +95,34 @@ bytes written, and throughput. Use `OMNICODER_SAVE_INTERVAL=0` plus
 `OMNICODER2026_SKIP_FINAL_SAVE=1` only for bounded profiling runs that should
 not write any checkpoint at all.
 
+### 20B Profile Matrix
+
+Use `scripts/ai_server_profile_matrix_20b.py` for bounded real-config probes
+before restarting a long optimizer run. The helper launches the normal
+AI-server Docker path against the `omnicoder2026_20b_1m` profile, writes a
+tiny run-scoped profiling corpus unless an explicit curation manifest is
+supplied, disables checkpoint writes by default, and summarizes:
+
+- per-rank step timing JSONL,
+- staged loss JSONL,
+- optional block timing JSONL,
+- container exit status and log tail,
+- q4/fake-quant settings, activation checkpointing, pipeline schedule, and
+  target-token budget used for the variant.
+
+The intended comparison set is narrow and diagnostic: q4 fake-quant chunk
+sizes, fake-quant-off profiling, activation checkpointing on/off, pipeline
+schedule and microbatch changes, loss-token budgets, diagnostics cadence, and
+block-timing variants. Fake-quant-off is allowed only when both
+`OMNICODER2026_SKIP_FINAL_SAVE=1` and
+`OMNICODER_PROFILE_ALLOW_FAKE_QUANT_OFF=1` are set, so a profiling shortcut
+cannot produce a checkpoint that pretends to satisfy the q4 training contract.
+
+Treat profile-matrix output as engineering evidence. It can identify slow
+phases, rank skew, checkpoint I/O cost, and target-token coverage mistakes, but
+it is not a substitute for heldout loss, decoded samples, long-context ladder
+gates, q4 export validation, or reportable benchmark scoring.
+
 ## Orchestration Ladder
 
 1. Collect immutable 2025-2026 traces and media manifests.
@@ -208,9 +236,12 @@ docker run -d \
 
 The repeatable AI-server launcher for this lane is
 `scripts/ai_server_fast_pipeline_20b.sh`. It bakes in the fast-card device
-selection, Docker IPC/ulimit requirements, 16/16/32 layer placement, GPipe
-schedule, low-memory Adafactor, q4 fake-quant hooks, allocator fragmentation
-mitigation, and media-tree mounts:
+selection, Docker IPC/ulimit requirements, 16/16/32 layer placement,
+low-memory Adafactor, q4 fake-quant hooks, allocator fragmentation mitigation,
+and media-tree mounts. Schedule, microbatching, activation checkpointing, fake
+quant, fake-quant chunk rows, and target-token budget are environment
+overrides so profile-matrix variants can compare them without rewriting the
+launcher.
 `OMNICODER_LM_LOSS_CHUNK_TOKENS` defaults to `64` so final-rank language
 model logits are chunked below the trainer's 128-token fallback during
 20B posttraining. `OMNICODER_FFN_CHUNK_TOKENS` defaults to `256` and is passed
@@ -268,10 +299,10 @@ the posttraining algorithm order at the failed algorithm.
 Posttraining data selection is explicit for balanced all-modal recovery. Use
 `python -m omnicoder.data_factory.balanced_allmodal_posttrain_2026` to build
 run-scoped SFT, reward, and RLVR JSONL files from curated 2025-2026 sources.
-The builder requires nonzero text, code, tool, image, video, audio, music, and
-long-context coverage, emits top-level `messages` or prompt/target rows, and
-never copies source `token_ids` into the optimizer replay files. Route those
-files into live posttraining with `--posttrain-input-jsonl` or
+The builder requires nonzero text, code, tool, image, video, audio, music, TTS,
+OCR, and long-context coverage, emits top-level `messages` or prompt/target
+rows, and never copies source `token_ids` into the optimizer replay files.
+Route those files into live posttraining with `--posttrain-input-jsonl` or
 `OMNICODER_POSTTRAIN_INPUT_JSONL`, for example:
 
 ```bash

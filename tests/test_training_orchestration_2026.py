@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import argparse
 import os
+import runpy
 from pathlib import Path
 
 import pytest
@@ -2117,9 +2118,10 @@ def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args
     assert '-v "$AI_DATA_ROOT:/mnt/ai_data"' in script
     assert 'STAGE_ORDER="${OMNICODER_STAGE_ORDER:-text,code,tool,image,video,audio,music,tts,ocr,long_context}"' in script
     assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"' in script
-    assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-16}"' in script
+    assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-256}"' in script
     assert 'LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"' in script
     assert 'FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-256}"' in script
+    assert 'MAX_LOSS_TOKENS_PER_SAMPLE="${OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE:-64}"' in script
     assert '-e PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"' in script
     assert '-e OMNICODER2026_LM_LOSS_CHUNK_TOKENS="$LM_LOSS_CHUNK_TOKENS"' in script
     assert '-e OMNICODER2026_FFN_CHUNK_TOKENS="$FFN_CHUNK_TOKENS"' in script
@@ -2139,6 +2141,26 @@ def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args
     assert '--distill-profile' not in branch
     full_branch = script.split('else\n  curation_manifest_args=()', 1)[1].split('docker_args=(', 1)[0]
     assert '--curation-manifest "$CURATION_MANIFEST"' in full_branch
+
+
+def test_profile_matrix_has_loss64_and_block_timing_variants():
+    namespace = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts" / "ai_server_profile_matrix_20b.py"))
+    variants = {variant["name"]: variant for variant in namespace["DEFAULT_VARIANTS"]}
+
+    loss64 = variants["fakequant_chunk256_loss64"]["env"]
+    assert loss64["OMNICODER_FAKE_QUANT"] == "1"
+    assert loss64["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "256"
+    assert loss64["OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE"] == "64"
+    assert loss64["OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL"] == "0"
+
+    chunk512 = variants["fakequant_chunk512_loss64"]["env"]
+    assert chunk512["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "512"
+    assert chunk512["OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE"] == "64"
+
+    sync_blocks = variants["block_timing_sync_fakequant_off"]["env"]
+    assert sync_blocks["OMNICODER_PROFILE_ALLOW_FAKE_QUANT_OFF"] == "1"
+    assert sync_blocks["OMNICODER2026_BLOCK_TIMING"] == "1"
+    assert sync_blocks["OMNICODER2026_BLOCK_TIMING_CUDA_SYNC"] == "1"
 
 
 def test_posttrain_start_algorithm_unknown_fails_before_training(tmp_path, monkeypatch):

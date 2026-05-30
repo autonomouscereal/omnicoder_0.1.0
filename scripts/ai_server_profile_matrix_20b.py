@@ -60,6 +60,36 @@ DEFAULT_VARIANTS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "fakequant_chunk256_loss64",
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "256",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "fakequant_chunk512_loss64",
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "512",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
         "name": "actckpt_off_fakequant_off",
         "steps": 1,
         "env": {
@@ -100,6 +130,22 @@ DEFAULT_VARIANTS: list[dict[str, Any]] = [
             "OMNICODER_STAGE_ORDER": "text",
             "OMNICODER2026_BLOCK_TIMING": "1",
             "OMNICODER2026_BLOCK_TIMING_CUDA_SYNC": "0",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "block_timing_sync_fakequant_off",
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "0",
+            "OMNICODER_PROFILE_ALLOW_FAKE_QUANT_OFF": "1",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_BLOCK_TIMING": "1",
+            "OMNICODER2026_BLOCK_TIMING_CUDA_SYNC": "1",
             "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
         },
     },
@@ -284,6 +330,9 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
         summary["last_global_step"] = step_rows[-1].get("step")
         summary["last_optimized_target_tokens"] = step_rows[-1].get("optimized_target_tokens")
         summary["last_valid_target_tokens"] = step_rows[-1].get("valid_target_tokens")
+        summary["last_seq_len"] = step_rows[-1].get("seq_len")
+        summary["max_loss_tokens_per_sample"] = step_rows[-1].get("max_loss_tokens_per_sample")
+        summary["loss_diagnostics_collected"] = step_rows[-1].get("loss_diagnostics_collected")
         summary["pipeline_schedule"] = step_rows[-1].get("pipeline_schedule")
         summary["pipeline_microbatches"] = step_rows[-1].get("pipeline_microbatches")
         summary["microbatch_size"] = step_rows[-1].get("microbatch_size")
@@ -320,6 +369,10 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
         if totals:
             summary["max_total_sec"] = max(totals)
             summary["min_total_sec"] = min(totals)
+            if isinstance(summary.get("last_seq_len"), (int, float)):
+                summary["sequence_tokens_per_sec"] = float(summary["last_seq_len"]) / max(totals)
+            if isinstance(summary.get("last_optimized_target_tokens"), (int, float)):
+                summary["optimized_target_tokens_per_sec"] = float(summary["last_optimized_target_tokens"]) / max(totals)
         if schedules:
             summary["max_schedule_step_sec"] = max(schedules)
             summary["min_schedule_step_sec"] = min(schedules)

@@ -192,6 +192,7 @@ Media can be represented as ordinary model output tokens:
 
 - `image | ...`
 - `video | ...`
+- `audio | ...`
 - `music | ...`
 - `tts | ...`
 - `ocr | ...`
@@ -299,6 +300,38 @@ The q4/TurboQuant lane currently means q4-aware fake quant, recovery training,
 and export/runtime validation hooks. It is not a claim that final TurboQuant
 runtime speedups have already been integrated and benchmarked.
 
+## Profiling And Diagnostic Readiness
+
+The current training harness has instrumentation for proving where time,
+memory, and learning signal are going before another long run is trusted.
+
+Training-step timing can record:
+
+- batch fetch and host-to-device movement,
+- input broadcast and pipeline schedule time,
+- loss broadcast and optimizer/update time,
+- diagnostics, telemetry, log-write overhead, and rank skew.
+
+Checkpoint timing can record:
+
+- state-dict collection,
+- CPU copy and optimizer-state collection,
+- temporary save and atomic rename,
+- marker waits, manifest writes, total bytes, and write throughput.
+
+The 20B profile matrix helper can run bounded no-checkpoint variants for q4
+fake quant chunk size, fake-quant-off profiling, activation checkpointing,
+pipeline schedule/microbatch choices, target-token budget, and optional block
+timing. Fake-quant-off is only allowed for no-save profiling runs that set the
+explicit profiling bypass; production and release-contract runs still fail
+closed if q4/QAT requirements are skipped.
+
+Checkpoint eval sidecars are intended to run asynchronously after a complete
+checkpoint marker. They cover heldout sample loss, target-token diagnostics,
+token top-k sanity, decode sanity, media route probes, native media
+reconstruction checks, and benchmark adapter handoff. These are engineering
+readiness probes, not public benchmark scores.
+
 ## Data Gates
 
 The training stack now treats data quality as part of the architecture contract.
@@ -325,7 +358,8 @@ Diagnostic gates:
 - Target-token diagnostics.
 - Heldout sample loss with non-null loss/perplexity.
 - Batch decode probes.
-- Media route and artifact parsing.
+- Media route and artifact parsing for image, video, audio, music, TTS, and
+  OCR.
 - Native media reconstruction checks.
 
 Reportable gates:
@@ -361,11 +395,14 @@ Implemented:
 - KDA/CSA/HCA layer cycle.
 - Block residual attention module.
 - Native continuous media bridge.
+- Adaptive latent reasoner cell and control heads.
 - MTP heads.
 - q4-aware training hooks.
 - Assistant/media target masking.
 - Data curation fail-closed gates.
 - Diagnostic/reportable benchmark separation.
+- Phase-timing, checkpoint-I/O, profile-matrix, and checkpoint-sidecar eval
+  plumbing.
 
 Proven only at engineering/probe scale so far:
 

@@ -29,7 +29,7 @@ The active dataset path therefore uses:
 - `labels = -100` for user, system, developer, tool-observation, benchmark
   prompt, and media input/context tokens.
 - `labels = token_id` for assistant answer tokens, tool-call outputs, and
-  image/video/music/TTS/OCR artifact tokens.
+  image/video/audio/music/TTS/OCR artifact tokens.
 - The same token IDs, embedding table, trunk layers, and output head for every
   modality.
 
@@ -42,8 +42,8 @@ preserves `input_json` media payloads such as `image_tokens`, `video_tokens`,
 `input_media_tokens`, and reference media metadata as unmasked context. They
 are not dropped just because the prompt has a plain text field.
 
-Media outputs are target tokens. A record that asks for an image, video, music,
-TTS, audio, or OCR output trains the assistant side to emit a visible route
+Media outputs are target tokens. A record that asks for an image, video, audio,
+music, TTS, or OCR output trains the assistant side to emit a visible route
 prefix plus canonical artifact JSON/tokens, for example:
 
 ```text

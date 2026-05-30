@@ -100,15 +100,17 @@ Use the omnimodal release gate before any benchmark result is treated as useful:
 python -m omnicoder.eval.omnimodal_release_gate_2026 `
   --predictions weights/benchmarks_2026/<run>/public_dev_predictions.jsonl `
   --out weights/benchmarks_2026/<run>/omnimodal_release_gate.json `
-  --require-modalities text,code,tool,image,video,audio,music `
+  --require-modalities text,code,tool,image,video,audio,music,tts,ocr `
   --min-output-tokens 16
 ```
 
 For media modalities the gate requires a generated artifact path that exists
-and is nonempty; video/audio/music paths are also probed with `ffprobe` when it
-is available. A failing release gate is actionable evidence, not a reportable
-score: fix decoding, artifact materialization, or the checkpoint before using
-the downstream benchmark numbers.
+and is nonempty; video/audio/music/TTS paths are also probed with `ffprobe`
+when it is available. OCR may route through a text artifact or a structured
+document/text output, but it still has to produce non-placeholder decoded
+content. A failing release gate is actionable evidence, not a reportable score:
+fix decoding, artifact materialization, or the checkpoint before using the
+downstream benchmark numbers.
 
 The `reportable_core_25` gate intentionally keeps a live math reasoning slot
 through `reasoning_matharena_2026` rather than using deployment-only checks to
