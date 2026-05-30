@@ -3531,7 +3531,12 @@ def distributed_training_plan(cfg: dict[str, Any], args: argparse.Namespace | No
     precision = str(arg_value(args, "precision", "") or distributed.get("precision") or "fp32")
     init_dtype = str(arg_value(args, "init_dtype", "") or distributed.get("init_dtype") or "auto")
     optimizer = str(arg_value(args, "optimizer", "") or distributed.get("optimizer") or "adamw")
-    optimizer_in_backward = bool(arg_value(args, "optimizer_in_backward", False) or distributed.get("optimizer_in_backward"))
+    optimizer_in_backward_env = os.getenv("OMNICODER_OPTIMIZER_IN_BACKWARD", "").strip()
+    optimizer_in_backward = (
+        truthy_value(optimizer_in_backward_env)
+        if optimizer_in_backward_env
+        else bool(arg_value(args, "optimizer_in_backward", False) or distributed.get("optimizer_in_backward"))
+    )
     optimizer_in_backward_update = str(arg_value(args, "optimizer_in_backward_update", "") or distributed.get("optimizer_in_backward_update") or "lowmem_sgd")
     optimizer_in_backward_grad_clip = float(arg_value(args, "optimizer_in_backward_grad_clip", 0.0) or distributed.get("optimizer_in_backward_grad_clip") or 1.0)
     optimizer_in_backward_clip_mode = str(arg_value(args, "optimizer_in_backward_clip_mode", "") or distributed.get("optimizer_in_backward_clip_mode") or "rms")
