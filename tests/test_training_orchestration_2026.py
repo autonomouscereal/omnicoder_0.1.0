@@ -481,6 +481,36 @@ def test_run_training_stages_blocks_bad_initial_resume_checkpoint_before_pretrai
     assert result["reason"] == "initial_checkpoint_readiness_failed"
 
 
+def test_run_training_stages_bounds_external_dense_launch_preflight(tmp_path: Path, monkeypatch) -> None:
+    profile = _profile(tmp_path)
+    profile["training_plan"]["stage_order"] = ["text"]
+    profile["training_plan"]["required_modalities"] = ["text"]
+    profile["training_plan"]["min_records_per_modality"] = 99
+    train_path = tmp_path / "train.jsonl"
+    _write_jsonl(train_path, [{"prompt": "status", "target": "ready", **QUALITY_META}])
+    manifest = {
+        "loaded_existing_curation_manifest": True,
+        "external_curation_manifest": str(tmp_path / "manifest.json"),
+        "external_curation_preflight_max_records_per_file": 256,
+        "per_modality_split_jsonl": {},
+        "per_modality_jsonl": {"text": str(train_path)},
+        "modalities": {"text": 1},
+        "train_all_jsonl": str(train_path),
+    }
+    calls: list[dict] = []
+
+    def fake_preflight(paths, out_dir, *, label, max_records=0, scan_artifacts=True, max_artifact_bytes=64 * 1024 * 1024):
+        calls.append({"label": label, "max_records": max_records, "paths": [str(path) for path in paths]})
+        return {"status": "passed", "manifest": str(out_dir / f"{label}.json"), "records": 1, "rejected": 0}
+
+    monkeypatch.setattr(orch, "run_integrity_preflight", fake_preflight)
+    result = orch.run_training_stages(profile, manifest, tmp_path / "out", _runtime_args(resume_checkpoint=""))
+
+    assert result["status"] == "failed"
+    assert calls[0]["label"] == "dense_training_launch"
+    assert calls[0]["max_records"] == 256
+
+
 def test_run_long_context_blocks_failed_checkpoint_readiness_before_ladder(tmp_path: Path, monkeypatch) -> None:
     profile = _readiness_profile(tmp_path)
     profile_path = tmp_path / "profile.json"

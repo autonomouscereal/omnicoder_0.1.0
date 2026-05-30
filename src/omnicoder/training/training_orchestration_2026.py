@@ -2265,6 +2265,18 @@ def run_integrity_preflight(
     return payload
 
 
+def dense_launch_preflight_max_records(manifest: dict[str, Any]) -> int:
+    raw = os.environ.get("OMNICODER_DENSE_LAUNCH_PREFLIGHT_MAX_RECORDS", "").strip()
+    if not raw:
+        raw = os.environ.get("OMNICODER_EXTERNAL_CURATION_PREFLIGHT_MAX_RECORDS", "").strip()
+    if not raw and manifest.get("loaded_existing_curation_manifest"):
+        raw = str(manifest.get("external_curation_preflight_max_records_per_file") or "")
+    try:
+        return max(0, int(raw or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def require_integrity_preflight(preflight: dict[str, Any]) -> None:
     if preflight.get("status") != "passed":
         raise SystemExit(
@@ -3927,11 +3939,24 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
                 "stages": [],
                 "final_checkpoint": str(previous_checkpoint),
             }
+    launch_preflight_max_records = dense_launch_preflight_max_records(manifest)
+    write_json(
+        out_dir / "manifests" / "integrity" / "dense_training_launch_preflight_config.json",
+        {
+            "schema": "omnicoder.dense_training_launch_preflight_config_2026.v1",
+            "created_at": now_iso(),
+            "loaded_existing_curation_manifest": bool(manifest.get("loaded_existing_curation_manifest")),
+            "external_curation_manifest": manifest.get("external_curation_manifest"),
+            "max_records_per_file": launch_preflight_max_records,
+            "source": "bounded_external_manifest" if launch_preflight_max_records > 0 else "full_scan",
+        },
+    )
     require_integrity_preflight(
         run_integrity_preflight(
             training_bound_jsonl_paths_from_manifest(manifest),
             out_dir,
             label="dense_training_launch",
+            max_records=launch_preflight_max_records,
         )
     )
     stage_reports: list[dict[str, Any]] = []
