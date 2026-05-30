@@ -14,6 +14,12 @@ from torch.utils.checkpoint import checkpoint as activation_checkpoint
 from omnicoder.modeling.kda_2026 import GatedDeltaNet2
 from omnicoder.tokenization.omni_ledger_2026 import DEFAULT_LEDGER
 
+try:
+    from torch.nn.attention.flex_attention import create_block_mask, flex_attention
+except Exception:  # pragma: no cover - optional runtime fast path
+    create_block_mask = None
+    flex_attention = None
+
 BlockKind = Literal["kda", "csa", "hca", "local", "delta", "csa_hca"]
 DEFAULT_LAYER_PATTERN: tuple[BlockKind, ...] = ("kda", "kda", "kda", "csa", "kda", "kda", "kda", "hca")
 
@@ -451,6 +457,64 @@ def _cached_arange(owner: nn.Module, ref: torch.Tensor, length: int, *, name: st
     return values
 
 
+def _flex_local_attention_available(owner: nn.Module, ref: torch.Tensor) -> bool:
+    if flex_attention is None or create_block_mask is None:
+        return False
+    if not ref.is_cuda:
+        return False
+    if os.getenv("OMNICODER2026_FLEX_LOCAL_ATTENTION", "1").lower() in {"0", "false", "no", "off"}:
+        return False
+    disabled = getattr(owner, "_flex_local_attention_disabled", False)
+    if bool(disabled):
+        return False
+    try:
+        major, minor = torch.cuda.get_device_capability(ref.device)
+    except Exception:
+        return False
+    return (major, minor) >= (7, 5)
+
+
+def _flex_local_block_mask(owner: nn.Module, ref: torch.Tensor, q_len: int, kv_len: int, window: int) -> Any:
+    if create_block_mask is None:
+        return None
+    q_len = int(q_len)
+    kv_len = int(kv_len)
+    window = max(1, int(window))
+    key = (ref.device.type, ref.device.index, q_len, kv_len, window)
+    cache = getattr(owner, "_flex_local_block_mask_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        setattr(owner, "_flex_local_block_mask_cache", cache)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    def mask_mod(batch: torch.Tensor, head: torch.Tensor, q_idx: torch.Tensor, kv_idx: torch.Tensor) -> torch.Tensor:
+        chunk_start = torch.div(q_idx, window, rounding_mode="floor") * window
+        left = torch.maximum(chunk_start - window, torch.zeros_like(chunk_start))
+        return (kv_idx <= q_idx) & (kv_idx >= left)
+
+    mask = create_block_mask(mask_mod, B=None, H=None, Q_LEN=q_len, KV_LEN=kv_len, device=str(ref.device))
+    if len(cache) >= 8:
+        cache.clear()
+    cache[key] = mask
+    return mask
+
+
+def _flex_sliding_local_attention(owner: nn.Module, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, window: int) -> torch.Tensor | None:
+    if not _flex_local_attention_available(owner, q):
+        return None
+    min_chunks = max(1, _env_int("OMNICODER2026_FLEX_LOCAL_ATTENTION_MIN_CHUNKS", 4))
+    if int(math.ceil(float(q.shape[2]) / float(max(1, int(window))))) < min_chunks:
+        return None
+    try:
+        mask = _flex_local_block_mask(owner, q, q.shape[2], k.shape[2], window)
+        return flex_attention(q, k, v, block_mask=mask, enable_gqa=(q.shape[1] != k.shape[1]))  # type: ignore[misc]
+    except Exception:
+        setattr(owner, "_flex_local_attention_disabled", True)
+        return None
+
+
 def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
     d = cos.shape[-1]
     x_rot, x_pass = x[..., :d], x[..., d:]
@@ -610,6 +674,9 @@ class LocalCausalAttention(nn.Module):
         t = q.shape[2]
         if t <= window:
             return F.scaled_dot_product_attention(q, k, v, is_causal=True, dropout_p=0.0)
+        flex_out = _flex_sliding_local_attention(self, q, k, v, window)
+        if flex_out is not None:
+            return flex_out
         parts: list[torch.Tensor] = []
         for start in range(0, t, window):
             end = min(t, start + window)
@@ -704,19 +771,25 @@ class SparseLatentAttention(nn.Module):
 
     def _local_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         if k.shape[1] == 1 and q.shape[1] > 1:
-            k = k.expand(-1, q.shape[1], -1, -1)
-            v = v.expand(-1, q.shape[1], -1, -1)
+            expanded_k = k.expand(-1, q.shape[1], -1, -1)
+            expanded_v = v.expand(-1, q.shape[1], -1, -1)
+        else:
+            expanded_k = k
+            expanded_v = v
         t = q.shape[2]
         window = max(1, int(self.cfg.local_window))
         if t <= window:
-            return F.scaled_dot_product_attention(q, k, v, is_causal=True, dropout_p=0.0)
+            return F.scaled_dot_product_attention(q, expanded_k, expanded_v, is_causal=True, dropout_p=0.0)
+        flex_out = _flex_sliding_local_attention(self, q, k, v, window)
+        if flex_out is not None:
+            return flex_out
         parts: list[torch.Tensor] = []
         for start in range(0, t, window):
             end = min(t, start + window)
             left = max(0, start - window)
             qi = q[:, :, start:end, :]
-            ki = k[:, :, left:end, :]
-            vi = v[:, :, left:end, :]
+            ki = expanded_k[:, :, left:end, :]
+            vi = expanded_v[:, :, left:end, :]
             mask = _cached_tril_mask(self, q, end - start, end - left, start - left)
             parts.append(F.scaled_dot_product_attention(qi, ki, vi, attn_mask=mask, dropout_p=0.0))
         return torch.cat(parts, dim=2)

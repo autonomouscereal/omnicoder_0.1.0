@@ -11,6 +11,7 @@ from omnicoder.modeling.omnicoder2026 import (
     LocalCausalAttention,
     OmniCoder2026,
     OmniCoder2026Config,
+    SparseLatentAttention,
     SwiGLU,
 )
 from omnicoder.tokenization.native_segments_2026 import build_native_segment_packet
@@ -265,3 +266,51 @@ def test_fused_swiglu_loads_legacy_gate_up_projection_state() -> None:
     x = torch.randn(2, 7, cfg.d_model)
 
     torch.testing.assert_close(reference(x), layer(x), atol=0.0, rtol=0.0)
+
+
+def test_flex_local_attention_matches_chunked_fallback(monkeypatch) -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is required for FlexAttention parity")
+    major, minor = torch.cuda.get_device_capability(0)
+    if (major, minor) < (7, 5):
+        pytest.skip("FlexAttention fast path is disabled below sm75")
+
+    torch.manual_seed(777)
+    cfg = _tiny_native_cfg()
+    cfg.local_window = 4
+    layer = LocalCausalAttention(cfg).cuda()
+    x = torch.randn(1, 13, cfg.d_model, device="cuda")
+
+    monkeypatch.setenv("OMNICODER2026_FLEX_LOCAL_ATTENTION", "0")
+    fallback = layer(x)
+    monkeypatch.setenv("OMNICODER2026_FLEX_LOCAL_ATTENTION", "1")
+    if hasattr(layer, "_flex_local_attention_disabled"):
+        delattr(layer, "_flex_local_attention_disabled")
+    flex = layer(x)
+
+    torch.testing.assert_close(flex, fallback, atol=1e-4, rtol=1e-4)
+
+
+def test_flex_sparse_mqa_local_attention_matches_expanded_fallback(monkeypatch) -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is required for FlexAttention parity")
+    major, minor = torch.cuda.get_device_capability(0)
+    if (major, minor) < (7, 5):
+        pytest.skip("FlexAttention fast path is disabled below sm75")
+
+    torch.manual_seed(778)
+    cfg = _tiny_native_cfg()
+    cfg.local_window = 4
+    layer = SparseLatentAttention(cfg, "csa").cuda()
+    q = torch.randn(1, cfg.n_heads, 13, cfg.head_dim, device="cuda")
+    k = torch.randn(1, 1, 13, cfg.head_dim, device="cuda")
+    v = torch.randn(1, 1, 13, cfg.head_dim, device="cuda")
+
+    monkeypatch.setenv("OMNICODER2026_FLEX_LOCAL_ATTENTION", "0")
+    fallback = layer._local_attention(q, k, v)
+    monkeypatch.setenv("OMNICODER2026_FLEX_LOCAL_ATTENTION", "1")
+    if hasattr(layer, "_flex_local_attention_disabled"):
+        delattr(layer, "_flex_local_attention_disabled")
+    flex = layer._local_attention(q, k, v)
+
+    torch.testing.assert_close(flex, fallback, atol=1e-4, rtol=1e-4)
