@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -103,6 +104,96 @@ DEFAULT_VARIANTS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=True, sort_keys=True) + "\n")
+
+
+def profile_corpus_paths(matrix_root: Path, matrix_tag: str) -> tuple[Path, str]:
+    host_root = matrix_root / "profile_corpus"
+    container_root = f"/workspace/weights/training_runs/profile_matrix_{matrix_tag}/profile_corpus"
+    return host_root, container_root
+
+
+def ensure_profile_corpus(matrix_root: Path, matrix_tag: str) -> str:
+    host_root, container_root = profile_corpus_paths(matrix_root, matrix_tag)
+    train_path = host_root / "train_text_profile.jsonl"
+    eval_path = host_root / "eval_text_profile.jsonl"
+    rows: list[dict[str, Any]] = []
+    prompts = [
+        (
+            "Explain why bounded profiling should avoid scanning the full dataset lake.",
+            "Bounded profiling should use a tiny clean manifest so measured time reflects model compute, optimizer work, and diagnostics instead of corpus discovery or disk I/O.",
+        ),
+        (
+            "Summarize the training target coverage rule.",
+            "The loss mask must cover assistant answer tokens and routed media artifact tokens while preserving prompt and media-input tokens as shared context.",
+        ),
+        (
+            "What should the 20B profiling probe record?",
+            "It should record per-rank step spans, optimizer diagnostics, optional block timings, target-token coverage, loss, schedule, and whether checkpoints were intentionally skipped.",
+        ),
+        (
+            "State the fake-quant profiling boundary.",
+            "Fake-quant-off runs are only no-checkpoint TPS isolation probes; production 20B training still requires the q4 fake-quant training path.",
+        ),
+    ]
+    for index, (prompt, answer) in enumerate(prompts):
+        identity = json.dumps({"prompt": prompt, "answer": answer, "index": index}, sort_keys=True)
+        rows.append(
+            {
+                "schema": "omnicoder.profile_matrix_training_row_2026.v1",
+                "record_id": f"profile_text_train_{index:02d}",
+                "source_id": f"profile_matrix_{matrix_tag}_{index:02d}",
+                "source_uri": "profile_matrix://synthetic/compute-isolation",
+                "source_date": "2026-05-30",
+                "modality": "text",
+                "modalities": ["text"],
+                "split": "train",
+                "quality_score": 0.99,
+                "contamination_status": "clean",
+                "payload_sha256": hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+                "messages": [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": answer},
+                ],
+            }
+        )
+    eval_rows = [
+        {
+            **rows[0],
+            "record_id": "profile_text_eval_00",
+            "source_id": f"profile_matrix_{matrix_tag}_eval_00",
+            "split": "eval",
+        }
+    ]
+    write_jsonl(train_path, rows)
+    write_jsonl(eval_path, eval_rows)
+    manifest_path = host_root / "curation_manifest.json"
+    train_container = f"{container_root}/train_text_profile.jsonl"
+    eval_container = f"{container_root}/eval_text_profile.jsonl"
+    manifest = {
+        "schema": "omnicoder.real_training_curation_manifest_2026.v1",
+        "schema_version": "2026-05-23",
+        "status": "ok",
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "profile_name": f"profile_matrix_{matrix_tag}",
+        "train_all_jsonl": train_container,
+        "curated_jsonl": train_container,
+        "per_modality_jsonl": {"text": train_container},
+        "per_modality_split_jsonl": {"text": {"train": train_container, "eval": eval_container}},
+        "records": len(rows),
+        "eval_records": len(eval_rows),
+        "modalities": {"text": len(rows)},
+        "split_counts": {"text": {"train": len(rows), "eval": len(eval_rows), "test": 0}},
+        "profile_matrix_compute_isolation": True,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return f"{container_root}/curation_manifest.json"
 
 
 def run(cmd: list[str], *, cwd: Path, env: dict[str, str] | None = None, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
@@ -279,6 +370,10 @@ def launch_variant(repo: Path, matrix_root: Path, matrix_tag: str, variant: dict
         env["OMNICODER_PROFILE"] = args.profile
     if args.curation_manifest:
         env["OMNICODER_CURATION_MANIFEST"] = args.curation_manifest
+    elif args.profile_corpus:
+        env["OMNICODER_CURATION_MANIFEST"] = ensure_profile_corpus(matrix_root, matrix_tag)
+        env["OMNICODER_EXTERNAL_CURATION_PREFLIGHT_MAX_RECORDS"] = str(min(16, int(env.get("OMNICODER_EXTERNAL_CURATION_PREFLIGHT_MAX_RECORDS", "16") or 16)))
+        env["OMNICODER_DENSE_LAUNCH_PREFLIGHT_MAX_RECORDS"] = str(min(16, int(env.get("OMNICODER_DENSE_LAUNCH_PREFLIGHT_MAX_RECORDS", "16") or 16)))
     launcher = repo / "scripts" / "ai_server_fast_pipeline_20b.sh"
     launch = run(["bash", str(launcher)], cwd=repo, env=env, timeout=120)
     result: dict[str, Any] = {
@@ -321,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", default="run-full")
     parser.add_argument("--timeout-seconds", type=int, default=3600)
     parser.add_argument("--poll-seconds", type=int, default=20)
+    parser.add_argument("--profile-corpus", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--cleanup-containers", action="store_true", default=os.getenv("OMNICODER_PROFILE_MATRIX_CLEANUP", "0").lower() in TRUTHY)
     args = parser.parse_args(argv)
 
