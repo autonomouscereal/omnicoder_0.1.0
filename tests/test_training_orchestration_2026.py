@@ -23,11 +23,15 @@ def _profile(root: Path) -> dict:
     audio_path = root / "data" / "audio" / "one.wav"
     video_path = root / "data" / "video" / "one.mp4"
     music_path = root / "data" / "music" / "music_song.mp3"
+    tts_path = root / "data" / "tts" / "voice.wav"
+    ocr_path = root / "data" / "ocr" / "doc.png"
     for path, payload in (
         (image_path, b"real image bytes"),
         (audio_path, b"real audio bytes"),
         (video_path, b"real video bytes"),
         (music_path, b"real music bytes"),
+        (tts_path, b"real tts bytes"),
+        (ocr_path, b"real ocr bytes"),
     ):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(payload)
@@ -58,6 +62,8 @@ def _profile(root: Path) -> dict:
     _write_jsonl(root / "data" / "videos.jsonl", [{"id": "video-sample-1", "video": str(video_path), "caption": "A real video sample.", **QUALITY_META}])
     _write_jsonl(root / "data" / "audio.jsonl", [{"id": "audio-sample-1", "audio": str(audio_path), "caption": "A real audio sample.", **QUALITY_META}])
     _write_jsonl(root / "data" / "music.jsonl", [{"source_id": "music-sample-1", "music": str(music_path), "caption": "A real music sample.", **QUALITY_META}])
+    _write_jsonl(root / "data" / "tts.jsonl", [{"source_id": "tts-sample-1", "tts": str(tts_path), "caption": "A real speech synthesis sample.", **QUALITY_META}])
+    _write_jsonl(root / "data" / "ocr.jsonl", [{"source_id": "ocr-sample-1", "ocr": str(ocr_path), "caption": "Invoice total is forty two dollars.", **QUALITY_META}])
     return {
         "profile_name": "unit",
         "work_dir": str(root / "weights"),
@@ -70,7 +76,11 @@ def _profile(root: Path) -> dict:
             "video_jsonl": ["data/videos.jsonl"],
             "audio_jsonl": ["data/audio.jsonl"],
             "music_jsonl": ["data/music.jsonl"],
+            "tts_jsonl": ["data/tts.jsonl"],
+            "ocr_jsonl": ["data/ocr.jsonl"],
             "audio_roots": ["data/audio"],
+            "tts_roots": ["data/tts"],
+            "ocr_roots": ["data/ocr"],
             "video_roots": ["data/video"],
             "music_roots": ["data/music"],
             "media_roots": [],
@@ -78,7 +88,7 @@ def _profile(root: Path) -> dict:
         "training_plan": {
             "max_records_per_modality": 2,
             "min_records_per_modality": 1,
-            "artifact_token_count": {"image": 4, "video": 4, "audio": 4, "music": 4, "tool": 4, "long_context": 4},
+            "artifact_token_count": {"image": 4, "video": 4, "audio": 4, "music": 4, "tts": 4, "ocr": 4, "tool": 4, "long_context": 4},
             "max_hash_bytes": 1024,
             "max_media_bytes": 1024 * 1024,
             "min_media_bytes": 1,
@@ -127,6 +137,32 @@ def test_pipeline_diagnostics_args_wire_step_timing_and_profile_skip_final_save(
     orch.append_pipeline_train_diagnostics_args(cmd, cfg, args, tmp_path / "out", "profile run")
     assert "--step_timing_file" in cmd
     assert "--skip_final_save" in cmd
+
+
+def test_release_contract_fake_quant_off_fails_closed_without_profile_bypass(monkeypatch) -> None:
+    profile_path = Path(__file__).resolve().parents[1] / "profiles" / "training_orchestration_2026.json"
+    cfg = orch.profile_cfg(orch.load_profile(profile_path))
+    args = argparse.Namespace(preset="omnicoder2026_20b_1m", allow_verifier_preset=False, fake_quant=False, context_ladder="")
+
+    monkeypatch.setenv("OMNICODER_FAKE_QUANT", "0")
+    monkeypatch.delenv("OMNICODER2026_SKIP_FINAL_SAVE", raising=False)
+    monkeypatch.delenv("OMNICODER_PROFILE_ALLOW_FAKE_QUANT_OFF", raising=False)
+    with pytest.raises(ValueError, match="q4/fake-quant training path"):
+        orch.release_training_contract_report(cfg, args)
+
+
+def test_release_contract_allows_fake_quant_off_only_for_explicit_no_checkpoint_profile(monkeypatch) -> None:
+    profile_path = Path(__file__).resolve().parents[1] / "profiles" / "training_orchestration_2026.json"
+    cfg = orch.profile_cfg(orch.load_profile(profile_path))
+    args = argparse.Namespace(preset="omnicoder2026_20b_1m", allow_verifier_preset=False, fake_quant=False, context_ladder="")
+
+    monkeypatch.setenv("OMNICODER_FAKE_QUANT", "0")
+    monkeypatch.setenv("OMNICODER2026_SKIP_FINAL_SAVE", "1")
+    monkeypatch.setenv("OMNICODER_PROFILE_ALLOW_FAKE_QUANT_OFF", "1")
+    report = orch.release_training_contract_report(cfg, args)
+
+    assert report["status"] == "passed"
+    assert report["profiling_fake_quant_off_contract_bypass"] is True
 
 
 def test_no_checkpoint_profile_training_stage_passes_without_checkpoint(tmp_path, monkeypatch) -> None:
@@ -2079,6 +2115,7 @@ def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args
     assert 'OMNICODER_CURATION_MANIFEST' in script
     assert 'AI_DATA_ROOT="${OMNICODER_AI_DATA_ROOT:-/mnt/ai_data}"' in script
     assert '-v "$AI_DATA_ROOT:/mnt/ai_data"' in script
+    assert 'STAGE_ORDER="${OMNICODER_STAGE_ORDER:-text,code,tool,image,video,audio,music,tts,ocr,long_context}"' in script
     assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"' in script
     assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-16}"' in script
     assert 'LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"' in script
@@ -2630,13 +2667,13 @@ def test_adaptive_mixture_plan_reweights_sparse_modalities(tmp_path):
         json.dumps(
             {
                 "records": 18,
-                "modalities": {"text": 12, "code": 4, "tool": 2, "image": 0, "video": 0, "audio": 0, "music": 0, "long_context": 0},
+                "modalities": {"text": 12, "code": 4, "tool": 2, "image": 0, "video": 0, "audio": 0, "music": 0, "tts": 0, "ocr": 0, "long_context": 0},
             }
         ),
         encoding="utf-8",
     )
     external_manifest = tmp_path / "external.json"
-    external_manifest.write_text(json.dumps({"records": {"train": 6}, "modalities": {"image": 2, "video": 1, "audio": 1, "music": 1, "long_context": 1}}), encoding="utf-8")
+    external_manifest.write_text(json.dumps({"records": {"train": 8}, "modalities": {"image": 2, "video": 1, "audio": 1, "music": 1, "tts": 1, "ocr": 1, "long_context": 1}}), encoding="utf-8")
 
     plan = orch.build_adaptive_mixture_plan(
         profile,

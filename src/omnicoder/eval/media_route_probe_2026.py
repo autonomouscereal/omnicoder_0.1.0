@@ -9,7 +9,7 @@ from omnicoder.inference.output_router_2026 import route_for_output, route_manif
 
 
 SCHEMA = "omnicoder.media_route_probe_2026.v1"
-DEFAULT_MEDIA_MODALITIES = ("image", "video", "music", "tts", "ocr")
+DEFAULT_MEDIA_MODALITIES = ("image", "video", "audio", "music", "tts", "ocr")
 
 
 def build_media_route_probe(*, model_vocab_size: int = 330000, modalities: tuple[str, ...] = DEFAULT_MEDIA_MODALITIES) -> dict[str, Any]:

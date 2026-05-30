@@ -93,6 +93,13 @@ def write_decode_sanity_tasks(out_dir: Path) -> Path:
         },
         {
             "benchmark_id": "local_decode_sanity",
+            "task_id": "math_probe",
+            "reportable": False,
+            "prompt": "Solve 17 * 19 and include one sentence explaining the arithmetic.",
+            "expected_signal": "coherent_math",
+        },
+        {
+            "benchmark_id": "local_decode_sanity",
             "task_id": "image_route_probe",
             "reportable": False,
             "prompt": "Return an image artifact route descriptor for a 512x512 diagnostic image of a blue cube on a white background.",
@@ -100,10 +107,45 @@ def write_decode_sanity_tasks(out_dir: Path) -> Path:
         },
         {
             "benchmark_id": "local_decode_sanity",
+            "task_id": "video_route_probe",
+            "reportable": False,
+            "prompt": "Return a video artifact route descriptor for a three-second diagnostic clip of a cube rotating on a white background.",
+            "expected_signal": "video_route_or_artifact_descriptor",
+        },
+        {
+            "benchmark_id": "local_decode_sanity",
+            "task_id": "audio_route_probe",
+            "reportable": False,
+            "prompt": "Return an audio artifact route descriptor for a one-second diagnostic sine sweep.",
+            "expected_signal": "audio_route_or_artifact_descriptor",
+        },
+        {
+            "benchmark_id": "local_decode_sanity",
+            "task_id": "music_route_probe",
+            "reportable": False,
+            "prompt": "Return a music artifact route descriptor for a short bright piano cadence.",
+            "expected_signal": "music_route_or_artifact_descriptor",
+        },
+        {
+            "benchmark_id": "local_decode_sanity",
             "task_id": "tts_route_probe",
             "reportable": False,
             "prompt": "Return a TTS artifact route descriptor for the phrase 'OmniCoder diagnostics are online.'",
             "expected_signal": "tts_route_or_artifact_descriptor",
+        },
+        {
+            "benchmark_id": "local_decode_sanity",
+            "task_id": "ocr_probe",
+            "reportable": False,
+            "prompt": "Return OCR text extracted from an imagined document containing the words 'target coverage ok'.",
+            "expected_signal": "ocr_text",
+        },
+        {
+            "benchmark_id": "local_decode_sanity",
+            "task_id": "long_context_probe",
+            "reportable": False,
+            "prompt": "Repeat the key phrase 'needle-ready' once, then summarize why long-context recall gates matter.",
+            "expected_signal": "long_context_recall_text",
         },
     ]
     path = out_dir / "decode_sanity_tasks.jsonl"

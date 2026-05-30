@@ -65,22 +65,7 @@ def _sample_loss(avg_loss: float = 1.25, perplexity: float = 3.49, tokens: int =
 
 
 def _media_route_probe() -> dict:
-    return {
-        "schema": "omnicoder.media_route_probe_2026.v1",
-        "routes": [
-            {
-                "output_route": {
-                    "name": "image_artifact",
-                    "output_field": "artifact_path",
-                    "output_modality": "image",
-                    "token_ranges": [{"name": "vision_semantic", "begin": 270592, "end": 278784}],
-                    "requires_artifact_decoder": True,
-                    "artifact_kind": "image",
-                    "notes": ["Requires an edge image decoder."],
-                }
-            }
-        ],
-    }
+    return build_media_route_probe(model_vocab_size=330000)
 
 
 def test_checkpoint_readiness_passes_valid_diagnostics() -> None:
@@ -123,6 +108,15 @@ def test_checkpoint_readiness_rejects_missing_media_router_metadata() -> None:
 
     assert report["status"] == "failed"
     assert "media_router_metadata_missing" in report["reasons"]
+
+
+def test_checkpoint_readiness_requires_every_core_media_route() -> None:
+    probe = build_media_route_probe(model_vocab_size=330000, modalities=("image", "video", "music", "tts", "ocr"))
+
+    report = checkpoint_readiness(_topk(), _sample_loss(), probe)
+
+    assert report["status"] == "failed"
+    assert "media_route_missing_required_modality_audio" in report["reasons"]
 
 
 def test_checkpoint_readiness_rejects_bad_weight_scale() -> None:
@@ -202,9 +196,10 @@ def test_media_route_probe_generates_all_core_media_routes() -> None:
 
     assert readiness["checks"]["media_route_probe"]["status"] == "passed"
     routes = {row["modality"]: row["output_route"] for row in report["rows"]}
-    assert {"image", "video", "music", "tts", "ocr"} <= set(routes)
+    assert {"image", "video", "audio", "music", "tts", "ocr"} <= set(routes)
     assert routes["image"]["requires_artifact_decoder"] is True
     assert routes["video"]["requires_artifact_decoder"] is True
+    assert routes["audio"]["requires_artifact_decoder"] is True
     assert routes["music"]["requires_artifact_decoder"] is True
     assert routes["tts"]["output_modality"] == "speech"
     assert routes["tts"]["requires_artifact_decoder"] is True

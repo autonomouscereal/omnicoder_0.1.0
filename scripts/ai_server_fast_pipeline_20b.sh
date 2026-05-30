@@ -25,7 +25,7 @@ NPROC_PER_NODE="${OMNICODER_NPROC_PER_NODE:-${#RANK_DEVICE_MAP_ITEMS[@]}}"
 CUDA_ALLOC_CONF="${OMNICODER_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 START_STAGE="${OMNICODER_START_STAGE:-text}"
-STAGE_ORDER="${OMNICODER_STAGE_ORDER:-text,code,tool,image,video,audio,music,long_context}"
+STAGE_ORDER="${OMNICODER_STAGE_ORDER:-text,code,tool,image,video,audio,music,tts,ocr,long_context}"
 RESUME_CHECKPOINT="${OMNICODER_RESUME_CHECKPOINT:-}"
 CURATION_MANIFEST="${OMNICODER_CURATION_MANIFEST:-}"
 POSTTRAIN_START_ALGORITHM="${OMNICODER_POSTTRAIN_START_ALGORITHM:-}"
@@ -41,8 +41,12 @@ LEARNING_RATE="${OMNICODER_LR:-0.00002}"
 # checkpoint should be written at all.
 SAVE_INTERVAL="${OMNICODER_SAVE_INTERVAL:-32}"
 SKIP_FINAL_SAVE="${OMNICODER2026_SKIP_FINAL_SAVE:-0}"
+FAKE_QUANT="${OMNICODER_FAKE_QUANT:-1}"
 FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-16}"
 FAKE_QUANT_MAX_FULL_ELEMENTS="${OMNICODER_FAKE_QUANT_MAX_FULL_ELEMENTS:-16777216}"
+ACTIVATION_CHECKPOINTING="${OMNICODER_ACTIVATION_CHECKPOINTING:-1}"
+PIPELINE_STAGE_SCHEDULE="${OMNICODER_PIPELINE_STAGE_SCHEDULE:-${OMNICODER_PIPELINE_SCHEDULE:-gpipe}}"
+PIPELINE_MICROBATCHES="${OMNICODER_PIPELINE_MICROBATCHES:-1}"
 LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"
 FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-256}"
 LOSS_TOKEN_STRIDE="${OMNICODER_LOSS_TOKEN_STRIDE:-1}"
@@ -57,6 +61,8 @@ STEP_TIMING_INTERVAL="${OMNICODER2026_STEP_TIMING_INTERVAL:-1}"
 RANK_SKEW_INTERVAL="${OMNICODER2026_RANK_SKEW_INTERVAL:-1}"
 LOSS_DIAGNOSTICS_INTERVAL="${OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL:-8}"
 TIMING_CUDA_SYNC="${OMNICODER2026_TIMING_CUDA_SYNC:-0}"
+BLOCK_TIMING="${OMNICODER2026_BLOCK_TIMING:-0}"
+BLOCK_TIMING_CUDA_SYNC="${OMNICODER2026_BLOCK_TIMING_CUDA_SYNC:-0}"
 CHECKPOINT_DATA_HASH_POLICY="${OMNICODER2026_CHECKPOINT_DATA_HASH_POLICY:-manifest}"
 PIPELINE_REASONING_EFFORT="${OMNICODER2026_PIPELINE_REASONING_EFFORT:-0}"
 POSTTRAIN_STEPS="${OMNICODER_POSTTRAIN_STEPS:-32}"
@@ -151,6 +157,16 @@ append_nonempty_arg() {
 optimizer_in_backward_args=()
 if truthy "$OPTIMIZER_IN_BACKWARD"; then
   optimizer_in_backward_args+=(--optimizer-in-backward)
+fi
+
+fake_quant_args=()
+if truthy "$FAKE_QUANT"; then
+  fake_quant_args+=(--fake-quant)
+fi
+
+activation_checkpointing_args=()
+if truthy "$ACTIVATION_CHECKPOINTING"; then
+  activation_checkpointing_args+=(--activation-checkpointing)
 fi
 
 if [[ -n "$RESUME_CHECKPOINT" && -z "$CHECKPOINT_READINESS_REPORT" && -z "$CHECKPOINT_MEDIA_ROUTE_PROBE" ]] && truthy "$AUTO_CHECKPOINT_MEDIA_ROUTE_PROBE"; then
@@ -259,8 +275,8 @@ if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then
     --nproc-per-node "$NPROC_PER_NODE"
     --rank-device-map "$RANK_DEVICE_MAP"
     --placement-layer-counts "$PLACEMENT_LAYER_COUNTS"
-    --pipeline-stage-schedule gpipe
-    --pipeline-microbatches 1
+    --pipeline-stage-schedule "$PIPELINE_STAGE_SCHEDULE"
+    --pipeline-microbatches "$PIPELINE_MICROBATCHES"
     --precision fp16
     --init-dtype fp16
     --optimizer adafactor
@@ -272,12 +288,12 @@ if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then
     --optimizer-in-backward-adafactor-clip-threshold 1.0
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
-    --activation-checkpointing
+    "${activation_checkpointing_args[@]}"
     --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
     --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_eval_args[@]}"
     "${shared_checkpoint_readiness_args[@]}"
-    --fake-quant
+    "${fake_quant_args[@]}"
   )
 elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
   if [[ -z "$RESUME_CHECKPOINT" ]]; then
@@ -311,8 +327,8 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --nproc-per-node "$NPROC_PER_NODE"
     --rank-device-map "$RANK_DEVICE_MAP"
     --placement-layer-counts "$PLACEMENT_LAYER_COUNTS"
-    --pipeline-stage-schedule gpipe
-    --pipeline-microbatches 1
+    --pipeline-stage-schedule "$PIPELINE_STAGE_SCHEDULE"
+    --pipeline-microbatches "$PIPELINE_MICROBATCHES"
     --precision fp16
     --init-dtype fp16
     --optimizer adafactor
@@ -324,13 +340,13 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --optimizer-in-backward-adafactor-clip-threshold 1.0
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
-    --activation-checkpointing
+    "${activation_checkpointing_args[@]}"
     --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
     --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_posttrain_args[@]}"
     "${shared_eval_args[@]}"
     "${shared_checkpoint_readiness_args[@]}"
-    --fake-quant
+    "${fake_quant_args[@]}"
   )
 else
   curation_manifest_args=()
@@ -355,8 +371,8 @@ else
     --nproc-per-node "$NPROC_PER_NODE"
     --rank-device-map "$RANK_DEVICE_MAP"
     --placement-layer-counts "$PLACEMENT_LAYER_COUNTS"
-    --pipeline-stage-schedule gpipe
-    --pipeline-microbatches 1
+    --pipeline-stage-schedule "$PIPELINE_STAGE_SCHEDULE"
+    --pipeline-microbatches "$PIPELINE_MICROBATCHES"
     --precision fp16
     --init-dtype fp16
     --optimizer adafactor
@@ -368,13 +384,13 @@ else
     --optimizer-in-backward-adafactor-clip-threshold 1.0
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
-    --activation-checkpointing
+    "${activation_checkpointing_args[@]}"
     --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
     --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_posttrain_args[@]}"
     "${shared_eval_args[@]}"
     "${shared_checkpoint_readiness_args[@]}"
-    --fake-quant
+    "${fake_quant_args[@]}"
   )
   if [[ "$MODE" == "run-full" ]]; then
     common_args+=(--finetune-steps "$FINETUNE_STEPS")
@@ -401,6 +417,8 @@ docker_args=(
   -e OMNICODER2026_RANK_SKEW_INTERVAL="$RANK_SKEW_INTERVAL"
   -e OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL="$LOSS_DIAGNOSTICS_INTERVAL"
   -e OMNICODER2026_TIMING_CUDA_SYNC="$TIMING_CUDA_SYNC"
+  -e OMNICODER2026_BLOCK_TIMING="$BLOCK_TIMING"
+  -e OMNICODER2026_BLOCK_TIMING_CUDA_SYNC="$BLOCK_TIMING_CUDA_SYNC"
   -e OMNICODER2026_CHECKPOINT_DATA_HASH_POLICY="$CHECKPOINT_DATA_HASH_POLICY"
   -e OMNICODER2026_PIPELINE_REASONING_EFFORT="$PIPELINE_REASONING_EFFORT"
   -e OMNICODER2026_SKIP_FINAL_SAVE="$SKIP_FINAL_SAVE"
@@ -410,6 +428,10 @@ docker_args=(
   -e OMNICODER2026_LOSS_TOKEN_STRIDE="$LOSS_TOKEN_STRIDE"
   -e OMNICODER2026_MAX_LOSS_TOKENS_PER_SAMPLE="$MAX_LOSS_TOKENS_PER_SAMPLE"
   -e OMNICODER_OPTIMIZER_IN_BACKWARD="$OPTIMIZER_IN_BACKWARD"
+  -e OMNICODER_FAKE_QUANT="$FAKE_QUANT"
+  -e OMNICODER_ACTIVATION_CHECKPOINTING="$ACTIVATION_CHECKPOINTING"
+  -e OMNICODER_PIPELINE_STAGE_SCHEDULE="$PIPELINE_STAGE_SCHEDULE"
+  -e OMNICODER_PIPELINE_MICROBATCHES="$PIPELINE_MICROBATCHES"
   -e TOKENIZERS_PARALLELISM=false
   -e OMNICODER_ADAPTIVE_WEIGHTS="$ADAPTIVE_WEIGHTS"
   -e OMNICODER_MIXTURE_PLAN="$MIXTURE_PLAN"

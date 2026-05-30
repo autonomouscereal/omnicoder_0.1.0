@@ -505,6 +505,17 @@
       ],
       "min_quality": 0.38
     },
+    "ocr": {
+      "enabled": true,
+      "formats": [
+        "document_image",
+        "ocr_text",
+        "layout_text",
+        "table_extraction",
+        "document_qa"
+      ],
+      "min_quality": 0.4
+    },
     "text": {
       "enabled": true,
       "formats": [
@@ -525,6 +536,17 @@
         "trajectory"
       ],
       "min_quality": 0.4
+    },
+    "tts": {
+      "enabled": true,
+      "formats": [
+        "speech_prompt",
+        "voice_plan",
+        "prosody_label",
+        "alignment_label",
+        "speech_artifact"
+      ],
+      "min_quality": 0.38
     },
     "video": {
       "enabled": true,
@@ -999,6 +1021,8 @@
       "image": 64,
       "long_context": 48,
       "music": 64,
+      "ocr": 64,
+      "tts": 64,
       "tool": 48,
       "video": 64
     },
@@ -1095,7 +1119,9 @@
       "image": 512,
       "long_context": 1536,
       "music": 512,
+      "ocr": 512,
       "text": 2048,
+      "tts": 1024,
       "tool": 2048,
       "video": 512
     },
@@ -1110,6 +1136,8 @@
       "video",
       "audio",
       "music",
+      "tts",
+      "ocr",
       "long_context"
     ],
     "resume_between_stages": true,
@@ -1125,6 +1153,8 @@
       "video",
       "audio",
       "music",
+      "tts",
+      "ocr",
       "long_context"
     ],
     "steps_per_stage": 64,

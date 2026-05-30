@@ -38,8 +38,8 @@ def test_target_contract_accepts_current_15360_mlp_release_shape() -> None:
         require_target_contract=True,
         contract=_contract(),
         context_ladder=[8192, 32768, 131072, 262144, 524288, 1_048_576],
-        required_modalities=["text", "code", "tool", "image", "video", "audio", "music", "long_context"],
-        enabled_modalities=["text", "code", "tool", "image", "video", "audio", "music", "long_context"],
+        required_modalities=["text", "code", "tool", "image", "video", "audio", "music", "tts", "ocr", "long_context"],
+        enabled_modalities=["text", "code", "tool", "image", "video", "audio", "music", "tts", "ocr", "long_context"],
         fake_quant_enabled=True,
     )
 

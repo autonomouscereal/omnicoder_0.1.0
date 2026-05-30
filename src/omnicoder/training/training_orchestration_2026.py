@@ -40,6 +40,8 @@ MEDIA_SUFFIXES: dict[str, tuple[str, ...]] = {
     "video": (".mp4", ".mov", ".webm", ".mkv", ".avi", ".webp"),
     "audio": (".wav", ".flac", ".mp3", ".m4a", ".ogg"),
     "music": (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".mid", ".midi"),
+    "tts": (".wav", ".flac", ".mp3", ".m4a", ".ogg"),
+    "ocr": (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".pdf"),
 }
 AGGREGATE_JSONL_NAMES = {"curated_records.jsonl", "train_all_modalities.jsonl"}
 SUMMARY_NAME_HINTS = ("summary", "workflow", "metadata", "prompt")
@@ -53,10 +55,12 @@ MODALITY_RANGE = {
     "video": "vision_residual",
     "audio": "speech_tts",
     "music": "audio_music",
+    "tts": "speech_tts",
+    "ocr": "vision_semantic",
     "tool": "tool_agent",
     "long_context": "time_space",
 }
-DEFAULT_STAGE_ORDER = ("text", "code", "tool", "image", "video", "audio", "music", "long_context")
+DEFAULT_STAGE_ORDER = ("text", "code", "tool", "image", "video", "audio", "music", "tts", "ocr", "long_context")
 _LJSPEECH_METADATA_CACHE: dict[str, dict[str, str]] = {}
 TARGET_PRESET_2026 = "omnicoder2026_20b_1m"
 PROBE_PRESET_NAMES = {"probe", "native1m_probe", "ledger_probe", "full_ledger_probe", "omnicoder2026_native1m_probe", "omnicoder2026_full_ledger_probe"}
@@ -1138,6 +1142,8 @@ def media_record_ok(path: Path, modality: str, metadata: dict[str, Any], plan: d
         return False
     if modality == "music" and metadata.get("audio_family") != "music":
         return False
+    if modality == "tts" and metadata.get("audio_family") == "music":
+        return False
     return True
 
 
@@ -1478,6 +1484,10 @@ def collect_modality_jsonl(
                     prompt = "Transcribe, caption, and understand the real speech/audio artifact represented by this ledger packet."
                 elif modality == "music":
                     prompt = "Learn the real music/audio generation artifact represented by this ledger packet."
+                elif modality == "tts":
+                    prompt = "Learn the real TTS speech artifact, voice plan, prosody, and text-to-speech alignment represented by this ledger packet."
+                elif modality == "ocr":
+                    prompt = "Read the document/image artifact and produce faithful OCR text plus useful layout details."
                 else:
                     prompt = f"Learn the real {modality} artifact represented by this ledger packet."
             if not target:
@@ -1498,7 +1508,7 @@ def collect_modality_jsonl(
                         metadata = safe_stat_payload(candidate)
                     if not media_record_ok(candidate, modality, metadata, plan):
                         continue
-                elif modality in {"image", "video", "audio", "music"}:
+                elif modality in {"image", "video", "audio", "music", "tts", "ocr"}:
                     continue
             rows.append(
                 make_training_record(
@@ -1746,6 +1756,14 @@ def collect_media(
         elif modality == "music":
             target = compact_media_target(media_path, modality, metadata)
             prompt = "Learn the real music/audio generation artifact represented by this ledger packet."
+        elif modality == "tts":
+            target = transcript_for_audio(media_path)
+            if target == media_path.stem.replace("_", " ").replace("-", " "):
+                target = compact_media_target(media_path, modality, metadata)
+            prompt = "Learn the real TTS speech artifact, voice plan, prosody, and text-to-speech alignment represented by this ledger packet."
+        elif modality == "ocr":
+            target = compact_media_target(media_path, modality, metadata)
+            prompt = "Read the document/image artifact and produce faithful OCR text plus useful layout details."
         elif modality == "video":
             target = compact_media_target(media_path, modality, metadata)
             prompt = "Describe temporal motion, visual content, and generation metadata for the real video artifact represented by this ledger packet."
@@ -2486,6 +2504,8 @@ def build_real_corpus(profile: dict[str, Any], out_dir: Path) -> dict[str, Any]:
     video_limit = modality_limit("video")
     audio_limit = modality_limit("audio")
     music_limit = modality_limit("music")
+    tts_limit = modality_limit("tts")
+    ocr_limit = modality_limit("ocr")
     image_rows = collect_modality_jsonl("image", existing_paths(sources.get("image_jsonl"), root), plan, image_limit, root)
     if len(image_rows) < image_limit:
         image_rows.extend(collect_media("image", existing_paths(sources.get("image_roots"), root) + media_roots, plan, image_limit - len(image_rows)))
@@ -2502,6 +2522,14 @@ def build_real_corpus(profile: dict[str, Any], out_dir: Path) -> dict[str, Any]:
     if len(music_rows) < music_limit:
         music_rows.extend(collect_media("music", existing_paths(sources.get("music_roots"), root) + media_roots, plan, music_limit - len(music_rows)))
     rows_by_modality["music"] = music_rows
+    tts_rows = collect_modality_jsonl("tts", existing_paths(sources.get("tts_jsonl"), root), plan, tts_limit, root)
+    if len(tts_rows) < tts_limit:
+        tts_rows.extend(collect_media("tts", existing_paths(sources.get("tts_roots"), root) + existing_paths(sources.get("audio_roots"), root) + media_roots, plan, tts_limit - len(tts_rows)))
+    rows_by_modality["tts"] = tts_rows
+    ocr_rows = collect_modality_jsonl("ocr", existing_paths(sources.get("ocr_jsonl"), root), plan, ocr_limit, root)
+    if len(ocr_rows) < ocr_limit:
+        ocr_rows.extend(collect_media("ocr", existing_paths(sources.get("ocr_roots"), root) + existing_paths(sources.get("image_roots"), root) + media_roots, plan, ocr_limit - len(ocr_rows)))
+    rows_by_modality["ocr"] = ocr_rows
     for modality, rows in list(rows_by_modality.items()):
         rows_by_modality[modality] = dedupe_rows(rows)[:modality_limit(modality)]
 
@@ -2555,7 +2583,7 @@ def build_real_corpus(profile: dict[str, Any], out_dir: Path) -> dict[str, Any]:
     test_agentic_focus = out_jsonl / "test_agentic_focus.jsonl"
     media_focus_rows = [
         row
-        for modality in ("image", "video", "audio", "music")
+        for modality in ("image", "video", "audio", "music", "tts", "ocr")
         for row in rows_by_modality.get(modality, [])
     ]
     agentic_focus_rows = [
@@ -2563,9 +2591,9 @@ def build_real_corpus(profile: dict[str, Any], out_dir: Path) -> dict[str, Any]:
         for modality in ("tool", "code", "long_context")
         for row in rows_by_modality.get(modality, [])
     ]
-    eval_media_focus_rows = [row for row in eval_all_rows if row.get("modality") in {"image", "video", "audio", "music"}]
+    eval_media_focus_rows = [row for row in eval_all_rows if row.get("modality") in {"image", "video", "audio", "music", "tts", "ocr"}]
     eval_agentic_focus_rows = [row for row in eval_all_rows if row.get("modality") in {"tool", "code", "long_context"}]
-    test_media_focus_rows = [row for row in test_all_rows if row.get("modality") in {"image", "video", "audio", "music"}]
+    test_media_focus_rows = [row for row in test_all_rows if row.get("modality") in {"image", "video", "audio", "music", "tts", "ocr"}]
     test_agentic_focus_rows = [row for row in test_all_rows if row.get("modality") in {"tool", "code", "long_context"}]
     write_jsonl(train_all, all_rows)
     write_jsonl(eval_all, eval_all_rows)
@@ -3513,9 +3541,14 @@ def release_training_contract_report(cfg: dict[str, Any], args: argparse.Namespa
     target = str(contract.get("target_profile") or RELEASE_TARGET_PRESET_2026)
     preset = resolve_training_preset(cfg, args)
     allow = bool(arg_value(args, "allow_verifier_preset", False))
-    fake_quant = bool(arg_value(args, "fake_quant", False) or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled"))
+    fake_quant = fake_quant_enabled(cfg, args)
+    profiling_allows_fake_quant_off = (
+        fake_quant is False
+        and no_checkpoint_profile_enabled()
+        and truthy_value(os.getenv("OMNICODER_PROFILE_ALLOW_FAKE_QUANT_OFF", ""))
+    )
     required = list_from_config_value(plan.get("required_modalities")) or list(DEFAULT_STAGE_ORDER)
-    return validate_target_contract_preset(
+    report = validate_target_contract_preset(
         preset,
         require_target_contract=target == RELEASE_TARGET_PRESET_2026,
         allow_probe=allow,
@@ -3523,8 +3556,22 @@ def release_training_contract_report(cfg: dict[str, Any], args: argparse.Namespa
         context_ladder=context_ladder_values(cfg, args),
         required_modalities=required,
         enabled_modalities=enabled_modalities(cfg),
-        fake_quant_enabled=fake_quant,
+        fake_quant_enabled=None if profiling_allows_fake_quant_off else fake_quant,
     )
+    if profiling_allows_fake_quant_off:
+        report["profiling_fake_quant_off_contract_bypass"] = True
+        report["profiling_fake_quant_off_reason"] = "explicit_no_checkpoint_profile_tps_isolation"
+    return report
+
+
+def fake_quant_enabled(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> bool:
+    plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
+    env_value = str(os.getenv("OMNICODER_FAKE_QUANT", "") or "").strip().lower()
+    if env_value in {"0", "false", "no", "off"}:
+        return False
+    if env_value in {"1", "true", "yes", "on"}:
+        return True
+    return bool(arg_value(args, "fake_quant", False) or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled"))
 
 
 def distributed_training_plan(cfg: dict[str, Any], args: argparse.Namespace | None = None) -> dict[str, Any]:
@@ -3553,7 +3600,13 @@ def distributed_training_plan(cfg: dict[str, Any], args: argparse.Namespace | No
         rank_device_map = ",".join(str(item) for item in rank_device_map_value)
     else:
         rank_device_map = str(rank_device_map_value)
-    activation_checkpointing = bool(arg_value(args, "activation_checkpointing", False) or distributed.get("activation_checkpointing"))
+    activation_checkpointing_env = str(os.getenv("OMNICODER_ACTIVATION_CHECKPOINTING", "") or "").strip().lower()
+    if activation_checkpointing_env in {"0", "false", "no", "off"}:
+        activation_checkpointing = False
+    elif activation_checkpointing_env in {"1", "true", "yes", "on"}:
+        activation_checkpointing = True
+    else:
+        activation_checkpointing = bool(arg_value(args, "activation_checkpointing", False) or distributed.get("activation_checkpointing"))
     cpu_offload = bool(arg_value(args, "cpu_offload", False) or distributed.get("cpu_offload"))
     fake_quant_chunk_rows = int(arg_value(args, "fake_quant_chunk_rows", 0) or distributed.get("fake_quant_chunk_rows") or plan.get("fake_quant_chunk_rows") or 0)
     fake_quant_max_full_elements = int(arg_value(args, "fake_quant_max_full_elements", 0) or distributed.get("fake_quant_max_full_elements") or plan.get("fake_quant_max_full_elements") or 0)
@@ -3582,8 +3635,23 @@ def distributed_training_plan(cfg: dict[str, Any], args: argparse.Namespace | No
     cli_head_device = int(arg_value(args, "placement_head_device", -1) or -1)
     placement_head_device = cli_head_device if cli_head_device >= 0 else int(distributed.get("placement_head_device", plan.get("placement_head_device", -1)))
     placement_schedule = str(arg_value(args, "placement_schedule", "") or distributed.get("placement_schedule") or plan.get("placement_schedule") or "sequential")
-    pipeline_microbatches = int(arg_value(args, "pipeline_microbatches", 0) or distributed.get("pipeline_microbatches") or plan.get("pipeline_microbatches") or 1)
-    pipeline_stage_schedule = str(arg_value(args, "pipeline_stage_schedule", "") or distributed.get("pipeline_stage_schedule") or distributed.get("pipeline_schedule") or plan.get("pipeline_stage_schedule") or plan.get("pipeline_schedule") or "1f1b")
+    pipeline_microbatches = int(
+        arg_value(args, "pipeline_microbatches", 0)
+        or os.getenv("OMNICODER_PIPELINE_MICROBATCHES", "")
+        or distributed.get("pipeline_microbatches")
+        or plan.get("pipeline_microbatches")
+        or 1
+    )
+    pipeline_stage_schedule = str(
+        arg_value(args, "pipeline_stage_schedule", "")
+        or os.getenv("OMNICODER_PIPELINE_STAGE_SCHEDULE", "")
+        or os.getenv("OMNICODER_PIPELINE_SCHEDULE", "")
+        or distributed.get("pipeline_stage_schedule")
+        or distributed.get("pipeline_schedule")
+        or plan.get("pipeline_stage_schedule")
+        or plan.get("pipeline_schedule")
+        or "1f1b"
+    )
     pipeline_stage_ranges_value = distributed.get("pipeline_stage_ranges") or plan.get("pipeline_stage_ranges") or ""
     if isinstance(pipeline_stage_ranges_value, list):
         pipeline_stage_ranges = ",".join(str(item) for item in pipeline_stage_ranges_value)
@@ -3769,8 +3837,14 @@ def append_pipeline_train_diagnostics_args(cmd: list[str], cfg: dict[str, Any], 
             str(diagnostics_dir / f"{safe_stem}_train_diagnostics.jsonl"),
             "--step_timing_file",
             str(diagnostics_dir / f"{safe_stem}_step_timing.jsonl"),
+            "--block_timing_file",
+            str(diagnostics_dir / f"{safe_stem}_block_timing.jsonl"),
         ]
     )
+    if truthy_value(os.getenv("OMNICODER2026_BLOCK_TIMING", "")):
+        cmd.append("--block_timing")
+    if truthy_value(os.getenv("OMNICODER2026_BLOCK_TIMING_CUDA_SYNC", "")):
+        cmd.append("--block_timing_cuda_sync")
     if truthy_value(os.getenv("OMNICODER2026_DIAGNOSTICS_GRAD_NORM", "")):
         cmd.append("--diagnostics_grad_norm")
     if truthy_value(os.getenv("OMNICODER2026_SKIP_FINAL_SAVE", "")):
@@ -3807,9 +3881,7 @@ def append_pipeline_sample_loss_runtime_args(cmd: list[str], cfg: dict[str, Any]
         cmd.extend(["--fake_quant_chunk_rows", str(int(distributed["fake_quant_chunk_rows"]))])
     if int(distributed.get("fake_quant_max_full_elements") or 0) > 0:
         cmd.extend(["--fake_quant_max_full_elements", str(int(distributed["fake_quant_max_full_elements"]))])
-    training_plan = cfg.get("training_plan") if isinstance(cfg.get("training_plan"), dict) else {}
-    q4_recovery = cfg.get("q4_recovery") if isinstance(cfg.get("q4_recovery"), dict) else {}
-    if bool(arg_value(args, "fake_quant", False) or training_plan.get("fake_quant") or q4_recovery.get("enabled")):
+    if fake_quant_enabled(cfg, args):
         cmd.append("--fake_quant")
     cmd.append("--require_target_contract")
 
@@ -3920,7 +3992,7 @@ def run_training_stages(profile: dict[str, Any], manifest: dict[str, Any], out_d
     lr = float(args.lr or plan.get("learning_rate") or 0.001)
     save_interval = resolve_save_interval(args, plan.get("save_interval"))
     resume_between = bool(plan.get("resume_between_stages", True))
-    fake_quant = bool(args.fake_quant or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled"))
+    fake_quant = fake_quant_enabled(cfg, args)
     initial_checkpoint = str(args.resume_checkpoint or plan.get("initial_checkpoint") or "")
     initial_checkpoint_path: Path | None = Path(initial_checkpoint) if initial_checkpoint else None
     previous_checkpoint: Path | None = initial_checkpoint_path
@@ -4287,7 +4359,7 @@ def run_long_context_curriculum_stage(
     no_checkpoint_profile = pipeline_stage_trainer and no_checkpoint_profile_enabled()
     expected_world_size = expected_pipeline_world_size(cfg, args)
     resume_completed = resume_completed_stages_enabled(plan, args)
-    fake_quant = bool(arg_value(args, "fake_quant", False) or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled"))
+    fake_quant = fake_quant_enabled(cfg, args)
     curation_manifest_arg = str(arg_value(args, "curation_manifest", "") or "").strip()
     data_manifest_path = (
         resolve_path(curation_manifest_arg, repo_root())
@@ -4825,7 +4897,7 @@ def run_posttraining_stages(
                         replay_cmd.extend(["--save_interval", str(save_interval)])
                     append_pipeline_train_diagnostics_args(replay_cmd, cfg, args, out_dir, f"posttrain_{index:02d}_{safe_name}_pipeline")
                     append_pretrain_runtime_args(replay_cmd, cfg, args)
-                    if bool(arg_value(args, "fake_quant", False) or cfg.get("training_plan", {}).get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled")):
+                    if fake_quant_enabled(cfg, args):
                         replay_cmd.append("--fake_quant")
                     replay_code = run_command(replay_cmd, out_dir / "logs" / f"posttrain_{index:02d}_{safe_name}_pipeline_command.log")
                     losses = parse_losses(replay_log)
@@ -5495,7 +5567,7 @@ def run_distillation_curriculum_stage(
         train_cmd.extend(["--device", device, "--aux_probe"])
     append_pipeline_train_diagnostics_args(train_cmd, cfg, args, out_dir, "09_distillation_replay")
     append_pretrain_runtime_args(train_cmd, cfg, args)
-    if bool(arg_value(args, "fake_quant", False) or training_plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled")):
+    if fake_quant_enabled(cfg, args):
         train_cmd.append("--fake_quant")
     if save_interval > 0:
         train_cmd.extend(["--save_interval", str(save_interval)])
@@ -5581,7 +5653,7 @@ def run_final_finetune_stage(
         cmd.extend(["--device", device, "--aux_probe"])
     append_pipeline_train_diagnostics_args(cmd, cfg, args, out_dir, "99_final_all_modality_finetune")
     append_pretrain_runtime_args(cmd, cfg, args)
-    if bool(arg_value(args, "fake_quant", False) or plan.get("fake_quant") or cfg.get("q4_recovery", {}).get("enabled")):
+    if fake_quant_enabled(cfg, args):
         cmd.append("--fake_quant")
     if save_interval > 0:
         cmd.extend(["--save_interval", str(save_interval)])

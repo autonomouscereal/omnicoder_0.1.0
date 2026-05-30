@@ -28,7 +28,7 @@ def _training_profile(root: Path) -> dict:
         "real_sources": {},
         "training_plan": {
             "max_records_per_modality": 8,
-            "artifact_token_count": {"image": 4, "video": 4, "audio": 4, "music": 4, "tool": 4, "long_context": 4},
+            "artifact_token_count": {"image": 4, "video": 4, "audio": 4, "music": 4, "tts": 4, "ocr": 4, "tool": 4, "long_context": 4},
             "text_token_limit": 64,
             "target_text_chars": 512,
         },

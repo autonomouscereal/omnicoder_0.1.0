@@ -53,6 +53,20 @@ def test_checkpoint_eval_sidecar_dry_run_plans_decode_and_diagnostics(tmp_path) 
     assert "token_topk_probe" in job_names
     assert "decode_sanity_predictions" in job_names
     assert (out_dir / "decode_sanity_tasks.jsonl").exists()
+    task_ids = {json.loads(line)["task_id"] for line in (out_dir / "decode_sanity_tasks.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()}
+    assert {
+        "text_probe",
+        "code_probe",
+        "math_probe",
+        "tool_probe",
+        "image_route_probe",
+        "video_route_probe",
+        "audio_route_probe",
+        "music_route_probe",
+        "tts_route_probe",
+        "ocr_probe",
+        "long_context_probe",
+    } <= task_ids
     decode_job = next(job for job in manifest["jobs"] if job["name"] == "decode_sanity_predictions")
     assert "--allow-local-dev-tasks" in decode_job["cmd"]
     assert "--max-output-tokens" in decode_job["cmd"]

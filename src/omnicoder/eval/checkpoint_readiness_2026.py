@@ -12,6 +12,7 @@ from typing import Any
 
 SCHEMA = "omnicoder.checkpoint_readiness_2026.v1"
 MEDIA_MODALITIES = {"image", "video", "audio", "music", "speech"}
+DEFAULT_REQUIRED_ROUTE_MODALITIES = ("image", "video", "audio", "music", "speech", "ocr")
 JUNK_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
@@ -571,7 +572,36 @@ def _route_is_media(route: dict[str, Any]) -> bool:
     return bool(route.get("requires_artifact_decoder")) or modality in MEDIA_MODALITIES or artifact_kind in MEDIA_MODALITIES
 
 
-def validate_media_route_probe(media_route_probe: dict[str, Any]) -> dict[str, Any]:
+def _route_modalities(route: dict[str, Any]) -> set[str]:
+    output_modality = str(route.get("output_modality") or "").strip().lower()
+    artifact_kind = str(route.get("artifact_kind") or "").strip().lower()
+    name = str(route.get("name") or "").strip().lower()
+    values = {output_modality, artifact_kind, name}
+    notes = route.get("notes")
+    if isinstance(notes, list):
+        values.update(str(item or "").strip().lower() for item in notes)
+    if "tts" in values:
+        values.add("speech")
+    out: set[str] = set()
+    joined = " ".join(value for value in values if value)
+    if str(route.get("output_field") or "").strip().lower() == "prediction" and str(route.get("output_modality") or "").strip().lower() == "text":
+        joined = f"{joined} ocr"
+    if output_modality == "image" or artifact_kind == "image" or "image" in name:
+        out.add("image")
+    if output_modality == "video" or artifact_kind == "video" or "video" in name:
+        out.add("video")
+    if output_modality == "music" or artifact_kind == "music" or "music" in name:
+        out.add("music")
+    if output_modality == "audio" or name.startswith("audio_"):
+        out.add("audio")
+    if output_modality == "speech" or "tts" in name or "speech" in name:
+        out.add("speech")
+    if "ocr" in joined:
+        out.add("ocr")
+    return out
+
+
+def validate_media_route_probe(media_route_probe: dict[str, Any], required_modalities: tuple[str, ...] = DEFAULT_REQUIRED_ROUTE_MODALITIES) -> dict[str, Any]:
     routes = _collect_routes(media_route_probe)
     media_routes = [route for route in routes if _route_is_media(route)]
     reasons: list[str] = _diagnostic_status_reasons(media_route_probe, "media_route_probe")
@@ -594,10 +624,19 @@ def validate_media_route_probe(media_route_probe: dict[str, Any]) -> dict[str, A
                 if begin is None or end is None or begin < 0 or end <= begin:
                     reasons.append("media_route_token_range_invalid")
                     break
+    covered: set[str] = set()
+    for route in routes:
+        covered.update(_route_modalities(route))
+    for modality in required_modalities:
+        normalized = "speech" if str(modality).strip().lower() == "tts" else str(modality).strip().lower()
+        if normalized and normalized not in covered:
+            reasons.append(f"media_route_missing_required_modality_{normalized}")
     return {
         "status": "passed" if not reasons else "failed",
         "reasons": sorted(set(reasons)),
         "routes": media_routes,
+        "covered_modalities": sorted(covered),
+        "required_modalities": list(required_modalities),
         "media_route_count": len(media_routes),
     }
 
