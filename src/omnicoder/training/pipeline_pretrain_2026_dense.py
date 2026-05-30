@@ -1173,7 +1173,8 @@ def _encode_segments_with_mask(tokenizer: Any, segments: list[tuple[str, bool]])
                     token_end = min(len(ids), token_start + 1)
                 for index in range(max(0, token_start), min(len(ids), token_end)):
                     mask[index] = 1.0
-            return ids, mask
+            if any(value > 0.0 for value in mask) or not any(bool(is_target) for _text, is_target in segments):
+                return ids, mask
     ids: list[int] = []
     mask: list[float] = []
     for text, is_target in segments:
@@ -1798,10 +1799,10 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         while attempts < scan_budget:
             path, offset, chunk_index, kind = self.records[cursor]
             key = (path, int(offset), kind)
+            attempts += 1
             if key in blocked_records:
                 cursor = self._next_record_index(cursor, key)
                 continue
-            attempts += 1
             ids, target_labels, weight, has_targets = self._window_from_entry((path, offset, chunk_index, kind))
             last_window = (ids, target_labels, weight)
             if has_targets:
