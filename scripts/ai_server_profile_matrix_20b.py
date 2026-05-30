@@ -270,6 +270,10 @@ def wait_container(container: str, repo: Path, timeout_seconds: int, poll_second
 def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, Any]:
     summary: dict[str, Any] = {"host_out_dir": str(host_out_dir), "container": container}
     log_path = host_out_dir / "train.log"
+    if not log_path.exists():
+        loss_logs = sorted((host_out_dir / "logs").glob("*_loss.jsonl"))
+        if loss_logs:
+            log_path = loss_logs[-1]
     log_rows = load_jsonl(log_path)
     step_rows = [row for row in log_rows if "step" in row and "loss" in row]
     summary["train_log"] = str(log_path)
