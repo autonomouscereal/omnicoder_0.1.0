@@ -202,6 +202,29 @@ def test_no_checkpoint_profile_training_stage_passes_without_checkpoint(tmp_path
     assert report["stages"][0]["checkpoint_complete"] is False
 
 
+def test_run_real_no_checkpoint_profile_skips_downstream_without_failure(tmp_path, monkeypatch) -> None:
+    profile = {"training_plan": {}, "modalities": {"text": {"enabled": True}}}
+    manifest = {"status": "ok"}
+    training = {
+        "status": "passed",
+        "profiling_no_checkpoint": True,
+        "final_checkpoint": None,
+        "stages": [{"status": "passed", "reason": "profiling_no_checkpoint_requested"}],
+    }
+    monkeypatch.setattr(orch, "load_profile", lambda _path: profile)
+    monkeypatch.setattr(orch, "release_training_contract_report", lambda cfg, args: {"status": "passed"})
+    monkeypatch.setattr(orch, "load_or_build_real_corpus", lambda profile, out_dir, args: manifest)
+    monkeypatch.setattr(orch, "run_training_stages", lambda profile, manifest, out_dir, args: training)
+
+    report = orch.run_real(argparse.Namespace(profile="profile.json", out_dir=str(tmp_path / "out")))
+
+    assert report["status"] == "passed"
+    assert report["training"]["profiling_no_checkpoint"] is True
+    assert report["pre_long_context_short_context_gate"]["reason"] == "profiling_no_checkpoint_requested"
+    assert report["long_context_curriculum"]["status"] == "skipped"
+    assert report["posttraining"]["reason"] == "profiling_no_checkpoint_requested"
+
+
 def test_media_records_include_ledger_token_ids(tmp_path, monkeypatch):
     profile = _profile(tmp_path)
     monkeypatch.setattr(orch, "repo_root", lambda: tmp_path)

@@ -5881,12 +5881,27 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     manifest = load_or_build_real_corpus(profile, out_dir, args)
     pretrain = run_training_stages(profile, manifest, out_dir, args)
     current_checkpoint = pretrain.get("final_checkpoint")
-    pre_long_context_gate = (
-        run_checkpoint_benchmark_gate(profile, manifest, out_dir, current_checkpoint, "pre_long_context_short_context", args)
-        if pretrain.get("status") == "passed" and current_checkpoint
-        else {"status": "skipped", "reason": "multimodal_pretrain_failed"}
-    )
-    if pretrain.get("status") == "passed" and current_checkpoint and checkpoint_promotable_to_long_context(pre_long_context_gate):
+    no_checkpoint_profile = bool(pretrain.get("profiling_no_checkpoint") and not current_checkpoint)
+    if no_checkpoint_profile:
+        pre_long_context_gate = {"status": "skipped", "reason": "profiling_no_checkpoint_requested"}
+    elif pretrain.get("status") == "passed" and current_checkpoint:
+        pre_long_context_gate = run_checkpoint_benchmark_gate(
+            profile,
+            manifest,
+            out_dir,
+            current_checkpoint,
+            "pre_long_context_short_context",
+            args,
+        )
+    else:
+        pre_long_context_gate = {"status": "skipped", "reason": "multimodal_pretrain_failed"}
+    if no_checkpoint_profile:
+        long_context_curriculum = {
+            "status": "skipped",
+            "reason": "profiling_no_checkpoint_requested",
+            "short_context_generation_gate": pre_long_context_gate,
+        }
+    elif pretrain.get("status") == "passed" and current_checkpoint and checkpoint_promotable_to_long_context(pre_long_context_gate):
         long_context_curriculum = run_long_context_curriculum_stage(profile, manifest, out_dir, current_checkpoint, args)
         current_checkpoint = long_context_curriculum.get("final_checkpoint") or current_checkpoint
     else:
@@ -5898,12 +5913,16 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             "short_context_generation_gate": pre_long_context_gate,
         }
     initial_benchmark = pre_long_context_gate
-    if long_context_curriculum.get("status") == "passed":
+    if no_checkpoint_profile:
+        distillation = {"status": "skipped", "reason": "profiling_no_checkpoint_requested"}
+    elif long_context_curriculum.get("status") == "passed":
         distillation = run_distillation_curriculum_stage(profile, manifest, out_dir, current_checkpoint, args)
         current_checkpoint = distillation.get("final_checkpoint") or current_checkpoint
     else:
         distillation = {"status": "skipped", "reason": "long_context_curriculum_failed"}
-    if distillation.get("status") in {"passed", "skipped"} and current_checkpoint:
+    if no_checkpoint_profile:
+        posttraining = {"status": "skipped", "reason": "profiling_no_checkpoint_requested"}
+    elif distillation.get("status") in {"passed", "skipped"} and current_checkpoint:
         post_args = namespace_with(args, live_posttraining=True)
         posttraining = run_posttraining_stages(
             profile,
@@ -5914,16 +5933,19 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         current_checkpoint = posttraining.get("final_checkpoint") or current_checkpoint
     else:
         posttraining = {"status": "skipped", "reason": "distillation_failed"}
-    if posttraining.get("status") == "passed" and current_checkpoint:
+    if no_checkpoint_profile:
+        finetune = {"status": "skipped", "reason": "profiling_no_checkpoint_requested"}
+    elif posttraining.get("status") == "passed" and current_checkpoint:
         finetune = run_final_finetune_stage(profile, manifest, out_dir, current_checkpoint, args)
         current_checkpoint = finetune.get("final_checkpoint") or current_checkpoint
     else:
         finetune = {"status": "skipped", "reason": "posttraining_failed"}
-    final_benchmark = (
-        run_checkpoint_benchmark_gate(profile, manifest, out_dir, current_checkpoint, "full_run_final", args)
-        if current_checkpoint
-        else {"status": "skipped", "reason": "no_final_checkpoint"}
-    )
+    if no_checkpoint_profile:
+        final_benchmark = {"status": "skipped", "reason": "profiling_no_checkpoint_requested"}
+    elif current_checkpoint:
+        final_benchmark = run_checkpoint_benchmark_gate(profile, manifest, out_dir, current_checkpoint, "full_run_final", args)
+    else:
+        final_benchmark = {"status": "skipped", "reason": "no_final_checkpoint"}
     summary = {
         "schema": "omnicoder.full_training_orchestration_result_2026.v1",
         "schema_version": SCHEMA_VERSION,
@@ -6011,12 +6033,27 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
     release_contract = release_training_contract_report(cfg, args)
     manifest = load_or_build_real_corpus(profile, out_dir, args)
     training = run_training_stages(profile, manifest, out_dir, args)
-    pre_long_context_gate = (
-        run_checkpoint_benchmark_gate(profile, manifest, out_dir, training.get("final_checkpoint"), "pre_long_context_short_context", args)
-        if training["status"] == "passed" and training.get("final_checkpoint")
-        else {"status": "skipped", "reason": "dense_training_failed"}
-    )
-    if training["status"] == "passed" and training.get("final_checkpoint") and checkpoint_promotable_to_long_context(pre_long_context_gate):
+    no_checkpoint_profile = bool(training.get("profiling_no_checkpoint") and not training.get("final_checkpoint"))
+    if no_checkpoint_profile:
+        pre_long_context_gate = {"status": "skipped", "reason": "profiling_no_checkpoint_requested"}
+    elif training["status"] == "passed" and training.get("final_checkpoint"):
+        pre_long_context_gate = run_checkpoint_benchmark_gate(
+            profile,
+            manifest,
+            out_dir,
+            training.get("final_checkpoint"),
+            "pre_long_context_short_context",
+            args,
+        )
+    else:
+        pre_long_context_gate = {"status": "skipped", "reason": "dense_training_failed"}
+    if no_checkpoint_profile:
+        long_context_curriculum = {
+            "status": "skipped",
+            "reason": "profiling_no_checkpoint_requested",
+            "short_context_generation_gate": pre_long_context_gate,
+        }
+    elif training["status"] == "passed" and training.get("final_checkpoint") and checkpoint_promotable_to_long_context(pre_long_context_gate):
         long_context_curriculum = run_long_context_curriculum_stage(profile, manifest, out_dir, training["final_checkpoint"], args)
     else:
         long_context_curriculum = {
@@ -6026,7 +6063,9 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
             else "dense_training_failed",
             "short_context_generation_gate": pre_long_context_gate,
         }
-    if long_context_curriculum["status"] == "passed":
+    if no_checkpoint_profile:
+        posttraining = {"status": "skipped", "reason": "profiling_no_checkpoint_requested", "stages": []}
+    elif long_context_curriculum["status"] == "passed":
         training_with_context = dict(training)
         training_with_context["final_checkpoint"] = long_context_curriculum.get("final_checkpoint") or training.get("final_checkpoint")
         posttraining = run_posttraining_stages(profile, out_dir, training_with_context, args)
