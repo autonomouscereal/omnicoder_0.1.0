@@ -2122,6 +2122,10 @@ def _optimizer_lr_groups(optimizer: Any, fallback_lr: float) -> dict[str, float]
 def _module_grad_norm(model: nn.Module, *, enabled: bool) -> float | None:
     if not bool(enabled):
         return None
+    try:
+        chunk_elems = max(1, int(os.getenv("OMNICODER2026_GRAD_NORM_CHUNK_ELEMS", "262144")))
+    except ValueError:
+        chunk_elems = 262_144
     total_sq = 0.0
     found = False
     with torch.no_grad():
@@ -2130,8 +2134,12 @@ def _module_grad_norm(model: nn.Module, *, enabled: bool) -> float | None:
             if grad is None:
                 continue
             found = True
-            norm = grad.detach().float().norm(2)
-            total_sq += float((norm * norm).detach().cpu().item())
+            flat = grad.detach().reshape(-1)
+            param_sq = torch.zeros((), device=flat.device, dtype=torch.float32)
+            for start in range(0, flat.numel(), chunk_elems):
+                chunk = flat[start : start + chunk_elems].float()
+                param_sq = param_sq + torch.sum(chunk * chunk)
+            total_sq += float(param_sq.detach().cpu().item())
     if not found:
         return None
     return float(math.sqrt(max(0.0, total_sq)))

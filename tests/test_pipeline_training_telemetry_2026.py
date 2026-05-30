@@ -11,6 +11,17 @@ torch = pytest.importorskip("torch")
 from omnicoder.training import pipeline_pretrain_2026_dense as pipeline
 
 
+def test_module_grad_norm_streams_chunks(monkeypatch) -> None:
+    monkeypatch.setenv("OMNICODER2026_GRAD_NORM_CHUNK_ELEMS", "3")
+    layer = torch.nn.Linear(4, 2, bias=False)
+    layer.weight.grad = torch.arange(1, 9, dtype=torch.float32).reshape_as(layer.weight)
+
+    actual = pipeline._module_grad_norm(layer, enabled=True)
+
+    expected = torch.linalg.vector_norm(layer.weight.grad.reshape(-1), ord=2).item()
+    assert actual == pytest.approx(expected)
+
+
 def _args(tmp_path, **overrides) -> argparse.Namespace:
     values = {
         "out": str(tmp_path / "checkpoint"),
