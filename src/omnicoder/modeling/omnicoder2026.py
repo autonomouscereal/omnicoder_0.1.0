@@ -378,10 +378,17 @@ class QuantAwareLinear(nn.Linear):
         self.fake_quant_max_full_elements = max(0, _env_int("OMNICODER2026_FAKE_QUANT_MAX_FULL_ELEMENTS", 0))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.fake_quant and self.fake_quant_chunk_rows > 0:
+        if self.fake_quant:
             max_full = int(self.fake_quant_max_full_elements)
-            if max_full <= 0 or self.weight.numel() > max_full:
+            if self.fake_quant_chunk_rows > 0 and (max_full <= 0 or self.weight.numel() > max_full):
                 return self._chunked_fake_quant_linear(x)
+            return _ChunkedFakeQuantLinearSTE.apply(
+                x,
+                self.weight,
+                self.bias,
+                self.group_size,
+                max(1, int(self.weight.shape[0])),
+            )
         weight = _fake_quant_weight(self.weight, self.group_size) if self.fake_quant else self.weight
         return F.linear(x, weight, self.bias)
 
@@ -989,7 +996,7 @@ class SparseLatentAttention(nn.Module):
     def _o_a(self, y: torch.Tensor) -> torch.Tensor:
         return self.o_a_proj(y)
 
-    def _sink_attention(
+    def _sink_attention_reference(
         self,
         q: torch.Tensor,
         k: torch.Tensor,
@@ -1007,6 +1014,71 @@ class SparseLatentAttention(nn.Module):
         exp_sinks = torch.exp(sink - denom_max).sum(dim=-1, keepdim=True)
         probs = exp_scores / (exp_scores.sum(dim=-1, keepdim=True) + exp_sinks).clamp_min(1e-9)
         return torch.matmul(probs, v)
+
+    def _sink_attention_sdpa(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Exact fused SDPA form of the sink-normalized global attention.
+
+        The reference path adds learned sink logits to the softmax denominator
+        but contributes no sink value. That is equivalent to appending zero
+        valued sink K/V slots whose dot-product score is zero and injecting the
+        learned sink logits through an additive attention bias. This preserves
+        the math while letting PyTorch route forward/backward through fused
+        SDPA kernels instead of separate matmul/exp/matmul ops.
+        """
+
+        b, q_heads, q_len, head_dim = q.shape
+        kv_heads = int(k.shape[1])
+        kv_len = int(k.shape[2])
+        sink_count = int(self.sink_logits.shape[-1])
+        sink_k = k.new_zeros((b, kv_heads, sink_count, head_dim))
+        sink_v = v.new_zeros((b, kv_heads, sink_count, v.shape[-1]))
+        k_aug = torch.cat((k, sink_k), dim=2)
+        v_aug = torch.cat((v, sink_v), dim=2)
+
+        attn_bias = q.new_zeros((1, q_heads, q_len, kv_len + sink_count))
+        attn_bias[..., :kv_len].masked_fill_(~mask.view(1, 1, q_len, kv_len), torch.finfo(attn_bias.dtype).min)
+        sink = self.sink_logits.to(dtype=attn_bias.dtype, device=attn_bias.device).view(1, q_heads, 1, sink_count)
+        attn_bias[..., kv_len:] = sink
+
+        kwargs: dict[str, Any] = {"attn_mask": attn_bias, "dropout_p": 0.0}
+        if kv_heads == 1 and q_heads > 1:
+            kwargs["enable_gqa"] = True
+        return F.scaled_dot_product_attention(q, k_aug, v_aug, **kwargs)
+
+    def _sink_attention(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        pair_count = int(q.shape[2]) * int(k.shape[2])
+        sdpa_cap_raw = str(os.environ.get("OMNICODER2026_SINK_ATTENTION_SDPA_MAX_QK_PAIRS", "auto")).strip().lower()
+        if sdpa_cap_raw in {"", "auto"}:
+            max_sdpa_pairs = 0
+            if q.is_cuda:
+                try:
+                    major, _minor = torch.cuda.get_device_capability(q.device)
+                except Exception:
+                    major = 0
+                # The fused additive-bias form is intended for FA4-class
+                # runtimes. Ampere tests are correct but slower for this shape,
+                # so keep the manual reference as the current-card default.
+                max_sdpa_pairs = 1_048_576 if major >= 9 else 0
+        else:
+            max_sdpa_pairs = max(0, _env_int("OMNICODER2026_SINK_ATTENTION_SDPA_MAX_QK_PAIRS", 0))
+        if max_sdpa_pairs > 0 and pair_count <= max_sdpa_pairs:
+            try:
+                return self._sink_attention_sdpa(q, k, v, mask)
+            except (TypeError, RuntimeError):
+                pass
+        return self._sink_attention_reference(q, k, v, mask)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, t, _ = x.shape

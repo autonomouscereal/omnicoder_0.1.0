@@ -165,7 +165,11 @@ optimized data path is role-specific:
 - Intermediate ranks no longer receive full label/sample-weight tensors.
 - Loss logging uses final-rank to rank-0 scalar sync; all-rank loss broadcast
   is reserved for checkpoint/final-save boundaries.
+- Normal steps only sync a rank-0 scalar when a train-log/checkpoint/final
+  event actually needs host-side loss evidence.
 - Target diagnostics are cadence-driven and final-rank-owned.
+- Low-memory optimizer-in-backward Adafactor is opt-in. The trainer no longer
+  silently routes `--optimizer adamw` through the Python chunked Adafactor path.
 
 This preserves exact loss and masking semantics while removing full-rank target
 collectives from every step.
@@ -306,10 +310,25 @@ Current speed/memory features:
 - Chunked loss to avoid full sequence-by-vocab materialization.
 - Activation checkpointing in the dense pipeline trainer.
 - Segmented activation-checkpoint profiling hooks for memory/speed experiments.
-- Low-memory optimizer-in-backward Adafactor path.
+- Opt-in low-memory optimizer-in-backward Adafactor path.
 - Weighted pipeline placement for fast-card training layouts.
 - Q4 fake-quant and QAT hooks for recovery validation.
 - MTP heads for future speculative decoding experiments.
+
+Current hot-path implementation details:
+
+- Block residual attention uses SDPA for normal bounded masks, with an exact
+  chunked fallback.
+- Sparse local MQA attention uses native SDPA GQA when available.
+- Sparse CSA/HCA sink attention has an exact SDPA/additive-bias form for
+  FA4-class runtimes or explicit profiling; Ampere-class cards keep the manual
+  reference path by default because measured forward latency was lower there.
+- GDN2/KDA tensor-gate recurrence uses the branch-free tensor scan fallback,
+  and the compiled-chunk path preallocates output storage instead of building
+  Python lists and concatenating chunks.
+- Q4 fake-quant linears route through the custom STE linear path even below the
+  chunk threshold, so autograd does not keep a separate full dequantized weight
+  tensor alive for threshold-edge matrices.
 
 Not currently claimed as implemented production paths:
 

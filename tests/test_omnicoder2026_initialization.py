@@ -436,6 +436,138 @@ def test_sparse_local_attention_uses_native_gqa_before_expand_fallback(monkeypat
     torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
 
 
+def test_sparse_sink_attention_sdpa_matches_reference_and_backward(monkeypatch) -> None:
+    torch.manual_seed(771)
+    cfg = _tiny_native_cfg()
+    cfg.sink_tokens = 2
+    reference = SparseLatentAttention(cfg, "csa")
+    fast = copy.deepcopy(reference)
+    q = torch.randn(2, cfg.n_heads, 5, cfg.head_dim)
+    k = torch.randn(2, cfg.n_heads, 4, cfg.head_dim)
+    v = torch.randn(2, cfg.n_heads, 4, cfg.head_dim)
+    mask = torch.tensor(
+        [
+            [False, False, False, False],
+            [True, False, False, False],
+            [True, True, False, False],
+            [True, True, True, False],
+            [True, True, True, True],
+        ],
+        dtype=torch.bool,
+    )
+    probe = torch.randn(2, cfg.n_heads, 5, cfg.head_dim)
+
+    q_ref = q.detach().clone().requires_grad_(True)
+    k_ref = k.detach().clone().requires_grad_(True)
+    v_ref = v.detach().clone().requires_grad_(True)
+    ref_out = reference._sink_attention_reference(q_ref, k_ref, v_ref, mask)
+    (ref_out * probe).sum().backward()
+
+    q_fast = q.detach().clone().requires_grad_(True)
+    k_fast = k.detach().clone().requires_grad_(True)
+    v_fast = v.detach().clone().requires_grad_(True)
+    monkeypatch.setenv("OMNICODER2026_SINK_ATTENTION_SDPA_MAX_QK_PAIRS", "4096")
+    fast_out = fast._sink_attention(q_fast, k_fast, v_fast, mask)
+    (fast_out * probe).sum().backward()
+
+    torch.testing.assert_close(fast_out, ref_out, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(q_fast.grad, q_ref.grad, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(k_fast.grad, k_ref.grad, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(v_fast.grad, v_ref.grad, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(fast.sink_logits.grad, reference.sink_logits.grad, atol=1e-5, rtol=1e-5)
+
+
+def test_sparse_sink_attention_uses_sdpa_fast_path(monkeypatch) -> None:
+    torch.manual_seed(772)
+    cfg = _tiny_native_cfg()
+    cfg.sink_tokens = 2
+    layer = SparseLatentAttention(cfg, "csa")
+    q = torch.randn(1, cfg.n_heads, 3, cfg.head_dim)
+    k = torch.randn(1, cfg.n_heads, 2, cfg.head_dim)
+    v = torch.randn(1, cfg.n_heads, 2, cfg.head_dim)
+    mask = torch.tensor([[False, False], [True, False], [True, True]], dtype=torch.bool)
+    original_sdpa = torch.nn.functional.scaled_dot_product_attention
+    calls: list[tuple[torch.Size, torch.Size, torch.Size | None]] = []
+
+    def wrapped_sdpa(*args, **kwargs):
+        attn_mask = kwargs.get("attn_mask")
+        calls.append((args[0].shape, args[1].shape, None if attn_mask is None else attn_mask.shape))
+        return original_sdpa(*args, **kwargs)
+
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", wrapped_sdpa)
+    monkeypatch.setenv("OMNICODER2026_SINK_ATTENTION_SDPA_MAX_QK_PAIRS", "4096")
+    actual = layer._sink_attention(q, k, v, mask)
+
+    assert calls == [(torch.Size([1, cfg.n_heads, 3, cfg.head_dim]), torch.Size([1, cfg.n_heads, 4, cfg.head_dim]), torch.Size([1, cfg.n_heads, 3, 4]))]
+    torch.testing.assert_close(actual, layer._sink_attention_reference(q, k, v, mask), atol=1e-6, rtol=1e-6)
+
+
+def test_sparse_sink_attention_auto_uses_reference_without_fa4_runtime(monkeypatch) -> None:
+    torch.manual_seed(7721)
+    cfg = _tiny_native_cfg()
+    layer = SparseLatentAttention(cfg, "csa")
+    q = torch.randn(1, cfg.n_heads, 3, cfg.head_dim)
+    k = torch.randn(1, cfg.n_heads, 2, cfg.head_dim)
+    v = torch.randn(1, cfg.n_heads, 2, cfg.head_dim)
+    mask = torch.tensor([[False, False], [True, False], [True, True]], dtype=torch.bool)
+
+    def forbidden_sdpa(*_args, **_kwargs):
+        raise AssertionError("auto mode should keep the manual sink path without an FA4-class CUDA runtime")
+
+    monkeypatch.delenv("OMNICODER2026_SINK_ATTENTION_SDPA_MAX_QK_PAIRS", raising=False)
+    monkeypatch.setattr(layer, "_sink_attention_sdpa", forbidden_sdpa)
+    actual = layer._sink_attention(q, k, v, mask)
+
+    torch.testing.assert_close(actual, layer._sink_attention_reference(q, k, v, mask), atol=1e-6, rtol=1e-6)
+
+
+def test_sparse_sink_attention_sdpa_gqa_matches_reference_cuda(monkeypatch) -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is required for GQA SDPA sink-attention parity")
+
+    torch.manual_seed(773)
+    cfg = _tiny_native_cfg()
+    cfg.sink_tokens = 2
+    reference = SparseLatentAttention(cfg, "csa").cuda().half()
+    fast = copy.deepcopy(reference)
+    q = torch.randn(1, cfg.n_heads, 7, cfg.head_dim, device="cuda", dtype=torch.float16)
+    k = torch.randn(1, 1, 4, cfg.head_dim, device="cuda", dtype=torch.float16)
+    v = torch.randn(1, 1, 4, cfg.head_dim, device="cuda", dtype=torch.float16)
+    mask = torch.tensor(
+        [
+            [False, False, False, False],
+            [True, False, False, False],
+            [True, False, False, False],
+            [True, True, False, False],
+            [True, True, False, False],
+            [True, True, True, False],
+            [True, True, True, True],
+        ],
+        dtype=torch.bool,
+        device="cuda",
+    )
+    probe = torch.randn(1, cfg.n_heads, 7, cfg.head_dim, device="cuda", dtype=torch.float16)
+
+    q_ref = q.detach().clone().requires_grad_(True)
+    k_ref = k.detach().clone().requires_grad_(True)
+    v_ref = v.detach().clone().requires_grad_(True)
+    ref_out = reference._sink_attention_reference(q_ref, k_ref, v_ref, mask)
+    (ref_out * probe).sum().backward()
+
+    q_fast = q.detach().clone().requires_grad_(True)
+    k_fast = k.detach().clone().requires_grad_(True)
+    v_fast = v.detach().clone().requires_grad_(True)
+    monkeypatch.setenv("OMNICODER2026_SINK_ATTENTION_SDPA_MAX_QK_PAIRS", "4096")
+    fast_out = fast._sink_attention(q_fast, k_fast, v_fast, mask)
+    (fast_out * probe).sum().backward()
+
+    torch.testing.assert_close(fast_out, ref_out, atol=5e-4, rtol=5e-3)
+    torch.testing.assert_close(q_fast.grad, q_ref.grad, atol=1e-3, rtol=5e-2)
+    torch.testing.assert_close(k_fast.grad, k_ref.grad, atol=1e-3, rtol=5e-2)
+    torch.testing.assert_close(v_fast.grad, v_ref.grad, atol=1e-3, rtol=5e-2)
+    torch.testing.assert_close(fast.sink_logits.grad, reference.sink_logits.grad, atol=1e-3, rtol=5e-2)
+
+
 def test_flex_local_attention_matches_chunked_fallback(monkeypatch) -> None:
     if not torch.cuda.is_available():
         pytest.skip("CUDA is required for FlexAttention parity")

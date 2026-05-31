@@ -247,7 +247,7 @@ def _gated_deltanet2_compiled_chunks(
                     forget_gate=forget_gate,
                     initial_state=initial_state,
                 )
-    outputs: list[torch.Tensor] = []
+    output = torch.empty_like(v_f)
     for start in range(0, q_f.shape[1], chunk):
         end = min(q_f.shape[1], start + chunk)
         q_chunk = q_f[:, start:end]
@@ -257,7 +257,7 @@ def _gated_deltanet2_compiled_chunks(
         forget_chunk = forget_f[:, start:end]
         if end - start != chunk:
             y_chunk, state = _gdn2_tensor_scan(q_chunk, k_chunk, v_chunk, write_chunk, forget_chunk, state)
-            outputs.append(y_chunk)
+            output[:, start:end] = y_chunk
             continue
         try:
             y_chunk, state = _compiled_gdn2_scan(q_chunk, k_chunk, v_chunk, write_chunk, forget_chunk, state)
@@ -271,8 +271,8 @@ def _gated_deltanet2_compiled_chunks(
                 forget_gate=forget_gate,
                 initial_state=initial_state,
             )
-        outputs.append(y_chunk)
-    return torch.cat(outputs, dim=1).to(dtype=v.dtype), state
+        output[:, start:end] = y_chunk
+    return output.to(dtype=v.dtype), state
 
 
 def _gated_deltanet2_jit_scan(
@@ -331,6 +331,9 @@ def kda_pytorch(
     outputs = torch.empty_like(v_f)
     beta_f = _prepare_gate(beta, v_f, sigmoid=False)
     forget_f = _prepare_gate(forget, v_f, sigmoid=False)
+    if isinstance(beta_f, torch.Tensor) and isinstance(forget_f, torch.Tensor):
+        outputs, state = _gdn2_tensor_scan(q_f, k_f, v_f, beta_f, forget_f, state)
+        return outputs.to(dtype=v.dtype), state
 
     for step in range(q.shape[1]):
         q_t = q_f[:, step]
@@ -370,6 +373,9 @@ def gated_deltanet2_pytorch(
     outputs = torch.empty_like(v_f)
     write_f = _prepare_gate(write_gate, v_f, sigmoid=True)
     forget_f = _prepare_gate(forget_gate, v_f, sigmoid=True)
+    if isinstance(write_f, torch.Tensor) and isinstance(forget_f, torch.Tensor):
+        outputs, state = _gdn2_tensor_scan(q_f, k_f, v_f, write_f, forget_f, state)
+        return outputs.to(dtype=v.dtype), state
 
     for step in range(q.shape[1]):
         q_t = q_f[:, step]

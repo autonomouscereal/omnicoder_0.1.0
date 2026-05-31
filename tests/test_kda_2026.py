@@ -6,6 +6,7 @@ from omnicoder.modeling.kda_2026 import (
     GatedDeltaNet2,
     KDA,
     KaczmarzLinearAttention,
+    _gdn2_tensor_scan,
     _gated_deltanet2_compiled_chunks,
     _gated_deltanet2_jit_scan,
     gated_deltanet2_pytorch,
@@ -177,6 +178,63 @@ def test_gated_deltanet2_full_compile_mode_caps_to_chunked(monkeypatch):
     assert calls == [3, 3]
     torch.testing.assert_close(actual, expected, atol=2e-4, rtol=2e-3)
     torch.testing.assert_close(actual_state, expected_state, atol=2e-4, rtol=2e-3)
+
+
+def test_tensor_gate_recurrent_paths_use_branch_free_scan(monkeypatch):
+    import omnicoder.modeling.kda_2026 as kda_module
+
+    torch.manual_seed(32)
+    calls: list[tuple[int, torch.Size]] = []
+
+    def wrapped_scan(q_f, k_f, v_f, write_f, forget_f, state):
+        calls.append((int(q_f.shape[1]), write_f.shape))
+        return _gdn2_tensor_scan(q_f, k_f, v_f, write_f, forget_f, state)
+
+    monkeypatch.setattr(kda_module, "_gdn2_tensor_scan", wrapped_scan)
+    q = torch.randn(2, 6, 3, 4) * 0.1
+    k = torch.randn(2, 6, 3, 4) * 0.1
+    v = torch.randn(2, 6, 3, 4) * 0.1
+    write = torch.randn(2, 6, 3) * 0.1
+    forget = torch.randn(2, 6, 3) * 0.1
+
+    y_gdn2, state_gdn2 = gated_deltanet2_pytorch(q, k, v, write_gate=write, forget_gate=forget)
+    y_kda, state_kda = kda_pytorch(q, k, v, beta=torch.sigmoid(write), forget=torch.sigmoid(forget))
+
+    assert calls == [(6, torch.Size([2, 6, 3, 1])), (6, torch.Size([2, 6, 3, 1]))]
+    assert y_gdn2.shape == v.shape
+    assert y_kda.shape == v.shape
+    assert state_gdn2.shape == (2, 3, 4, 4)
+    assert state_kda.shape == (2, 3, 4, 4)
+
+
+def test_compiled_chunk_path_preallocates_output_without_cat(monkeypatch):
+    import omnicoder.modeling.kda_2026 as kda_module
+
+    torch.manual_seed(33)
+    calls: list[int] = []
+
+    def fake_compiled_scan(q_f, k_f, v_f, write_f, forget_f, state):
+        calls.append(int(q_f.shape[1]))
+        return kda_module._gdn2_tensor_scan(q_f, k_f, v_f, write_f, forget_f, state)
+
+    def forbidden_cat(*_args, **_kwargs):
+        raise AssertionError("compiled GDN2 chunk path should fill a preallocated output, not torch.cat chunks")
+
+    monkeypatch.setattr(kda_module, "_compiled_gdn2_scan", fake_compiled_scan)
+    monkeypatch.setattr(torch, "cat", forbidden_cat)
+    monkeypatch.setenv("OMNICODER2026_GDN2_COMPILED_CHUNK_TOKENS", "3")
+    q = torch.randn(1, 7, 2, 4) * 0.1
+    k = torch.randn(1, 7, 2, 4) * 0.1
+    v = torch.randn(1, 7, 2, 4) * 0.1
+    write = torch.randn(1, 7, 2) * 0.1
+    forget = torch.randn(1, 7, 2) * 0.1
+
+    actual, actual_state = _gated_deltanet2_compiled_chunks(q, k, v, write_gate=write, forget_gate=forget)
+    expected, expected_state = gated_deltanet2_pytorch(q, k, v, write_gate=write, forget_gate=forget)
+
+    assert calls == [3, 3]
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(actual_state, expected_state, atol=1e-6, rtol=1e-6)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="JIT GDN2 training parity is most relevant on CUDA")

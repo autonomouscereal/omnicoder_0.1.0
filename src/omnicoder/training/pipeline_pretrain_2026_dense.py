@@ -3432,8 +3432,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--train_diagnostics_file", default=os.getenv("OMNICODER2026_TRAIN_DIAGNOSTICS_FILE", ""))
     parser.add_argument("--step_timing_file", default=os.getenv("OMNICODER2026_STEP_TIMING_FILE", ""))
     parser.add_argument("--block_timing_file", default=os.getenv("OMNICODER2026_BLOCK_TIMING_FILE", ""))
-    parser.add_argument("--step_timing_interval", type=int, default=int(os.getenv("OMNICODER2026_STEP_TIMING_INTERVAL", "1") or 1))
+    parser.add_argument("--step_timing_interval", type=int, default=int(os.getenv("OMNICODER2026_STEP_TIMING_INTERVAL", "0") or 0))
     parser.add_argument("--telemetry_interval", type=int, default=int(os.getenv("OMNICODER2026_TELEMETRY_INTERVAL", "8") or 8))
+    parser.add_argument("--train_log_interval", type=int, default=int(os.getenv("OMNICODER2026_TRAIN_LOG_INTERVAL", "8") or 8))
     parser.add_argument("--detailed_event_log_interval", type=int, default=int(os.getenv("OMNICODER2026_DETAILED_EVENT_LOG_INTERVAL", "0") or 0))
     parser.add_argument("--timing_cuda_sync", action="store_true", default=(os.getenv("OMNICODER2026_TIMING_CUDA_SYNC", "0") == "1"))
     parser.add_argument("--block_timing", action="store_true", default=(os.getenv("OMNICODER2026_BLOCK_TIMING", "0") == "1"))
@@ -3473,7 +3474,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--init_dtype", default="auto")
     parser.add_argument("--optimizer", default="adamw")
     parser.add_argument("--optimizer_in_backward", action="store_true")
-    parser.add_argument("--optimizer_in_backward_update", default="lowmem_adafactor", choices=["lowmem_adafactor", "chunked_adafactor"])
+    parser.add_argument("--optimizer_in_backward_update", default=os.getenv("OMNICODER2026_OPTIMIZER_IN_BACKWARD_UPDATE", ""), choices=["", "lowmem_adafactor", "chunked_adafactor"])
     parser.add_argument("--optimizer_in_backward_grad_clip", type=float, default=1.0)
     parser.add_argument("--optimizer_in_backward_clip_mode", default="rms", choices=["rms", "clamp"])
     parser.add_argument("--optimizer_in_backward_adafactor_chunk_rows", type=int, default=256)
@@ -3728,8 +3729,10 @@ def main(argv: list[str] | None = None) -> int:
         global_step = start_step + local_step + 1
         step_timer = PhaseTimer(device=device, cuda_sync=bool(args.timing_cuda_sync))
         final_step = (local_step + 1) == int(args.steps)
+        checkpoint_due = int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0
         log_step_timing = _should_log_interval(int(args.step_timing_interval), global_step)
-        collect_telemetry = _should_log_interval(int(args.telemetry_interval), global_step) or final_step or log_step_timing
+        train_log_due = _should_log_interval(int(args.train_log_interval), global_step) or final_step or checkpoint_due
+        collect_telemetry = _should_log_interval(int(args.telemetry_interval), global_step) or final_step
         collect_loss_diagnostics = _should_log_interval(int(args.loss_diagnostics_interval), global_step) or final_step
         collect_rank_skew = _should_log_interval(int(args.rank_skew_interval), global_step)
         log_detail_events = _should_log_interval(int(args.detailed_event_log_interval), global_step)
@@ -3816,16 +3819,18 @@ def main(argv: list[str] | None = None) -> int:
                 loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
         else:
             loss_tensor = None
-        with step_timer.span("loss_rank0_sync_sec"):
-            rank0_loss_tensor = _sync_pipeline_loss_to_rank0(
-                rank=rank,
-                world_size=world_size,
-                loss_tensor=loss_tensor,
-                device=device,
-            )
+        rank0_loss_tensor: torch.Tensor | None = None
+        if train_log_due:
+            with step_timer.span("loss_rank0_sync_sec"):
+                rank0_loss_tensor = _sync_pipeline_loss_to_rank0(
+                    rank=rank,
+                    world_size=world_size,
+                    loss_tensor=loss_tensor,
+                    device=device,
+                )
         rank0_loss_value = _tensor_scalar_float(rank0_loss_tensor) if rank == 0 and rank0_loss_tensor is not None else None
         local_loss_value: float | None = rank0_loss_value if spec.has_head and rank == 0 else None
-        if rank == 0:
+        if rank == 0 and rank0_loss_value is not None:
             last_loss = rank0_loss_value
         if spec.has_head and bool(args.require_target_contract):
             if local_loss_value is None and loss_tensor is not None:
@@ -3932,7 +3937,7 @@ def main(argv: list[str] | None = None) -> int:
                         source_summary=source_summary,
                     ),
                 )
-        if rank == 0:
+        if rank == 0 and train_log_due:
             with step_timer.span("log_write_sec"):
                 _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": rank0_loss_value, "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "batch_size": int(batch_size), "sample_weight_mean": sample_weight_mean, "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle), "train_diagnostics_file": str(final_train_diagnostics_path), "step_timing_file": str(step_timing_path), "loss_diagnostics_collected": bool(collect_loss_diagnostics), "valid_target_tokens": int(target_summary.valid_target_tokens if target_summary is not None else 0), "optimized_target_tokens": int(target_summary.optimized_target_tokens if target_summary is not None else 0)})
         if log_step_timing:
@@ -3978,7 +3983,7 @@ def main(argv: list[str] | None = None) -> int:
                     "records": records,
                 },
             )
-        if int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0:
+        if checkpoint_due:
             checkpoint_loss = _sync_pipeline_loss_for_checkpoint(
                 rank=rank,
                 world_size=world_size,

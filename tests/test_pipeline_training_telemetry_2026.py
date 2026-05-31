@@ -66,6 +66,23 @@ def _args(tmp_path, **overrides) -> argparse.Namespace:
     return argparse.Namespace(**values)
 
 
+def test_build_optimizer_keeps_adamw_unless_lowmem_mode_is_explicit(tmp_path) -> None:
+    layer = torch.nn.Linear(4, 2)
+    adamw = pipeline.build_optimizer(_args(tmp_path, optimizer="adamw", optimizer_in_backward=False, optimizer_in_backward_update=""), layer)
+
+    assert isinstance(adamw, torch.optim.AdamW)
+
+
+def test_build_optimizer_lowmem_adafactor_is_opt_in(tmp_path) -> None:
+    layer = torch.nn.Linear(4, 2)
+    lowmem = pipeline.build_optimizer(
+        _args(tmp_path, optimizer="adamw", optimizer_in_backward=True, optimizer_in_backward_update="lowmem_adafactor"),
+        layer,
+    )
+
+    assert isinstance(lowmem, pipeline.PipelineLowMemoryAdafactor)
+
+
 def test_pipeline_telemetry_cpu_fallback_writes_jsonl(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(pipeline.torch.cuda, "is_available", lambda: False)
     args = _args(tmp_path)

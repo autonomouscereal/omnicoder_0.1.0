@@ -48,9 +48,17 @@ quality reductions:
   matmuls onto explicit `torch.mm`/`torch.addmm(..., out=...)` buffers. This
   reduces Python-side tensor assignment and allocator churn while preserving
   the reference STE tests.
+- Routed all q4 fake-quant linears, including threshold-edge small matrices,
+  through the custom STE linear path. This preserves the same groupwise q4
+  forward and STE gradients while avoiding autograd retention of a separate
+  full dequantized weight tensor.
 - Sparse MQA local attention now attempts native SDPA GQA before falling back
   to expanded K/V tensors, preserving exact local attention semantics while
   avoiding avoidable K/V expansion on runtimes that support `enable_gqa`.
+- Added an exact SDPA/additive-bias representation of CSA/HCA sink attention.
+  It is gated to FA4-class runtimes or explicit env override; the current
+  Ampere-class training cards keep the manual reference path by default because
+  measured forward latency was lower there.
 - Replaced per-group sparse-attention output projections with
   `QuantAwareGroupedLinear`, a single grouped batched matmul that preserves
   grouped weights and fake-quant behavior.
@@ -58,6 +66,9 @@ quality reductions:
   projection shape.
 - Preallocated local/global attention outputs in fallback loops instead of
   repeatedly building lists and concatenating tensors.
+- Preallocated compiled GDN2 chunk outputs and routed tensor-gate KDA/GDN2
+  fallbacks through the branch-free tensor scan instead of per-token gate-type
+  checks.
 - Added multi-entry RoPE caching keyed by device, dtype, and length.
 - Cached block-residual summary position tensors.
 - Added an opt-in TorchScript GDN2 scan path for parity testing; it is not a
@@ -69,6 +80,10 @@ quality reductions:
   to CPU again during train diagnostics.
 - Reduced repeated per-step source-summary payloads by emitting a compact
   reference and live record-cache counters.
+- Made train loss logging cadence-aware and stopped syncing final-rank loss to
+  rank 0 on steps that do not need host-side scalar evidence.
+- Made `PipelineLowMemoryAdafactor` opt-in instead of the accidental default
+  when `--optimizer adamw` was requested.
 - Added launcher passthrough for DataLoader/cache/GDN2 profiling knobs.
 - Raised the default q4 fake-quant chunk rows from 256 to 8192 after profiling.
 - Kept the production/profile fast-card placement default at `16,16,32`.
@@ -156,6 +171,25 @@ Latest corrective proof commands/results:
   coverage `8/8` on each step.
 - Regression sweep: `96 passed, 8 skipped in 6.02s` for KDA CPU parity,
   proof gates, model init, q4 fake quant, telemetry, and pipeline trainer.
+- Current hot-path regression subset: `100 passed, 9 skipped in 6.08s` for KDA,
+  model initialization, q4 fake quant, pipeline telemetry, and pipeline trainer.
+- CUDA hot-path follow-up: `3 passed in 18.15s` for CSA/HCA sink SDPA GQA
+  parity/backward, GDN2 JIT gradient parity, and GDN2 compiled-chunk gradient
+  parity.
+- 3-rank CPU/Gloo torchrun after cadence-aware loss sync and AdamW optimizer
+  selection: 2 steps, `14.43017 -> 14.31956`, optimizer logged as `adamw`,
+  `optimizer_in_backward_update=""`, final target coverage `5/5`.
+
+Latest local microbench evidence on the AI server RTX 3090-class CUDA path:
+
+- CSA/HCA sink attention, q-heads 32, KV-heads 1, q=512, blocks=128:
+  manual reference `0.5283 ms`, SDPA/additive-bias `0.6829 ms`, max abs diff
+  `0.00390625`. The SDPA path stays opt-in/FA4-auto instead of default on
+  these cards.
+- GDN2 tensor-gate scan shape B1/T128/H8/D64: old inline loop comparison
+  `31.8634 ms`, branch-free scan `32.8856 ms`, max abs diff `1.52e-05`. This
+  patch is kept as a correctness-preserving graph/allocation cleanup, not
+  marketed as a current-card throughput win.
 
 Current verification commands:
 

@@ -3,7 +3,14 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from omnicoder.modeling.omnicoder2026 import MHCResidual, OmniCoder2026Config, QuantAwareLinear, _fake_quant_weight, _fake_quant_weight_value
+from omnicoder.modeling.omnicoder2026 import (
+    MHCResidual,
+    OmniCoder2026Config,
+    QuantAwareLinear,
+    _ChunkedFakeQuantLinearSTE,
+    _fake_quant_weight,
+    _fake_quant_weight_value,
+)
 
 
 def test_chunked_fake_quant_linear_matches_full_ste_reference(monkeypatch):
@@ -106,6 +113,30 @@ def test_chunked_fake_quant_linear_accepts_mixed_activation_and_weight_dtype(mon
     assert actual.dtype == x.dtype
     torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
 
+    actual.sum().backward()
+    assert x.grad is not None
+    assert layer.weight.grad is not None
+    assert layer.bias.grad is not None
+
+
+def test_fake_quant_linear_uses_no_retained_qweight_ste_path_when_below_threshold(monkeypatch):
+    monkeypatch.setenv("OMNICODER2026_FAKE_QUANT_CHUNK_ROWS", "3")
+    monkeypatch.setenv("OMNICODER2026_FAKE_QUANT_MAX_FULL_ELEMENTS", "1024")
+    layer = QuantAwareLinear(5, 4, bias=True, fake_quant=True, group_size=4)
+    x = torch.randn(2, 5, requires_grad=True)
+    calls: list[int] = []
+    original_apply = _ChunkedFakeQuantLinearSTE.apply
+
+    def wrapped_apply(*args, **kwargs):
+        calls.append(int(args[4]))
+        return original_apply(*args, **kwargs)
+
+    monkeypatch.setattr(_ChunkedFakeQuantLinearSTE, "apply", wrapped_apply)
+    actual = layer(x)
+    expected = F.linear(x, _fake_quant_weight(layer.weight, layer.group_size), layer.bias)
+
+    assert calls == [4]
+    torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
     actual.sum().backward()
     assert x.grad is not None
     assert layer.weight.grad is not None
