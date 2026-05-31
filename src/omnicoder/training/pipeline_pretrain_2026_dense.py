@@ -222,6 +222,7 @@ class OmniCoder2026PipelineShard(nn.Module):
             else nn.Identity()
         )
         self.last_lm_loss_diagnostics: dict[str, Any] = {}
+        self.last_lm_loss_timing: dict[str, Any] = {}
         self.last_reasoning_diagnostics: dict[str, Any] = {}
         self.profile_block_timing = False
         self.profile_block_cuda_sync = False
@@ -398,33 +399,65 @@ class OmniCoder2026PipelineShard(nn.Module):
     ) -> torch.Tensor:
         if not self.spec.has_head:
             raise RuntimeError("LM loss can only be computed on the final pipeline stage")
-        if labels.device != hidden.device:
-            labels = labels.to(hidden.device, non_blocking=True)
-        shifted_hidden = hidden[:, :-1, :]
-        shifted_labels = labels[:, 1:]
-        sparse_target_labels = bool(labels_are_sparse) if labels_are_sparse is not None else bool(labels.eq(-100).any())
-        target_mask = shifted_labels.ge(0)
-        if loss_mask is not None:
-            if loss_mask.device != hidden.device:
+        loss_started = _monotonic()
+        loss_spans: dict[str, float] = {}
+
+        @contextlib.contextmanager
+        def loss_span(name: str):
+            started = _monotonic()
+            try:
+                yield
+            finally:
+                loss_spans[str(name)] = float(loss_spans.get(str(name), 0.0) + (_monotonic() - started))
+
+        def set_loss_diagnostics(diagnostics: dict[str, Any], *, sparse_path: bool) -> None:
+            timing = {
+                "schema": "omnicoder.lm_loss_timing_2026.v1",
+                "total_sec": float(_monotonic() - loss_started),
+                "spans": {str(key): float(value) for key, value in loss_spans.items()},
+                "chunk_tokens": int(chunk_tokens),
+                "collect_diagnostics": bool(collect_diagnostics),
+                "sparse_path": bool(sparse_path),
+                "labels_are_sparse": bool(sparse_target_labels),
+                "loss_token_stride": int(loss_token_stride),
+                "max_loss_tokens_per_sample": int(max_loss_tokens_per_sample),
+            }
+            self.last_lm_loss_timing = timing
+            diagnostics = dict(diagnostics)
+            diagnostics["timing"] = timing
+            self.last_lm_loss_diagnostics = diagnostics
+
+        with loss_span("label_to_device_sec"):
+            if labels.device != hidden.device:
+                labels = labels.to(hidden.device, non_blocking=True)
+            if loss_mask is not None and loss_mask.device != hidden.device:
                 loss_mask = loss_mask.to(hidden.device, non_blocking=True)
-            if tuple(loss_mask.shape) != tuple(labels.shape):
-                raise ValueError(f"loss_mask shape mismatch: mask={tuple(loss_mask.shape)} labels={tuple(labels.shape)}")
-            target_mask = target_mask & loss_mask[:, 1:].to(dtype=torch.bool)
+        with loss_span("mask_build_sec"):
+            shifted_hidden = hidden[:, :-1, :]
+            shifted_labels = labels[:, 1:]
+            sparse_target_labels = bool(labels_are_sparse) if labels_are_sparse is not None else bool(labels.eq(-100).any())
+            target_mask = shifted_labels.ge(0)
+            if loss_mask is not None:
+                if tuple(loss_mask.shape) != tuple(labels.shape):
+                    raise ValueError(f"loss_mask shape mismatch: mask={tuple(loss_mask.shape)} labels={tuple(labels.shape)}")
+                target_mask = target_mask & loss_mask[:, 1:].to(dtype=torch.bool)
         collect_diagnostics = bool(collect_diagnostics)
         ce_accumulator = _new_ce_accumulator() if collect_diagnostics else {}
+        available_target_tokens = 0
         optimized_target_tokens = 0
-        boundary_weight = max(1.0, float(target_boundary_weight or 1.0))
-        prev_target_mask = F.pad(target_mask[:, :-1], (1, 0), value=False)
-        boundary_mask = target_mask & ~prev_target_mask
-        prefix_weight = max(1.0, float(target_prefix_weight or 1.0))
-        prefix_tokens = max(0, int(target_prefix_tokens or 0))
-        prefix_mask = torch.zeros_like(target_mask, dtype=torch.bool)
-        if prefix_tokens > 0:
-            target_rank = target_mask.long().cumsum(dim=1)
-            boundary_rank = target_rank * boundary_mask.long()
-            last_boundary_rank = torch.cummax(boundary_rank, dim=1).values
-            prefix_index = target_rank - last_boundary_rank
-            prefix_mask = target_mask & last_boundary_rank.gt(0) & prefix_index.lt(prefix_tokens)
+        with loss_span("boundary_prefix_mask_sec"):
+            boundary_weight = max(1.0, float(target_boundary_weight or 1.0))
+            prev_target_mask = F.pad(target_mask[:, :-1], (1, 0), value=False)
+            boundary_mask = target_mask & ~prev_target_mask
+            prefix_weight = max(1.0, float(target_prefix_weight or 1.0))
+            prefix_tokens = max(0, int(target_prefix_tokens or 0))
+            prefix_mask = torch.zeros_like(target_mask, dtype=torch.bool)
+            if prefix_tokens > 0:
+                target_rank = target_mask.long().cumsum(dim=1)
+                boundary_rank = target_rank * boundary_mask.long()
+                last_boundary_rank = torch.cummax(boundary_rank, dim=1).values
+                prefix_index = target_rank - last_boundary_rank
+                prefix_mask = target_mask & last_boundary_rank.gt(0) & prefix_index.lt(prefix_tokens)
 
         def _token_weight(mask: torch.Tensor, boundary: torch.Tensor, prefix: torch.Tensor) -> torch.Tensor:
             weights = torch.ones_like(mask, dtype=torch.float32)
@@ -446,36 +479,56 @@ class OmniCoder2026PipelineShard(nn.Module):
         loss_token_stride = max(1, int(loss_token_stride))
         max_loss_tokens_per_sample = max(0, int(max_loss_tokens_per_sample))
         if sparse_target_labels or loss_token_stride > 1 or max_loss_tokens_per_sample > 0:
-            selected_hidden: list[torch.Tensor] = []
-            selected_labels: list[torch.Tensor] = []
-            selected_batches: list[torch.Tensor] = []
-            selected_token_weights: list[torch.Tensor] = []
-            for batch_index in range(int(shifted_hidden.shape[0])):
-                positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()
-                if positions.numel() == 0:
-                    continue
-                if not sparse_target_labels and loss_token_stride > 1:
-                    positions = positions[::loss_token_stride]
+            with loss_span("selected_position_scan_sec"):
+                selected_hidden: list[torch.Tensor] = []
+                selected_labels: list[torch.Tensor] = []
+                selected_batches: list[torch.Tensor] = []
+                selected_token_weights: list[torch.Tensor] = []
+                for batch_index in range(int(shifted_hidden.shape[0])):
+                    positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()
                     if positions.numel() == 0:
-                        positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()[-1:]
-                boundary_positions = torch.nonzero(boundary_mask[batch_index], as_tuple=False).flatten()
-                if boundary_positions.numel() > 0:
-                    positions = torch.unique(torch.cat((positions, boundary_positions)), sorted=True)
-                prefix_positions = torch.nonzero(prefix_mask[batch_index], as_tuple=False).flatten()
-                if prefix_positions.numel() > 0:
-                    positions = torch.unique(torch.cat((positions, prefix_positions)), sorted=True)
-                if max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
-                    priority_positions = torch.unique(torch.cat((boundary_positions, prefix_positions)), sorted=True)
-                    if sparse_target_labels and priority_positions.numel() > 0:
-                        if priority_positions.numel() >= max_loss_tokens_per_sample:
-                            pick = torch.linspace(
-                                0,
-                                priority_positions.numel() - 1,
-                                steps=max_loss_tokens_per_sample,
-                                device=priority_positions.device,
-                                dtype=torch.float32,
-                            ).round().long().unique(sorted=True)
-                            positions = priority_positions[pick]
+                        continue
+                    available_target_tokens += int(positions.numel())
+                    if not sparse_target_labels and loss_token_stride > 1:
+                        positions = positions[::loss_token_stride]
+                        if positions.numel() == 0:
+                            positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()[-1:]
+                    boundary_positions = torch.nonzero(boundary_mask[batch_index], as_tuple=False).flatten()
+                    if boundary_positions.numel() > 0:
+                        positions = torch.unique(torch.cat((positions, boundary_positions)), sorted=True)
+                    prefix_positions = torch.nonzero(prefix_mask[batch_index], as_tuple=False).flatten()
+                    if prefix_positions.numel() > 0:
+                        positions = torch.unique(torch.cat((positions, prefix_positions)), sorted=True)
+                    if max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
+                        priority_positions = torch.unique(torch.cat((boundary_positions, prefix_positions)), sorted=True)
+                        if sparse_target_labels and priority_positions.numel() > 0:
+                            if priority_positions.numel() >= max_loss_tokens_per_sample:
+                                pick = torch.linspace(
+                                    0,
+                                    priority_positions.numel() - 1,
+                                    steps=max_loss_tokens_per_sample,
+                                    device=priority_positions.device,
+                                    dtype=torch.float32,
+                                ).round().long().unique(sorted=True)
+                                positions = priority_positions[pick]
+                            else:
+                                pick = torch.linspace(
+                                    0,
+                                    positions.numel() - 1,
+                                    steps=max_loss_tokens_per_sample,
+                                    device=positions.device,
+                                    dtype=torch.float32,
+                                ).round().long().unique(sorted=True)
+                                positions = torch.unique(torch.cat((priority_positions, positions[pick])), sorted=True)
+                                if positions.numel() > max_loss_tokens_per_sample:
+                                    pick = torch.linspace(
+                                        0,
+                                        positions.numel() - 1,
+                                        steps=max_loss_tokens_per_sample,
+                                        device=positions.device,
+                                        dtype=torch.float32,
+                                    ).round().long().unique(sorted=True)
+                                    positions = positions[pick]
                         else:
                             pick = torch.linspace(
                                 0,
@@ -484,105 +537,122 @@ class OmniCoder2026PipelineShard(nn.Module):
                                 device=positions.device,
                                 dtype=torch.float32,
                             ).round().long().unique(sorted=True)
-                            positions = torch.unique(torch.cat((priority_positions, positions[pick])), sorted=True)
-                            if positions.numel() > max_loss_tokens_per_sample:
-                                pick = torch.linspace(
-                                    0,
-                                    positions.numel() - 1,
-                                    steps=max_loss_tokens_per_sample,
-                                    device=positions.device,
-                                    dtype=torch.float32,
-                                ).round().long().unique(sorted=True)
-                                positions = positions[pick]
-                    else:
-                        pick = torch.linspace(
-                            0,
-                            positions.numel() - 1,
-                            steps=max_loss_tokens_per_sample,
-                            device=positions.device,
-                            dtype=torch.float32,
-                        ).round().long().unique(sorted=True)
-                        positions = positions[pick]
-                selected_hidden.append(shifted_hidden[batch_index, positions, :])
-                selected_labels.append(shifted_labels[batch_index, positions])
-                selected_batches.append(torch.full((positions.numel(),), batch_index, dtype=torch.long, device=hidden.device))
-                selected_token_weights.append(
-                    _token_weight(
-                        target_mask[batch_index, positions],
-                        boundary_mask[batch_index, positions],
-                        prefix_mask[batch_index, positions],
+                            positions = positions[pick]
+                    selected_hidden.append(shifted_hidden[batch_index, positions, :])
+                    selected_labels.append(shifted_labels[batch_index, positions])
+                    selected_batches.append(torch.full((positions.numel(),), batch_index, dtype=torch.long, device=hidden.device))
+                    selected_token_weights.append(
+                        _token_weight(
+                            target_mask[batch_index, positions],
+                            boundary_mask[batch_index, positions],
+                            prefix_mask[batch_index, positions],
+                        )
                     )
-                )
             if not selected_hidden:
-                self.last_lm_loss_diagnostics = _lm_loss_diagnostics(labels, 0, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(0)
+                set_loss_diagnostics(
+                    _lm_loss_diagnostics(labels, 0, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(available_target_tokens, 0),
+                    sparse_path=True,
+                )
                 return hidden.sum() * 0.0
-            flat_hidden = torch.cat(selected_hidden, dim=0)
-            flat_labels = torch.cat(selected_labels, dim=0)
-            flat_batches = torch.cat(selected_batches, dim=0)
-            flat_token_weights = torch.cat(selected_token_weights, dim=0) if selected_token_weights else None
-            losses = flat_hidden.new_empty((flat_hidden.shape[0],), dtype=torch.float32)
-            for start in range(0, flat_hidden.shape[0], max(1, int(chunk_tokens))):
-                end = min(flat_hidden.shape[0], start + int(chunk_tokens))
-                logits = self.lm_head(flat_hidden[start:end, :])
-                losses[start:end] = F.cross_entropy(logits, flat_labels[start:end], reduction="none").float()
+            with loss_span("selected_concat_sec"):
+                flat_hidden = torch.cat(selected_hidden, dim=0)
+                flat_labels = torch.cat(selected_labels, dim=0)
+                flat_batches = torch.cat(selected_batches, dim=0)
+                flat_token_weights = torch.cat(selected_token_weights, dim=0) if selected_token_weights else None
+                losses = flat_hidden.new_empty((flat_hidden.shape[0],), dtype=torch.float32)
+            with loss_span("selected_lm_head_ce_sec"):
+                for start in range(0, flat_hidden.shape[0], max(1, int(chunk_tokens))):
+                    end = min(flat_hidden.shape[0], start + int(chunk_tokens))
+                    logits = self.lm_head(flat_hidden[start:end, :])
+                    losses[start:end] = F.cross_entropy(logits, flat_labels[start:end], reduction="none").float()
             optimized_target_tokens = int(flat_labels.numel())
             if collect_diagnostics:
-                _accumulate_ce_by_token_family(ce_accumulator, flat_labels, losses, flat_token_weights)
-            if flat_token_weights is not None:
-                losses = losses * flat_token_weights
-            if sample_weights is not None:
+                with loss_span("ce_diagnostics_sec"):
+                    _accumulate_ce_by_token_family(ce_accumulator, flat_labels, losses, flat_token_weights)
+            with loss_span("selected_reduce_sec"):
+                if flat_token_weights is not None:
+                    losses = losses * flat_token_weights
+                if sample_weights is not None:
+                    weights = _aligned_weights(int(shifted_hidden.shape[0]))
+                    assert weights is not None
+                    per_sample_sum = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
+                    per_sample_tokens = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
+                    per_sample_sum.index_add_(0, flat_batches, losses)
+                    per_sample_tokens.index_add_(0, flat_batches, flat_token_weights if flat_token_weights is not None else torch.ones_like(losses))
+                    per_sample = per_sample_sum / per_sample_tokens.clamp_min(1.0)
+                    out = (per_sample * weights).mean().to(dtype=hidden.dtype)
+                    set_loss_diagnostics(
+                        _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(available_target_tokens, optimized_target_tokens),
+                        sparse_path=True,
+                    )
+                    return out
+                if flat_token_weights is not None:
+                    out = (losses.sum() / flat_token_weights.sum().clamp_min(1.0)).to(dtype=hidden.dtype)
+                    set_loss_diagnostics(
+                        _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(available_target_tokens, optimized_target_tokens),
+                        sparse_path=True,
+                    )
+                    return out
+                out = losses.mean().to(dtype=hidden.dtype)
+                set_loss_diagnostics(
+                    _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(available_target_tokens, optimized_target_tokens),
+                    sparse_path=True,
+                )
+                return out
+        if sample_weights is not None:
+            with loss_span("dense_weighted_lm_head_ce_sec"):
                 weights = _aligned_weights(int(shifted_hidden.shape[0]))
                 assert weights is not None
                 per_sample_sum = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
                 per_sample_tokens = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
-                per_sample_sum.index_add_(0, flat_batches, losses)
-                per_sample_tokens.index_add_(0, flat_batches, flat_token_weights if flat_token_weights is not None else torch.ones_like(losses))
+                for start in range(0, shifted_hidden.shape[1], max(1, int(chunk_tokens))):
+                    end = min(shifted_hidden.shape[1], start + int(chunk_tokens))
+                    logits = self.lm_head(shifted_hidden[:, start:end, :])
+                    token_losses = F.cross_entropy(logits.transpose(1, 2), shifted_labels[:, start:end], reduction="none").float()
+                    mask = target_mask[:, start:end].float()
+                    mask = mask * _token_weight(target_mask[:, start:end], boundary_mask[:, start:end], prefix_mask[:, start:end])
+                    if collect_diagnostics:
+                        with loss_span("ce_diagnostics_sec"):
+                            _accumulate_ce_by_token_family(ce_accumulator, shifted_labels[:, start:end], token_losses, mask)
+                    per_sample_sum = per_sample_sum + (token_losses * mask).sum(dim=1)
+                    per_sample_tokens = per_sample_tokens + mask.sum(dim=1)
+            with loss_span("dense_weighted_reduce_sec"):
                 per_sample = per_sample_sum / per_sample_tokens.clamp_min(1.0)
-                self.last_lm_loss_diagnostics = _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(optimized_target_tokens)
-                return (per_sample * weights).mean().to(dtype=hidden.dtype)
-            if flat_token_weights is not None:
-                self.last_lm_loss_diagnostics = _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(optimized_target_tokens)
-                return (losses.sum() / flat_token_weights.sum().clamp_min(1.0)).to(dtype=hidden.dtype)
-            self.last_lm_loss_diagnostics = _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(optimized_target_tokens)
-            return losses.mean().to(dtype=hidden.dtype)
-        if sample_weights is not None:
-            weights = _aligned_weights(int(shifted_hidden.shape[0]))
-            assert weights is not None
-            per_sample_sum = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
-            per_sample_tokens = hidden.new_zeros((shifted_hidden.shape[0],), dtype=torch.float32)
+                if collect_diagnostics:
+                    with loss_span("diagnostic_scalar_sec"):
+                        optimized_target_tokens = int(target_mask.sum().detach().cpu().item())
+                else:
+                    optimized_target_tokens = int(shifted_labels.numel())
+                out = (per_sample * weights).mean().to(dtype=hidden.dtype)
+                set_loss_diagnostics(
+                    _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(optimized_target_tokens, optimized_target_tokens),
+                    sparse_path=False,
+                )
+                return out
+        with loss_span("dense_mask_sum_sec"):
+            total_mask = target_mask.float() * _token_weight(target_mask, boundary_mask, prefix_mask)
+            total_tokens = total_mask.sum().clamp_min(1.0)
+        loss_sum = hidden.new_zeros(())
+        with loss_span("dense_lm_head_ce_sec"):
             for start in range(0, shifted_hidden.shape[1], max(1, int(chunk_tokens))):
                 end = min(shifted_hidden.shape[1], start + int(chunk_tokens))
                 logits = self.lm_head(shifted_hidden[:, start:end, :])
                 token_losses = F.cross_entropy(logits.transpose(1, 2), shifted_labels[:, start:end], reduction="none").float()
-                mask = target_mask[:, start:end].float()
-                mask = mask * _token_weight(target_mask[:, start:end], boundary_mask[:, start:end], prefix_mask[:, start:end])
                 if collect_diagnostics:
-                    _accumulate_ce_by_token_family(ce_accumulator, shifted_labels[:, start:end], token_losses, mask)
-                per_sample_sum = per_sample_sum + (token_losses * mask).sum(dim=1)
-                per_sample_tokens = per_sample_tokens + mask.sum(dim=1)
-            per_sample = per_sample_sum / per_sample_tokens.clamp_min(1.0)
-            if collect_diagnostics:
-                optimized_target_tokens = int(target_mask.sum().detach().cpu().item())
-            else:
-                optimized_target_tokens = int(shifted_labels.numel())
-            self.last_lm_loss_diagnostics = _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(optimized_target_tokens)
-            return (per_sample * weights).mean().to(dtype=hidden.dtype)
-        total_mask = target_mask.float() * _token_weight(target_mask, boundary_mask, prefix_mask)
-        total_tokens = total_mask.sum().clamp_min(1.0)
-        loss_sum = hidden.new_zeros(())
-        for start in range(0, shifted_hidden.shape[1], max(1, int(chunk_tokens))):
-            end = min(shifted_hidden.shape[1], start + int(chunk_tokens))
-            logits = self.lm_head(shifted_hidden[:, start:end, :])
-            token_losses = F.cross_entropy(logits.transpose(1, 2), shifted_labels[:, start:end], reduction="none").float()
-            if collect_diagnostics:
-                _accumulate_ce_by_token_family(ce_accumulator, shifted_labels[:, start:end], token_losses, total_mask[:, start:end])
-            loss_sum = loss_sum + (token_losses * total_mask[:, start:end]).sum()
+                    with loss_span("ce_diagnostics_sec"):
+                        _accumulate_ce_by_token_family(ce_accumulator, shifted_labels[:, start:end], token_losses, total_mask[:, start:end])
+                loss_sum = loss_sum + (token_losses * total_mask[:, start:end]).sum()
         if collect_diagnostics:
-            optimized_target_tokens = int(target_mask.sum().detach().cpu().item())
+            with loss_span("diagnostic_scalar_sec"):
+                optimized_target_tokens = int(target_mask.sum().detach().cpu().item())
         else:
             optimized_target_tokens = int(shifted_labels.numel())
-        self.last_lm_loss_diagnostics = _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(optimized_target_tokens)
-        return loss_sum / total_tokens.to(dtype=loss_sum.dtype)
+        out = loss_sum / total_tokens.to(dtype=loss_sum.dtype)
+        set_loss_diagnostics(
+            _lm_loss_diagnostics(labels, optimized_target_tokens, ce_accumulator) if collect_diagnostics else _minimal_lm_loss_diagnostics(optimized_target_tokens, optimized_target_tokens),
+            sparse_path=False,
+        )
+        return out
 
     def local_state_dict(self) -> dict[str, torch.Tensor]:
         return {key: value.detach().cpu() for key, value in self.state_dict().items() if not key.endswith("._metadata")}
@@ -1625,17 +1695,20 @@ def _lm_loss_diagnostics(labels: torch.Tensor, optimized_target_tokens: int, ce_
     }
 
 
-def _minimal_lm_loss_diagnostics(optimized_target_tokens: int) -> dict[str, Any]:
-    zeros = _zero_token_family_counts()
+def _minimal_lm_loss_diagnostics(valid_target_tokens: int, optimized_target_tokens: int) -> dict[str, Any]:
+    target_counts = _zero_token_family_counts()
+    optimized_counts = _zero_token_family_counts()
+    target_counts["unknown"] = int(max(0, valid_target_tokens))
+    optimized_counts["unknown"] = int(max(0, optimized_target_tokens))
     return {
         "schema": "omnicoder.lm_loss_diagnostics_2026.v1",
         "diagnostics_skipped": True,
-        "valid_target_tokens": 0,
+        "valid_target_tokens": int(max(0, valid_target_tokens)),
         "optimized_target_tokens": int(max(0, optimized_target_tokens)),
-        "target_counts_by_token_family": zeros,
-        "target_counts_by_modality": _modality_counts_from_token_families(zeros),
-        "optimized_target_counts_by_token_family": zeros,
-        "optimized_target_counts_by_modality": _modality_counts_from_token_families(zeros),
+        "target_counts_by_token_family": target_counts,
+        "target_counts_by_modality": _modality_counts_from_token_families(target_counts),
+        "optimized_target_counts_by_token_family": optimized_counts,
+        "optimized_target_counts_by_modality": _modality_counts_from_token_families(optimized_counts),
         "ce_by_token_family": {},
         "ce_by_modality": {},
     }
@@ -3537,9 +3610,16 @@ def main(argv: list[str] | None = None) -> int:
                 dist.broadcast_object_list(loss_diagnostics_box, src=world_size - 1)
                 loss_diagnostics = loss_diagnostics_box[0] if isinstance(loss_diagnostics_box[0], dict) else {}
             else:
+                target_diag = torch.zeros((2,), dtype=torch.long, device=device)
+                if spec.has_head:
+                    basic_diag = getattr(shard, "last_lm_loss_diagnostics", {})
+                    if isinstance(basic_diag, dict):
+                        target_diag[0] = int(basic_diag.get("valid_target_tokens") or 0)
+                        target_diag[1] = int(basic_diag.get("optimized_target_tokens") or 0)
+                dist.broadcast(target_diag, src=world_size - 1)
                 loss_diagnostics = {
-                    "valid_target_tokens": 0,
-                    "optimized_target_tokens": 0,
+                    "valid_target_tokens": int(target_diag[0].detach().cpu().item()),
+                    "optimized_target_tokens": int(target_diag[1].detach().cpu().item()),
                     "diagnostics_skipped": True,
                 }
         step_elapsed_sec = step_timer.elapsed()
@@ -3573,7 +3653,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         if rank == 0:
             with step_timer.span("log_write_sec"):
-                _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": loss_value_for_log, "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "sample_weight_mean": sample_weight_mean, "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle), "train_diagnostics_file": str(train_diagnostics_path), "step_timing_file": str(step_timing_path), "loss_diagnostics_collected": bool(collect_loss_diagnostics), "valid_target_tokens": int((loss_diagnostics.get("valid_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0), "optimized_target_tokens": int((loss_diagnostics.get("optimized_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0)})
+                _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": loss_value_for_log, "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "batch_size": int(batch_size), "sample_weight_mean": sample_weight_mean, "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle), "train_diagnostics_file": str(train_diagnostics_path), "step_timing_file": str(step_timing_path), "loss_diagnostics_collected": bool(collect_loss_diagnostics), "valid_target_tokens": int((loss_diagnostics.get("valid_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0), "optimized_target_tokens": int((loss_diagnostics.get("optimized_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0)})
         if log_step_timing:
             rank_elapsed: list[float] = []
             if collect_rank_skew:
@@ -3597,6 +3677,7 @@ def main(argv: list[str] | None = None) -> int:
                 "rank_elapsed_sec": rank_elapsed,
                 "rank_skew_sec": (max(rank_elapsed) - min(rank_elapsed)) if rank_elapsed else None,
                 "optimizer_diagnostics": optimizer.diagnostics() if hasattr(optimizer, "diagnostics") else {},
+                "lm_loss_timing": getattr(shard, "last_lm_loss_timing", {}) if spec.has_head else {},
             }
             _append_pipeline_telemetry(step_timing_path, timing_record)
         if bool(args.block_timing) and getattr(shard, "block_timing_records", None):

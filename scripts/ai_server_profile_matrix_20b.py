@@ -156,6 +156,72 @@ DEFAULT_VARIANTS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "block_timing_q4_chunk2048_loss64",
+        "default": False,
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "2048",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_BLOCK_TIMING": "1",
+            "OMNICODER2026_BLOCK_TIMING_CUDA_SYNC": "0",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "gpipe_mb2_q4_chunk2048_loss64",
+        "default": False,
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "2048",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "2",
+            "OMNICODER_BATCH_SIZE": "2",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "onef1b_mb2_q4_chunk2048_loss64",
+        "default": False,
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "2048",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "1f1b",
+            "OMNICODER_PIPELINE_MICROBATCHES": "2",
+            "OMNICODER_BATCH_SIZE": "2",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "actckpt_off_q4_chunk2048_loss64",
+        "default": False,
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "2048",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "0",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
         "name": "actckpt_off_q4_loss64",
         "default": False,
         "steps": 1,
@@ -586,6 +652,7 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
         else:
             summary["last_target_token_coverage"] = None
         summary["last_seq_len"] = step_rows[-1].get("seq_len")
+        summary["last_batch_size"] = step_rows[-1].get("batch_size")
         summary["max_loss_tokens_per_sample"] = step_rows[-1].get("max_loss_tokens_per_sample")
         summary["loss_diagnostics_collected"] = step_rows[-1].get("loss_diagnostics_collected")
         summary["pipeline_schedule"] = step_rows[-1].get("pipeline_schedule")
@@ -595,6 +662,8 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
     timing_files = sorted(diag_dir.glob("*_step_timing.rank*.jsonl"))
     timings: list[dict[str, Any]] = []
     phase_values: dict[str, list[float]] = {}
+    lm_loss_phase_values: dict[str, list[float]] = {}
+    optimizer_values: dict[str, list[float]] = {}
     rank_skews: list[float] = []
     for path in timing_files:
         rank_match = re.search(r"\.rank(\d+)\.", path.name)
@@ -614,9 +683,24 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
                 numeric = _float_or_none(value)
                 if numeric is not None:
                     phase_values.setdefault(str(key), []).append(numeric)
+            lm_loss_timing = row.get("lm_loss_timing") if isinstance(row.get("lm_loss_timing"), dict) else {}
+            lm_total = _float_or_none(lm_loss_timing.get("total_sec"))
+            if lm_total is not None:
+                lm_loss_phase_values.setdefault("total_sec", []).append(lm_total)
+            lm_spans = lm_loss_timing.get("spans") if isinstance(lm_loss_timing.get("spans"), dict) else {}
+            for key, value in lm_spans.items():
+                numeric = _float_or_none(value)
+                if numeric is not None:
+                    lm_loss_phase_values.setdefault(str(key), []).append(numeric)
+            optimizer_diagnostics = row.get("optimizer_diagnostics") if isinstance(row.get("optimizer_diagnostics"), dict) else {}
+            for key, value in optimizer_diagnostics.items():
+                numeric = _float_or_none(value)
+                if numeric is not None:
+                    optimizer_values.setdefault(str(key), []).append(numeric)
         last = rows[-1]
         spans = last.get("spans") if isinstance(last.get("spans"), dict) else {}
         opt = last.get("optimizer_diagnostics") if isinstance(last.get("optimizer_diagnostics"), dict) else {}
+        lm_loss_timing = last.get("lm_loss_timing") if isinstance(last.get("lm_loss_timing"), dict) else {}
         timings.append(
             {
                 "rank": rank,
@@ -630,11 +714,14 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
                 "rank_skew_sec": last.get("rank_skew_sec"),
                 "phase_spans": spans,
                 "optimizer_diagnostics": opt,
+                "lm_loss_timing": lm_loss_timing,
             }
         )
     summary["rank_timing"] = timings
     summary["phase_timing_files"] = [str(path) for path in timing_files]
     summary["phase_timing_summary"] = {key: _summarize_numeric(values) for key, values in sorted(phase_values.items())}
+    summary["lm_loss_timing_summary"] = {key: _summarize_numeric(values) for key, values in sorted(lm_loss_phase_values.items())}
+    summary["optimizer_diagnostics_summary"] = {key: _summarize_numeric(values) for key, values in sorted(optimizer_values.items())}
     if rank_skews:
         summary["rank_skew_summary"] = _summarize_numeric(rank_skews)
     if timings:
@@ -647,6 +734,8 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
                 summary["total_step_skew_ratio"] = max(totals) / min(totals)
             if isinstance(summary.get("last_seq_len"), (int, float)):
                 summary["sequence_tokens_per_sec"] = float(summary["last_seq_len"]) / max(totals)
+                batch_size = _float_or_none(summary.get("last_batch_size")) or 1.0
+                summary["training_tokens_per_sec"] = (float(summary["last_seq_len"]) * max(1.0, batch_size)) / max(totals)
             if isinstance(summary.get("last_optimized_target_tokens"), (int, float)):
                 summary["optimized_target_tokens_per_sec"] = float(summary["last_optimized_target_tokens"]) / max(totals)
         if schedules:

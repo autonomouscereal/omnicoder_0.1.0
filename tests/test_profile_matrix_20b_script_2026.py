@@ -27,6 +27,7 @@ def test_profile_matrix_summary_aggregates_phase_timings_and_target_coverage(tmp
                 "optimized_target_tokens": 6,
                 "valid_target_tokens": 8,
                 "seq_len": 32,
+                "batch_size": 2,
             }
         ],
     )
@@ -43,7 +44,14 @@ def test_profile_matrix_summary_aggregates_phase_timings_and_target_coverage(tmp
                     "schedule_step_sec": 2.0,
                     "optimizer_step_sec": 1.0,
                 },
-                "optimizer_diagnostics": {"step": 1},
+                "optimizer_diagnostics": {"step": 1, "hook_step_sec": 0.75},
+                "lm_loss_timing": {
+                    "total_sec": 1.5,
+                    "spans": {
+                        "selected_lm_head_ce_sec": 1.25,
+                        "selected_position_scan_sec": 0.1,
+                    },
+                },
             },
             {
                 "event": "pipeline_step_timing",
@@ -55,7 +63,14 @@ def test_profile_matrix_summary_aggregates_phase_timings_and_target_coverage(tmp
                     "schedule_step_sec": 2.5,
                     "optimizer_step_sec": 1.25,
                 },
-                "optimizer_diagnostics": {"step": 2},
+                "optimizer_diagnostics": {"step": 2, "hook_step_sec": 1.25},
+                "lm_loss_timing": {
+                    "total_sec": 2.0,
+                    "spans": {
+                        "selected_lm_head_ce_sec": 1.75,
+                        "selected_position_scan_sec": 0.15,
+                    },
+                },
             },
         ],
     )
@@ -70,12 +85,18 @@ def test_profile_matrix_summary_aggregates_phase_timings_and_target_coverage(tmp
     summary = summarize_run(out_dir, "container", tmp_path)
 
     assert summary["last_target_token_coverage"] == 0.75
+    assert summary["sequence_tokens_per_sec"] == 6.4
+    assert summary["training_tokens_per_sec"] == 12.8
     assert summary["no_checkpoint_written"] is True
     assert summary["phase_timing_summary"]["batch_fetch_sec"]["count"] == 2
     assert summary["phase_timing_summary"]["batch_fetch_sec"]["max_sec"] == 0.75
     assert summary["phase_timing_summary"]["schedule_step_sec"]["mean_sec"] == 2.25
     assert summary["rank_skew_summary"]["max_sec"] == 0.5
     assert summary["rank_timing"][0]["phase_spans"]["host_to_device_sec"] == 0.5
+    assert summary["rank_timing"][0]["lm_loss_timing"]["spans"]["selected_lm_head_ce_sec"] == 1.75
+    assert summary["lm_loss_timing_summary"]["selected_lm_head_ce_sec"]["max_sec"] == 1.75
+    assert summary["lm_loss_timing_summary"]["total_sec"]["mean_sec"] == 1.75
+    assert summary["optimizer_diagnostics_summary"]["hook_step_sec"]["max_sec"] == 1.25
     assert summary["schedule_step_skew_ratio"] == 1.0
 
 
@@ -114,8 +135,12 @@ def test_profile_matrix_default_selection_skips_opt_in_risky_variants() -> None:
     assert "gdn2_compiled_fakequant_chunk256_loss64" not in names
     assert "gdn2_jit_q4_loss64" not in names
     assert "fakequant_chunk2048_loss64_diagnostics" not in names
+    assert "block_timing_q4_chunk2048_loss64" not in names
+    assert "gpipe_mb2_q4_chunk2048_loss64" not in names
+    assert "onef1b_mb2_q4_chunk2048_loss64" not in names
+    assert "actckpt_off_q4_chunk2048_loss64" not in names
     assert "actckpt_off_q4_loss64" not in names
 
-    selected, missing = select_variants({"gdn2_jit_q4_loss64", "missing_variant"})
-    assert [variant["name"] for variant in selected] == ["gdn2_jit_q4_loss64"]
+    selected, missing = select_variants({"gdn2_jit_q4_loss64", "block_timing_q4_chunk2048_loss64", "gpipe_mb2_q4_chunk2048_loss64", "missing_variant"})
+    assert [variant["name"] for variant in selected] == ["gdn2_jit_q4_loss64", "block_timing_q4_chunk2048_loss64", "gpipe_mb2_q4_chunk2048_loss64"]
     assert missing == ["missing_variant"]

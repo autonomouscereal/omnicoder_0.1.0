@@ -315,6 +315,11 @@ def test_final_stage_chunked_lm_loss_backward() -> None:
     loss = final.chunked_lm_loss(final(hidden), labels, chunk_tokens=2)
     assert loss.ndim == 0
     assert torch.isfinite(loss)
+    timing = final.last_lm_loss_timing
+    assert timing["schema"] == "omnicoder.lm_loss_timing_2026.v1"
+    assert timing["total_sec"] >= 0.0
+    assert timing["spans"]["dense_lm_head_ce_sec"] >= 0.0
+    assert final.last_lm_loss_diagnostics["timing"]["chunk_tokens"] == 2
     loss.backward()
     assert hidden.grad is not None
 
@@ -382,6 +387,10 @@ def test_final_stage_selected_token_lm_loss_bounds_vocab_projection() -> None:
     expected = torch.stack(expected_parts).mean()
 
     assert torch.allclose(loss.float(), expected.float(), atol=1e-5)
+    timing = final.last_lm_loss_timing
+    assert timing["sparse_path"] is True
+    assert timing["spans"]["selected_position_scan_sec"] >= 0.0
+    assert timing["spans"]["selected_lm_head_ce_sec"] >= 0.0
     loss.backward()
     assert hidden.grad is not None
 
@@ -577,7 +586,10 @@ def test_final_stage_can_skip_expensive_loss_diagnostics_without_changing_loss()
     assert torch.allclose(skipped_loss.float(), full_loss.float(), atol=1e-5)
     assert not bool(full_diagnostics.get("diagnostics_skipped", False))
     assert skipped_diagnostics["diagnostics_skipped"] is True
+    assert skipped_diagnostics["valid_target_tokens"] == full_diagnostics["valid_target_tokens"]
     assert skipped_diagnostics["optimized_target_tokens"] == full_diagnostics["optimized_target_tokens"]
+    assert skipped_diagnostics["target_counts_by_token_family"]["unknown"] == full_diagnostics["valid_target_tokens"]
+    assert skipped_diagnostics["optimized_target_counts_by_token_family"]["unknown"] == full_diagnostics["optimized_target_tokens"]
 
 
 def test_checkpoint_data_integrity_manifest_policy_does_not_hash_training_file(tmp_path, monkeypatch) -> None:
