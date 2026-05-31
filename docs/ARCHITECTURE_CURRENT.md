@@ -326,6 +326,11 @@ Current hot-path implementation details:
 - GDN2/KDA tensor-gate recurrence uses the branch-free tensor scan fallback,
   and the compiled-chunk path preallocates output storage instead of building
   Python lists and concatenating chunks.
+- An opt-in exact GDN2 checkpoint-scan path recomputes the recurrent scan
+  during backward instead of saving the whole per-token state chain. It is
+  controlled by `OMNICODER2026_GDN2_CHECKPOINT_SCAN=1` and has CPU/CUDA
+  gradient parity tests, but it is not the default until full 20B profiling
+  proves the recompute/memory tradeoff is favorable.
 - Q4 fake-quant linears route through the custom STE linear path even below the
   chunk threshold, so autograd does not keep a separate full dequantized weight
   tensor alive for threshold-edge matrices.

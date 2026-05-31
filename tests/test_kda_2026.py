@@ -7,6 +7,7 @@ from omnicoder.modeling.kda_2026 import (
     KDA,
     KaczmarzLinearAttention,
     _gdn2_tensor_scan,
+    _gated_deltanet2_checkpoint_scan,
     _gated_deltanet2_compiled_chunks,
     _gated_deltanet2_jit_scan,
     gated_deltanet2_pytorch,
@@ -235,6 +236,75 @@ def test_compiled_chunk_path_preallocates_output_without_cat(monkeypatch):
     assert calls == [3, 3]
     torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
     torch.testing.assert_close(actual_state, expected_state, atol=1e-6, rtol=1e-6)
+
+
+@pytest.mark.parametrize("device", _devices())
+def test_gated_deltanet2_checkpoint_scan_gradient_parity(device):
+    torch.manual_seed(34)
+    batch, time, heads, key_dim, value_dim = 1, 6, 2, 4, 4
+    q = torch.randn(batch, time, heads, key_dim, device=device) * 0.1
+    k = torch.randn(batch, time, heads, key_dim, device=device) * 0.1
+    v = torch.randn(batch, time, heads, value_dim, device=device) * 0.1
+    write = torch.randn(batch, time, heads, device=device) * 0.1
+    forget = torch.randn(batch, time, heads, device=device) * 0.1
+    initial_state = torch.randn(batch, heads, key_dim, value_dim, device=device, dtype=torch.float32) * 0.01
+    probe = torch.randn(batch, time, heads, value_dim, device=device)
+    state_probe = torch.randn(batch, heads, key_dim, value_dim, device=device)
+
+    ref_inputs = [tensor.detach().clone().requires_grad_(True) for tensor in (q, k, v, write, forget, initial_state)]
+    ckpt_inputs = [tensor.detach().clone().requires_grad_(True) for tensor in (q, k, v, write, forget, initial_state)]
+
+    ref_y, ref_state = gated_deltanet2_pytorch(
+        ref_inputs[0],
+        ref_inputs[1],
+        ref_inputs[2],
+        write_gate=ref_inputs[3],
+        forget_gate=ref_inputs[4],
+        initial_state=ref_inputs[5],
+    )
+    ckpt_y, ckpt_state = _gated_deltanet2_checkpoint_scan(
+        ckpt_inputs[0],
+        ckpt_inputs[1],
+        ckpt_inputs[2],
+        write_gate=ckpt_inputs[3],
+        forget_gate=ckpt_inputs[4],
+        initial_state=ckpt_inputs[5],
+    )
+    (ref_y * probe).sum().add((ref_state * state_probe).sum()).backward()
+    (ckpt_y * probe).sum().add((ckpt_state * state_probe).sum()).backward()
+
+    torch.testing.assert_close(ckpt_y, ref_y, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(ckpt_state, ref_state, atol=1e-6, rtol=1e-6)
+    for actual, expected in zip(ckpt_inputs, ref_inputs, strict=True):
+        assert actual.grad is not None
+        assert expected.grad is not None
+        torch.testing.assert_close(actual.grad, expected.grad, atol=2e-5, rtol=2e-5)
+
+
+def test_gated_deltanet2_module_checkpoint_scan_env_path_gradient_parity(monkeypatch):
+    torch.manual_seed(35)
+    eager = GatedDeltaNet2(d_model=16, n_heads=4, head_dim=4)
+    checkpointed = GatedDeltaNet2(d_model=16, n_heads=4, head_dim=4)
+    checkpointed.load_state_dict(eager.state_dict())
+    x_eager = torch.randn(2, 7, 16, requires_grad=True)
+    x_checkpointed = x_eager.detach().clone().requires_grad_(True)
+    probe = torch.randn(2, 7, 16)
+
+    monkeypatch.setenv("OMNICODER2026_GDN2_CHECKPOINT_SCAN", "0")
+    y_eager, state_eager = eager(x_eager, return_state=True)
+    (y_eager * probe).sum().add(state_eager.square().mean()).backward()
+
+    monkeypatch.setenv("OMNICODER2026_GDN2_CHECKPOINT_SCAN", "1")
+    y_checkpointed, state_checkpointed = checkpointed(x_checkpointed, return_state=True)
+    (y_checkpointed * probe).sum().add(state_checkpointed.square().mean()).backward()
+
+    torch.testing.assert_close(y_checkpointed, y_eager, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(state_checkpointed, state_eager, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(x_checkpointed.grad, x_eager.grad, atol=2e-5, rtol=2e-5)
+    for checkpointed_param, eager_param in zip(checkpointed.parameters(), eager.parameters(), strict=True):
+        assert checkpointed_param.grad is not None
+        assert eager_param.grad is not None
+        torch.testing.assert_close(checkpointed_param.grad, eager_param.grad, atol=2e-5, rtol=2e-5)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="JIT GDN2 training parity is most relevant on CUDA")

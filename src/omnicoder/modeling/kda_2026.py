@@ -297,6 +297,107 @@ def _gated_deltanet2_jit_scan(
     return y.to(dtype=v.dtype), state
 
 
+def _gated_deltanet2_tensor_gate_scan(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    *,
+    write_gate: torch.Tensor,
+    forget_gate: torch.Tensor,
+    initial_state: Optional[torch.Tensor] = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    _check_qkv(q, k, v)
+    q_f = q.float()
+    k_f = F.normalize(k.float(), dim=-1)
+    v_f = v.float()
+    write_f = _prepare_gate(write_gate, v_f, sigmoid=True)
+    forget_f = _prepare_gate(forget_gate, v_f, sigmoid=True)
+    if not isinstance(write_f, torch.Tensor) or not isinstance(forget_f, torch.Tensor):
+        raise ValueError("tensor-gate GDN2 scan requires tensor gates")
+    state = _initial_state(q, v.shape[-1], initial_state)
+    y, state = _gdn2_tensor_scan(q_f, k_f, v_f, write_f, forget_f, state)
+    return y.to(dtype=v.dtype), state
+
+
+class _GatedDeltaNet2CheckpointScan(torch.autograd.Function):
+    @staticmethod
+    def forward(
+        ctx,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        write_gate: torch.Tensor,
+        forget_gate: torch.Tensor,
+        initial_state: Optional[torch.Tensor],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        ctx.has_initial_state = initial_state is not None
+        tensors = [q, k, v, write_gate, forget_gate]
+        if initial_state is not None:
+            tensors.append(initial_state)
+        ctx.save_for_backward(*tensors)
+        y, state = _gated_deltanet2_tensor_gate_scan(
+            q,
+            k,
+            v,
+            write_gate=write_gate,
+            forget_gate=forget_gate,
+            initial_state=initial_state,
+        )
+        return y, state
+
+    @staticmethod
+    def backward(ctx, grad_y: torch.Tensor | None, grad_state: torch.Tensor | None):
+        saved = ctx.saved_tensors
+        q, k, v, write_gate, forget_gate = saved[:5]
+        initial_state = saved[5] if bool(ctx.has_initial_state) else None
+        with torch.enable_grad():
+            q_req = q.detach().requires_grad_(ctx.needs_input_grad[0])
+            k_req = k.detach().requires_grad_(ctx.needs_input_grad[1])
+            v_req = v.detach().requires_grad_(ctx.needs_input_grad[2])
+            write_req = write_gate.detach().requires_grad_(ctx.needs_input_grad[3])
+            forget_req = forget_gate.detach().requires_grad_(ctx.needs_input_grad[4])
+            initial_req = None
+            grad_inputs = [q_req, k_req, v_req, write_req, forget_req]
+            if initial_state is not None:
+                initial_req = initial_state.detach().requires_grad_(ctx.needs_input_grad[5])
+                grad_inputs.append(initial_req)
+            y, state = _gated_deltanet2_tensor_gate_scan(
+                q_req,
+                k_req,
+                v_req,
+                write_gate=write_req,
+                forget_gate=forget_req,
+                initial_state=initial_req,
+            )
+            grad_y = torch.zeros_like(y) if grad_y is None else grad_y
+            grad_state = torch.zeros_like(state) if grad_state is None else grad_state
+            grads = torch.autograd.grad(
+                (y, state),
+                tuple(grad_inputs),
+                grad_outputs=(grad_y, grad_state),
+                allow_unused=True,
+            )
+        if initial_state is None:
+            return (*grads[:5], None)
+        return (*grads[:5], grads[5])
+
+
+def _gated_deltanet2_checkpoint_scan(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    *,
+    write_gate: torch.Tensor,
+    forget_gate: torch.Tensor,
+    initial_state: Optional[torch.Tensor] = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    return _GatedDeltaNet2CheckpointScan.apply(q, k, v, write_gate, forget_gate, initial_state)
+
+
+def _gdn2_checkpoint_scan_available(ref: torch.Tensor) -> bool:
+    return bool(ref.requires_grad and _truthy_env("OMNICODER2026_GDN2_CHECKPOINT_SCAN", "0"))
+
+
 def kda_pytorch(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -374,8 +475,14 @@ def gated_deltanet2_pytorch(
     write_f = _prepare_gate(write_gate, v_f, sigmoid=True)
     forget_f = _prepare_gate(forget_gate, v_f, sigmoid=True)
     if isinstance(write_f, torch.Tensor) and isinstance(forget_f, torch.Tensor):
-        outputs, state = _gdn2_tensor_scan(q_f, k_f, v_f, write_f, forget_f, state)
-        return outputs.to(dtype=v.dtype), state
+        return _gated_deltanet2_tensor_gate_scan(
+            q,
+            k,
+            v,
+            write_gate=write_gate,
+            forget_gate=forget_gate,
+            initial_state=initial_state,
+        )
 
     for step in range(q.shape[1]):
         q_t = q_f[:, step]
@@ -601,7 +708,16 @@ class GatedDeltaNet2(_BaseRecurrentLinearAttention):
         q = self._shape(q_raw)
         k = self._shape(k_raw)
         v = self._shape(v_raw)
-        if _gdn2_compile_available(q):
+        if _gdn2_checkpoint_scan_available(q):
+            y, state = _gated_deltanet2_checkpoint_scan(
+                q,
+                k,
+                v,
+                write_gate=write_gate,
+                forget_gate=forget_gate,
+                initial_state=initial_state,
+            )
+        elif _gdn2_compile_available(q):
             y, state = _gated_deltanet2_compiled_chunks(
                 q,
                 k,
@@ -663,6 +779,7 @@ __all__ = [
     "KDA",
     "KaczmarzLinearAttention",
     "RecurrentLinearAttentionConfig",
+    "_gated_deltanet2_checkpoint_scan",
     "_gated_deltanet2_compiled_chunks",
     "_gated_deltanet2_jit_scan",
     "gated_deltanet2_pytorch",

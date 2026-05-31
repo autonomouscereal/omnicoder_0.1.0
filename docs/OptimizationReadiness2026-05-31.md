@@ -69,6 +69,10 @@ quality reductions:
 - Preallocated compiled GDN2 chunk outputs and routed tensor-gate KDA/GDN2
   fallbacks through the branch-free tensor scan instead of per-token gate-type
   checks.
+- Added an opt-in exact GDN2 checkpoint-scan autograd path behind
+  `OMNICODER2026_GDN2_CHECKPOINT_SCAN=1`. It recomputes the fp32 recurrent
+  scan in backward so the forward tape does not retain the full per-token
+  recurrent-state chain. It remains opt-in pending full 20B profile proof.
 - Added multi-entry RoPE caching keyed by device, dtype, and length.
 - Cached block-residual summary position tensors.
 - Added an opt-in TorchScript GDN2 scan path for parity testing; it is not a
@@ -171,11 +175,12 @@ Latest corrective proof commands/results:
   coverage `8/8` on each step.
 - Regression sweep: `96 passed, 8 skipped in 6.02s` for KDA CPU parity,
   proof gates, model init, q4 fake quant, telemetry, and pipeline trainer.
-- Current hot-path regression subset: `100 passed, 9 skipped in 6.08s` for KDA,
+- Current hot-path regression subset: `102 passed, 9 skipped in 5.95s` for KDA,
   model initialization, q4 fake quant, pipeline telemetry, and pipeline trainer.
-- CUDA hot-path follow-up: `3 passed in 18.15s` for CSA/HCA sink SDPA GQA
-  parity/backward, GDN2 JIT gradient parity, and GDN2 compiled-chunk gradient
-  parity.
+- CUDA hot-path follow-up: `4 passed in 18.32s` for GDN2 checkpoint-scan
+  CPU/CUDA gradient parity, GDN2 checkpoint module env-path parity, and GDN2
+  compiled-chunk gradient parity. Separate sink-attention/GDN2 CUDA follow-up:
+  `3 passed in 18.15s`.
 - 3-rank CPU/Gloo torchrun after cadence-aware loss sync and AdamW optimizer
   selection: 2 steps, `14.43017 -> 14.31956`, optimizer logged as `adamw`,
   `optimizer_in_backward_update=""`, final target coverage `5/5`.
