@@ -816,6 +816,16 @@ def launch_variant(repo: Path, matrix_root: Path, matrix_tag: str, variant: dict
     container = parsed.get("container") or env["OMNICODER_CONTAINER_NAME"]
     state = wait_container(container, repo, int(args.timeout_seconds), int(args.poll_seconds))
     result["container_state"] = state
+    if args.cleanup_containers and state.get("timed_out") and state.get("running"):
+        stop_proc = run(["docker", "stop", container], cwd=repo, timeout=120)
+        result["timeout_stop"] = {
+            "returncode": stop_proc.returncode,
+            "stdout": stop_proc.stdout.strip(),
+            "stderr": stop_proc.stderr.strip(),
+        }
+        state = inspect_container(container, repo)
+        state["timed_out"] = True
+        result["container_state_after_timeout_stop"] = state
     host_out_dir = Path(parsed.get("host_out_dir") or (matrix_root / name))
     result.update(summarize_run(host_out_dir, container, repo))
     result["no_checkpoint_requested"] = (

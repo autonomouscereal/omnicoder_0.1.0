@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import runpy
+from types import SimpleNamespace
 from pathlib import Path
 
 
@@ -121,6 +122,49 @@ def test_profile_matrix_summary_flags_checkpoint_files(tmp_path: Path) -> None:
 
     assert summary["no_checkpoint_written"] is False
     assert summary["checkpoint_complete_files"]
+
+
+def test_profile_matrix_stops_timed_out_container_when_cleanup_enabled(tmp_path: Path) -> None:
+    namespace = runpy.run_path(str(SCRIPT))
+    launch_variant = namespace["launch_variant"]
+    calls: list[list[str]] = []
+
+    class _Proc:
+        def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(cmd: list[str], **_kwargs):
+        calls.append(cmd)
+        if cmd and cmd[0] == "bash":
+            return _Proc(stdout="container=profile_timeout\nhost_out_dir=/tmp/profile_timeout\n")
+        return _Proc(stdout="ok\n")
+
+    launch_variant.__globals__["run"] = fake_run
+    launch_variant.__globals__["wait_container"] = lambda *_args, **_kwargs: {"exists": True, "running": True, "timed_out": True}
+    launch_variant.__globals__["inspect_container"] = lambda *_args, **_kwargs: {"exists": True, "running": False, "exit_code": 137, "oom_killed": False}
+    launch_variant.__globals__["summarize_run"] = lambda *_args, **_kwargs: {"checkpoint_complete_files": [], "no_checkpoint_written": True}
+
+    args = SimpleNamespace(
+        timeout_seconds=1,
+        poll_seconds=1,
+        profile=None,
+        curation_manifest="/tmp/curation_manifest.json",
+        profile_corpus=False,
+        mode="target_20b_native_1m_q4",
+        seq_len=128,
+        steps=1,
+        cleanup_containers=True,
+    )
+
+    result = launch_variant(tmp_path, tmp_path, "timeout_probe", {"name": "variant", "env": {}, "steps": 1}, args)
+
+    assert result["status"] == "timed_out"
+    assert result["timeout_stop"]["returncode"] == 0
+    assert result["container_state_after_timeout_stop"]["running"] is False
+    assert ["docker", "stop", "profile_timeout"] in calls
+    assert ["docker", "rm", "profile_timeout"] in calls
 
 
 def test_profile_matrix_default_selection_skips_opt_in_risky_variants() -> None:
