@@ -111,8 +111,9 @@ The May 25 posttraining retries mapped the first live memory boundary:
 `16,16,32` with 2048-token replay and 64-row fake quant could overfill the
 middle 3090, while `16,8,40` and `16,14,34` could overfill the RTX 8000 during
 backward recompute. That finding was superseded by the May 31 no-checkpoint
-optimization profiles: the fast-card launcher now defaults to `21,21,22`,
-`OMNICODER_FAKE_QUANT_CHUNK_ROWS=2048`, and
+optimization profiles: the fast-card launcher now defaults to `16,16,32`,
+`OMNICODER_FAKE_QUANT_CHUNK_ROWS=8192`,
+`OMNICODER_FFN_CHUNK_TOKENS=1024`, and
 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for the measured short and
 medium rungs. Longer-context rungs can still override placement when memory
 profiling shows the RTX 8000 needs more headroom.

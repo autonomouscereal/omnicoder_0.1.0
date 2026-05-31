@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Canonical AI-server launcher for the 20B-class native-1M target lane.
 # Host GPUs 0,4,6 are exposed as container CUDA devices 0,1,2.
-# The default 21/21/22 split is the fastest measured seq1024 q4 layout while
-# preserving the full 20B-class architecture; override to 16/16/32 when a
-# particular long-context rung needs extra RTX 8000 headroom.
+# The default 16/16/32 split preserves the full 64-layer/15360-MLP architecture
+# while keeping the 3090 ranks below the seq-2048 OOM line. Override to
+# 21/21/22 for short-context speed probes only.
 
 REPO="${OMNICODER_REPO:-/home/cereal/omnicoder_2026_work}"
 WEIGHTS_ROOT="${OMNICODER_WEIGHTS_ROOT:-/home/cereal/omnicoder_2026_work/weights}"
@@ -19,7 +19,10 @@ MODE="${OMNICODER_MODE:-run-full}"
 
 FAST_GPU_DEVICES="${OMNICODER_FAST_GPU_DEVICES:-0,4,6}"
 RANK_DEVICE_MAP="${OMNICODER_RANK_DEVICE_MAP:-0,1,2}"
-PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-21,21,22}"
+# Headroom placement keeps the RTX 3090 ranks below the seq-2048 OOM line while
+# preserving the full 64-layer/15360-MLP contract. Override to 21,21,22 for
+# short-context speed probes only.
+PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"
 IFS=',' read -r -a RANK_DEVICE_MAP_ITEMS <<< "$RANK_DEVICE_MAP"
 NPROC_PER_NODE="${OMNICODER_NPROC_PER_NODE:-${#RANK_DEVICE_MAP_ITEMS[@]}}"
 CUDA_ALLOC_CONF="${OMNICODER_CUDA_ALLOC_CONF:-expandable_segments:True}"
@@ -42,13 +45,18 @@ LEARNING_RATE="${OMNICODER_LR:-0.00002}"
 SAVE_INTERVAL="${OMNICODER_SAVE_INTERVAL:-32}"
 SKIP_FINAL_SAVE="${OMNICODER2026_SKIP_FINAL_SAVE:-0}"
 FAKE_QUANT="${OMNICODER_FAKE_QUANT:-1}"
-FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-2048}"
+# 8192 rows is the current best q4 seq-1024/2048 profile setting. Lower this
+# via env for longer context rungs if memory pressure appears.
+FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-8192}"
 FAKE_QUANT_MAX_FULL_ELEMENTS="${OMNICODER_FAKE_QUANT_MAX_FULL_ELEMENTS:-16777216}"
 ACTIVATION_CHECKPOINTING="${OMNICODER_ACTIVATION_CHECKPOINTING:-1}"
+ACTIVATION_CHECKPOINT_SEGMENT_SIZE="${OMNICODER2026_ACTIVATION_CHECKPOINT_SEGMENT_SIZE:-1}"
 PIPELINE_STAGE_SCHEDULE="${OMNICODER_PIPELINE_STAGE_SCHEDULE:-${OMNICODER_PIPELINE_SCHEDULE:-gpipe}}"
 PIPELINE_MICROBATCHES="${OMNICODER_PIPELINE_MICROBATCHES:-1}"
 LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"
-FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-256}"
+# 1024 was the best measured seq-1024/2048 q4 setting with full target-token
+# coverage; lower this via env if a longer-context rung needs memory relief.
+FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-1024}"
 LOSS_TOKEN_STRIDE="${OMNICODER_LOSS_TOKEN_STRIDE:-1}"
 MAX_LOSS_TOKENS_PER_SAMPLE="${OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE:-64}"
 OPTIMIZER_ADAFACTOR_CHUNK_ROWS="${OMNICODER_OPTIMIZER_IN_BACKWARD_ADAFACTOR_CHUNK_ROWS:-256}"
@@ -58,6 +66,7 @@ CHECKPOINT_SYNC_BACKEND="${OMNICODER2026_CHECKPOINT_SYNC_BACKEND:-filesystem}"
 CHECKPOINT_MARKER_TIMEOUT_SECONDS="${OMNICODER2026_CHECKPOINT_MARKER_TIMEOUT_SECONDS:-14400}"
 CHECKPOINT_MARKER_POLL_SECONDS="${OMNICODER2026_CHECKPOINT_MARKER_POLL_SECONDS:-2}"
 STEP_TIMING_INTERVAL="${OMNICODER2026_STEP_TIMING_INTERVAL:-8}"
+TELEMETRY_INTERVAL="${OMNICODER2026_TELEMETRY_INTERVAL:-8}"
 RANK_SKEW_INTERVAL="${OMNICODER2026_RANK_SKEW_INTERVAL:-32}"
 LOSS_DIAGNOSTICS_INTERVAL="${OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL:-8}"
 DETAILED_EVENT_LOG_INTERVAL="${OMNICODER2026_DETAILED_EVENT_LOG_INTERVAL:-0}"
@@ -299,6 +308,7 @@ if [[ "$MODE" == "run-long-context" || "$MODE" == "run-longctx" ]]; then
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
     "${activation_checkpointing_args[@]}"
+    --activation-checkpoint-segment-size "$ACTIVATION_CHECKPOINT_SEGMENT_SIZE"
     --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
     --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_eval_args[@]}"
@@ -351,6 +361,7 @@ elif [[ "$MODE" == "run-posttraining" || "$MODE" == "run-posttrain" ]]; then
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
     "${activation_checkpointing_args[@]}"
+    --activation-checkpoint-segment-size "$ACTIVATION_CHECKPOINT_SEGMENT_SIZE"
     --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
     --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_posttrain_args[@]}"
@@ -395,6 +406,7 @@ else
     --optimizer-in-backward-adafactor-decay-rate -0.8
     --optimizer-in-backward-adafactor-eps1 1e-30
     "${activation_checkpointing_args[@]}"
+    --activation-checkpoint-segment-size "$ACTIVATION_CHECKPOINT_SEGMENT_SIZE"
     --fake-quant-chunk-rows "$FAKE_QUANT_CHUNK_ROWS"
     --fake-quant-max-full-elements "$FAKE_QUANT_MAX_FULL_ELEMENTS"
     "${shared_posttrain_args[@]}"
@@ -424,6 +436,7 @@ docker_args=(
   -e OMNICODER2026_CHECKPOINT_MARKER_TIMEOUT_SECONDS="$CHECKPOINT_MARKER_TIMEOUT_SECONDS"
   -e OMNICODER2026_CHECKPOINT_MARKER_POLL_SECONDS="$CHECKPOINT_MARKER_POLL_SECONDS"
   -e OMNICODER2026_STEP_TIMING_INTERVAL="$STEP_TIMING_INTERVAL"
+  -e OMNICODER2026_TELEMETRY_INTERVAL="$TELEMETRY_INTERVAL"
   -e OMNICODER2026_RANK_SKEW_INTERVAL="$RANK_SKEW_INTERVAL"
   -e OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL="$LOSS_DIAGNOSTICS_INTERVAL"
   -e OMNICODER2026_DETAILED_EVENT_LOG_INTERVAL="$DETAILED_EVENT_LOG_INTERVAL"
@@ -451,6 +464,7 @@ docker_args=(
   -e OMNICODER_FAKE_QUANT="$FAKE_QUANT"
   -e OMNICODER_PROFILE_ALLOW_FAKE_QUANT_OFF="${OMNICODER_PROFILE_ALLOW_FAKE_QUANT_OFF:-0}"
   -e OMNICODER_ACTIVATION_CHECKPOINTING="$ACTIVATION_CHECKPOINTING"
+  -e OMNICODER2026_ACTIVATION_CHECKPOINT_SEGMENT_SIZE="$ACTIVATION_CHECKPOINT_SEGMENT_SIZE"
   -e OMNICODER_PIPELINE_STAGE_SCHEDULE="$PIPELINE_STAGE_SCHEDULE"
   -e OMNICODER_PIPELINE_MICROBATCHES="$PIPELINE_MICROBATCHES"
   -e TOKENIZERS_PARALLELISM=false

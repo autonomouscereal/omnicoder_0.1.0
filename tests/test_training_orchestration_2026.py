@@ -481,6 +481,7 @@ def _runtime_args(**overrides):
         "optimizer_in_backward_adafactor_eps1": 0.0,
         "rank_device_map": "",
         "activation_checkpointing": False,
+        "activation_checkpoint_segment_size": 0,
         "cpu_offload": False,
         "fake_quant_chunk_rows": 0,
         "fake_quant_max_full_elements": 0,
@@ -716,6 +717,57 @@ def test_pipeline_stage_launcher_uses_torchrun_without_dense_only_flags():
     assert cmd[cmd.index("--placement_layer_counts") + 1] == "16,16,32"
     assert cmd[cmd.index("--pipeline_schedule") + 1] == "gpipe"
     assert cmd[cmd.index("--pipeline_microbatches") + 1] == "1"
+    assert "--activation_checkpoint_segment_size" not in cmd
+
+
+def test_pipeline_stage_launcher_forwards_segmented_activation_checkpoint_size():
+    cfg = {
+        "training_plan": {
+            "distributed_training": {
+                "mode": "pipeline_stage",
+                "nproc_per_node": 3,
+                "rank_device_map": ["0", "1", "2"],
+                "placement_layer_counts": [16, 16, 32],
+                "precision": "fp16",
+                "init_dtype": "fp16",
+                "optimizer": "adafactor",
+                "pipeline_stage_schedule": "gpipe",
+                "pipeline_microbatches": 1,
+                "activation_checkpointing": True,
+                "activation_checkpoint_segment_size": 4,
+            }
+        }
+    }
+    args = _runtime_args()
+    cmd = orch.pretrain_launcher(cfg, args)
+    cmd.extend(["--preset", "omnicoder2026_20b_1m", "--data", "train.jsonl", "--out", "ckpt"])
+    orch.append_pretrain_runtime_args(cmd, cfg, args)
+    assert "omnicoder.training.pipeline_pretrain_2026_dense" in cmd
+    assert cmd[cmd.index("--activation_checkpoint_segment_size") + 1] == "4"
+
+
+def test_pipeline_stage_launcher_reads_segmented_activation_checkpoint_size_from_args():
+    cfg = {
+        "training_plan": {
+            "distributed_training": {
+                "mode": "pipeline_stage",
+                "nproc_per_node": 3,
+                "rank_device_map": ["0", "1", "2"],
+                "placement_layer_counts": [16, 16, 32],
+                "precision": "fp16",
+                "init_dtype": "fp16",
+                "optimizer": "adafactor",
+                "pipeline_stage_schedule": "gpipe",
+                "pipeline_microbatches": 1,
+                "activation_checkpointing": True,
+            }
+        }
+    }
+    args = _runtime_args(activation_checkpoint_segment_size=2)
+    cmd = orch.pretrain_launcher(cfg, args)
+    cmd.extend(["--preset", "omnicoder2026_20b_1m", "--data", "train.jsonl", "--out", "ckpt"])
+    orch.append_pretrain_runtime_args(cmd, cfg, args)
+    assert cmd[cmd.index("--activation_checkpoint_segment_size") + 1] == "2"
 
 
 def test_pipeline_stage_uses_placement_devices_as_rank_map_alias():
@@ -2117,10 +2169,10 @@ def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args
     assert 'AI_DATA_ROOT="${OMNICODER_AI_DATA_ROOT:-/mnt/ai_data}"' in script
     assert '-v "$AI_DATA_ROOT:/mnt/ai_data"' in script
     assert 'STAGE_ORDER="${OMNICODER_STAGE_ORDER:-text,code,tool,image,video,audio,music,tts,ocr,long_context}"' in script
-    assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-21,21,22}"' in script
-    assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-2048}"' in script
+    assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"' in script
+    assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-8192}"' in script
     assert 'LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"' in script
-    assert 'FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-256}"' in script
+    assert 'FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-1024}"' in script
     assert 'MAX_LOSS_TOKENS_PER_SAMPLE="${OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE:-64}"' in script
     assert 'STEP_TIMING_INTERVAL="${OMNICODER2026_STEP_TIMING_INTERVAL:-8}"' in script
     assert 'RANK_SKEW_INTERVAL="${OMNICODER2026_RANK_SKEW_INTERVAL:-32}"' in script
@@ -2171,11 +2223,31 @@ def test_profile_matrix_has_loss64_and_block_timing_variants():
     assert variants["gdn2_compiled_fakequant_chunk256_loss64"]["default"] is False
     assert compiled["OMNICODER_FAKE_QUANT"] == "1"
     assert compiled["OMNICODER2026_GDN2_COMPILED_CHUNKS"] == "1"
-    assert compiled["OMNICODER2026_GDN2_COMPILED_MODE"] == "full"
+    assert compiled["OMNICODER2026_GDN2_COMPILED_MODE"] == "chunked"
+    assert compiled["OMNICODER2026_GDN2_COMPILED_CHUNK_TOKENS"] == "32"
     assert variants["gdn2_compiled_fakequant_chunk256_loss64"]["steps"] == 4
 
     assert variants["gdn2_jit_q4_loss64"]["default"] is False
     assert variants["gdn2_jit_q4_loss64"]["env"]["OMNICODER2026_GDN2_JIT_SCAN"] == "1"
+    assert variants["gdn2_compiled_headroom_q4_chunk8192_ffn1024_loss64"]["default"] is False
+    assert variants["gdn2_compiled_headroom_q4_chunk8192_ffn1024_loss64"]["env"]["OMNICODER2026_GDN2_COMPILED_CHUNKS"] == "1"
+    assert variants["gdn2_compiled_headroom_q4_chunk8192_ffn1024_loss64"]["env"]["OMNICODER2026_GDN2_COMPILED_MODE"] == "chunked"
+    assert variants["gdn2_compiled_headroom_q4_chunk8192_ffn1024_loss64"]["env"]["OMNICODER_FFN_CHUNK_TOKENS"] == "1024"
+    assert variants["gdn2_jit_headroom_q4_chunk8192_ffn1024_loss64"]["default"] is False
+    assert variants["gdn2_jit_headroom_q4_chunk8192_ffn1024_loss64"]["env"]["OMNICODER2026_GDN2_JIT_SCAN"] == "1"
+    assert variants["gdn2_jit_headroom_q4_chunk8192_ffn1024_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "8192"
+    assert variants["gpipe_batch2_headroom_q4_chunk8192_ffn1024_loss64"]["default"] is False
+    assert variants["gpipe_batch2_headroom_q4_chunk8192_ffn1024_loss64"]["env"]["OMNICODER_BATCH_SIZE"] == "2"
+    assert variants["gpipe_batch2_headroom_q4_chunk8192_ffn1024_loss64"]["env"]["OMNICODER_FFN_CHUNK_TOKENS"] == "1024"
+    assert variants["onef1b_batch2_headroom_q4_chunk8192_ffn1024_loss64"]["default"] is False
+    assert variants["onef1b_batch2_headroom_q4_chunk8192_ffn1024_loss64"]["env"]["OMNICODER_PIPELINE_STAGE_SCHEDULE"] == "1f1b"
+    assert variants["onef1b_batch2_headroom_q4_chunk8192_ffn1024_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "8192"
+    assert variants["gpipe_batch2_headroom_q4_chunk4096_ffn1024_loss64"]["default"] is False
+    assert variants["gpipe_batch2_headroom_q4_chunk4096_ffn1024_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "4096"
+    assert variants["gpipe_batch2_headroom_q4_chunk4096_ffn1024_loss64"]["env"]["OMNICODER_BATCH_SIZE"] == "2"
+    assert variants["onef1b_batch2_headroom_q4_chunk4096_ffn1024_loss64"]["default"] is False
+    assert variants["onef1b_batch2_headroom_q4_chunk4096_ffn1024_loss64"]["env"]["OMNICODER_PIPELINE_STAGE_SCHEDULE"] == "1f1b"
+    assert variants["onef1b_batch2_headroom_q4_chunk4096_ffn1024_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "4096"
     assert variants["fakequant_chunk1024_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "1024"
     assert variants["fakequant_chunk2048_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "2048"
     assert variants["fakequant_chunk2048_loss64_diagnostics"]["default"] is False

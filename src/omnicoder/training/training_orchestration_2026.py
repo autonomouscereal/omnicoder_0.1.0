@@ -3607,6 +3607,13 @@ def distributed_training_plan(cfg: dict[str, Any], args: argparse.Namespace | No
         activation_checkpointing = True
     else:
         activation_checkpointing = bool(arg_value(args, "activation_checkpointing", False) or distributed.get("activation_checkpointing"))
+    activation_checkpoint_segment_size = int(
+        arg_value(args, "activation_checkpoint_segment_size", 0)
+        or os.getenv("OMNICODER2026_ACTIVATION_CHECKPOINT_SEGMENT_SIZE", "")
+        or distributed.get("activation_checkpoint_segment_size")
+        or plan.get("activation_checkpoint_segment_size")
+        or 1
+    )
     cpu_offload = bool(arg_value(args, "cpu_offload", False) or distributed.get("cpu_offload"))
     fake_quant_chunk_rows = int(arg_value(args, "fake_quant_chunk_rows", 0) or distributed.get("fake_quant_chunk_rows") or plan.get("fake_quant_chunk_rows") or 0)
     fake_quant_max_full_elements = int(arg_value(args, "fake_quant_max_full_elements", 0) or distributed.get("fake_quant_max_full_elements") or plan.get("fake_quant_max_full_elements") or 0)
@@ -3675,6 +3682,7 @@ def distributed_training_plan(cfg: dict[str, Any], args: argparse.Namespace | No
         "optimizer_in_backward_adafactor_eps1": optimizer_in_backward_adafactor_eps1,
         "rank_device_map": rank_device_map,
         "activation_checkpointing": activation_checkpointing,
+        "activation_checkpoint_segment_size": max(1, activation_checkpoint_segment_size),
         "cpu_offload": cpu_offload,
         "fake_quant_chunk_rows": fake_quant_chunk_rows,
         "fake_quant_max_full_elements": fake_quant_max_full_elements,
@@ -3745,6 +3753,9 @@ def append_pretrain_runtime_args(cmd: list[str], cfg: dict[str, Any], args: argp
             cmd.extend(["--rank_device_map", str(distributed["rank_device_map"])])
         if bool(distributed["activation_checkpointing"]):
             cmd.append("--activation_checkpointing")
+        checkpoint_segment_size = int(distributed.get("activation_checkpoint_segment_size") or 1)
+        if checkpoint_segment_size > 1:
+            cmd.extend(["--activation_checkpoint_segment_size", str(checkpoint_segment_size)])
         if int(distributed.get("fake_quant_chunk_rows") or 0) > 0:
             cmd.extend(["--fake_quant_chunk_rows", str(int(distributed["fake_quant_chunk_rows"]))])
         if int(distributed.get("fake_quant_max_full_elements") or 0) > 0:
@@ -3796,6 +3807,9 @@ def append_pretrain_runtime_args(cmd: list[str], cfg: dict[str, Any], args: argp
         cmd.extend(["--rank_device_map", str(distributed["rank_device_map"])])
     if bool(distributed["activation_checkpointing"]):
         cmd.append("--activation_checkpointing")
+    checkpoint_segment_size = int(distributed.get("activation_checkpoint_segment_size") or 1)
+    if checkpoint_segment_size > 1 and pipeline_stage:
+        cmd.extend(["--activation_checkpoint_segment_size", str(checkpoint_segment_size)])
     if bool(distributed["cpu_offload"]):
         cmd.append("--cpu_offload")
     if int(distributed.get("fake_quant_chunk_rows") or 0) > 0:
@@ -6244,6 +6258,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--pipeline-async-streams", dest="pipeline_async_streams", action="store_true", default=None)
     run.add_argument("--no-pipeline-async-streams", dest="pipeline_async_streams", action="store_false")
     run.add_argument("--activation-checkpointing", action="store_true")
+    run.add_argument("--activation-checkpoint-segment-size", "--activation_checkpoint_segment_size", dest="activation_checkpoint_segment_size", type=int, default=0)
     run.add_argument("--cpu-offload", action="store_true")
     run.add_argument("--fake-quant-chunk-rows", dest="fake_quant_chunk_rows", type=int, default=0)
     run.add_argument("--fake-quant-max-full-elements", dest="fake_quant_max_full_elements", type=int, default=0)
@@ -6322,6 +6337,7 @@ def main(argv: list[str] | None = None) -> int:
     long.add_argument("--pipeline-async-streams", dest="pipeline_async_streams", action="store_true", default=None)
     long.add_argument("--no-pipeline-async-streams", dest="pipeline_async_streams", action="store_false")
     long.add_argument("--activation-checkpointing", action="store_true")
+    long.add_argument("--activation-checkpoint-segment-size", "--activation_checkpoint_segment_size", dest="activation_checkpoint_segment_size", type=int, default=0)
     long.add_argument("--cpu-offload", action="store_true")
     long.add_argument("--fake-quant-chunk-rows", dest="fake_quant_chunk_rows", type=int, default=0)
     long.add_argument("--fake-quant-max-full-elements", dest="fake_quant_max_full_elements", type=int, default=0)
@@ -6384,6 +6400,7 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--pipeline-async-streams", dest="pipeline_async_streams", action="store_true", default=None)
     post.add_argument("--no-pipeline-async-streams", dest="pipeline_async_streams", action="store_false")
     post.add_argument("--activation-checkpointing", action="store_true")
+    post.add_argument("--activation-checkpoint-segment-size", "--activation_checkpoint_segment_size", dest="activation_checkpoint_segment_size", type=int, default=0)
     post.add_argument("--cpu-offload", action="store_true")
     post.add_argument("--fake-quant-chunk-rows", dest="fake_quant_chunk_rows", type=int, default=0)
     post.add_argument("--fake-quant-max-full-elements", dest="fake_quant_max_full_elements", type=int, default=0)
@@ -6460,6 +6477,7 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--pipeline-async-streams", dest="pipeline_async_streams", action="store_true", default=None)
     full.add_argument("--no-pipeline-async-streams", dest="pipeline_async_streams", action="store_false")
     full.add_argument("--activation-checkpointing", action="store_true")
+    full.add_argument("--activation-checkpoint-segment-size", "--activation_checkpoint_segment_size", dest="activation_checkpoint_segment_size", type=int, default=0)
     full.add_argument("--cpu-offload", action="store_true")
     full.add_argument("--fake-quant-chunk-rows", dest="fake_quant_chunk_rows", type=int, default=0)
     full.add_argument("--fake-quant-max-full-elements", dest="fake_quant_max_full_elements", type=int, default=0)

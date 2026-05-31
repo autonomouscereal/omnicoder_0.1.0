@@ -151,6 +151,34 @@ def test_gated_deltanet2_jit_scan_matches_reference(device):
     torch.testing.assert_close(actual_state, expected_state, atol=1e-6, rtol=1e-6)
 
 
+def test_gated_deltanet2_full_compile_mode_caps_to_chunked(monkeypatch):
+    import omnicoder.modeling.kda_2026 as kda_module
+
+    torch.manual_seed(31)
+    calls: list[int] = []
+
+    def fake_compiled_scan(q_f, k_f, v_f, write_f, forget_f, state):
+        calls.append(int(q_f.shape[1]))
+        return kda_module._gdn2_tensor_scan(q_f, k_f, v_f, write_f, forget_f, state)
+
+    monkeypatch.setattr(kda_module, "_compiled_gdn2_scan", fake_compiled_scan)
+    monkeypatch.setenv("OMNICODER2026_GDN2_COMPILED_MODE", "full")
+    monkeypatch.setenv("OMNICODER2026_GDN2_COMPILED_FULL_MAX_TOKENS", "2")
+    monkeypatch.setenv("OMNICODER2026_GDN2_COMPILED_CHUNK_TOKENS", "3")
+    q = torch.randn(1, 7, 2, 4) * 0.1
+    k = torch.randn(1, 7, 2, 4) * 0.1
+    v = torch.randn(1, 7, 2, 4) * 0.1
+    write = torch.randn(1, 7, 2) * 0.1
+    forget = torch.randn(1, 7, 2) * 0.1
+
+    expected, expected_state = gated_deltanet2_pytorch(q, k, v, write_gate=write, forget_gate=forget)
+    actual, actual_state = _gated_deltanet2_compiled_chunks(q, k, v, write_gate=write, forget_gate=forget)
+
+    assert calls == [3, 3]
+    torch.testing.assert_close(actual, expected, atol=2e-4, rtol=2e-3)
+    torch.testing.assert_close(actual_state, expected_state, atol=2e-4, rtol=2e-3)
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="JIT GDN2 training parity is most relevant on CUDA")
 def test_gated_deltanet2_module_jit_scan_gradient_parity_cuda(monkeypatch):
     torch.manual_seed(30)

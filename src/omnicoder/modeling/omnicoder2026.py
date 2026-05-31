@@ -295,12 +295,20 @@ class _ChunkedFakeQuantLinearSTE(torch.autograd.Function):
         ctx.save_for_backward(x, weight)
         x_flat = x.reshape(-1, x.shape[-1])
         out_features = int(weight.shape[0])
-        output = x_flat.new_empty((x_flat.shape[0], out_features))
+        compute_dtype = weight.dtype if weight.is_cuda and weight.dtype in {torch.float16, torch.bfloat16} else x_flat.dtype
+        x_for_mm = x_flat.to(dtype=compute_dtype) if x_flat.dtype != compute_dtype else x_flat
+        output = torch.empty((x_flat.shape[0], out_features), device=x_flat.device, dtype=compute_dtype)
         for start in range(0, out_features, ctx.chunk_rows):
             end = min(out_features, start + ctx.chunk_rows)
             q_weight = _fake_quant_weight_value(weight[start:end], ctx.group_size)
-            q_bias = bias[start:end] if bias is not None else None
-            output[:, start:end] = F.linear(x_flat, q_weight, q_bias)
+            if q_weight.dtype != compute_dtype:
+                q_weight = q_weight.to(dtype=compute_dtype)
+            output_chunk = output[:, start:end]
+            torch.mm(x_for_mm, q_weight.t(), out=output_chunk)
+            if bias is not None:
+                q_bias = bias[start:end]
+                output_chunk.add_(q_bias.to(dtype=compute_dtype) if q_bias.dtype != compute_dtype else q_bias)
+        output = output.to(dtype=x.dtype) if output.dtype != x.dtype else output
         return output.reshape((*x.shape[:-1], out_features))
 
     @staticmethod
@@ -316,19 +324,37 @@ class _ChunkedFakeQuantLinearSTE(torch.autograd.Function):
 
         grad_x: torch.Tensor | None = None
         if needs_x:
-            grad_x_flat = torch.zeros_like(x_flat)
+            grad_x_compute_dtype = grad_output_flat.dtype
+            if weight.dtype == torch.float32 and grad_output_flat.dtype != torch.float32:
+                grad_x_compute_dtype = torch.float32
+            grad_x_flat = torch.zeros(
+                x_flat.shape,
+                dtype=grad_x_compute_dtype,
+                device=x_flat.device,
+            )
             for start in range(0, weight.shape[0], chunk_rows):
                 end = min(int(weight.shape[0]), start + chunk_rows)
                 q_weight = _fake_quant_weight_value(weight[start:end], group_size)
-                grad_x_flat.add_(grad_output_flat[:, start:end].matmul(q_weight))
+                grad_output_chunk = grad_output_flat[:, start:end]
+                if q_weight.dtype != grad_x_compute_dtype:
+                    q_weight = q_weight.to(dtype=grad_x_compute_dtype)
+                if grad_output_chunk.dtype != grad_x_compute_dtype:
+                    grad_output_chunk = grad_output_chunk.to(dtype=grad_x_compute_dtype)
+                torch.addmm(grad_x_flat, grad_output_chunk, q_weight, beta=1.0, alpha=1.0, out=grad_x_flat)
+            if grad_x_flat.dtype != x_flat.dtype:
+                grad_x_flat = grad_x_flat.to(dtype=x_flat.dtype)
             grad_x = grad_x_flat.reshape_as(x)
 
         grad_weight: torch.Tensor | None = None
         if needs_weight:
             grad_weight = torch.empty_like(weight)
+            x_for_weight = x_flat.to(dtype=weight.dtype) if x_flat.dtype != weight.dtype else x_flat
             for start in range(0, weight.shape[0], chunk_rows):
                 end = min(int(weight.shape[0]), start + chunk_rows)
-                grad_weight[start:end] = grad_output_flat[:, start:end].transpose(0, 1).matmul(x_flat)
+                grad_output_chunk = grad_output_flat[:, start:end]
+                if grad_output_chunk.dtype != weight.dtype:
+                    grad_output_chunk = grad_output_chunk.to(dtype=weight.dtype)
+                torch.mm(grad_output_chunk.transpose(0, 1), x_for_weight, out=grad_weight[start:end])
 
         grad_bias: torch.Tensor | None = None
         if needs_bias and ctx.has_bias:
@@ -927,6 +953,15 @@ class SparseLatentAttention(nn.Module):
     def _global_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, block_size: int) -> torch.Tensor:
         t = q.shape[2]
         n_blocks = k.shape[2]
+        q_block_pairs = int(t) * int(n_blocks)
+        full_cap = max(0, _env_int("OMNICODER2026_GLOBAL_ATTENTION_FULL_MAX_QBLOCKS", 1_048_576))
+        csa_all_blocks = self.mode != "csa" or int(n_blocks) <= max(1, int(self.cfg.csa_top_k_blocks))
+        if full_cap > 0 and q_block_pairs <= full_cap and csa_all_blocks:
+            positions = _cached_arange(self, q, t, name="_sparse_position_arange_cache")
+            q_block = torch.div(positions, int(block_size), rounding_mode="floor")
+            block_idx = _cached_arange(self, q, n_blocks, name="_sparse_block_arange_cache")
+            mask = block_idx.view(1, -1) < q_block.view(-1, 1)
+            return self._sink_attention(q, k, v, mask)
         chunk = max(1, int(self.cfg.local_window))
         output = q.new_empty(q.shape)
         for start in range(0, t, chunk):
@@ -1052,6 +1087,71 @@ class BlockAttentionResidual(nn.Module):
             positions = torch.cat((positions[:1], tail_positions), dim=0)
         return summaries, positions
 
+    def _residual_attention_sdpa(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        summaries: torch.Tensor,
+        summary_positions: torch.Tensor,
+    ) -> torch.Tensor:
+        token_blocks = torch.div(
+            _cached_arange(self, q, q.shape[1], name="_attnres_token_arange_cache"),
+            self.block_size,
+            rounding_mode="floor",
+        )
+        # SDPA boolean masks use True for positions that may participate, which
+        # matches the old masked_fill(summary_block > token_block) semantics.
+        mask = summary_positions.view(1, -1) <= token_blocks.view(-1, 1)
+        return F.scaled_dot_product_attention(
+            q.unsqueeze(1),
+            k.unsqueeze(1),
+            summaries.unsqueeze(1),
+            attn_mask=mask.view(1, 1, q.shape[1], k.shape[1]),
+            dropout_p=0.0,
+        ).squeeze(1)
+
+    def _residual_attention_chunked(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        summaries: torch.Tensor,
+        summary_positions: torch.Tensor,
+    ) -> torch.Tensor:
+        residual_context = summaries.new_empty((q.shape[0], q.shape[1], summaries.shape[-1]))
+        chunk_tokens = self.chunk_tokens
+        k_t = k.transpose(-1, -2)
+        inv_scale = 1.0 / math.sqrt(max(1, q.shape[-1]))
+        token_blocks_all = torch.div(
+            _cached_arange(self, q, q.shape[1], name="_attnres_token_arange_cache"),
+            self.block_size,
+            rounding_mode="floor",
+        )
+        block_positions = summary_positions.view(1, 1, -1)
+        for start in range(0, q.shape[1], chunk_tokens):
+            end = min(q.shape[1], start + chunk_tokens)
+            q_chunk = q[:, start:end, :]
+            scores = torch.matmul(q_chunk, k_t) * inv_scale
+            token_blocks = token_blocks_all[start:end].view(1, -1, 1)
+            scores = scores.masked_fill(block_positions > token_blocks, torch.finfo(scores.dtype).min)
+            weights = torch.softmax(scores.float(), dim=-1).to(dtype=summaries.dtype)
+            residual_context[:, start:end, :] = torch.matmul(weights, summaries)
+        return residual_context
+
+    def _residual_attention_context(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        summaries: torch.Tensor,
+        summary_positions: torch.Tensor,
+    ) -> torch.Tensor:
+        if q.shape[1] == 0 or k.shape[1] == 0:
+            return summaries.new_empty((q.shape[0], q.shape[1], summaries.shape[-1]))
+        pair_count = int(q.shape[1]) * int(k.shape[1])
+        max_sdpa_pairs = max(0, _env_int("OMNICODER2026_BLOCK_ATTENTION_RESIDUAL_SDPA_MAX_TOKEN_BLOCK_PAIRS", 4_194_304))
+        if max_sdpa_pairs > 0 and pair_count <= max_sdpa_pairs:
+            return self._residual_attention_sdpa(q, k, summaries, summary_positions)
+        return self._residual_attention_chunked(q, k, summaries, summary_positions)
+
     def forward(self, x: torch.Tensor, update: torch.Tensor) -> torch.Tensor:
         if update.dtype != x.dtype:
             update = update.to(dtype=x.dtype)
@@ -1060,24 +1160,7 @@ class BlockAttentionResidual(nn.Module):
         summaries, summary_positions = self._block_summaries(x)
         q = self.q(update)
         k = self.k(summaries)
-        block_positions = summary_positions.view(1, 1, -1)
-        residual_context = update.new_empty(update.shape)
-        chunk_tokens = self.chunk_tokens
-        k_t = k.transpose(-1, -2)
-        inv_scale = 1.0 / math.sqrt(max(1, q.shape[-1]))
-        token_blocks_all = torch.div(
-            _cached_arange(self, x, x.shape[1], name="_attnres_token_arange_cache"),
-            self.block_size,
-            rounding_mode="floor",
-        )
-        for start in range(0, x.shape[1], chunk_tokens):
-            end = min(x.shape[1], start + chunk_tokens)
-            q_chunk = q[:, start:end, :]
-            scores = torch.matmul(q_chunk, k_t) * inv_scale
-            token_blocks = token_blocks_all[start:end].view(1, -1, 1)
-            scores = scores.masked_fill(block_positions > token_blocks, torch.finfo(scores.dtype).min)
-            weights = torch.softmax(scores.float(), dim=-1).to(dtype=x.dtype)
-            residual_context[:, start:end, :] = torch.matmul(weights, summaries)
+        residual_context = self._residual_attention_context(q, k, summaries, summary_positions)
         gate = torch.sigmoid(self.update_gate(x)).to(dtype=x.dtype)
         scale = self.scale.to(device=x.device, dtype=x.dtype)
         return x + update + torch.tanh(scale) * gate * residual_context
@@ -1323,8 +1406,14 @@ class OmniCoder2026(nn.Module):
         reset_omnicoder2026_parameters(self, cfg)
         self._weighted_device_map: dict[str, object] | None = None
         self._weighted_pipeline_stages: list[tuple[torch.device, int, int]] = []
+        self._module_device_cache: dict[str, torch.device] = {}
         self._checkpoint_blocks = bool(checkpoint_blocks)
         self.last_reasoning_diagnostics: dict[str, Any] = {}
+
+    def _apply(self, fn: Any) -> "OmniCoder2026":
+        result = super()._apply(fn)
+        self._module_device_cache = {}
+        return result
 
     @staticmethod
     def _module_device(module: nn.Module) -> torch.device:
@@ -1333,6 +1422,28 @@ class OmniCoder2026(nn.Module):
         for buffer in module.buffers(recurse=True):
             return buffer.device
         return torch.device("cpu")
+
+    def _cached_module_device(self, name: str, module: nn.Module) -> torch.device:
+        cache = getattr(self, "_module_device_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._module_device_cache = cache
+        cached = cache.get(name)
+        if cached is not None:
+            return cached
+        device = self._module_device(module)
+        cache[name] = device
+        return device
+
+    def _refresh_weighted_device_cache(self) -> None:
+        cache: dict[str, torch.device] = {
+            "embed": self._module_device(self.embed),
+            "norm": self._module_device(self.norm),
+            "native_media_bridge": self._module_device(self.native_media_bridge),
+        }
+        for index, block in enumerate(self.blocks):
+            cache[f"blocks.{index}"] = self._module_device(block)
+        self._module_device_cache = cache
 
     def _chunked_lm_loss(self, hidden: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """Compute next-token loss without materializing full-sequence vocab logits."""
@@ -1410,7 +1521,7 @@ class OmniCoder2026(nn.Module):
         return x, None
 
     def _forward_weighted_hidden(self, input_ids: torch.Tensor) -> torch.Tensor:
-        embed_device = self._module_device(self.embed)
+        embed_device = self._cached_module_device("embed", self.embed)
         if input_ids.device != embed_device:
             input_ids = input_ids.to(embed_device, non_blocking=True)
         x = self.embed(input_ids)
@@ -1419,7 +1530,7 @@ class OmniCoder2026(nn.Module):
                 x = self._run_stage(x, start, end, device)
             return x
         for index, block in enumerate(self.blocks):
-            block_device = self._module_device(block)
+            block_device = self._cached_module_device(f"blocks.{index}", block)
             x = self._run_stage(x, index, index + 1, block_device)
         return x
 
@@ -1464,7 +1575,7 @@ class OmniCoder2026(nn.Module):
         if not torch.cuda.is_available() or len(self._weighted_pipeline_stages) <= 1:
             return False
         devices = [device for device, _, _ in self._weighted_pipeline_stages]
-        head_device = self._module_device(self.norm)
+        head_device = self._cached_module_device("norm", self.norm)
         return head_device.type == "cuda" and all(device.type == "cuda" for device in devices)
 
     def _forward_weighted_pipeline_loss_serial(
@@ -1472,7 +1583,7 @@ class OmniCoder2026(nn.Module):
         input_chunks: list[torch.Tensor],
         label_chunks: list[torch.Tensor],
     ) -> torch.Tensor:
-        head_device = self._module_device(self.norm)
+        head_device = self._cached_module_device("norm", self.norm)
         loss_sums: list[torch.Tensor] = []
         total_tokens = 0
         for input_chunk, label_chunk in zip(input_chunks, label_chunks, strict=True):
@@ -1492,7 +1603,7 @@ class OmniCoder2026(nn.Module):
         label_chunks: list[torch.Tensor],
     ) -> torch.Tensor:
         stages = list(self._weighted_pipeline_stages)
-        head_device = self._module_device(self.norm)
+        head_device = self._cached_module_device("norm", self.norm)
         stream_cache: dict[str, torch.cuda.Stream] = {}
 
         def stage_stream(device: torch.device) -> torch.cuda.Stream:
@@ -1511,7 +1622,7 @@ class OmniCoder2026(nn.Module):
         loss_sums: list[torch.Tensor | None] = [None] * len(input_chunks)
         loss_events: list[torch.cuda.Event | None] = [None] * len(input_chunks)
         token_counts = [max(0, int(labels[:, 1:].numel())) for labels in label_chunks]
-        embed_device = self._module_device(self.embed)
+        embed_device = self._cached_module_device("embed", self.embed)
         embed_stream = stage_stream(embed_device)
         embedded_chunks: list[torch.Tensor] = []
         embedded_events: list[torch.cuda.Event] = []
@@ -1615,6 +1726,7 @@ class OmniCoder2026(nn.Module):
             ],
         }
         self._weighted_pipeline_stages = self._contiguous_pipeline_stages(layer_devices)
+        self._refresh_weighted_device_cache()
         return dict(self._weighted_device_map)
 
     def forward(
@@ -1636,13 +1748,13 @@ class OmniCoder2026(nn.Module):
     ) -> dict[str, torch.Tensor | list[torch.Tensor] | None]:
         if input_ids.shape[1] > self.max_seq_len:
             raise ValueError(f"sequence length {input_ids.shape[1]} exceeds native context {self.max_seq_len}")
-        embed_device = self._module_device(self.embed)
+        embed_device = self._cached_module_device("embed", self.embed)
         if input_ids.device != embed_device:
             input_ids = input_ids.to(embed_device, non_blocking=True)
         x = self.embed(input_ids)
         native_media_token_count = 0
         if native_media_features is not None:
-            media_device = self._module_device(self.native_media_bridge)
+            media_device = self._cached_module_device("native_media_bridge", self.native_media_bridge)
             if native_media_features.device != media_device:
                 native_media_features = native_media_features.to(media_device, non_blocking=True)
             if native_media_type_ids is not None and native_media_type_ids.device != media_device:
@@ -1654,12 +1766,12 @@ class OmniCoder2026(nn.Module):
             if native_media_token_count > x.shape[1]:
                 raise ValueError("native media feature tokens cannot exceed input_ids length in aligned mode")
             x[:, :native_media_token_count, :].add_(media_x.to(device=x.device, dtype=x.dtype))
-        for block in self.blocks:
-            block_device = self._module_device(block)
+        for index, block in enumerate(self.blocks):
+            block_device = self._cached_module_device(f"blocks.{index}", block)
             if x.device != block_device:
                 x = x.to(block_device, non_blocking=True)
             x = self._run_block(block, x)
-        head_device = self._module_device(self.norm)
+        head_device = self._cached_module_device("norm", self.norm)
         if x.device != head_device:
             x = x.to(head_device, non_blocking=True)
         reasoner_controls: dict[str, torch.Tensor] | None = None
@@ -1699,7 +1811,7 @@ class OmniCoder2026(nn.Module):
                 result["flow_loss"] = flow_loss
                 result["loss"] = flow_loss if loss is None else loss + flow_loss
         if native_media_features is not None and (native_media_targets is not None or return_aux):
-            media_device = self._module_device(self.native_media_bridge)
+            media_device = self._cached_module_device("native_media_bridge", self.native_media_bridge)
             media_hidden = hidden[:, :native_media_token_count, :]
             if media_hidden.device != media_device:
                 media_hidden = media_hidden.to(media_device, non_blocking=True)

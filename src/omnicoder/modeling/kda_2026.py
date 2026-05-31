@@ -230,21 +230,23 @@ def _gated_deltanet2_compiled_chunks(
         raise ValueError("compiled GDN2 path requires tensor gates")
     state = _initial_state(q, v.shape[-1], initial_state)
     chunk = max(1, int(chunk_size if chunk_size is not None else _env_int("OMNICODER2026_GDN2_COMPILED_CHUNK_TOKENS", 32)))
-    mode = str(os.environ.get("OMNICODER2026_GDN2_COMPILED_MODE", "full")).strip().lower()
+    mode = str(os.environ.get("OMNICODER2026_GDN2_COMPILED_MODE", "chunked")).strip().lower()
     if mode in {"full", "fullscan", "scan"}:
-        try:
-            y, state = _compiled_gdn2_scan(q_f, k_f, v_f, write_f, forget_f, state)
-            return y.to(dtype=v.dtype), state
-        except Exception:
-            _GDN2_COMPILE_DISABLED = True
-            return gated_deltanet2_pytorch(
-                q,
-                k,
-                v,
-                write_gate=write_gate,
-                forget_gate=forget_gate,
-                initial_state=initial_state,
-            )
+        max_full_tokens = max(1, _env_int("OMNICODER2026_GDN2_COMPILED_FULL_MAX_TOKENS", 128))
+        if q_f.shape[1] <= max_full_tokens:
+            try:
+                y, state = _compiled_gdn2_scan(q_f, k_f, v_f, write_f, forget_f, state)
+                return y.to(dtype=v.dtype), state
+            except Exception:
+                _GDN2_COMPILE_DISABLED = True
+                return gated_deltanet2_pytorch(
+                    q,
+                    k,
+                    v,
+                    write_gate=write_gate,
+                    forget_gate=forget_gate,
+                    initial_state=initial_state,
+                )
     outputs: list[torch.Tensor] = []
     for start in range(0, q_f.shape[1], chunk):
         end = min(q_f.shape[1], start + chunk)

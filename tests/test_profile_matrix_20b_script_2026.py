@@ -176,15 +176,37 @@ def test_profile_matrix_default_selection_skips_opt_in_risky_variants() -> None:
 
     assert missing == []
     assert "fakequant_chunk2048_loss64" in names
+    assert "fakequant_chunk4096_loss64" not in names
+    assert "fakequant_chunk8192_loss64" not in names
+    assert "headroom_16_16_32_q4_chunk2048_loss64" not in names
+    assert "headroom_16_16_32_q4_chunk8192_loss64" not in names
     assert "gdn2_compiled_fakequant_chunk256_loss64" not in names
     assert "gdn2_jit_q4_loss64" not in names
     assert "fakequant_chunk2048_loss64_diagnostics" not in names
     assert "block_timing_q4_chunk2048_loss64" not in names
+    assert "checkpoint_segment2_q4_chunk2048_loss64" not in names
+    assert "checkpoint_segment4_q4_chunk2048_loss64" not in names
+    assert "reasoning_effort2_q4_chunk2048_loss64" not in names
+    assert "reasoning_efforthigh_q4_chunk2048_loss64" not in names
+    assert "p2p_on_ffn_chunk1024_headroom_q4_chunk8192_loss64" not in names
+    assert "gdn2_compiled_headroom_q4_chunk8192_ffn1024_loss64" not in names
+    assert "gdn2_jit_headroom_q4_chunk8192_ffn1024_loss64" not in names
     assert "gpipe_mb2_q4_chunk2048_loss64" not in names
     assert "onef1b_mb2_q4_chunk2048_loss64" not in names
     assert "actckpt_off_q4_chunk2048_loss64" not in names
     assert "actckpt_off_q4_loss64" not in names
 
-    selected, missing = select_variants({"gdn2_jit_q4_loss64", "block_timing_q4_chunk2048_loss64", "gpipe_mb2_q4_chunk2048_loss64", "missing_variant"})
-    assert [variant["name"] for variant in selected] == ["gdn2_jit_q4_loss64", "block_timing_q4_chunk2048_loss64", "gpipe_mb2_q4_chunk2048_loss64"]
+    selected, missing = select_variants({"gdn2_jit_q4_loss64", "fakequant_chunk4096_loss64", "headroom_16_16_32_q4_chunk8192_loss64", "block_timing_q4_chunk2048_loss64", "checkpoint_segment2_q4_chunk2048_loss64", "reasoning_effort2_q4_chunk2048_loss64", "p2p_on_ffn_chunk1024_headroom_q4_chunk8192_loss64", "gdn2_compiled_headroom_q4_chunk8192_ffn1024_loss64", "gdn2_jit_headroom_q4_chunk8192_ffn1024_loss64", "gpipe_mb2_q4_chunk2048_loss64", "missing_variant"})
+    assert [variant["name"] for variant in selected] == [
+        "gdn2_jit_q4_loss64",
+        "fakequant_chunk4096_loss64",
+        "headroom_16_16_32_q4_chunk8192_loss64",
+        "p2p_on_ffn_chunk1024_headroom_q4_chunk8192_loss64",
+        "gdn2_compiled_headroom_q4_chunk8192_ffn1024_loss64",
+        "gdn2_jit_headroom_q4_chunk8192_ffn1024_loss64",
+        "block_timing_q4_chunk2048_loss64",
+        "checkpoint_segment2_q4_chunk2048_loss64",
+        "reasoning_effort2_q4_chunk2048_loss64",
+        "gpipe_mb2_q4_chunk2048_loss64",
+    ]
     assert missing == ["missing_variant"]

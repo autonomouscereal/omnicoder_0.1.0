@@ -29,6 +29,25 @@ contract:
 The safe changes are implementation-level speed and I/O improvements, not
 quality reductions:
 
+- Added an SDPA fast path for `BlockAttentionResidual`. Normal token/block
+  shapes now use fused scaled-dot-product attention with the same causal
+  summary-block mask; the old Python chunked matmul/softmax loop remains as
+  the bounded fallback for huge masks.
+- Reworked distributed pipeline step routing so rank 0 keeps input IDs,
+  the final rank alone receives labels/sample weights by point-to-point
+  transfer, and intermediate ranks no longer allocate or receive full target
+  tensors.
+- Narrowed loss and target-summary sync. The final rank owns loss/target
+  diagnostics; rank 0 receives only the scalar/summary needed for logging, and
+  all-rank loss broadcast is reserved for checkpoint/final-save boundaries.
+- Added cadence-aware final-rank diagnostics so healthy non-diagnostic steps
+  avoid full target diagnostics and label CPU pulls.
+- Packed token-family count transfer into one compact device-to-host copy
+  rather than copying full label tensors to CPU for diagnostics.
+- Kept q4 fake-quant STE semantics but moved chunked linear forward/backward
+  matmuls onto explicit `torch.mm`/`torch.addmm(..., out=...)` buffers. This
+  reduces Python-side tensor assignment and allocator churn while preserving
+  the reference STE tests.
 - Replaced per-group sparse-attention output projections with
   `QuantAwareGroupedLinear`, a single grouped batched matmul that preserves
   grouped weights and fake-quant behavior.
@@ -48,9 +67,44 @@ quality reductions:
 - Reduced repeated per-step source-summary payloads by emitting a compact
   reference and live record-cache counters.
 - Added launcher passthrough for DataLoader/cache/GDN2 profiling knobs.
-- Raised the default q4 fake-quant chunk rows from 256 to 2048 after profiling.
-- Promoted the measured fast-card placement default from `16,16,32` to
-  `21,21,22` for seq-1024 q4 profiling.
+- Raised the default q4 fake-quant chunk rows from 256 to 8192 after profiling.
+- Kept the production/profile fast-card placement default at `16,16,32`.
+  `21,21,22` is slightly useful for short seq-1024 probes but OOMs at
+  seq-2048, so it is not the safe default.
+- Added cached module-device lookups in the weighted/non-weighted forward
+  paths so every block pass does not repeatedly walk parameters to rediscover
+  placement.
+- Added segmented activation-checkpoint profile variants; they are opt-in
+  because the measured segment-2 path did not beat the baseline and segment-4
+  failed memory.
+- Added a fail-closed pre-full-training proof gate that aggregates target
+  coverage, heldout loss, decode/media release gates, reportable benchmark
+  evidence, q4 profile evidence, reasoning profile evidence, coverage evidence,
+  and GGUF/runtime proof.
+
+## 2026 Forward/Backward Research Alignment
+
+The corrective pass focused on implementation architecture, not superficial
+parameter knobs. The current promoted changes line up with the 2025-2026
+runtime direction from PyTorch FlexAttention/FlashAttention-4, selective
+activation checkpointing, pipeline parallelism, and the Kimi Linear /
+Gated DeltaNet-2 / FlashKDA research track:
+
+- Use fused attention kernels where the mask is representable, with exact
+  fallbacks for unsupported shapes.
+- Avoid blindly recomputing expensive matmuls as a quality-neutral default.
+- Remove avoidable full-rank collectives before chasing scheduler knobs.
+- Keep the KDA/GDN2 recurrence as the next kernel target, but do not promote
+  the current Torch compile/JIT scans into full training until a fused
+  chunkwise autograd kernel or FLA-compatible backend passes full-pipeline
+  backward parity.
+
+Unpromoted by design:
+
+- No layer/width reduction.
+- No removal of residual attention, media paths, MTP heads, q4/QAT path, or
+  adaptive latent reasoning.
+- No batch-size or chunk-size sweep is treated as the optimization answer.
 
 ## Verification
 
@@ -58,7 +112,12 @@ Unit and integration checks:
 
 | Check | Result |
 |---|---:|
-| Focused AI-server container suite | 146 passed, 2 CUDA-only FlexAttention parity tests skipped in CPU-forced run |
+| Corrective hot-path AI-server CPU suite: KDA, proof gates, model init, q4 fake quant, telemetry, pipeline trainer | 96 passed, 8 CUDA-only tests skipped |
+| Corrective pipeline/orchestration AI-server suite after P2P target routing | 131 passed |
+| Corrective CUDA fast-card suite for residual SDPA, FlexAttention, q4 fake quant | 8 passed |
+| 3-rank CPU/Gloo torchrun smoke with P2P target routing | passed; loss 14.3911 -> 14.3007 over 2 optimizer steps |
+| Focused AI-server container suite after proof gate and hot-path patches | 134 passed |
+| Earlier focused AI-server container suite | 146 passed, 2 CUDA-only FlexAttention parity tests skipped in CPU-forced run |
 | GPU recurrent-path suite | 22 passed |
 | Earlier broad AI-server sweep before final doc/checkpoint-load polish | 119 passed |
 | Launcher/profile wiring after placement change | passed |
@@ -76,8 +135,22 @@ Important caveat: the GDN2 JIT path passed isolated parity tests, but the full
 pipeline run hit activation-checkpoint/pipeline backward metadata mismatch on
 rank 2. It remains opt-in and experimental.
 
-Latest focused AI-server container suite after loss-timing and target-count
-instrumentation: `60 passed in 4.58s`.
+Latest focused AI-server container suite after proof gate, target masking,
+segmented checkpoint, q4 dtype/out-mm, and device-cache patches:
+`134 passed in 12.40s`.
+
+Latest corrective proof commands/results:
+
+- CUDA fast-card: `8 passed in 5.22s` for block residual SDPA parity,
+  block-mask preservation, backward parity, CUDA FlexAttention parity, and q4
+  fake-quant tests.
+- Pipeline/orchestration: `131 passed in 12.65s` after replacing all-rank
+  batch/label/weight broadcasts with point-to-point target routing.
+- CPU/Gloo distributed smoke: 3 ranks, 2 steps, explicit assistant targets,
+  no final checkpoint; completed with positive/decreasing loss and target
+  coverage `8/8` on each step.
+- Regression sweep: `96 passed, 8 skipped in 6.02s` for KDA CPU parity,
+  proof gates, model init, q4 fake quant, telemetry, and pipeline trainer.
 
 Current verification commands:
 
@@ -115,10 +188,23 @@ unless noted otherwise, with no final checkpoint writes.
 | commit `280c257` seq-1024 q4 chunk 2048, no checkpoint | ~6.35 train seq-tokens/s |
 | current staged seq-1024 q4 chunk 2048, no checkpoint | ~6.05 train tokens/s |
 | current staged seq-1024 q4 block-timing probe | ~5.83 train seq-tokens/s |
+| current staged seq-1024 safe headroom q4 chunk 8192, `16,16,32` | ~6.26 train seq-tokens/s |
+| current staged seq-2048 safe headroom q4 chunk 8192, `16,16,32` | ~6.20 train seq-tokens/s |
+| seq-1024 safe headroom q4 chunk 8192 + FFN chunk 1024, `16,16,32` | ~6.43 train seq-tokens/s |
+| final staged seq-1024 q4 chunk 8192 + FFN chunk 1024, `16,16,32` | ~6.36 train seq-tokens/s |
+| seq-2048 safe headroom q4 chunk 8192 + FFN chunk 1024, `16,16,32` | ~6.22 train seq-tokens/s |
+| seq-1024 checkpoint segment-2 q4 chunk 8192 | ~6.12 train seq-tokens/s, slower than baseline |
+| seq-1024 checkpoint segment-4 q4 chunk 2048 | failed |
+| seq-1024 fake-quant-off diagnostic | ~6.01 train seq-tokens/s, not faster than q4 chunk 8192 |
 | q4 GPipe microbatch-2/batch-2 probe | failed: 3090 rank OOM |
+| q4 1F1B microbatch-2/batch-2 probe | timed out and was rejected |
 | q4 activation-checkpoint-off probe | failed: 3090 rank OOM |
 | q4 GDN2 JIT full-pipeline probe | failed: checkpoint backward metadata mismatch |
 | q4 GDN2 compiled full-pipeline probe | timed out before first loss |
+| final reasoning baseline `fakequant_chunk2048_loss64` | passed, ~6.02 train seq-tokens/s |
+| final reasoning effort-2 profile | passed, ~6.42 train seq-tokens/s |
+| final reasoning high-effort profile | passed, ~6.32 train seq-tokens/s |
+| NCCL P2P-on profile with current q4 default | passed, ~6.31 train seq-tokens/s, slower than P2P-off |
 
 The profile matrix showed that `schedule_step` remains the dominant cost.
 Batch fetch, host-to-device, telemetry, and log-write timings were small after
@@ -126,23 +212,128 @@ the cache and diagnostics changes. Activation-checkpoint-off OOMed, so
 activation checkpointing remains required. The 1F1B batch-2 variant was not
 stable enough to promote.
 
-Current clean q4 profile:
+Current best clean q4 seq-1024 profile:
 
-- Summary: `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_current_q4_seq1024/profile_matrix_summary.json`
-- Variant: `fakequant_chunk2048_loss64`
-- Loss: `16.594022750854492`
-- Step: 1
+- Summary: `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_ffn1024_globalfast_seq1024_final/profile_matrix_summary.json`
+- Variant: `ffn_chunk1024_headroom_q4_chunk8192_loss64`
+- Loss: `17.01636505126953`
+- Step: global step `1`
 - Sequence length: 1024
 - Batch size: 1
-- Max total step time: `169.21987411298323s`
-- Max schedule-step time: `169.14335185103118s`
-- Training throughput: `6.051298674978949` tokens/s
-- Target coverage: `30/30` optimized target tokens, coverage `1.0`
-- LM-loss total timing: about `0.079s`
+- Max total step time: `160.91215864697006s`
+- Max schedule-step time: `160.85912654199637s`
+- Training throughput: `6.363720483338887` sequence tokens/s
+- Target coverage: `31/31` optimized target tokens, coverage `1.0`
+- LM-loss total timing: about `0.090s`
 - Selected LM-head CE timing: about `0.012s`
-- Selected-position scan timing: about `0.065s`
-- Optimizer hook-step timing: about `4.75s`
+- Selected-position scan timing: about `0.074s`
+- Optimizer hook-step timing: about `4.43s`
 - Checkpoints written: none
+
+Current seq-2048 q4 headroom profile:
+
+- Summary: `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_ffn1024_globalfast_seq2048/profile_matrix_summary.json`
+- Variant: `ffn_chunk1024_headroom_q4_chunk8192_loss64`
+- Loss: `16.856172561645508`
+- Step: profile summary did not record a separate local step field
+- Sequence length: 2048
+- Batch size: 1
+- Max total step time: not separately recorded in this profile summary
+- Max schedule-step time: `328.99901678902097s`
+- Training throughput: `6.2195` sequence tokens/s
+- Target coverage: `32/32` optimized target tokens, coverage `1.0`
+- LM-loss total timing: about `0.126s`
+- Selected-position scan timing: about `0.109s`
+- Optimizer hook-step timing: about `6.65s`
+- Checkpoints written: none
+
+Current reasoning profile evidence:
+
+- Summary: `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_reasoning_variants_seq1024_final/profile_matrix_summary.json`
+- `fakequant_chunk2048_loss64`: loss `16.871400833129883`, target coverage
+  `32/32`, no OOM, no checkpoint writes, `6.0201242624766085` sequence
+  tokens/s.
+- `reasoning_effort2_q4_chunk2048_loss64`: loss `16.635637283325195`,
+  target coverage `31/31`, no OOM, no checkpoint writes,
+  `6.4221088436572344` sequence tokens/s.
+- `reasoning_efforthigh_q4_chunk2048_loss64`: loss `16.809810638427734`,
+  target coverage `31/31`, no OOM, no checkpoint writes,
+  `6.323432031542531` sequence tokens/s.
+
+Current communication profile evidence:
+
+- Summary: `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_p2p_on_seq1024_final/profile_matrix_summary.json`
+- Variant: `p2p_on_ffn_chunk1024_headroom_q4_chunk8192_loss64`
+- Status: passed, no OOM, target coverage `31/31`.
+- Throughput: `6.306021168981113` sequence tokens/s.
+- Baseline comparison: the otherwise matched P2P-off final q4 profile is
+  `6.363720483338887` sequence tokens/s with slightly lower rank skew, so
+  `NCCL_P2P_DISABLE=1` remains the default.
+
+Corrective microbench evidence:
+
+- Block residual attention, seq 2048 / d_model 512 / rank 64 on RTX 3090:
+  old chunked residual-context forward+backward averaged `11.95 ms`; SDPA fast
+  path averaged `4.74 ms`, about `2.5x` faster with matching parity tests.
+- q4 fake-quant grad-x operand-cast probe produced matching checksums. The
+  small-shape timing was neutral (`1.88 ms` vs `1.89 ms`), so the real fix for
+  q4/QAT remains a fused dequant-matmul custom autograd kernel; the current
+  promoted code keeps STE behavior and avoids extra allocator churn where the
+  existing chunked path already uses explicit output buffers.
+
+Current model-contract evidence:
+
+- Summary: `/home/cereal/omnicoder_2026_work/weights/training_runs/model_contract_report_20260531T1127Z.json`
+- Status: passed.
+- Shape: 64 layers, d_model 4096, MLP 15360, vocab 330000, 2 MTP heads.
+- Context ladder configured: 8192, 32768, 131072, 262144, 524288, 1048576.
+- Estimate: 22.576B total parameters, 19.566B trunk parameters, 10.51 GiB
+  q4 weights, 13.13 GiB estimated native state, and 24GB native fit estimate
+  still positive. This is a memory estimate, not yet a GGUF/runtime proof.
+
+Current pre-full-training proof gate:
+
+- Summary: `/home/cereal/omnicoder_2026_work/weights/training_runs/pre_full_training_proof_gate_partial_20260531T1140Z.json`
+- Passed checks: `model_contract`, `q4_profile`, `reasoning_profile`.
+- Blocked checks: `target_token_coverage`, `heldout_loss_by_modality`,
+  `decode_and_media_release_gate`, `data_coverage`, `context_ladder`,
+  `reportable_scores`, and `gguf_runtime`.
+- Decision: not ready for real full training yet. This is intentional
+  fail-closed behavior; the q4/reasoning/model-shape parts are now proven,
+  while modality coverage, decode/media quality, 1M ladder, reportable scoring,
+  and runtime export still need real artifacts.
+
+Current data coverage audit:
+
+- Summary: `/home/cereal/omnicoder_2026_work/weights/training_runs/data_coverage_latest_composite_20260531T1142Z.json`
+- Status: `needs_data`.
+- Existing useful counts include curated normalized traces `112000`, external
+  train rows `58006`, Qwen agentic/math/code/tool rollout rows `232`, and
+  curated modality files for text/code/tool/long-context/image/video/audio/
+  music/media-focus.
+- Current blockers are external train promotion/integrity-index evidence and
+  missing media teacher rollout rows. This means the pool is not empty, but it
+  is not yet cleanly promoted as full-training-ready data.
+
+Fastest honest remaining artifact path:
+
+1. Data: run the dataset sidecar coverage/integrity path until the external
+   promotion/integrity reports pass and media teacher rollout rows exist.
+2. Checkpoint diagnostics: from one complete safe checkpoint, run target-token
+   diagnostics and heldout sample loss over eval JSONLs covering text, code,
+   tool, math, long-context, image, video, audio, music, TTS, and OCR.
+3. Decode/media: generate real checkpoint predictions with nontrivial output
+   caps, then run the omnimodal release gate. Current media token artifacts
+   prove route/token output only; rendered PNG/MP4/WAV quality still needs a
+   real decoder/backend.
+4. Long context: run the 8K -> 1M ladder and add a recall/probe aggregation
+   artifact with finite loss and pass/fail per rung.
+5. Reportable benchmarks: only score authorized/official snapshots with real
+   Omnicoder predictions and official scorer artifacts. Canary/public-dev
+   plumbing remains diagnostic.
+6. Runtime: keep GGUF blocked until a real export plus llama.cpp/LM Studio or
+   native bridge runtime proof shows q4 memory under 24GB and usable prefill/
+   decode metrics.
 
 Current q4 block-timing profile:
 
@@ -168,6 +359,19 @@ Remote evidence paths:
 - `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_actckpt_off_seq1024/profile_matrix_summary.json`
 - `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_gdn2_jit_seq1024/profile_matrix_summary.json`
 - `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_gdn2_variants_seq1024/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_headroom8192_lossfast_seq1024/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_headroom8192_lossfast_seq2048/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_ckptoff_q4_vs_fqoff_seq1024/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_ckpt_segments_headroom_seq1024/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_ckpt_segment2_chunk8192_seq1024/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_microbatch2_seq1024/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_ffn1024_globalfast_seq1024_final/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_ffn1024_globalfast_seq2048/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_reasoning_variants_seq1024_final/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_p2p_on_seq1024_final/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/model_contract_report_20260531T1127Z.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/pre_full_training_proof_gate_partial_20260531T1140Z.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/data_coverage_latest_composite_20260531T1142Z.json`
 
 The commit-bound profile used `fakequant_chunk2048_loss64`, exited cleanly,
 wrote no checkpoint, and produced loss `16.850051879882812`. Loss diagnostics
@@ -223,12 +427,19 @@ For the next serious profile/training launch:
 
 - Use the staged code with q4 fake quant enabled.
 - Keep activation checkpointing on.
-- Keep `FAKE_QUANT_CHUNK_ROWS=2048` unless a longer-context rung proves a
+- Keep `FAKE_QUANT_CHUNK_ROWS=8192` unless a longer-context rung proves a
   better value.
-- Start fast-card placement at `21,21,22` for short/medium rungs and override
-  only when memory profiling says the RTX 8000 needs more headroom.
+- Start fast-card placement at `16,16,32` because it passes seq-2048 with the
+  current 15360 MLP/full-residual target. Use `21,21,22` only for short
+  no-checkpoint probes where OOM risk is acceptable.
+- Do not promote microbatch-2, 1F1B, checkpoint-off, checkpoint segment-4, or
+  GDN2 JIT/compiled scan paths until a profile proves they are stable and
+  faster under the same target contract.
 - Keep GDN2 JIT/compiled scan paths disabled by default.
 - Enable checkpoint eval sidecars after complete checkpoint markers.
 - Treat public-dev benchmark canaries as diagnostic only.
+- Run `proof_gates_2026.py` before a serious full-training launch and treat
+  missing GGUF/runtime, reportable benchmark, heldout-loss, media decode, or
+  context-ladder evidence as a hard block rather than a warning.
 - Do not claim 1M readiness until the full context ladder has produced finite
   losses and passing recall/probe artifacts.

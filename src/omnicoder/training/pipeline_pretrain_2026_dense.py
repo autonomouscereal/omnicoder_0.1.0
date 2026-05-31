@@ -18,6 +18,7 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.utils.checkpoint import checkpoint as activation_checkpoint
 from torch.profiler import record_function
 
 from omnicoder.config_2026 import get_omnicoder2026_preset, preset_to_model_kwargs
@@ -142,6 +143,164 @@ class PipelineShardSpec:
     has_head: bool
 
 
+@dataclass(frozen=True)
+class PipelineStepTensors:
+    input_ids: torch.Tensor | None
+    labels: torch.Tensor | None
+    sample_weights: torch.Tensor | None
+
+
+@dataclass(frozen=True)
+class PipelineTargetSummary:
+    valid_target_tokens: int
+    optimized_target_tokens: int
+    sample_weight_mean: float | None
+
+
+def _pipeline_final_rank(world_size: int) -> int:
+    return max(0, int(world_size) - 1)
+
+
+def _loss_scalar_tensor(loss_tensor: torch.Tensor) -> torch.Tensor:
+    return loss_tensor.detach().float().reshape(-1).mean()
+
+
+def _tensor_scalar_float(value: torch.Tensor) -> float:
+    return float(value.detach().float().cpu().item())
+
+
+def _route_pipeline_step_tensors(
+    *,
+    rank: int,
+    world_size: int,
+    batch: torch.Tensor | None,
+    labels: torch.Tensor | None,
+    sample_weights: torch.Tensor | None,
+    batch_size: int,
+    seq_len: int,
+    device: torch.device,
+    dist_module: Any = dist,
+) -> PipelineStepTensors:
+    """Move only the tensors each pipeline role needs for this step."""
+
+    rank = int(rank)
+    final_rank = _pipeline_final_rank(int(world_size))
+    input_ids = batch if rank == 0 else None
+    target_labels: torch.Tensor | None = labels if rank == final_rank else None
+    target_weights: torch.Tensor | None = sample_weights if rank == final_rank else None
+    if final_rank == 0:
+        if input_ids is None or target_labels is None or target_weights is None:
+            raise RuntimeError("single-stage pipeline requires rank 0 to own inputs, labels, and sample weights")
+        return PipelineStepTensors(input_ids=input_ids, labels=target_labels, sample_weights=target_weights)
+    if rank == 0:
+        if input_ids is None or labels is None or sample_weights is None:
+            raise RuntimeError("rank 0 must fetch input ids, labels, and sample weights before target routing")
+        dist_module.send(labels.contiguous(), dst=final_rank)
+        dist_module.send(sample_weights.contiguous(), dst=final_rank)
+        return PipelineStepTensors(input_ids=input_ids, labels=None, sample_weights=None)
+    if rank == final_rank:
+        target_labels = torch.empty((int(batch_size), int(seq_len)), dtype=torch.long, device=device)
+        target_weights = torch.empty((int(batch_size),), dtype=torch.float32, device=device)
+        dist_module.recv(target_labels, src=0)
+        dist_module.recv(target_weights, src=0)
+        return PipelineStepTensors(input_ids=None, labels=target_labels, sample_weights=target_weights)
+    return PipelineStepTensors(input_ids=None, labels=None, sample_weights=None)
+
+
+def _sync_pipeline_loss_to_rank0(
+    *,
+    rank: int,
+    world_size: int,
+    loss_tensor: torch.Tensor | None,
+    device: torch.device,
+    dist_module: Any = dist,
+) -> torch.Tensor | None:
+    final_rank = _pipeline_final_rank(int(world_size))
+    rank = int(rank)
+    if rank == final_rank:
+        if loss_tensor is None:
+            raise RuntimeError("final pipeline rank must have a local loss tensor")
+        scalar = _loss_scalar_tensor(loss_tensor).to(device=device)
+        if rank != 0:
+            dist_module.send(scalar, dst=0)
+        return scalar
+    if rank == 0:
+        scalar = torch.empty((), dtype=torch.float32, device=device)
+        dist_module.recv(scalar, src=final_rank)
+        return scalar
+    return None
+
+
+def _sync_pipeline_loss_for_checkpoint(
+    *,
+    rank: int,
+    world_size: int,
+    loss_tensor: torch.Tensor | None,
+    device: torch.device,
+    dist_module: Any = dist,
+) -> float:
+    final_rank = _pipeline_final_rank(int(world_size))
+    if int(rank) == final_rank:
+        if loss_tensor is None:
+            raise RuntimeError("final pipeline rank must have a local loss tensor for checkpoint loss sync")
+        scalar = _loss_scalar_tensor(loss_tensor).to(device=device)
+    else:
+        scalar = torch.empty((), dtype=torch.float32, device=device)
+    dist_module.broadcast(scalar, src=final_rank)
+    return _tensor_scalar_float(scalar)
+
+
+def _target_summary_from_final_rank(
+    loss_diagnostics: dict[str, Any] | None,
+    sample_weights: torch.Tensor | None,
+) -> PipelineTargetSummary:
+    diagnostics = loss_diagnostics if isinstance(loss_diagnostics, dict) else {}
+    sample_weight_mean = _tensor_scalar_float(sample_weights.detach().float().mean()) if sample_weights is not None else None
+    return PipelineTargetSummary(
+        valid_target_tokens=int(diagnostics.get("valid_target_tokens") or 0),
+        optimized_target_tokens=int(diagnostics.get("optimized_target_tokens") or 0),
+        sample_weight_mean=sample_weight_mean,
+    )
+
+
+def _sync_pipeline_target_summary_to_rank0(
+    *,
+    rank: int,
+    world_size: int,
+    loss_diagnostics: dict[str, Any] | None,
+    sample_weights: torch.Tensor | None,
+    device: torch.device,
+    dist_module: Any = dist,
+) -> PipelineTargetSummary | None:
+    final_rank = _pipeline_final_rank(int(world_size))
+    rank = int(rank)
+    if rank == final_rank:
+        summary = _target_summary_from_final_rank(loss_diagnostics, sample_weights)
+        if rank != 0:
+            payload = torch.tensor(
+                [
+                    float(summary.valid_target_tokens),
+                    float(summary.optimized_target_tokens),
+                    float("nan") if summary.sample_weight_mean is None else float(summary.sample_weight_mean),
+                ],
+                dtype=torch.float64,
+                device=device,
+            )
+            dist_module.send(payload, dst=0)
+        return summary
+    if rank == 0:
+        payload = torch.empty((3,), dtype=torch.float64, device=device)
+        dist_module.recv(payload, src=final_rank)
+        values = payload.detach().cpu().tolist()
+        sample_weight_mean = None if math.isnan(float(values[2])) else float(values[2])
+        return PipelineTargetSummary(
+            valid_target_tokens=int(values[0]),
+            optimized_target_tokens=int(values[1]),
+            sample_weight_mean=sample_weight_mean,
+        )
+    return None
+
+
 def parse_stage_ranges(raw: str, n_layers: int) -> list[tuple[int, int]]:
     ranges: list[tuple[int, int]] = []
     for part in str(raw or "").split(","):
@@ -200,11 +359,19 @@ def shard_spec(rank: int, ranges: list[tuple[int, int]]) -> PipelineShardSpec:
 class OmniCoder2026PipelineShard(nn.Module):
     """One pipeline stage with checkpoint-compatible local module names."""
 
-    def __init__(self, cfg: OmniCoder2026Config, spec: PipelineShardSpec, *, checkpoint_blocks: bool = False):
+    def __init__(
+        self,
+        cfg: OmniCoder2026Config,
+        spec: PipelineShardSpec,
+        *,
+        checkpoint_blocks: bool = False,
+        checkpoint_segment_size: int = 1,
+    ):
         super().__init__()
         self.cfg = cfg
         self.spec = spec
         self.checkpoint_blocks = bool(checkpoint_blocks)
+        self.checkpoint_segment_size = max(1, int(checkpoint_segment_size or 1))
         self.embed = nn.Embedding(cfg.vocab_size, cfg.d_model) if spec.has_embed else nn.Identity()
         pattern = list(cfg.layer_pattern)
         blocks: list[nn.Module] = []
@@ -233,6 +400,14 @@ class OmniCoder2026PipelineShard(nn.Module):
         self._block_timing_call_index = 0
         reset_omnicoder2026_parameters(self, cfg)
 
+    def _checkpoint_enabled(self) -> bool:
+        return bool(self.checkpoint_blocks and self.training and torch.is_grad_enabled())
+
+    def _forward_block_range(self, x: torch.Tensor, start: int, end: int) -> torch.Tensor:
+        for index in range(int(start), int(end)):
+            x = self.blocks[index](x)
+        return x
+
     def _configured_reasoning_effort(self) -> int | str | None:
         effort = getattr(self, "pipeline_reasoning_effort", None)
         if effort is not None:
@@ -253,14 +428,25 @@ class OmniCoder2026PipelineShard(nn.Module):
     def _forward_fast(self, x: torch.Tensor) -> torch.Tensor:
         if self.spec.has_embed:
             x = self._embed_input_ids(x)
-        for index in range(self.spec.layer_start, self.spec.layer_end):
-            block = self.blocks[index]
-            if self.checkpoint_blocks and self.training and torch.is_grad_enabled():
-                from torch.utils.checkpoint import checkpoint
-
-                x = checkpoint(block, x, use_reentrant=False)
+        checkpoint_enabled = self._checkpoint_enabled()
+        segment_size = max(1, int(self.checkpoint_segment_size))
+        index = int(self.spec.layer_start)
+        layer_end = int(self.spec.layer_end)
+        while index < layer_end:
+            if checkpoint_enabled:
+                segment_end = min(layer_end, index + segment_size)
+                if segment_end == index + 1:
+                    x = activation_checkpoint(self.blocks[index], x, use_reentrant=False)
+                else:
+                    x = activation_checkpoint(
+                        lambda inp, start=index, end=segment_end: self._forward_block_range(inp, start, end),
+                        x,
+                        use_reentrant=False,
+                    )
+                index = segment_end
             else:
-                x = block(x)
+                x = self.blocks[index](x)
+                index += 1
         if self.spec.has_head:
             if isinstance(self.latent_reasoner, AdaptiveLatentReasoner):
                 x, _controls = self.latent_reasoner(x, effort=self._configured_reasoning_effort(), return_controls=False)
@@ -305,15 +491,28 @@ class OmniCoder2026PipelineShard(nn.Module):
         if self.spec.has_embed:
             with block_span("embed", layer_start=int(self.spec.layer_start), layer_end=int(self.spec.layer_end)):
                 x = self._embed_input_ids(x)
-        for index in range(self.spec.layer_start, self.spec.layer_end):
+        checkpoint_enabled = self._checkpoint_enabled()
+        segment_size = max(1, int(self.checkpoint_segment_size))
+        index = int(self.spec.layer_start)
+        layer_end = int(self.spec.layer_end)
+        while index < layer_end:
+            if checkpoint_enabled and segment_size > 1:
+                segment_end = min(layer_end, index + segment_size)
+                with block_span("block_segment", layer_start=int(index), layer_end=int(segment_end), checkpointed=True):
+                    x = activation_checkpoint(
+                        lambda inp, start=index, end=segment_end: self._forward_block_range(inp, start, end),
+                        x,
+                        use_reentrant=False,
+                    )
+                index = segment_end
+                continue
             block = self.blocks[index]
-            with block_span("block", layer_index=int(index), checkpointed=bool(self.checkpoint_blocks and self.training and torch.is_grad_enabled())):
-                if self.checkpoint_blocks and self.training and torch.is_grad_enabled():
-                    from torch.utils.checkpoint import checkpoint
-
-                    x = checkpoint(block, x, use_reentrant=False)
+            with block_span("block", layer_index=int(index), checkpointed=bool(checkpoint_enabled)):
+                if checkpoint_enabled:
+                    x = activation_checkpoint(block, x, use_reentrant=False)
                 else:
                     x = block(x)
+            index += 1
         if self.spec.has_head:
             if isinstance(self.latent_reasoner, AdaptiveLatentReasoner):
                 with block_span("latent_reasoner"):
@@ -489,14 +688,24 @@ class OmniCoder2026PipelineShard(nn.Module):
                     if positions.numel() == 0:
                         continue
                     available_target_tokens += int(positions.numel())
+                    if positions.numel() == 1:
+                        boundary_positions = positions
+                    else:
+                        span_starts = torch.empty_like(positions, dtype=torch.bool)
+                        span_starts[0] = True
+                        span_starts[1:] = positions[1:].ne(positions[:-1] + 1)
+                        boundary_positions = positions[span_starts]
                     if not sparse_target_labels and loss_token_stride > 1:
                         positions = positions[::loss_token_stride]
                         if positions.numel() == 0:
                             positions = torch.nonzero(target_mask[batch_index], as_tuple=False).flatten()[-1:]
-                    boundary_positions = torch.nonzero(boundary_mask[batch_index], as_tuple=False).flatten()
                     if boundary_positions.numel() > 0:
                         positions = torch.unique(torch.cat((positions, boundary_positions)), sorted=True)
-                    prefix_positions = torch.nonzero(prefix_mask[batch_index], as_tuple=False).flatten()
+                    prefix_positions = (
+                        torch.nonzero(prefix_mask[batch_index], as_tuple=False).flatten()
+                        if prefix_tokens > 0
+                        else positions.new_empty((0,))
+                    )
                     if prefix_positions.numel() > 0:
                         positions = torch.unique(torch.cat((positions, prefix_positions)), sorted=True)
                     if max_loss_tokens_per_sample > 0 and positions.numel() > max_loss_tokens_per_sample:
@@ -1563,17 +1772,21 @@ def _token_family_counts(labels: torch.Tensor | None) -> dict[str, int]:
             target_labels = target_labels[1:]
         if target_labels.numel() == 0:
             return counts
-        flat = target_labels.reshape(-1).to(device="cpu")
+        flat = target_labels.reshape(-1)
         valid = flat.ge(0)
-        if int(valid.sum().item()) <= 0:
-            return counts
         assigned = torch.zeros_like(valid, dtype=torch.bool)
+        count_tensors: list[torch.Tensor] = []
+        names: list[str] = []
         for token_range in DEFAULT_LEDGER.ranges:
             mask = valid & flat.ge(int(token_range.begin)) & flat.lt(int(token_range.end))
-            count = int(mask.sum().item())
-            counts[token_range.name] = count
+            count_tensors.append(mask.sum().to(dtype=torch.long))
+            names.append(token_range.name)
             assigned = assigned | mask
-        counts["unknown"] = int((valid & ~assigned).sum().item())
+        count_tensors.append((valid & ~assigned).sum().to(dtype=torch.long))
+        names.append("unknown")
+        packed_counts = torch.stack(count_tensors).to(device="cpu")
+        for name, value in zip(names, packed_counts.tolist(), strict=False):
+            counts[name] = int(value)
     return counts
 
 
@@ -2851,11 +3064,16 @@ def _train_diagnostics_record(
     loss_target_counts = loss_diagnostics.get("target_counts_by_token_family")
     if isinstance(loss_target_counts, dict) and any(int(value or 0) for value in loss_target_counts.values()):
         target_counts = {str(key): int(value or 0) for key, value in loss_target_counts.items()}
+    elif labels is None and int(loss_diagnostics.get("valid_target_tokens") or 0) > 0:
+        target_counts = _zero_token_family_counts()
+        target_counts["unknown"] = int(loss_diagnostics.get("valid_target_tokens") or 0)
     else:
         target_counts = _token_family_counts(labels)
     optimized_counts = loss_diagnostics.get("optimized_target_counts_by_token_family")
     if not isinstance(optimized_counts, dict):
         optimized_counts = {key: 0 for key in target_counts}
+        if "unknown" in optimized_counts:
+            optimized_counts["unknown"] = int(loss_diagnostics.get("optimized_target_tokens") or 0)
     valid_target_tokens = int(sum(int(value or 0) for value in target_counts.values()))
     optimized_target_tokens = int(loss_diagnostics.get("optimized_target_tokens") or sum(int(value or 0) for value in optimized_counts.values()))
     elapsed = max(0.0, float(step_elapsed_sec or 0.0))
@@ -3215,13 +3433,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--step_timing_file", default=os.getenv("OMNICODER2026_STEP_TIMING_FILE", ""))
     parser.add_argument("--block_timing_file", default=os.getenv("OMNICODER2026_BLOCK_TIMING_FILE", ""))
     parser.add_argument("--step_timing_interval", type=int, default=int(os.getenv("OMNICODER2026_STEP_TIMING_INTERVAL", "1") or 1))
+    parser.add_argument("--telemetry_interval", type=int, default=int(os.getenv("OMNICODER2026_TELEMETRY_INTERVAL", "8") or 8))
     parser.add_argument("--detailed_event_log_interval", type=int, default=int(os.getenv("OMNICODER2026_DETAILED_EVENT_LOG_INTERVAL", "0") or 0))
     parser.add_argument("--timing_cuda_sync", action="store_true", default=(os.getenv("OMNICODER2026_TIMING_CUDA_SYNC", "0") == "1"))
     parser.add_argument("--block_timing", action="store_true", default=(os.getenv("OMNICODER2026_BLOCK_TIMING", "0") == "1"))
     parser.add_argument("--block_timing_cuda_sync", action="store_true", default=(os.getenv("OMNICODER2026_BLOCK_TIMING_CUDA_SYNC", "0") == "1"))
     parser.add_argument("--record_functions", action="store_true", default=(os.getenv("OMNICODER2026_RECORD_FUNCTIONS", "0") == "1"))
     parser.add_argument("--rank_skew_interval", type=int, default=int(os.getenv("OMNICODER2026_RANK_SKEW_INTERVAL", "0") or 0))
-    parser.add_argument("--loss_diagnostics_interval", type=int, default=int(os.getenv("OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL", "1") or 1))
+    parser.add_argument("--loss_diagnostics_interval", type=int, default=int(os.getenv("OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL", "8") or 8))
     parser.add_argument("--diagnostics_grad_norm", action="store_true", default=(os.getenv("OMNICODER2026_DIAGNOSTICS_GRAD_NORM", "0") == "1"))
     parser.add_argument("--data_manifest", default="")
     parser.add_argument("--data_sha256", default=os.getenv("OMNICODER2026_DATA_SHA256", ""))
@@ -3261,7 +3480,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--optimizer_in_backward_adafactor_clip_threshold", type=float, default=1.0)
     parser.add_argument("--optimizer_in_backward_adafactor_decay_rate", type=float, default=-0.8)
     parser.add_argument("--optimizer_in_backward_adafactor_eps1", type=float, default=1.0e-30)
-    parser.add_argument("--activation_checkpointing", action="store_true")
+    parser.add_argument("--activation_checkpointing", "--activation-checkpointing", action="store_true")
+    parser.add_argument(
+        "--activation_checkpoint_segment_size",
+        "--activation-checkpoint-segment-size",
+        type=int,
+        default=int(os.getenv("OMNICODER2026_ACTIVATION_CHECKPOINT_SEGMENT_SIZE", "1") or 1),
+    )
     parser.add_argument("--sanitize_input_ids", action="store_true", default=(os.getenv("OMNICODER2026_SANITIZE_INPUT_IDS", "0") == "1"))
     parser.add_argument("--pipeline_reasoning_effort", default=os.getenv("OMNICODER2026_PIPELINE_REASONING_EFFORT", ""))
     parser.add_argument("--fake_quant", action="store_true")
@@ -3335,6 +3560,7 @@ def main(argv: list[str] | None = None) -> int:
     validate_target_device_placement(args, ranges, spec, device)
     telemetry_path = _rank_telemetry_path(args, rank=rank, world_size=world_size)
     train_diagnostics_path = _rank_train_diagnostics_path(args, rank=rank, world_size=world_size)
+    final_train_diagnostics_path = _rank_train_diagnostics_path(args, rank=world_size - 1, world_size=world_size)
     step_timing_path = _rank_step_timing_path(args, rank=rank, world_size=world_size)
     block_timing_path = _rank_block_timing_path(args, rank=rank, world_size=world_size)
     init_dtype_name = str(args.init_dtype or "auto").lower()
@@ -3345,7 +3571,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         print(json.dumps({"event": "model_build_start", "rank": int(rank), "layer_start": int(spec.layer_start), "layer_end": int(spec.layer_end), "seq_len": int(seq_len)}), flush=True)
         with torch.device(device):
-            shard = OmniCoder2026PipelineShard(cfg, spec, checkpoint_blocks=bool(args.activation_checkpointing)).to(device)
+            shard = OmniCoder2026PipelineShard(
+                cfg,
+                spec,
+                checkpoint_blocks=bool(args.activation_checkpointing),
+                checkpoint_segment_size=int(args.activation_checkpoint_segment_size),
+            ).to(device)
             shard.profile_block_timing = bool(args.block_timing)
             shard.profile_block_cuda_sync = bool(args.block_timing_cuda_sync)
             shard.profile_record_functions = bool(args.record_functions)
@@ -3496,17 +3727,23 @@ def main(argv: list[str] | None = None) -> int:
         step_started_at = time.time()
         global_step = start_step + local_step + 1
         step_timer = PhaseTimer(device=device, cuda_sync=bool(args.timing_cuda_sync))
+        final_step = (local_step + 1) == int(args.steps)
         log_step_timing = _should_log_interval(int(args.step_timing_interval), global_step)
-        collect_loss_diagnostics = _should_log_interval(int(args.loss_diagnostics_interval), global_step)
+        collect_telemetry = _should_log_interval(int(args.telemetry_interval), global_step) or final_step or log_step_timing
+        collect_loss_diagnostics = _should_log_interval(int(args.loss_diagnostics_interval), global_step) or final_step
         collect_rank_skew = _should_log_interval(int(args.rank_skew_interval), global_step)
         log_detail_events = _should_log_interval(int(args.detailed_event_log_interval), global_step)
-        _reset_cuda_peak_memory(device)
+        if collect_telemetry:
+            _reset_cuda_peak_memory(device)
         if (local_step % gradient_accumulation_steps) == 0:
             optimizer.zero_grad(set_to_none=True)
             if hasattr(optimizer, "reset_step_stats"):
                 optimizer.reset_step_stats()
         losses: list[torch.Tensor] = []
         sample_weight_mean: float | None = None
+        batch: torch.Tensor | None = None
+        batch_labels: torch.Tensor | None = None
+        batch_weights: torch.Tensor | None = None
         if rank == 0:
             if log_detail_events:
                 _write_log(args.log_file, {"event": "batch_fetch_start", "local_step": int(local_step + 1), "global_step": int(global_step)})
@@ -3523,52 +3760,86 @@ def main(argv: list[str] | None = None) -> int:
                 batch_labels = batch_labels.to(device, non_blocking=True)
                 batch_weights = batch_weights.to(device, non_blocking=True).float()
             debug_event("rank0_fetch_batch_done")
-            sample_weight_mean = float(batch_weights.detach().mean().cpu()) if collect_loss_diagnostics else None
             if log_detail_events:
                 _write_log(args.log_file, {"event": "batch_fetch_done", "local_step": int(local_step + 1), "global_step": int(global_step), "sample_weight_mean": sample_weight_mean})
-        else:
-            with step_timer.span("host_to_device_sec"):
-                batch = torch.empty((batch_size, seq_len), dtype=torch.long, device=device)
-                batch_labels = torch.empty((batch_size, seq_len), dtype=torch.long, device=device)
-                batch_weights = torch.empty((batch_size,), dtype=torch.float32, device=device)
-        debug_event("broadcast_start")
-        with step_timer.span("broadcast_inputs_sec"):
-            dist.broadcast(batch, src=0)
-            dist.broadcast(batch_labels, src=0)
-            dist.broadcast(batch_weights, src=0)
-        current_sample_weights["weights"] = batch_weights
+        debug_event("route_step_tensors_start")
+        with step_timer.span("route_step_tensors_sec"):
+            routed_tensors = _route_pipeline_step_tensors(
+                rank=rank,
+                world_size=world_size,
+                batch=batch,
+                labels=batch_labels,
+                sample_weights=batch_weights,
+                batch_size=batch_size,
+                seq_len=seq_len,
+                device=device,
+            )
+        batch = routed_tensors.input_ids
+        batch_labels = routed_tensors.labels
+        batch_weights = routed_tensors.sample_weights
+        current_sample_weights["weights"] = batch_weights if spec.has_head else None
         current_sample_weights["loss_scale"] = 1.0 / float(gradient_accumulation_steps)
         current_sample_weights["collect_loss_diagnostics"] = collect_loss_diagnostics
         current_sample_weights["labels_are_sparse"] = True
-        debug_event("broadcast_done")
+        debug_event("route_step_tensors_done")
         with step_timer.span("schedule_step_sec"):
             with autocast_context(device, str(args.precision)):
                 if rank == 0:
                     if log_detail_events:
                         _write_log(args.log_file, {"event": "schedule_step_start", "local_step": int(local_step + 1), "global_step": int(global_step), "rank": int(rank)})
                     debug_event("schedule_step_rank0_start")
-                    schedule.step(batch, target=batch_labels, losses=losses)
+                    if batch is None:
+                        raise RuntimeError("rank 0 must own input ids before schedule.step")
+                    if spec.has_head:
+                        if batch_labels is None:
+                            raise RuntimeError("single-stage final rank must own labels before schedule.step")
+                        schedule.step(batch, target=batch_labels, losses=losses)
+                    else:
+                        schedule.step(batch, losses=losses)
                     debug_event("schedule_step_rank0_done")
+                elif spec.has_head:
+                    if batch_labels is None:
+                        raise RuntimeError("final pipeline rank must own labels before schedule.step")
+                    debug_event("schedule_step_final_start")
+                    schedule.step(target=batch_labels, losses=losses)
+                    debug_event("schedule_step_final_done")
                 else:
                     debug_event("schedule_step_nonzero_start")
-                    schedule.step(target=batch_labels, losses=losses)
+                    schedule.step(losses=losses)
                     debug_event("schedule_step_nonzero_done")
         if rank == 0 and log_detail_events:
             _write_log(args.log_file, {"event": "schedule_step_done", "local_step": int(local_step + 1), "global_step": int(global_step), "rank": int(rank)})
-        if spec.has_head and losses:
-            loss_tensor = torch.stack([loss.detach().float() for loss in losses]).mean().to(device=device)
+        if spec.has_head:
+            if losses:
+                loss_tensor = torch.stack([loss.detach().float() for loss in losses]).mean().to(device=device)
+            else:
+                loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
         else:
-            loss_tensor = torch.tensor(float(last_loss) if last_loss is not None else -1.0, device=device)
-        with step_timer.span("loss_broadcast_sec"):
-            dist.broadcast(loss_tensor, src=world_size - 1)
-        loss_value_for_log = float(loss_tensor.detach().cpu())
-        last_loss = loss_value_for_log
-        if bool(args.require_target_contract) and loss_value_for_log <= 0.0:
+            loss_tensor = None
+        with step_timer.span("loss_rank0_sync_sec"):
+            rank0_loss_tensor = _sync_pipeline_loss_to_rank0(
+                rank=rank,
+                world_size=world_size,
+                loss_tensor=loss_tensor,
+                device=device,
+            )
+        rank0_loss_value = _tensor_scalar_float(rank0_loss_tensor) if rank == 0 and rank0_loss_tensor is not None else None
+        local_loss_value: float | None = rank0_loss_value if spec.has_head and rank == 0 else None
+        if rank == 0:
+            last_loss = rank0_loss_value
+        if spec.has_head and bool(args.require_target_contract):
+            if local_loss_value is None and loss_tensor is not None:
+                local_loss_value = _tensor_scalar_float(loss_tensor)
+            if local_loss_value is not None and local_loss_value <= 0.0:
+                raise RuntimeError(
+                    "target contract produced a non-positive training loss; "
+                    "check assistant/media target coverage before continuing"
+                )
+        if bool(args.require_target_contract) and rank == 0 and rank0_loss_value is not None and rank0_loss_value <= 0.0:
             raise RuntimeError(
                 "target contract produced a non-positive training loss; "
                 "check assistant/media target coverage before continuing"
             )
-        final_step = (local_step + 1) == int(args.steps)
         should_update = ((local_step + 1) % gradient_accumulation_steps) == 0 or final_step
         if bool(getattr(args, "skip_final_optimizer_update", False)) and final_step:
             should_update = False
@@ -3592,68 +3863,78 @@ def main(argv: list[str] | None = None) -> int:
             )
         debug_event("optimizer_step_done" if should_update else "optimizer_step_deferred")
         with step_timer.span("telemetry_sec"):
-            memory_record = _pipeline_telemetry_record(
-                args=args,
-                rank=rank,
-                world_size=world_size,
-                device=device,
-                ranges=ranges,
-                spec=spec,
-                seq_len=seq_len,
-                step=global_step,
-                local_step=local_step + 1,
-            )
-            _append_pipeline_telemetry(telemetry_path, memory_record)
-        with step_timer.span("diagnostics_broadcast_sec"):
-            if collect_loss_diagnostics:
-                loss_diagnostics_box: list[Any] = [getattr(shard, "last_lm_loss_diagnostics", {}) if spec.has_head else None]
-                dist.broadcast_object_list(loss_diagnostics_box, src=world_size - 1)
-                loss_diagnostics = loss_diagnostics_box[0] if isinstance(loss_diagnostics_box[0], dict) else {}
-            else:
-                target_diag = torch.zeros((2,), dtype=torch.long, device=device)
-                if spec.has_head:
-                    basic_diag = getattr(shard, "last_lm_loss_diagnostics", {})
-                    if isinstance(basic_diag, dict):
-                        target_diag[0] = int(basic_diag.get("valid_target_tokens") or 0)
-                        target_diag[1] = int(basic_diag.get("optimized_target_tokens") or 0)
-                dist.broadcast(target_diag, src=world_size - 1)
-                loss_diagnostics = {
-                    "valid_target_tokens": int(target_diag[0].detach().cpu().item()),
-                    "optimized_target_tokens": int(target_diag[1].detach().cpu().item()),
-                    "diagnostics_skipped": True,
-                }
-        step_elapsed_sec = step_timer.elapsed()
-        with step_timer.span("diagnostics_write_sec"):
-            if rank == 0 and isinstance(source_summary, dict):
-                source_summary["record_cache"] = _dataset_record_cache_summary(data)
-            _append_pipeline_telemetry(
-                train_diagnostics_path,
-                _train_diagnostics_record(
+            if collect_telemetry:
+                memory_record = _pipeline_telemetry_record(
                     args=args,
                     rank=rank,
                     world_size=world_size,
+                    device=device,
+                    ranges=ranges,
                     spec=spec,
-                    global_step=global_step,
-                    local_step=local_step + 1,
                     seq_len=seq_len,
-                    batch_size=batch_size,
-                    microbatch_size=microbatch_size,
-                    loss=loss_value_for_log,
-                    labels=batch_labels if collect_loss_diagnostics else None,
-                    sample_weights=batch_weights if collect_loss_diagnostics else None,
-                    optimizer=optimizer,
-                    optimizer_update=bool(should_update),
-                    grad_norm_pre_clip=grad_norm_pre_clip,
-                    grad_norm_post_clip=grad_norm_post_clip,
-                    step_elapsed_sec=step_elapsed_sec,
-                    memory_record=memory_record,
-                    loss_diagnostics=loss_diagnostics,
-                    source_summary=source_summary,
-                ),
-            )
+                    step=global_step,
+                    local_step=local_step + 1,
+                )
+                _append_pipeline_telemetry(telemetry_path, memory_record)
+            else:
+                memory_record = {
+                    "event": "pipeline_rank_memory_telemetry_skipped",
+                    "rank": int(rank),
+                    "world_size": int(world_size),
+                    "device": str(device),
+                    "device_type": str(device.type),
+                    "device_index": int(device.index or 0) if device.type == "cuda" else None,
+                    "cuda_active": bool(device.type == "cuda" and torch.cuda.is_available()),
+                    "step": int(global_step),
+                    "local_step": int(local_step + 1),
+                    "telemetry_interval": int(args.telemetry_interval),
+                }
+        loss_diagnostics = getattr(shard, "last_lm_loss_diagnostics", {}) if spec.has_head else {}
+        target_summary: PipelineTargetSummary | None = None
+        with step_timer.span("target_summary_sync_sec"):
+            if collect_loss_diagnostics:
+                target_summary = _sync_pipeline_target_summary_to_rank0(
+                    rank=rank,
+                    world_size=world_size,
+                    loss_diagnostics=loss_diagnostics if spec.has_head else None,
+                    sample_weights=batch_weights if spec.has_head else None,
+                    device=device,
+                )
+        if rank == 0 and target_summary is not None:
+            sample_weight_mean = target_summary.sample_weight_mean
+        step_elapsed_sec = step_timer.elapsed()
+        with step_timer.span("diagnostics_write_sec"):
+            if spec.has_head and collect_loss_diagnostics:
+                if local_loss_value is None and loss_tensor is not None:
+                    local_loss_value = _tensor_scalar_float(loss_tensor)
+                _append_pipeline_telemetry(
+                    train_diagnostics_path,
+                    _train_diagnostics_record(
+                        args=args,
+                        rank=rank,
+                        world_size=world_size,
+                        spec=spec,
+                        global_step=global_step,
+                        local_step=local_step + 1,
+                        seq_len=seq_len,
+                        batch_size=batch_size,
+                        microbatch_size=microbatch_size,
+                        loss=float(local_loss_value if local_loss_value is not None else -1.0),
+                        labels=batch_labels,
+                        sample_weights=batch_weights,
+                        optimizer=optimizer,
+                        optimizer_update=bool(should_update),
+                        grad_norm_pre_clip=grad_norm_pre_clip,
+                        grad_norm_post_clip=grad_norm_post_clip,
+                        step_elapsed_sec=step_elapsed_sec,
+                        memory_record=memory_record,
+                        loss_diagnostics=loss_diagnostics,
+                        source_summary=source_summary,
+                    ),
+                )
         if rank == 0:
             with step_timer.span("log_write_sec"):
-                _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": loss_value_for_log, "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "batch_size": int(batch_size), "sample_weight_mean": sample_weight_mean, "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle), "train_diagnostics_file": str(train_diagnostics_path), "step_timing_file": str(step_timing_path), "loss_diagnostics_collected": bool(collect_loss_diagnostics), "valid_target_tokens": int((loss_diagnostics.get("valid_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0), "optimized_target_tokens": int((loss_diagnostics.get("optimized_target_tokens") if isinstance(loss_diagnostics, dict) else 0) or 0)})
+                _write_log(args.log_file, {"step": global_step, "local_step": local_step + 1, "loss": rank0_loss_value, "preset": preset.name, "seq_len": seq_len, "distributed": "pipeline", "world_size": world_size, "pipeline_schedule": args.pipeline_schedule, "pipeline_microbatches": pipeline_microbatches, "microbatch_size": microbatch_size, "batch_size": int(batch_size), "sample_weight_mean": sample_weight_mean, "optimizer": str(args.optimizer), "optimizer_in_backward": bool(args.optimizer_in_backward), "optimizer_in_backward_update": str(args.optimizer_in_backward_update), "loss_token_stride": int(args.loss_token_stride), "max_loss_tokens_per_sample": int(args.max_loss_tokens_per_sample), "target_boundary_weight": float(args.target_boundary_weight), "target_prefix_weight": float(args.target_prefix_weight), "target_prefix_tokens": int(args.target_prefix_tokens), "gradient_accumulation_steps": int(gradient_accumulation_steps), "optimizer_update": bool(should_update), "shuffle": bool(args.shuffle), "train_diagnostics_file": str(final_train_diagnostics_path), "step_timing_file": str(step_timing_path), "loss_diagnostics_collected": bool(collect_loss_diagnostics), "valid_target_tokens": int(target_summary.valid_target_tokens if target_summary is not None else 0), "optimized_target_tokens": int(target_summary.optimized_target_tokens if target_summary is not None else 0)})
         if log_step_timing:
             rank_elapsed: list[float] = []
             if collect_rank_skew:
@@ -3698,12 +3979,26 @@ def main(argv: list[str] | None = None) -> int:
                 },
             )
         if int(args.save_interval) > 0 and (start_step + local_step + 1) % int(args.save_interval) == 0:
-            save_sharded_checkpoint(Path(args.out).with_name(f"{Path(args.out).stem}.step{global_step}"), shard, preset=preset, args=args, optimizer=optimizer, global_step=global_step, last_loss=loss_value_for_log)
+            checkpoint_loss = _sync_pipeline_loss_for_checkpoint(
+                rank=rank,
+                world_size=world_size,
+                loss_tensor=loss_tensor,
+                device=device,
+            )
+            last_loss = checkpoint_loss
+            save_sharded_checkpoint(Path(args.out).with_name(f"{Path(args.out).stem}.step{global_step}"), shard, preset=preset, args=args, optimizer=optimizer, global_step=global_step, last_loss=checkpoint_loss)
 
     if not bool(args.skip_final_save):
-        save_sharded_checkpoint(args.out, shard, preset=preset, args=args, optimizer=optimizer, global_step=start_step + int(args.steps), last_loss=float(loss_tensor.cpu()))
+        final_loss = _sync_pipeline_loss_for_checkpoint(
+            rank=rank,
+            world_size=world_size,
+            loss_tensor=loss_tensor,
+            device=device,
+        )
+        last_loss = final_loss
+        save_sharded_checkpoint(args.out, shard, preset=preset, args=args, optimizer=optimizer, global_step=start_step + int(args.steps), last_loss=final_loss)
     if rank == 0:
-        _write_log(args.log_file, {"status": "ok", "out": args.out, "last_loss": float(loss_tensor.cpu()), "global_step": start_step + int(args.steps), "distributed": "pipeline", "world_size": world_size, "final_save_skipped": bool(args.skip_final_save)})
+        _write_log(args.log_file, {"status": "ok", "out": args.out, "last_loss": last_loss, "global_step": start_step + int(args.steps), "distributed": "pipeline", "world_size": world_size, "final_save_skipped": bool(args.skip_final_save)})
     dist.destroy_process_group()
     return 0
 

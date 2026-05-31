@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 pytest.importorskip("torch")
@@ -108,6 +110,87 @@ def test_block_attention_residual_is_low_rank_and_memory_bounded() -> None:
     assert torch.equal(positions, torch.sort(positions).values)
     assert out.shape == x.shape
     assert torch.isfinite(out).all()
+
+
+def test_block_attention_residual_sdpa_fast_path_matches_chunked_loop(monkeypatch) -> None:
+    torch.manual_seed(2601)
+    cfg = _tiny_native_cfg()
+    cfg.block_attnres_chunk_tokens = 3
+    residual = BlockAttentionResidual(cfg)
+    residual.scale.data.fill_(0.75)
+    x = torch.randn(2, 19, cfg.d_model)
+    update = torch.randn_like(x)
+
+    monkeypatch.setenv("OMNICODER2026_BLOCK_ATTENTION_RESIDUAL_SDPA_MAX_TOKEN_BLOCK_PAIRS", "0")
+    chunked = residual(x, update)
+
+    sdpa_calls: list[tuple[torch.Size, torch.Size | None]] = []
+    original_sdpa = torch.nn.functional.scaled_dot_product_attention
+
+    def wrapped_sdpa(*args, **kwargs):
+        mask = kwargs.get("attn_mask")
+        sdpa_calls.append((args[0].shape, None if mask is None else mask.shape))
+        return original_sdpa(*args, **kwargs)
+
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", wrapped_sdpa)
+    monkeypatch.setenv("OMNICODER2026_BLOCK_ATTENTION_RESIDUAL_SDPA_MAX_TOKEN_BLOCK_PAIRS", "4096")
+    fast = residual(x, update)
+
+    assert sdpa_calls == [(torch.Size([2, 1, 19, cfg.block_attnres_rank]), torch.Size([1, 1, 19, 4]))]
+    torch.testing.assert_close(fast, chunked, atol=1e-6, rtol=1e-6)
+
+
+def test_block_attention_residual_sdpa_preserves_causal_block_mask(monkeypatch) -> None:
+    cfg = _tiny_native_cfg()
+    cfg.block_attnres_block_size = 2
+    residual = BlockAttentionResidual(cfg)
+    q = torch.zeros(1, 5, cfg.block_attnres_rank)
+    k = torch.zeros(1, 3, cfg.block_attnres_rank)
+    summaries = torch.zeros(1, 3, cfg.d_model)
+    summaries[0, :, 0] = torch.tensor([10.0, 20.0, 30.0])
+    summary_positions = torch.tensor([0, 1, 2])
+
+    monkeypatch.setenv("OMNICODER2026_BLOCK_ATTENTION_RESIDUAL_SDPA_MAX_TOKEN_BLOCK_PAIRS", "4096")
+    context = residual._residual_attention_context(q, k, summaries, summary_positions)
+
+    expected = torch.tensor([10.0, 10.0, 15.0, 15.0, 20.0])
+    torch.testing.assert_close(context[0, :, 0], expected, atol=1e-6, rtol=1e-6)
+    assert torch.count_nonzero(context[..., 1:]) == 0
+
+
+def test_block_attention_residual_sdpa_backward_matches_chunked_loop(monkeypatch) -> None:
+    torch.manual_seed(2602)
+    cfg = _tiny_native_cfg()
+    cfg.block_attnres_chunk_tokens = 4
+    base = BlockAttentionResidual(cfg)
+    base.scale.data.fill_(0.5)
+    chunked = copy.deepcopy(base)
+    fast = copy.deepcopy(base)
+    x = torch.randn(2, 17, cfg.d_model)
+    update = torch.randn_like(x)
+    probe = torch.randn_like(x)
+
+    x_chunked = x.detach().clone().requires_grad_(True)
+    update_chunked = update.detach().clone().requires_grad_(True)
+    monkeypatch.setenv("OMNICODER2026_BLOCK_ATTENTION_RESIDUAL_SDPA_MAX_TOKEN_BLOCK_PAIRS", "0")
+    chunked_out = chunked(x_chunked, update_chunked)
+    (chunked_out * probe).sum().backward()
+
+    x_fast = x.detach().clone().requires_grad_(True)
+    update_fast = update.detach().clone().requires_grad_(True)
+    monkeypatch.setenv("OMNICODER2026_BLOCK_ATTENTION_RESIDUAL_SDPA_MAX_TOKEN_BLOCK_PAIRS", "4096")
+    fast_out = fast(x_fast, update_fast)
+    (fast_out * probe).sum().backward()
+
+    torch.testing.assert_close(fast_out, chunked_out, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(x_fast.grad, x_chunked.grad, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(update_fast.grad, update_chunked.grad, atol=1e-5, rtol=1e-5)
+    for (name, fast_param), (chunked_name, chunked_param) in zip(fast.named_parameters(), chunked.named_parameters(), strict=True):
+        assert name == chunked_name
+        if fast_param.grad is None or chunked_param.grad is None:
+            assert fast_param.grad is None and chunked_param.grad is None
+            continue
+        torch.testing.assert_close(fast_param.grad, chunked_param.grad, atol=1e-5, rtol=1e-5)
 
 
 def test_rotary_embedding_keeps_multiple_length_cache_entries() -> None:

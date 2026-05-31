@@ -142,11 +142,33 @@ Mechanism:
 5. The residual-context signal is gated and added back to the layer output.
 6. The learned scale starts near zero so the path begins close to identity.
 
+Implementation detail: normal token/block shapes use
+`scaled_dot_product_attention` with an exact causal block-summary mask. The
+older chunked matmul/softmax loop remains as the fallback when the token-block
+pair count is too large for the fused mask path. This keeps the residual
+attention contract intact while moving the common forward/backward path onto
+the fused attention backend.
+
 This is not a full depth-token attention-logit accumulator. A full residual
 attention cache over every token and every layer would be too expensive for the
 1M-context/24GB contract. The implemented path is the current hardware-aware
 variant: it keeps a residual selection signal while bounding memory by summary
 blocks instead of by sequence length times depth.
+
+## Training Hot Path
+
+The full trainer uses pipeline parallelism for the 20B-class target. The current
+optimized data path is role-specific:
+
+- Rank 0 owns dataset iteration and input IDs.
+- The final rank owns labels, sample weights, LM loss, and target diagnostics.
+- Intermediate ranks no longer receive full label/sample-weight tensors.
+- Loss logging uses final-rank to rank-0 scalar sync; all-rank loss broadcast
+  is reserved for checkpoint/final-save boundaries.
+- Target diagnostics are cadence-driven and final-rank-owned.
+
+This preserves exact loss and masking semantics while removing full-rank target
+collectives from every step.
 
 ## Adaptive Latent Reasoning
 
@@ -283,6 +305,7 @@ Current speed/memory features:
 - Low-rank projections in sparse/global attention components.
 - Chunked loss to avoid full sequence-by-vocab materialization.
 - Activation checkpointing in the dense pipeline trainer.
+- Segmented activation-checkpoint profiling hooks for memory/speed experiments.
 - Low-memory optimizer-in-backward Adafactor path.
 - Weighted pipeline placement for fast-card training layouts.
 - Q4 fake-quant and QAT hooks for recovery validation.
@@ -325,6 +348,12 @@ pipeline schedule/microbatch choices, target-token budget, and optional block
 timing. Fake-quant-off is only allowed for no-save profiling runs that set the
 explicit profiling bypass; production and release-contract runs still fail
 closed if q4/QAT requirements are skipped.
+
+The proof-gate helper in `src/omnicoder/eval/proof_gates_2026.py` aggregates
+readiness evidence before a serious full-training launch. It fails closed when
+target-token coverage, heldout loss, decode/media route proof, official or
+authorized benchmark outputs, q4 profile proof, reasoning profile proof,
+coverage evidence, or real GGUF/runtime proof is missing.
 
 Checkpoint eval sidecars are intended to run asynchronously after a complete
 checkpoint marker. They cover heldout sample loss, target-token diagnostics,
@@ -385,18 +414,40 @@ authorized snapshots are not present.
 The current default 20B fast-card training profile keeps the architecture
 unchanged and uses implementation-level optimizations:
 
-- q4 fake-quant chunk rows default to 2048 after seq-256/512/1024 profiling.
-- Short and medium rungs default to the measured fast-card layer placement
-  `21,21,22`; longer-context rungs may override this for RTX 8000 headroom.
+- q4 fake-quant chunk rows default to 8192 after seq-1024/2048 profiling.
+- FFN sequence chunking defaults to 1024 after seq-1024/2048 profiling showed
+  the best measured q4 throughput with full target-token coverage.
+- Fast-card layer placement defaults to `16,16,32`. This keeps extra headroom
+  on the RTX 8000 and passes seq-2048 under the current 15360-MLP/full-residual
+  target; `21,21,22` remains a short-context probe setting only.
 - Sparse-attention grouped output projection uses one grouped batched matmul
   instead of per-group Python module dispatch.
 - Local/global fallback attention loops preallocate output tensors instead of
   list-building and concatenation.
 - RoPE and residual-summary position tensors are cached by shape/device/dtype.
+- Weighted/non-weighted forward paths cache module-device placement so block
+  passes do not repeatedly scan parameters to rediscover devices.
+- Chunked q4 fake-quant linear uses preallocated `mm`/`addmm` output buffers
+  in forward/backward rather than allocating through repeated `F.linear` and
+  matmul assignment.
+- CSA/HCA global attention now has an exact full-matrix fast path for small and
+  medium block products, preserving strict compressed-block causality while
+  avoiding Python block loops.
 - Dataset indexing avoids double JSON parsing, and tokenized row caching can be
   bounded by `OMNICODER2026_DATASET_RECORD_CACHE_MAX_BYTES`.
 - Train diagnostics reuse existing target-family counts when available and
   avoid repeating large source summaries every step.
+
+Measured profile guidance as of 2026-05-31:
+
+- `16,16,32` + q4 chunk8192 + FFN chunk1024 + activation checkpointing passes
+  seq-1024 at about 6.36-6.43 sequence tokens/s and seq-2048 at about 6.22
+  sequence tokens/s in no-checkpoint profiles.
+- Activation-checkpoint-off fails memory under the real q4 path.
+- Microbatch-2 GPipe fails and 1F1B times out in the current implementation.
+- Checkpoint segment-2 works but is slower than the baseline; segment-4 fails.
+- Fake-quant-off is not a useful production speed path and, in the latest
+  diagnostic run, did not beat q4 chunk8192.
 
 The KDA/GatedDeltaNet-2 path now has an opt-in compiled tensor-scan oracle
 behind `OMNICODER2026_GDN2_COMPILED_CHUNKS=1`. It preserves the fp32 recurrent

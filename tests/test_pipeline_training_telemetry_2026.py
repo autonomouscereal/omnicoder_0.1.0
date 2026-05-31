@@ -308,6 +308,61 @@ def test_train_diagnostics_reuses_loss_target_counts_without_label_cpu_pull(tmp_
     assert "origin_groups" not in record["data"]["source_summary"]
 
 
+def test_train_diagnostics_preserves_skipped_target_counts_without_labels(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(pipeline.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        pipeline,
+        "_token_family_counts",
+        lambda _labels: (_ for _ in ()).throw(AssertionError("skipped diagnostics should not inspect labels")),
+    )
+    args = _args(tmp_path)
+    ranges = [(0, 1), (1, 3)]
+    spec = pipeline.shard_spec(1, ranges)
+    memory = pipeline._pipeline_telemetry_record(
+        args=args,
+        rank=1,
+        world_size=2,
+        device=torch.device("cpu"),
+        ranges=ranges,
+        spec=spec,
+        seq_len=6,
+        step=13,
+        local_step=6,
+    )
+
+    record = pipeline._train_diagnostics_record(
+        args=args,
+        rank=1,
+        world_size=2,
+        spec=spec,
+        global_step=13,
+        local_step=6,
+        seq_len=6,
+        batch_size=2,
+        microbatch_size=1,
+        loss=3.5,
+        labels=None,
+        sample_weights=None,
+        optimizer=SimpleNamespace(param_groups=[{"lr": 2.0e-5}]),
+        optimizer_update=False,
+        grad_norm_pre_clip=None,
+        grad_norm_post_clip=None,
+        step_elapsed_sec=1.0,
+        memory_record=memory,
+        loss_diagnostics={
+            "diagnostics_skipped": True,
+            "valid_target_tokens": 17,
+            "optimized_target_tokens": 9,
+        },
+        source_summary={"available": True, "records": 1, "source_count": 1},
+    )
+
+    assert record["loss"]["valid_target_tokens"] == 17
+    assert record["loss"]["optimized_target_tokens"] == 9
+    assert record["targets"]["by_token_family"]["unknown"] == 17
+    assert record["targets"]["optimized_by_token_family"]["unknown"] == 9
+
+
 def test_train_diagnostics_path_and_jsonl_append(tmp_path) -> None:
     args = _args(tmp_path, train_diagnostics_file=str(tmp_path / "diag.jsonl"))
     path = pipeline._rank_train_diagnostics_path(args, rank=2, world_size=3)

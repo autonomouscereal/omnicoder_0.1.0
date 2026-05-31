@@ -221,7 +221,7 @@ docker run -d \
     --distributed pipeline_stage \
     --nproc-per-node 3 \
     --rank-device-map 0,1,2 \
-    --placement-layer-counts 21,21,22 \
+    --placement-layer-counts 16,16,32 \
     --pipeline-stage-schedule gpipe \
     --pipeline-microbatches 1 \
     --precision fp16 \
@@ -230,7 +230,7 @@ docker run -d \
     --optimizer-in-backward \
     --optimizer-in-backward-update lowmem_adafactor \
     --activation-checkpointing \
-    --fake-quant-chunk-rows 2048 \
+    --fake-quant-chunk-rows 8192 \
     --fake-quant-max-full-elements 16777216 \
     --steps-per-stage 64 \
     --posttrain-steps 32 \
@@ -243,8 +243,8 @@ docker run -d \
 
 The repeatable AI-server launcher for this lane is
 `scripts/ai_server_fast_pipeline_20b.sh`. It bakes in the fast-card device
-selection, Docker IPC/ulimit requirements, the current measured `21,21,22`
-short/medium-rung layer placement, low-memory Adafactor, q4 fake-quant hooks,
+selection, Docker IPC/ulimit requirements, the current measured `16,16,32`
+headroom layer placement, low-memory Adafactor, q4 fake-quant hooks,
 allocator fragmentation mitigation,
 and media-tree mounts. Schedule, microbatching, activation checkpointing, fake
 quant, fake-quant chunk rows, and target-token budget are environment
@@ -252,9 +252,10 @@ overrides so profile-matrix variants can compare them without rewriting the
 launcher.
 `OMNICODER_LM_LOSS_CHUNK_TOKENS` defaults to `64` so final-rank language
 model logits are chunked below the trainer's 128-token fallback during
-20B posttraining. `OMNICODER_FFN_CHUNK_TOKENS` defaults to `256` and is passed
+20B posttraining. `OMNICODER_FFN_CHUNK_TOKENS` defaults to `1024` and is passed
 as `OMNICODER2026_FFN_CHUNK_TOKENS` to chunk the SwiGLU sequence dimension
-during fake-quant backward recompute.
+during fake-quant backward recompute; lower it only if a longer-context rung
+needs memory relief.
 
 ```bash
 cd /home/cereal/omnicoder_2026_work
@@ -327,16 +328,17 @@ save. Launch additional chunks or GRPO/RLVR chunks by overriding
 
 When a complete checkpoint was saved with an older fast-card layer placement,
 the pipeline loader can repartition tensors into the current placement. This is
-used to move failed `16,8,40`, `16,14,34`, or earlier `16,16,32` shards into
+used to move failed `16,8,40`, `16,14,34`, or earlier profile shards into
 the current profiled layout: each rank loads its own shard first, then streams only
 missing layer tensors from the other rank files. Optimizer state is not
 restored across that placement change because parameter ordering and ownership
 changed. The 2048-token May 25 retries showed that `16,8,40` and `16,14,34`
 overfilled the RTX 8000 during fake-quant FFN backward, while later
-seq-1024 no-checkpoint profiles showed `21,21,22` with 2048-row fake-quant
-chunks is the best measured short/medium-rung default so far. Longer-context
-rungs may still override placement if memory profiling says the RTX 8000 needs
-more headroom.
+seq-1024/2048 no-checkpoint profiles showed `16,16,32` with 8192-row
+fake-quant chunks and 1024-token FFN chunks is the best measured safe
+short/medium-rung default so far. `21,21,22` remains a short-context probe
+setting only. Longer-context rungs may still override placement if memory
+profiling says the RTX 8000 needs more headroom.
 
 ```bash
 cd /home/cereal/omnicoder_2026_work

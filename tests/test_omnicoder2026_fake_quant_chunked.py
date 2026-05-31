@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from omnicoder.modeling.omnicoder2026 import MHCResidual, OmniCoder2026Config, QuantAwareLinear, _fake_quant_weight
+from omnicoder.modeling.omnicoder2026 import MHCResidual, OmniCoder2026Config, QuantAwareLinear, _fake_quant_weight, _fake_quant_weight_value
 
 
 def test_chunked_fake_quant_linear_matches_full_ste_reference(monkeypatch):
@@ -82,6 +82,34 @@ def test_chunked_fake_quant_linear_matches_full_ste_reference(monkeypatch):
     torch.testing.assert_close(x.grad, ref_x.grad, rtol=1e-6, atol=1e-6)
     torch.testing.assert_close(layer.weight.grad, ref_weight.grad, rtol=1e-6, atol=1e-6)
     torch.testing.assert_close(layer.bias.grad, ref_bias.grad, rtol=1e-6, atol=1e-6)
+
+
+def test_chunked_fake_quant_linear_accepts_mixed_activation_and_weight_dtype(monkeypatch):
+    monkeypatch.setenv("OMNICODER2026_FAKE_QUANT_CHUNK_ROWS", "2")
+    monkeypatch.setenv("OMNICODER2026_FAKE_QUANT_MAX_FULL_ELEMENTS", "0")
+
+    layer = QuantAwareLinear(6, 5, bias=True, fake_quant=True, group_size=4).half()
+    x = torch.linspace(-0.5, 0.5, steps=12, dtype=torch.float32).reshape(2, 6)
+    x.requires_grad_(True)
+
+    with torch.no_grad():
+        layer.weight.copy_(torch.linspace(-0.4, 0.5, steps=30, dtype=torch.float16).reshape(5, 6))
+        layer.bias.copy_(torch.linspace(-0.2, 0.2, steps=5, dtype=torch.float16))
+
+    actual = layer(x)
+    expected = F.linear(
+        x,
+        _fake_quant_weight_value(layer.weight.detach(), layer.group_size).float(),
+        layer.bias.detach().float(),
+    )
+
+    assert actual.dtype == x.dtype
+    torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-3)
+
+    actual.sum().backward()
+    assert x.grad is not None
+    assert layer.weight.grad is not None
+    assert layer.bias.grad is not None
 
 
 def test_mhc_residual_preserves_pipeline_dtype():

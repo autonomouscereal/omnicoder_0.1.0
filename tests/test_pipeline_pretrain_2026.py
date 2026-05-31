@@ -72,6 +72,37 @@ class FakeDist:
         raise AssertionError("filesystem checkpoint sync must not call dist.barrier")
 
 
+class FakePointToPointDist:
+    def __init__(self) -> None:
+        self.sent: list[tuple[int, torch.Tensor]] = []
+        self.received: list[tuple[int, tuple[int, ...], torch.dtype]] = []
+        self.broadcasts: list[tuple[int, tuple[int, ...], torch.dtype]] = []
+
+    def send(self, tensor: torch.Tensor, dst: int) -> None:
+        self.sent.append((int(dst), tensor.detach().clone()))
+
+    def recv(self, tensor: torch.Tensor, src: int) -> None:
+        self.received.append((int(src), tuple(tensor.shape), tensor.dtype))
+        if not self.sent:
+            raise AssertionError("recv called before a matching fake send")
+        _dst, payload = self.sent.pop(0)
+        tensor.copy_(payload.to(device=tensor.device, dtype=tensor.dtype))
+
+    def broadcast(self, tensor: torch.Tensor, src: int) -> None:
+        self.broadcasts.append((int(src), tuple(tensor.shape), tensor.dtype))
+
+
+class NoPointToPointDist:
+    def send(self, tensor: torch.Tensor, dst: int) -> None:
+        raise AssertionError("intermediate ranks must not send step tensors")
+
+    def recv(self, tensor: torch.Tensor, src: int) -> None:
+        raise AssertionError("intermediate ranks must not receive step tensors")
+
+    def broadcast(self, tensor: torch.Tensor, src: int) -> None:
+        raise AssertionError("intermediate ranks must not broadcast step tensors")
+
+
 class TinyShard:
     spec = SimpleNamespace(stage_index=0, num_stages=3, layer_start=0, layer_end=1, has_embed=True, has_head=False)
 
@@ -125,6 +156,118 @@ def test_stage_ranges_target_contract() -> None:
         stage_ranges(6, "2,2,1")
 
 
+def test_pipeline_step_tensor_routing_keeps_labels_and_weights_final_rank_only() -> None:
+    batch = torch.arange(8, dtype=torch.long).reshape(2, 4)
+    labels = batch + 100
+    weights = torch.tensor([0.5, 2.0], dtype=torch.float32)
+    fake_dist = FakePointToPointDist()
+
+    rank0_tensors = pipeline._route_pipeline_step_tensors(
+        rank=0,
+        world_size=3,
+        batch=batch,
+        labels=labels,
+        sample_weights=weights,
+        batch_size=2,
+        seq_len=4,
+        device=torch.device("cpu"),
+        dist_module=fake_dist,
+    )
+    assert rank0_tensors.input_ids is batch
+    assert rank0_tensors.labels is None
+    assert rank0_tensors.sample_weights is None
+    assert [(dst, tuple(tensor.shape), tensor.dtype) for dst, tensor in fake_dist.sent] == [
+        (2, (2, 4), torch.long),
+        (2, (2,), torch.float32),
+    ]
+
+    intermediate = pipeline._route_pipeline_step_tensors(
+        rank=1,
+        world_size=3,
+        batch=None,
+        labels=None,
+        sample_weights=None,
+        batch_size=2,
+        seq_len=4,
+        device=torch.device("cpu"),
+        dist_module=NoPointToPointDist(),
+    )
+    assert intermediate.input_ids is None
+    assert intermediate.labels is None
+    assert intermediate.sample_weights is None
+
+    final_tensors = pipeline._route_pipeline_step_tensors(
+        rank=2,
+        world_size=3,
+        batch=None,
+        labels=None,
+        sample_weights=None,
+        batch_size=2,
+        seq_len=4,
+        device=torch.device("cpu"),
+        dist_module=fake_dist,
+    )
+    assert final_tensors.input_ids is None
+    assert torch.equal(final_tensors.labels, labels)
+    assert torch.equal(final_tensors.sample_weights, weights)
+    assert fake_dist.received == [(0, (2, 4), torch.long), (0, (2,), torch.float32)]
+
+
+def test_pipeline_loss_and_target_summary_are_point_to_point_and_interval_owned() -> None:
+    fake_dist = FakePointToPointDist()
+    final_loss = torch.tensor(3.25)
+    sent_loss = pipeline._sync_pipeline_loss_to_rank0(
+        rank=2,
+        world_size=3,
+        loss_tensor=final_loss,
+        device=torch.device("cpu"),
+        dist_module=fake_dist,
+    )
+    assert sent_loss is not None
+    assert [(dst, tuple(tensor.shape), float(tensor.item())) for dst, tensor in fake_dist.sent] == [(0, (), 3.25)]
+
+    rank0_loss = pipeline._sync_pipeline_loss_to_rank0(
+        rank=0,
+        world_size=3,
+        loss_tensor=None,
+        device=torch.device("cpu"),
+        dist_module=fake_dist,
+    )
+    assert rank0_loss is not None
+    assert float(rank0_loss.item()) == pytest.approx(3.25)
+
+    no_sync = pipeline._sync_pipeline_target_summary_to_rank0(
+        rank=1,
+        world_size=3,
+        loss_diagnostics=None,
+        sample_weights=None,
+        device=torch.device("cpu"),
+        dist_module=NoPointToPointDist(),
+    )
+    assert no_sync is None
+
+    diagnostics = {"valid_target_tokens": 7, "optimized_target_tokens": 5}
+    weights = torch.tensor([1.0, 3.0], dtype=torch.float32)
+    final_summary = pipeline._sync_pipeline_target_summary_to_rank0(
+        rank=2,
+        world_size=3,
+        loss_diagnostics=diagnostics,
+        sample_weights=weights,
+        device=torch.device("cpu"),
+        dist_module=fake_dist,
+    )
+    assert final_summary == pipeline.PipelineTargetSummary(7, 5, 2.0)
+    rank0_summary = pipeline._sync_pipeline_target_summary_to_rank0(
+        rank=0,
+        world_size=3,
+        loss_diagnostics=None,
+        sample_weights=None,
+        device=torch.device("cpu"),
+        dist_module=fake_dist,
+    )
+    assert rank0_summary == final_summary
+
+
 def test_sparse_global_attention_masks_current_compressed_block() -> None:
     cfg = tiny_cfg(n_layers=3)
     cfg.csa_top_k_blocks = 4
@@ -139,6 +282,26 @@ def test_sparse_global_attention_masks_current_compressed_block() -> None:
     assert mask[4, 0]
     assert mask[4, 1]
     assert not mask[4, 2]
+
+
+def test_sparse_global_attention_full_fast_path_matches_chunked_loop(monkeypatch) -> None:
+    torch.manual_seed(1208)
+    cfg = tiny_cfg(n_layers=3)
+    cfg.n_heads = 2
+    cfg.head_dim = 4
+    cfg.d_model = 8
+    cfg.csa_top_k_blocks = 8
+    attn = SparseLatentAttention(cfg, "csa")
+    q = torch.randn(1, cfg.n_heads, 16, cfg.head_dim)
+    k = torch.randn(1, 1, 8, cfg.head_dim)
+    v = torch.randn(1, 1, 8, cfg.head_dim)
+
+    monkeypatch.setenv("OMNICODER2026_GLOBAL_ATTENTION_FULL_MAX_QBLOCKS", "0")
+    chunked = attn._global_attention(q, k, v, block_size=2)
+    monkeypatch.setenv("OMNICODER2026_GLOBAL_ATTENTION_FULL_MAX_QBLOCKS", "128")
+    full = attn._global_attention(q, k, v, block_size=2)
+
+    torch.testing.assert_close(full, chunked, atol=1e-6, rtol=1e-6)
 
 
 def test_full_checkpoint_loads_rank_local_shard_from_cpu(tmp_path) -> None:
@@ -393,6 +556,35 @@ def test_final_stage_selected_token_lm_loss_bounds_vocab_projection() -> None:
     assert timing["spans"]["selected_lm_head_ce_sec"] >= 0.0
     loss.backward()
     assert hidden.grad is not None
+
+
+def test_segmented_activation_checkpoint_matches_per_block_checkpoint() -> None:
+    cfg = tiny_cfg(n_layers=4)
+    ranges = stage_ranges(4, "2,2")
+    per_block = OmniCoder2026PipelineShard(cfg, shard_spec(1, ranges), checkpoint_blocks=True, checkpoint_segment_size=1)
+    segmented = OmniCoder2026PipelineShard(cfg, shard_spec(1, ranges), checkpoint_blocks=True, checkpoint_segment_size=2)
+    segmented.load_state_dict(per_block.state_dict())
+    per_block.train()
+    segmented.train()
+
+    hidden = torch.randn(1, 8, cfg.d_model)
+    labels = torch.tensor([[-100, -100, 5, 6, -100, 7, 8, 9]], dtype=torch.long)
+    hidden_a = hidden.detach().clone().requires_grad_(True)
+    hidden_b = hidden.detach().clone().requires_grad_(True)
+
+    loss_a = per_block.chunked_lm_loss(per_block(hidden_a), labels, chunk_tokens=2)
+    loss_b = segmented.chunked_lm_loss(segmented(hidden_b), labels, chunk_tokens=2)
+    loss_a.backward()
+    loss_b.backward()
+
+    torch.testing.assert_close(loss_b, loss_a, atol=0.0, rtol=0.0)
+    torch.testing.assert_close(hidden_b.grad, hidden_a.grad, atol=0.0, rtol=0.0)
+    torch.testing.assert_close(
+        segmented.blocks[2].ffn.down.weight.grad,
+        per_block.blocks[2].ffn.down.weight.grad,
+        atol=0.0,
+        rtol=0.0,
+    )
 
 
 def test_final_stage_ignores_masked_prompt_labels() -> None:
