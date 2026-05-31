@@ -886,16 +886,24 @@ class SparseLatentAttention(nn.Module):
         return (c * weights).sum(dim=2)
 
     def _local_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-        if k.shape[1] == 1 and q.shape[1] > 1:
-            expanded_k = k.expand(-1, q.shape[1], -1, -1)
-            expanded_v = v.expand(-1, q.shape[1], -1, -1)
-        else:
-            expanded_k = k
-            expanded_v = v
+        use_gqa = bool(k.shape[1] == 1 and q.shape[1] > 1)
+
+        def sdpa(qi: torch.Tensor, ki: torch.Tensor, vi: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+            if use_gqa:
+                try:
+                    return F.scaled_dot_product_attention(qi, ki, vi, enable_gqa=True, **kwargs)
+                except TypeError:
+                    pass
+                except RuntimeError:
+                    pass
+                ki = ki.expand(-1, qi.shape[1], -1, -1)
+                vi = vi.expand(-1, qi.shape[1], -1, -1)
+            return F.scaled_dot_product_attention(qi, ki, vi, **kwargs)
+
         t = q.shape[2]
         window = max(1, int(self.cfg.local_window))
         if t <= window:
-            return F.scaled_dot_product_attention(q, expanded_k, expanded_v, is_causal=True, dropout_p=0.0)
+            return sdpa(q, k, v, is_causal=True, dropout_p=0.0)
         flex_out = _flex_sliding_local_attention(self, q, k, v, window)
         if flex_out is not None:
             return flex_out
@@ -904,10 +912,10 @@ class SparseLatentAttention(nn.Module):
             end = min(t, start + window)
             left = max(0, start - window)
             qi = q[:, :, start:end, :]
-            ki = expanded_k[:, :, left:end, :]
-            vi = expanded_v[:, :, left:end, :]
+            ki = k[:, :, left:end, :]
+            vi = v[:, :, left:end, :]
             mask = _cached_tril_mask(self, q, end - start, end - left, start - left)
-            output[:, :, start:end, :] = F.scaled_dot_product_attention(qi, ki, vi, attn_mask=mask, dropout_p=0.0)
+            output[:, :, start:end, :] = sdpa(qi, ki, vi, attn_mask=mask, dropout_p=0.0)
         return output
 
     def _global_mask(self, t: int, n_blocks: int, block_size: int, device: torch.device) -> torch.Tensor:

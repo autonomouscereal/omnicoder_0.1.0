@@ -433,6 +433,8 @@ unchanged and uses implementation-level optimizations:
 - CSA/HCA global attention now has an exact full-matrix fast path for small and
   medium block products, preserving strict compressed-block causality while
   avoiding Python block loops.
+- Sparse MQA local attention uses native SDPA GQA when available, with the old
+  expanded-K/V path retained as exact fallback.
 - Dataset indexing avoids double JSON parsing, and tokenized row caching can be
   bounded by `OMNICODER2026_DATASET_RECORD_CACHE_MAX_BYTES`.
 - Train diagnostics reuse existing target-family counts when available and

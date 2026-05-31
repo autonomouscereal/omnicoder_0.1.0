@@ -406,6 +406,36 @@ def test_sparse_latent_attention_loads_legacy_grouped_o_projection_state() -> No
     torch.testing.assert_close(reference(x), layer(x), atol=0.0, rtol=0.0)
 
 
+def test_sparse_local_attention_uses_native_gqa_before_expand_fallback(monkeypatch) -> None:
+    torch.manual_seed(770)
+    cfg = _tiny_native_cfg()
+    cfg.local_window = 16
+    layer = SparseLatentAttention(cfg, "csa")
+    q = torch.randn(1, cfg.n_heads, 8, cfg.head_dim)
+    k = torch.randn(1, 1, 8, cfg.head_dim)
+    v = torch.randn(1, 1, 8, cfg.head_dim)
+
+    original_sdpa = torch.nn.functional.scaled_dot_product_attention
+    gqa_flags: list[bool] = []
+
+    def wrapped_sdpa(*args, **kwargs):
+        gqa_flags.append(bool(kwargs.get("enable_gqa", False)))
+        return original_sdpa(*args, **kwargs)
+
+    expected = original_sdpa(
+        q,
+        k.expand(-1, q.shape[1], -1, -1),
+        v.expand(-1, q.shape[1], -1, -1),
+        is_causal=True,
+        dropout_p=0.0,
+    )
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", wrapped_sdpa)
+    actual = layer._local_attention(q, k, v)
+
+    assert gqa_flags and gqa_flags[0] is True
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+
+
 def test_flex_local_attention_matches_chunked_fallback(monkeypatch) -> None:
     if not torch.cuda.is_available():
         pytest.skip("CUDA is required for FlexAttention parity")

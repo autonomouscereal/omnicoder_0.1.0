@@ -48,6 +48,9 @@ quality reductions:
   matmuls onto explicit `torch.mm`/`torch.addmm(..., out=...)` buffers. This
   reduces Python-side tensor assignment and allocator churn while preserving
   the reference STE tests.
+- Sparse MQA local attention now attempts native SDPA GQA before falling back
+  to expanded K/V tensors, preserving exact local attention semantics while
+  avoiding avoidable K/V expansion on runtimes that support `enable_gqa`.
 - Replaced per-group sparse-attention output projections with
   `QuantAwareGroupedLinear`, a single grouped batched matmul that preserves
   grouped weights and fake-quant behavior.
@@ -144,6 +147,8 @@ Latest corrective proof commands/results:
 - CUDA fast-card: `8 passed in 5.22s` for block residual SDPA parity,
   block-mask preservation, backward parity, CUDA FlexAttention parity, and q4
   fake-quant tests.
+- CUDA sparse-GQA follow-up: `3 passed in 5.28s` for native SDPA GQA dispatch,
+  Flex sparse MQA parity, and residual SDPA backward parity.
 - Pipeline/orchestration: `131 passed in 12.65s` after replacing all-rank
   batch/label/weight broadcasts with point-to-point target routing.
 - CPU/Gloo distributed smoke: 3 ranks, 2 steps, explicit assistant targets,
