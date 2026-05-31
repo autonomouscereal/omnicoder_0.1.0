@@ -107,6 +107,7 @@ unless noted otherwise, with no final checkpoint writes.
 | seq-1024 q4 chunk 2048, `20,20,24` placement | ~6.15 train seq-tokens/s |
 | seq-1024 q4 chunk 2048, `21,21,22` placement | ~6.22 train seq-tokens/s |
 | final default seq-1024 q4 chunk 2048, `21,21,22` | ~5.99 train seq-tokens/s |
+| commit `280c257` seq-1024 q4 chunk 2048, no checkpoint | ~6.35 train seq-tokens/s |
 
 The profile matrix showed that `schedule_step` remains the dominant cost.
 Batch fetch, host-to-device, telemetry, and log-write timings were small after
@@ -120,6 +121,12 @@ Remote evidence paths:
 - `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_chunk2048_seq1024_staged_20260531T051653Z/profile_matrix_summary.json`
 - `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_chunk2048_seq1024_placements_20260531T052159Z/profile_matrix_summary.json`
 - `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_defaults_seq1024_20260531T053346Z/profile_matrix_summary.json`
+- `/home/cereal/omnicoder_2026_work/weights/training_runs/profile_matrix_optproof_commit280c257_seq1024/profile_matrix_summary.json`
+
+The commit-bound profile used `fakequant_chunk2048_loss64`, exited cleanly,
+wrote no checkpoint, and produced loss `16.850051879882812`. Loss diagnostics
+were disabled for that one-step throughput probe, so target-token coverage was
+not collected in that run.
 
 ## Omnimodal Trainability Proof
 
