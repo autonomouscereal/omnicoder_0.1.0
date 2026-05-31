@@ -76,6 +76,7 @@ def test_profile_matrix_summary_aggregates_phase_timings_and_target_coverage(tmp
     assert summary["phase_timing_summary"]["schedule_step_sec"]["mean_sec"] == 2.25
     assert summary["rank_skew_summary"]["max_sec"] == 0.5
     assert summary["rank_timing"][0]["phase_spans"]["host_to_device_sec"] == 0.5
+    assert summary["schedule_step_skew_ratio"] == 1.0
 
 
 def test_profile_matrix_summary_flags_checkpoint_files(tmp_path: Path) -> None:
@@ -99,3 +100,22 @@ def test_profile_matrix_summary_flags_checkpoint_files(tmp_path: Path) -> None:
 
     assert summary["no_checkpoint_written"] is False
     assert summary["checkpoint_complete_files"]
+
+
+def test_profile_matrix_default_selection_skips_opt_in_risky_variants() -> None:
+    namespace = runpy.run_path(str(SCRIPT))
+    select_variants = namespace["select_variants"]
+
+    selected, missing = select_variants(set())
+    names = {str(variant["name"]) for variant in selected}
+
+    assert missing == []
+    assert "fakequant_chunk2048_loss64" in names
+    assert "gdn2_compiled_fakequant_chunk256_loss64" not in names
+    assert "gdn2_jit_q4_loss64" not in names
+    assert "fakequant_chunk2048_loss64_diagnostics" not in names
+    assert "actckpt_off_q4_loss64" not in names
+
+    selected, missing = select_variants({"gdn2_jit_q4_loss64", "missing_variant"})
+    assert [variant["name"] for variant in selected] == ["gdn2_jit_q4_loss64"]
+    assert missing == ["missing_variant"]

@@ -7,6 +7,7 @@ from omnicoder.modeling.kda_2026 import (
     KDA,
     KaczmarzLinearAttention,
     _gated_deltanet2_compiled_chunks,
+    _gated_deltanet2_jit_scan,
     gated_deltanet2_pytorch,
     kaczmarz_linear_attention_pytorch,
     kda_pytorch,
@@ -116,6 +117,66 @@ def test_gated_deltanet2_loads_legacy_unfused_projection_state(device):
     expected = F.linear(y.reshape(2, 5, inner), legacy["o_proj.weight"])
 
     torch.testing.assert_close(layer(x), expected, atol=1e-6, rtol=1e-6)
+
+
+@pytest.mark.parametrize("device", _devices())
+def test_gated_deltanet2_jit_scan_matches_reference(device):
+    torch.manual_seed(29)
+    batch, time, heads, key_dim, value_dim = 1, 7, 2, 4, 4
+    q = torch.randn(batch, time, heads, key_dim, device=device) * 0.1
+    k = torch.randn(batch, time, heads, key_dim, device=device) * 0.1
+    v = torch.randn(batch, time, heads, value_dim, device=device) * 0.1
+    write = torch.randn(batch, time, heads, device=device) * 0.1
+    forget = torch.randn(batch, time, heads, device=device) * 0.1
+    initial_state = torch.randn(batch, heads, key_dim, value_dim, device=device, dtype=torch.float32) * 0.01
+
+    expected, expected_state = gated_deltanet2_pytorch(
+        q,
+        k,
+        v,
+        write_gate=write,
+        forget_gate=forget,
+        initial_state=initial_state,
+    )
+    actual, actual_state = _gated_deltanet2_jit_scan(
+        q,
+        k,
+        v,
+        write_gate=write,
+        forget_gate=forget,
+        initial_state=initial_state,
+    )
+
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(actual_state, expected_state, atol=1e-6, rtol=1e-6)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="JIT GDN2 training parity is most relevant on CUDA")
+def test_gated_deltanet2_module_jit_scan_gradient_parity_cuda(monkeypatch):
+    torch.manual_seed(30)
+    eager = GatedDeltaNet2(d_model=16, n_heads=4, head_dim=4).cuda().to(dtype=torch.float16)
+    scripted = GatedDeltaNet2(d_model=16, n_heads=4, head_dim=4).cuda().to(dtype=torch.float16)
+    scripted.load_state_dict(eager.state_dict())
+    x_eager = torch.randn(2, 9, 16, device="cuda", dtype=torch.float16, requires_grad=True)
+    x_scripted = x_eager.detach().clone().requires_grad_(True)
+
+    monkeypatch.setenv("OMNICODER2026_GDN2_JIT_SCAN", "0")
+    y_eager, state_eager = eager(x_eager, return_state=True)
+    eager_loss = y_eager.float().square().mean() + state_eager.square().mean() * 1e-3
+    eager_loss.backward()
+
+    monkeypatch.setenv("OMNICODER2026_GDN2_JIT_SCAN", "1")
+    y_scripted, state_scripted = scripted(x_scripted, return_state=True)
+    scripted_loss = y_scripted.float().square().mean() + state_scripted.square().mean() * 1e-3
+    scripted_loss.backward()
+
+    torch.testing.assert_close(y_scripted, y_eager, atol=3e-4, rtol=3e-3)
+    torch.testing.assert_close(state_scripted, state_eager, atol=3e-4, rtol=3e-3)
+    torch.testing.assert_close(x_scripted.grad, x_eager.grad, atol=3e-4, rtol=3e-3)
+    for scripted_param, eager_param in zip(scripted.parameters(), eager.parameters(), strict=True):
+        assert scripted_param.grad is not None
+        assert eager_param.grad is not None
+        torch.testing.assert_close(scripted_param.grad, eager_param.grad, atol=4e-4, rtol=5e-3)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="compiled GDN2 fast path is CUDA-only")

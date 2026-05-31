@@ -382,6 +382,22 @@ authorized snapshots are not present.
 
 ## Optimization Status
 
+The current default 20B fast-card training profile keeps the architecture
+unchanged and uses implementation-level optimizations:
+
+- q4 fake-quant chunk rows default to 2048 after seq-256/512/1024 profiling.
+- Short and medium rungs default to the measured fast-card layer placement
+  `21,21,22`; longer-context rungs may override this for RTX 8000 headroom.
+- Sparse-attention grouped output projection uses one grouped batched matmul
+  instead of per-group Python module dispatch.
+- Local/global fallback attention loops preallocate output tensors instead of
+  list-building and concatenation.
+- RoPE and residual-summary position tensors are cached by shape/device/dtype.
+- Dataset indexing avoids double JSON parsing, and tokenized row caching can be
+  bounded by `OMNICODER2026_DATASET_RECORD_CACHE_MAX_BYTES`.
+- Train diagnostics reuse existing target-family counts when available and
+  avoid repeating large source summaries every step.
+
 The KDA/GatedDeltaNet-2 path now has an opt-in compiled tensor-scan oracle
 behind `OMNICODER2026_GDN2_COMPILED_CHUNKS=1`. It preserves the fp32 recurrent
 state and exact gate/update equations and has CUDA output/state/gradient parity
@@ -389,6 +405,11 @@ tests. It is not a default training path yet: isolated cached calls can be
 faster after very expensive compilation, but the real 20B seq-256 profile did
 not beat the eager recurrent path, so full training keeps the eager oracle
 unless a longer-run benchmark proves the compile cost amortizes safely.
+
+A second opt-in TorchScript GDN2 scan exists behind
+`OMNICODER2026_GDN2_JIT_SCAN=1`. It passed isolated parity tests but is not a
+default full-pipeline path because pipeline/activation-checkpoint backward
+metadata did not stay stable enough in the 20B profile run.
 
 ## Runtime And Export
 

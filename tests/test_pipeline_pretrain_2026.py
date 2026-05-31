@@ -160,6 +160,37 @@ def test_full_checkpoint_loads_rank_local_shard_from_cpu(tmp_path) -> None:
             assert torch.equal(value, target.state_dict()[key])
 
 
+def test_full_checkpoint_loads_legacy_sparse_grouped_output_projection(tmp_path) -> None:
+    cfg = tiny_cfg(n_layers=1)
+    cfg.layer_pattern = ("csa",)
+    cfg.o_groups = 2
+    ranges = stage_ranges(1, "1")
+    source = OmniCoder2026PipelineShard(cfg, shard_spec(0, ranges))
+    full_state: dict[str, torch.Tensor] = {}
+    expected_grouped: dict[str, torch.Tensor] = {}
+    for key, value in source.state_dict().items():
+        tensor = value.detach().cpu().clone()
+        if key.endswith(".o_a_proj.weight") and tensor.ndim == 3:
+            expected_grouped[key] = tensor
+            prefix = key[: -len("o_a_proj.weight")]
+            for group_index in range(int(tensor.shape[0])):
+                full_state[f"{prefix}o_a_groups.{group_index}.weight"] = tensor[group_index].clone()
+        else:
+            full_state[key] = tensor
+    assert expected_grouped, "test fixture must include a grouped sparse output projection"
+    ckpt = tmp_path / "legacy_sparse_grouped.pt"
+    torch.save({"model_state_dict": full_state, "global_step": 11, "last_loss": 2.25}, ckpt)
+    target = OmniCoder2026PipelineShard(cfg, shard_spec(0, ranges))
+
+    step, loss = load_full_checkpoint_shard(ckpt, target)
+
+    assert step == 11
+    assert loss == 2.25
+    loaded = target.state_dict()
+    for key, expected in expected_grouped.items():
+        assert torch.equal(loaded[key], expected)
+
+
 def test_sharded_checkpoint_resume_can_reshard_changed_layer_placement(tmp_path, monkeypatch) -> None:
     cfg = tiny_cfg(n_layers=6)
     old_ranges = stage_ranges(6, "2,2,2")
@@ -609,6 +640,39 @@ def test_weighted_pipeline_dataset_masks_user_and_trains_assistant(tmp_path) -> 
     assert labels[:10].eq(-100).all()
 
 
+def test_weighted_pipeline_dataset_caches_tokenized_records(tmp_path, monkeypatch) -> None:
+    class CountingTokenizer:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def encode(self, text: str) -> list[int]:
+            self.calls += 1
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    record = {
+        "messages": [
+            {"role": "user", "content": "name the cached target"},
+            {"role": "assistant", "content": "cache proof answer"},
+        ]
+    }
+    source = tmp_path / "cached.jsonl"
+    source.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    monkeypatch.setenv("OMNICODER2026_DATASET_RECORD_CACHE_MAX_BYTES", "1048576")
+
+    tokenizer = CountingTokenizer()
+    dataset = WeightedTextJsonlDataset(str(source), tokenizer, seq_len=96, vocab_size=256)
+    first_ids, first_labels, _first_weight = dataset[0]
+    second_ids, second_labels, _second_weight = dataset[0]
+    summary = pipeline._dataset_source_summary(dataset)
+
+    assert tokenizer.calls == 1
+    assert torch.equal(first_ids, second_ids)
+    assert torch.equal(first_labels, second_labels)
+    assert summary["record_cache"]["entries"] == 1
+    assert summary["record_cache"]["misses"] == 1
+    assert summary["record_cache"]["hits"] >= 1
+
+
 def test_weighted_pipeline_dataset_trains_media_target_json(tmp_path) -> None:
     class TinyTokenizer:
         def encode(self, text: str) -> list[int]:
@@ -931,6 +995,48 @@ def test_dataset_skips_targetless_context_rows(tmp_path) -> None:
     _ids, labels, _weight = dataset[0]
 
     assert labels[1:].ge(0).any()
+
+
+def test_weighted_dataset_indexes_jsonl_with_single_parse_per_line(tmp_path, monkeypatch) -> None:
+    class TinyTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [ord(ch) % 101 + 2 for ch in text]
+
+    rows = [
+        {
+            "messages": [
+                {"role": "user", "content": "prompt one"},
+                {"role": "assistant", "content": "answer one"},
+            ],
+            "quality_score": 0.99,
+            "contamination_status": "clean",
+        },
+        {
+            "messages": [
+                {"role": "user", "content": "prompt two"},
+                {"role": "assistant", "content": "answer two"},
+            ],
+            "quality_score": 0.99,
+            "contamination_status": "clean",
+        },
+    ]
+    source = tmp_path / "parse_once.jsonl"
+    source.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    real_loads = pipeline.json.loads
+    calls = {"count": 0}
+
+    def counting_loads(*args, **kwargs):
+        calls["count"] += 1
+        return real_loads(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline.json, "loads", counting_loads)
+
+    dataset = WeightedTextJsonlDataset(str(source), TinyTokenizer(), seq_len=64, vocab_size=256)
+
+    assert calls["count"] == len(rows)
+    assert len(dataset.source_row_keys) == len(rows)
+    assert len(dataset.row_metadata) == len(rows)
+    assert len(dataset.records) >= len(rows)
 
 
 def test_dataset_retries_legacy_targetless_index_entries(tmp_path) -> None:

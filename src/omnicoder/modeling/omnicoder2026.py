@@ -364,10 +364,58 @@ class QuantAwareLinear(nn.Linear):
         return _ChunkedFakeQuantLinearSTE.apply(x, self.weight, self.bias, self.group_size, rows)
 
 
+class QuantAwareGroupedLinear(nn.Module):
+    """Grouped no-bias linear with the same fake-quant semantics as QuantAwareLinear.
+
+    This replaces small per-group ModuleList projections in sparse attention with
+    one grouped batched matmul. It preserves the exact grouped parameterization,
+    but removes repeated Python dispatch and concatenation from every CSA/HCA
+    layer.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        groups: int,
+        *,
+        fake_quant: bool = False,
+        group_size: int = 128,
+    ):
+        super().__init__()
+        self.in_features = int(in_features)
+        self.out_features = int(out_features)
+        self.groups = max(1, int(groups))
+        if self.in_features % self.groups != 0:
+            raise ValueError(f"in_features={self.in_features} must be divisible by groups={self.groups}")
+        if self.out_features % self.groups != 0:
+            raise ValueError(f"out_features={self.out_features} must be divisible by groups={self.groups}")
+        self.in_per_group = self.in_features // self.groups
+        self.out_per_group = self.out_features // self.groups
+        self.fake_quant = bool(fake_quant)
+        self.group_size = int(group_size)
+        self.weight = nn.Parameter(torch.empty(self.groups, self.out_per_group, self.in_per_group))
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        nn.init.kaiming_uniform_(self.weight.reshape(self.out_features, self.in_per_group), a=math.sqrt(5))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        weight = self.weight
+        if self.fake_quant:
+            flat = weight.reshape(self.out_features, self.in_per_group)
+            weight = _fake_quant_weight(flat, self.group_size).reshape_as(self.weight)
+        x_flat = x.reshape(-1, self.groups, self.in_per_group).transpose(0, 1)
+        y = torch.bmm(x_flat, weight.transpose(1, 2)).transpose(0, 1)
+        return y.reshape(*x.shape[:-1], self.out_features)
+
+
 def reset_omnicoder2026_parameters(module: nn.Module, cfg: OmniCoder2026Config) -> None:
     std = float(getattr(cfg, "initializer_std", 0.02) or 0.02)
     for child in module.modules():
         if isinstance(child, nn.Embedding):
+            nn.init.normal_(child.weight, mean=0.0, std=std)
+        elif isinstance(child, QuantAwareGroupedLinear):
             nn.init.normal_(child.weight, mean=0.0, std=std)
         elif isinstance(child, QuantAwareLinear):
             nn.init.normal_(child.weight, mean=0.0, std=std)
@@ -400,14 +448,20 @@ class RotaryEmbedding(nn.Module):
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self._cache_key: tuple[str, int | None, torch.dtype, int] | None = None
         self._cache_value: tuple[torch.Tensor, torch.Tensor] | None = None
+        self._cache_values: dict[tuple[str, int | None, torch.dtype, int], tuple[torch.Tensor, torch.Tensor]] = {}
         self._cache_max_tokens = max(0, _env_int("OMNICODER2026_ROPE_CACHE_MAX_TOKENS", 8192))
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
         t = x.shape[-2]
         if positions is None and self._cache_max_tokens > 0 and int(t) <= self._cache_max_tokens:
             key = (x.device.type, x.device.index, x.dtype, int(t))
-            if self._cache_key == key and self._cache_value is not None:
-                return self._cache_value
+            cache = getattr(self, "_cache_values", None)
+            if not isinstance(cache, dict):
+                cache = {}
+                self._cache_values = cache
+            cached = cache.get(key)
+            if cached is not None:
+                return cached
         else:
             key = None
         if positions is None:
@@ -416,6 +470,13 @@ class RotaryEmbedding(nn.Module):
         emb = torch.cat((freqs, freqs), dim=-1).to(dtype=x.dtype)
         value = (emb.cos(), emb.sin())
         if positions is not None and key is not None:
+            cache = getattr(self, "_cache_values", None)
+            if not isinstance(cache, dict):
+                cache = {}
+                self._cache_values = cache
+            if len(cache) >= 16:
+                cache.clear()
+            cache[key] = value
             self._cache_key = key
             self._cache_value = value
         return value
@@ -677,7 +738,7 @@ class LocalCausalAttention(nn.Module):
         flex_out = _flex_sliding_local_attention(self, q, k, v, window)
         if flex_out is not None:
             return flex_out
-        parts: list[torch.Tensor] = []
+        output = q.new_empty(q.shape)
         for start in range(0, t, window):
             end = min(t, start + window)
             left = max(0, start - window)
@@ -685,8 +746,8 @@ class LocalCausalAttention(nn.Module):
             ki = k[:, :, left:end, :]
             vi = v[:, :, left:end, :]
             mask = _cached_tril_mask(self, q, end - start, end - left, start - left)
-            parts.append(F.scaled_dot_product_attention(qi, ki, vi, attn_mask=mask, dropout_p=0.0))
-        return torch.cat(parts, dim=2)
+            output[:, :, start:end, :] = F.scaled_dot_product_attention(qi, ki, vi, attn_mask=mask, dropout_p=0.0)
+        return output
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, t, _ = x.shape
@@ -730,14 +791,16 @@ class SparseLatentAttention(nn.Module):
         if inner % self.o_groups == 0 and o_rank % self.o_groups == 0 and self.o_groups > 1:
             self.o_inner_per_group = inner // self.o_groups
             self.o_rank_per_group = o_rank // self.o_groups
-            self.o_a_groups = nn.ModuleList(
-                [lin(self.o_inner_per_group, self.o_rank_per_group) for _ in range(self.o_groups)]
+            self.o_a_proj: QuantAwareLinear | QuantAwareGroupedLinear = QuantAwareGroupedLinear(
+                inner,
+                o_rank,
+                self.o_groups,
+                fake_quant=cfg.fake_quant,
+                group_size=cfg.fake_quant_group_size,
             )
-            self.o_a_proj = None
         else:
             self.o_inner_per_group = inner
             self.o_rank_per_group = o_rank
-            self.o_a_groups = None
             self.o_a_proj = lin(inner, o_rank)
         self.o_b_proj = lin(o_rank, cfg.d_model)
         self.global_gate = lin(cfg.d_model, cfg.d_model)
@@ -745,6 +808,33 @@ class SparseLatentAttention(nn.Module):
         self.k_norm = RMSNorm(cfg.head_dim, cfg.rms_norm_eps)
         self.sink_logits = nn.Parameter(torch.zeros(cfg.n_heads, max(1, cfg.sink_tokens)))
         self.rope = RotaryEmbedding(min(cfg.rope_dim, cfg.head_dim))
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        local_metadata: dict,
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        grouped_key = prefix + "o_a_proj.weight"
+        legacy_keys = [prefix + f"o_a_groups.{idx}.weight" for idx in range(int(self.o_groups))]
+        if isinstance(self.o_a_proj, QuantAwareGroupedLinear) and grouped_key not in state_dict:
+            if all(key in state_dict for key in legacy_keys):
+                state_dict[grouped_key] = torch.stack([state_dict[key] for key in legacy_keys], dim=0)
+                for key in legacy_keys:
+                    state_dict.pop(key, None)
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def _shape(self, x: torch.Tensor) -> torch.Tensor:
         b, t, _ = x.shape
@@ -783,7 +873,7 @@ class SparseLatentAttention(nn.Module):
         flex_out = _flex_sliding_local_attention(self, q, k, v, window)
         if flex_out is not None:
             return flex_out
-        parts: list[torch.Tensor] = []
+        output = q.new_empty(q.shape)
         for start in range(0, t, window):
             end = min(t, start + window)
             left = max(0, start - window)
@@ -791,8 +881,8 @@ class SparseLatentAttention(nn.Module):
             ki = expanded_k[:, :, left:end, :]
             vi = expanded_v[:, :, left:end, :]
             mask = _cached_tril_mask(self, q, end - start, end - left, start - left)
-            parts.append(F.scaled_dot_product_attention(qi, ki, vi, attn_mask=mask, dropout_p=0.0))
-        return torch.cat(parts, dim=2)
+            output[:, :, start:end, :] = F.scaled_dot_product_attention(qi, ki, vi, attn_mask=mask, dropout_p=0.0)
+        return output
 
     def _global_mask(self, t: int, n_blocks: int, block_size: int, device: torch.device) -> torch.Tensor:
         q_block = torch.div(torch.arange(t, device=device), int(block_size), rounding_mode="floor")
@@ -838,7 +928,7 @@ class SparseLatentAttention(nn.Module):
         t = q.shape[2]
         n_blocks = k.shape[2]
         chunk = max(1, int(self.cfg.local_window))
-        parts: list[torch.Tensor] = []
+        output = q.new_empty(q.shape)
         for start in range(0, t, chunk):
             end = min(t, start + chunk)
             selected = self._selected_blocks(start, end, n_blocks, block_size, q.device)
@@ -850,15 +940,11 @@ class SparseLatentAttention(nn.Module):
             # summary may include future tokens inside the block and would let
             # teacher-forced loss cheat while autoregressive decode fails.
             mask = selected.view(1, -1) < q_block.view(-1, 1)
-            parts.append(self._sink_attention(q[:, :, start:end, :], k_sel, v_sel, mask))
-        return torch.cat(parts, dim=2)
+            output[:, :, start:end, :] = self._sink_attention(q[:, :, start:end, :], k_sel, v_sel, mask)
+        return output
 
     def _o_a(self, y: torch.Tensor) -> torch.Tensor:
-        if self.o_a_groups is None:
-            assert self.o_a_proj is not None
-            return self.o_a_proj(y)
-        grouped = y.view(*y.shape[:-1], self.o_groups, self.o_inner_per_group)
-        return torch.cat([proj(grouped[..., i, :]) for i, proj in enumerate(self.o_a_groups)], dim=-1)
+        return self.o_a_proj(y)
 
     def _sink_attention(
         self,
@@ -957,7 +1043,7 @@ class BlockAttentionResidual(nn.Module):
         else:
             x_pad = x
         summaries = x_pad.view(b, -1, block, d).mean(dim=2)
-        positions = torch.arange(summaries.shape[1], device=x.device)
+        positions = _cached_arange(self, x, summaries.shape[1], name="_attnres_summary_arange_cache")
         if summaries.shape[1] > self.max_blocks:
             prefix = summaries[:, :1, :]
             tail = summaries[:, -(self.max_blocks - 1):, :] if self.max_blocks > 1 else summaries[:, :0, :]

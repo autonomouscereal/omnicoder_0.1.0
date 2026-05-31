@@ -84,6 +84,13 @@ def _should_log_interval(interval: int, step: int) -> bool:
     return int(step) <= 1 or (int(step) % interval) == 0
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(str(name), str(int(default))) or int(default))
+    except Exception:
+        return int(default)
+
+
 def _cuda_synchronize_if_requested(device: torch.device, enabled: bool) -> None:
     if not bool(enabled) or device.type != "cuda" or not torch.cuda.is_available():
         return
@@ -513,12 +520,11 @@ class OmniCoder2026PipelineShard(nn.Module):
             flat_labels = torch.cat(selected_labels, dim=0)
             flat_batches = torch.cat(selected_batches, dim=0)
             flat_token_weights = torch.cat(selected_token_weights, dim=0) if selected_token_weights else None
-            token_losses: list[torch.Tensor] = []
+            losses = flat_hidden.new_empty((flat_hidden.shape[0],), dtype=torch.float32)
             for start in range(0, flat_hidden.shape[0], max(1, int(chunk_tokens))):
                 end = min(flat_hidden.shape[0], start + int(chunk_tokens))
                 logits = self.lm_head(flat_hidden[start:end, :])
-                token_losses.append(F.cross_entropy(logits, flat_labels[start:end], reduction="none").float())
-            losses = torch.cat(token_losses, dim=0)
+                losses[start:end] = F.cross_entropy(logits, flat_labels[start:end], reduction="none").float()
             optimized_target_tokens = int(flat_labels.numel())
             if collect_diagnostics:
                 _accumulate_ce_by_token_family(ce_accumulator, flat_labels, losses, flat_token_weights)
@@ -1658,6 +1664,11 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         self.max_source_rows = int(max_source_rows) if int(max_source_rows) > 0 else 0
         self.max_indexed_windows = int(max_indexed_windows) if int(max_indexed_windows) > 0 else int(max_records)
         self.fallback: tuple[list[int], list[int], float] = ([1] * self.seq_len, [1] * self.seq_len, 0.05)
+        self.record_cache_max_bytes = max(0, _env_int("OMNICODER2026_DATASET_RECORD_CACHE_MAX_BYTES", 512 * 1024 * 1024))
+        self._record_cache: dict[tuple[Path, int, str], tuple[list[int], list[int], float, int, int]] = {}
+        self._record_cache_bytes = 0
+        self._record_cache_hits = 0
+        self._record_cache_misses = 0
         window_limit = int(self.max_indexed_windows) if int(self.max_indexed_windows) > 0 else None
         source_limit = int(self.max_source_rows) if int(self.max_source_rows) > 0 else None
         p = Path(path)
@@ -1709,6 +1720,10 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
             obj = json.loads(raw.decode("utf-8", errors="ignore"))
         except Exception:
             return True
+        return cls._jsonl_obj_has_possible_target(obj)
+
+    @classmethod
+    def _jsonl_obj_has_possible_target(cls, obj: object) -> bool:
         if not isinstance(obj, dict):
             return True
         if any(_token_id_list(obj.get(key)) for key in ("target_token_ids", "completion_token_ids", "assistant_token_ids", "media_token_ids", "artifact_token_ids")):
@@ -1828,12 +1843,12 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
                     break
                 if not raw.strip():
                     continue
-                if not self._jsonl_line_has_possible_target(raw):
-                    continue
                 try:
                     obj = json.loads(raw.decode("utf-8", errors="ignore"))
                 except Exception:
                     obj = {}
+                if not self._jsonl_obj_has_possible_target(obj):
+                    continue
                 if not isinstance(obj, dict):
                     obj = {}
                 if _row_trainability_rejection_reason(obj) is not None:
@@ -1856,16 +1871,47 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return max(1, len(self.records))
 
+    def _cached_record_copy(self, key: tuple[Path, int, str]) -> tuple[list[int], list[int], float, int] | None:
+        cached = self._record_cache.get(key)
+        if cached is None:
+            self._record_cache_misses += 1
+            return None
+        self._record_cache_hits += 1
+        ids, labels, weight, raw_len, _estimated_bytes = cached
+        return list(ids), list(labels), float(weight), int(raw_len)
+
+    def _cache_record(
+        self,
+        key: tuple[Path, int, str],
+        ids: list[int],
+        labels: list[int],
+        weight: float,
+        raw_len: int,
+    ) -> tuple[list[int], list[int], float, int]:
+        max_bytes = int(self.record_cache_max_bytes or 0)
+        if max_bytes <= 0:
+            return ids, labels, float(weight), int(raw_len)
+        estimated_bytes = 64 + (len(ids) + len(labels)) * 8
+        if estimated_bytes <= max_bytes and self._record_cache_bytes + estimated_bytes <= max_bytes:
+            self._record_cache[key] = (list(ids), list(labels), float(weight), int(raw_len), int(estimated_bytes))
+            self._record_cache_bytes += int(estimated_bytes)
+        return ids, labels, float(weight), int(raw_len)
+
     def _read_record(self, path: Path, offset: int, kind: str) -> tuple[list[int], list[int], float, int]:
+        key = (path, int(offset), str(kind))
+        cached = self._cached_record_copy(key)
+        if cached is not None:
+            return cached
         if kind == "txt":
             text = path.read_text(encoding="utf-8", errors="ignore")
             ids = [int(x) for x in self.tokenizer.encode(text)]
-            return ids, _labels_from_ids_mask(ids, [1.0] * len(ids)), 1.0, len(ids)
+            labels = _labels_from_ids_mask(ids, [1.0] * len(ids))
+            return self._cache_record(key, ids, labels, 1.0, len(ids))
         with path.open("rb") as handle:
             handle.seek(int(offset))
             line = handle.readline().decode("utf-8", errors="ignore")
         if not line.strip():
-            return self.fallback[0], self.fallback[1], self.fallback[2], len(self.fallback[0])
+            return self._cache_record(key, list(self.fallback[0]), list(self.fallback[1]), self.fallback[2], len(self.fallback[0]))
         try:
             obj = json.loads(line)
         except Exception:
@@ -1873,9 +1919,9 @@ class WeightedTextJsonlDataset(torch.utils.data.Dataset):
         if not isinstance(obj, dict):
             obj = {"text": str(obj)}
         if _row_trainability_rejection_reason(obj) is not None:
-            return self.fallback[0], self.fallback[1], self.fallback[2], len(self.fallback[0])
+            return self._cache_record(key, list(self.fallback[0]), list(self.fallback[1]), self.fallback[2], len(self.fallback[0]))
         ids, labels, weight = record_ids_labels_weight(obj, self.tokenizer)
-        return ids, labels, weight, len(ids)
+        return self._cache_record(key, ids, labels, weight, len(ids))
 
     def _window_from_entry(self, entry: tuple[Path, int, int, str]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, bool]:
         path, offset, chunk_index, kind = entry
@@ -2039,6 +2085,19 @@ def _fill_missing_from_checkpoint_state(
                 filtered[key] = embed
             else:
                 remaining.append(key)
+        elif key.endswith(".o_a_proj.weight") and current[key].ndim == 3:
+            groups = int(current[key].shape[0])
+            legacy_prefix = key[: -len("o_a_proj.weight")]
+            legacy_keys = [f"{legacy_prefix}o_a_groups.{idx}.weight" for idx in range(groups)]
+            legacy_tensors = [checkpoint_state.get(legacy_key) for legacy_key in legacy_keys]
+            if all(isinstance(tensor, torch.Tensor) for tensor in legacy_tensors):
+                stacked = torch.stack([tensor for tensor in legacy_tensors if isinstance(tensor, torch.Tensor)], dim=0)
+                if tuple(stacked.shape) == tuple(current[key].shape):
+                    filtered[key] = stacked
+                else:
+                    remaining.append(key)
+            else:
+                remaining.append(key)
         else:
             remaining.append(key)
     return remaining
@@ -2106,6 +2165,8 @@ def load_checkpoint_shard(
             filtered[key] = state["embed.weight"]
         else:
             missing.append(key)
+    if missing:
+        missing = _fill_missing_from_checkpoint_state(filtered, missing, state, current)
     if missing and sharded and placement_changed:
         missing = _fill_missing_from_other_shards(source, filtered, missing, current, local_rank=int(dist.get_rank()))
     if missing:
@@ -2539,6 +2600,7 @@ def _dataset_source_summary(dataset: WeightedTextJsonlDataset | None) -> dict[st
         "max_source_rows": int(getattr(dataset, "max_source_rows", 0) or 0),
         "max_indexed_windows": int(getattr(dataset, "max_indexed_windows", 0) or 0),
         "fallback_active": bool(not getattr(dataset, "records", [])),
+        "record_cache": _dataset_record_cache_summary(dataset),
         "sources": dict(sorted(sources.items(), key=lambda item: (-item[1], item[0]))[:32]),
         "row_sources": dict(sorted(row_sources.items(), key=lambda item: (-item[1], item[0]))[:32]),
         "source_count": int(len(sources)),
@@ -2547,6 +2609,37 @@ def _dataset_source_summary(dataset: WeightedTextJsonlDataset | None) -> dict[st
         "origin_groups": dict(sorted(origin_groups.items())),
         "modalities": dict(sorted(modalities.items())),
     }
+
+
+def _dataset_record_cache_summary(dataset: WeightedTextJsonlDataset | None) -> dict[str, int]:
+    return {
+        "max_bytes": int(getattr(dataset, "record_cache_max_bytes", 0) or 0),
+        "bytes": int(getattr(dataset, "_record_cache_bytes", 0) or 0),
+        "entries": int(len(getattr(dataset, "_record_cache", {}) or {})),
+        "hits": int(getattr(dataset, "_record_cache_hits", 0) or 0),
+        "misses": int(getattr(dataset, "_record_cache_misses", 0) or 0),
+    }
+
+
+def _compact_source_summary(source_summary: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(source_summary, dict):
+        return {"available": False}
+    keep = (
+        "available",
+        "records",
+        "indexed_samples",
+        "source_rows",
+        "max_source_rows",
+        "max_indexed_windows",
+        "fallback_active",
+        "source_count",
+        "row_source_count",
+        "kinds",
+        "modalities",
+        "record_cache",
+    )
+    compact = {key: source_summary[key] for key in keep if key in source_summary}
+    return compact or {"available": False}
 
 
 def _sample_weight_summary(sample_weights: torch.Tensor | None) -> dict[str, Any]:
@@ -2681,11 +2774,12 @@ def _train_diagnostics_record(
     loss_diagnostics: dict[str, Any] | None,
     source_summary: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    target_counts = _token_family_counts(labels)
     loss_diagnostics = loss_diagnostics if isinstance(loss_diagnostics, dict) else {}
     loss_target_counts = loss_diagnostics.get("target_counts_by_token_family")
     if isinstance(loss_target_counts, dict) and any(int(value or 0) for value in loss_target_counts.values()):
         target_counts = {str(key): int(value or 0) for key, value in loss_target_counts.items()}
+    else:
+        target_counts = _token_family_counts(labels)
     optimized_counts = loss_diagnostics.get("optimized_target_counts_by_token_family")
     if not isinstance(optimized_counts, dict):
         optimized_counts = {key: 0 for key in target_counts}
@@ -2742,7 +2836,8 @@ def _train_diagnostics_record(
             "data_path": str(getattr(args, "data", "")),
             "data_manifest": str(getattr(args, "data_manifest", "") or ""),
             "sample_weights": _sample_weight_summary(sample_weights),
-            "source_summary": source_summary or {"available": False},
+            "source_summary": _compact_source_summary(source_summary),
+            "source_summary_ref": "dataset_index_done",
             "shuffle": bool(getattr(args, "shuffle", True)),
         },
         "runtime": {
@@ -3286,6 +3381,7 @@ def main(argv: list[str] | None = None) -> int:
         if rank == 0
         else None
     )
+    dataset_source_summary = _dataset_source_summary(data) if rank == 0 else None
     if rank == 0:
         _write_log(
             args.log_file,
@@ -3294,7 +3390,7 @@ def main(argv: list[str] | None = None) -> int:
                 "samples": int(len(data) if data is not None else 0),
                 "data": str(args.data),
                 "seq_len": int(seq_len),
-                "source_summary": _dataset_source_summary(data),
+                "source_summary": dataset_source_summary,
             },
         )
     loader_kwargs: dict[str, Any] = {
@@ -3312,7 +3408,7 @@ def main(argv: list[str] | None = None) -> int:
             loader_kwargs["prefetch_factor"] = max(1, int(args.dataloader_prefetch_factor or 1))
     loader = DataLoader(data, **loader_kwargs) if rank == 0 else None
     it = iter(loader) if loader is not None else None
-    source_summary_box: list[Any] = [_dataset_source_summary(data) if rank == 0 else None]
+    source_summary_box: list[Any] = [dataset_source_summary if rank == 0 else None]
     dist.broadcast_object_list(source_summary_box, src=0)
     source_summary = source_summary_box[0] if isinstance(source_summary_box[0], dict) else {"available": False}
     data_integrity_box: list[Any] = [_checkpoint_data_integrity(args) if rank == 0 else None]
@@ -3448,6 +3544,8 @@ def main(argv: list[str] | None = None) -> int:
                 }
         step_elapsed_sec = step_timer.elapsed()
         with step_timer.span("diagnostics_write_sec"):
+            if rank == 0 and isinstance(source_summary, dict):
+                source_summary["record_cache"] = _dataset_record_cache_summary(data)
             _append_pipeline_telemetry(
                 train_diagnostics_path,
                 _train_diagnostics_record(

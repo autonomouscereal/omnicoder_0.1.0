@@ -133,6 +133,29 @@ def _gdn2_tensor_scan(
     return outputs, state
 
 
+@torch.jit.script
+def _gdn2_tensor_scan_jit(
+    q_f: torch.Tensor,
+    k_f: torch.Tensor,
+    v_f: torch.Tensor,
+    write_f: torch.Tensor,
+    forget_f: torch.Tensor,
+    state: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    outputs = torch.empty_like(v_f)
+    for step in range(q_f.size(1)):
+        q_t = q_f[:, step]
+        k_t = k_f[:, step]
+        v_t = v_f[:, step]
+        write = write_f[:, step]
+        retain = forget_f[:, step]
+        prediction = torch.matmul(k_t.unsqueeze(-2), state).squeeze(-2)
+        update = k_t.unsqueeze(-1) * (write * (v_t - prediction)).unsqueeze(-2)
+        state = retain.unsqueeze(-2) * state + update
+        outputs[:, step] = torch.matmul(q_t.unsqueeze(-2), state).squeeze(-2)
+    return outputs, state
+
+
 _COMPILED_GDN2_SCAN: object | None = None
 _GDN2_COMPILE_DISABLED = False
 
@@ -167,6 +190,14 @@ def _gdn2_compile_available(ref: torch.Tensor) -> bool:
     except Exception:
         return False
     return (major, minor) >= (7, 5)
+
+
+def _gdn2_jit_available(ref: torch.Tensor) -> bool:
+    if not _truthy_env("OMNICODER2026_GDN2_JIT_SCAN", "0"):
+        return False
+    if not ref.is_cuda and not _truthy_env("OMNICODER2026_GDN2_JIT_SCAN_CPU", "0"):
+        return False
+    return True
 
 
 def _gated_deltanet2_compiled_chunks(
@@ -240,6 +271,28 @@ def _gated_deltanet2_compiled_chunks(
             )
         outputs.append(y_chunk)
     return torch.cat(outputs, dim=1).to(dtype=v.dtype), state
+
+
+def _gated_deltanet2_jit_scan(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    *,
+    write_gate: torch.Tensor,
+    forget_gate: torch.Tensor,
+    initial_state: Optional[torch.Tensor] = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    _check_qkv(q, k, v)
+    q_f = q.float()
+    k_f = F.normalize(k.float(), dim=-1)
+    v_f = v.float()
+    write_f = _prepare_gate(write_gate, v_f, sigmoid=True)
+    forget_f = _prepare_gate(forget_gate, v_f, sigmoid=True)
+    if not isinstance(write_f, torch.Tensor) or not isinstance(forget_f, torch.Tensor):
+        raise ValueError("JIT GDN2 path requires tensor gates")
+    state = _initial_state(q, v.shape[-1], initial_state)
+    y, state = _gdn2_tensor_scan_jit(q_f, k_f, v_f, write_f, forget_f, state)
+    return y.to(dtype=v.dtype), state
 
 
 def kda_pytorch(
@@ -549,6 +602,15 @@ class GatedDeltaNet2(_BaseRecurrentLinearAttention):
                 forget_gate=forget_gate,
                 initial_state=initial_state,
             )
+        elif _gdn2_jit_available(q):
+            y, state = _gated_deltanet2_jit_scan(
+                q,
+                k,
+                v,
+                write_gate=write_gate,
+                forget_gate=forget_gate,
+                initial_state=initial_state,
+            )
         else:
             y, state = gated_deltanet2_pytorch(
                 q,
@@ -594,6 +656,7 @@ __all__ = [
     "KaczmarzLinearAttention",
     "RecurrentLinearAttentionConfig",
     "_gated_deltanet2_compiled_chunks",
+    "_gated_deltanet2_jit_scan",
     "gated_deltanet2_pytorch",
     "kaczmarz_linear_attention_pytorch",
     "kda_pytorch",

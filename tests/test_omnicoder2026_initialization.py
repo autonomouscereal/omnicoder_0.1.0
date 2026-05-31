@@ -11,6 +11,9 @@ from omnicoder.modeling.omnicoder2026 import (
     LocalCausalAttention,
     OmniCoder2026,
     OmniCoder2026Config,
+    QuantAwareGroupedLinear,
+    QuantAwareLinear,
+    RotaryEmbedding,
     SparseLatentAttention,
     SwiGLU,
 )
@@ -105,6 +108,22 @@ def test_block_attention_residual_is_low_rank_and_memory_bounded() -> None:
     assert torch.equal(positions, torch.sort(positions).values)
     assert out.shape == x.shape
     assert torch.isfinite(out).all()
+
+
+def test_rotary_embedding_keeps_multiple_length_cache_entries() -> None:
+    rope = RotaryEmbedding(8, base=10000.0)
+    x_short = torch.randn(1, 1, 7, 8)
+    x_long = torch.randn(1, 1, 11, 8)
+
+    short_first = rope(x_short)
+    long_first = rope(x_long)
+    short_second = rope(x_short)
+
+    assert len(rope._cache_values) == 2
+    assert short_first[0] is short_second[0]
+    assert short_first[1] is short_second[1]
+    torch.testing.assert_close(short_first[0], short_second[0], atol=0.0, rtol=0.0)
+    torch.testing.assert_close(long_first[0], rope(x_long)[0], atol=0.0, rtol=0.0)
 
 
 def test_native_continuous_media_features_train_through_shared_trunk() -> None:
@@ -265,6 +284,42 @@ def test_fused_swiglu_loads_legacy_gate_up_projection_state() -> None:
     reference.load_state_dict(legacy, strict=True)
     x = torch.randn(2, 7, cfg.d_model)
 
+    torch.testing.assert_close(reference(x), layer(x), atol=0.0, rtol=0.0)
+
+
+@pytest.mark.parametrize("fake_quant", [False, True])
+def test_quant_aware_grouped_linear_matches_module_list_projection(fake_quant: bool) -> None:
+    torch.manual_seed(735)
+    grouped = QuantAwareGroupedLinear(8, 6, 2, fake_quant=fake_quant, group_size=4)
+    proj0 = QuantAwareLinear(4, 3, bias=False, fake_quant=fake_quant, group_size=4)
+    proj1 = QuantAwareLinear(4, 3, bias=False, fake_quant=fake_quant, group_size=4)
+    with torch.no_grad():
+        grouped.weight[0].copy_(torch.randn_like(grouped.weight[0]))
+        grouped.weight[1].copy_(torch.randn_like(grouped.weight[1]))
+        proj0.weight.copy_(grouped.weight[0])
+        proj1.weight.copy_(grouped.weight[1])
+    x = torch.randn(2, 5, 8)
+
+    expected = torch.cat((proj0(x[..., :4]), proj1(x[..., 4:])), dim=-1)
+
+    torch.testing.assert_close(grouped(x), expected, atol=0.0, rtol=0.0)
+
+
+def test_sparse_latent_attention_loads_legacy_grouped_o_projection_state() -> None:
+    torch.manual_seed(736)
+    cfg = _tiny_native_cfg()
+    layer = SparseLatentAttention(cfg, "csa")
+    reference = SparseLatentAttention(cfg, "csa")
+    state = layer.state_dict()
+    grouped_weight = state.pop("o_a_proj.weight")
+    for idx in range(cfg.o_groups):
+        state[f"o_a_groups.{idx}.weight"] = grouped_weight[idx]
+
+    reference.load_state_dict(state, strict=True)
+
+    assert isinstance(reference.o_a_proj, QuantAwareGroupedLinear)
+    torch.testing.assert_close(reference.o_a_proj.weight, grouped_weight, atol=0.0, rtol=0.0)
+    x = torch.randn(2, 9, cfg.d_model)
     torch.testing.assert_close(reference(x), layer(x), atol=0.0, rtol=0.0)
 
 

@@ -221,7 +221,7 @@ docker run -d \
     --distributed pipeline_stage \
     --nproc-per-node 3 \
     --rank-device-map 0,1,2 \
-    --placement-layer-counts 16,16,32 \
+    --placement-layer-counts 21,21,22 \
     --pipeline-stage-schedule gpipe \
     --pipeline-microbatches 1 \
     --precision fp16 \
@@ -230,7 +230,7 @@ docker run -d \
     --optimizer-in-backward \
     --optimizer-in-backward-update lowmem_adafactor \
     --activation-checkpointing \
-    --fake-quant-chunk-rows 16 \
+    --fake-quant-chunk-rows 2048 \
     --fake-quant-max-full-elements 16777216 \
     --steps-per-stage 64 \
     --posttrain-steps 32 \
@@ -243,8 +243,9 @@ docker run -d \
 
 The repeatable AI-server launcher for this lane is
 `scripts/ai_server_fast_pipeline_20b.sh`. It bakes in the fast-card device
-selection, Docker IPC/ulimit requirements, 16/16/32 layer placement,
-low-memory Adafactor, q4 fake-quant hooks, allocator fragmentation mitigation,
+selection, Docker IPC/ulimit requirements, the current measured `21,21,22`
+short/medium-rung layer placement, low-memory Adafactor, q4 fake-quant hooks,
+allocator fragmentation mitigation,
 and media-tree mounts. Schedule, microbatching, activation checkpointing, fake
 quant, fake-quant chunk rows, and target-token budget are environment
 overrides so profile-matrix variants can compare them without rewriting the
@@ -326,14 +327,16 @@ save. Launch additional chunks or GRPO/RLVR chunks by overriding
 
 When a complete checkpoint was saved with an older fast-card layer placement,
 the pipeline loader can repartition tensors into the current placement. This is
-used to move failed `16,8,40` or `16,14,34` shards back into the current
-`16,16,32` layout: each rank loads its own shard first, then streams only
+used to move failed `16,8,40`, `16,14,34`, or earlier `16,16,32` shards into
+the current profiled layout: each rank loads its own shard first, then streams only
 missing layer tensors from the other rank files. Optimizer state is not
 restored across that placement change because parameter ordering and ownership
 changed. The 2048-token May 25 retries showed that `16,8,40` and `16,14,34`
-overfilled the RTX 8000 during fake-quant FFN backward, while earlier
-`16,16,32` pressure was tied to 64-row fake-quant chunks on a 3090. The fast
-lane now keeps the RTX 8000 largest at 32 layers and uses 16-row chunks.
+overfilled the RTX 8000 during fake-quant FFN backward, while later
+seq-1024 no-checkpoint profiles showed `21,21,22` with 2048-row fake-quant
+chunks is the best measured short/medium-rung default so far. Longer-context
+rungs may still override placement if memory profiling says the RTX 8000 needs
+more headroom.
 
 ```bash
 cd /home/cereal/omnicoder_2026_work

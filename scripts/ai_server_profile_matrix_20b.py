@@ -75,6 +75,235 @@ DEFAULT_VARIANTS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "gdn2_compiled_fakequant_chunk256_loss64",
+        "default": False,
+        "steps": 4,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "256",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_GDN2_COMPILED_CHUNKS": "1",
+            "OMNICODER2026_GDN2_COMPILED_MODE": "full",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "4",
+        },
+    },
+    {
+        "name": "gdn2_jit_q4_loss64",
+        "default": False,
+        "steps": 2,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "256",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_GDN2_JIT_SCAN": "1",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "fakequant_chunk1024_loss64",
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "1024",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "fakequant_chunk2048_loss64",
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "2048",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "fakequant_chunk2048_loss64_diagnostics",
+        "default": False,
+        "steps": 2,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "2048",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "1",
+        },
+    },
+    {
+        "name": "actckpt_off_q4_loss64",
+        "default": False,
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "256",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "0",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "placement_18_18_28_q4_loss64",
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "256",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_PLACEMENT_LAYER_COUNTS": "18,18,28",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "placement_18_18_28_q4_chunk2048_loss64",
+        "default": False,
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "2048",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_PLACEMENT_LAYER_COUNTS": "18,18,28",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "placement_20_20_24_q4_loss64",
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "256",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_PLACEMENT_LAYER_COUNTS": "20,20,24",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "placement_20_20_24_q4_chunk2048_loss64",
+        "default": False,
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "2048",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_PLACEMENT_LAYER_COUNTS": "20,20,24",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "placement_21_21_22_q4_loss64",
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "256",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_PLACEMENT_LAYER_COUNTS": "21,21,22",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "placement_21_21_22_q4_chunk2048_loss64",
+        "default": False,
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "2048",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_PLACEMENT_LAYER_COUNTS": "21,21,22",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "onef1b_batch2_q4_loss64",
+        "steps": 1,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "256",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "1f1b",
+            "OMNICODER_PIPELINE_MICROBATCHES": "2",
+            "OMNICODER_BATCH_SIZE": "2",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
+        "name": "dataloader_workers2_q4_loss64",
+        "steps": 2,
+        "env": {
+            "OMNICODER_FAKE_QUANT": "1",
+            "OMNICODER_FAKE_QUANT_CHUNK_ROWS": "256",
+            "OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE": "64",
+            "OMNICODER_ACTIVATION_CHECKPOINTING": "1",
+            "OMNICODER_PIPELINE_STAGE_SCHEDULE": "gpipe",
+            "OMNICODER_PIPELINE_MICROBATCHES": "1",
+            "OMNICODER_BATCH_SIZE": "1",
+            "OMNICODER_STAGE_ORDER": "text",
+            "OMNICODER2026_DATALOADER_NUM_WORKERS": "2",
+            "OMNICODER2026_DATALOADER_PERSISTENT_WORKERS": "1",
+            "OMNICODER2026_DATALOADER_PREFETCH_FACTOR": "2",
+            "OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL": "0",
+        },
+    },
+    {
         "name": "fakequant_chunk512_loss64",
         "steps": 1,
         "env": {
@@ -414,6 +643,8 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
         if totals:
             summary["max_total_sec"] = max(totals)
             summary["min_total_sec"] = min(totals)
+            if min(totals) > 0.0:
+                summary["total_step_skew_ratio"] = max(totals) / min(totals)
             if isinstance(summary.get("last_seq_len"), (int, float)):
                 summary["sequence_tokens_per_sec"] = float(summary["last_seq_len"]) / max(totals)
             if isinstance(summary.get("last_optimized_target_tokens"), (int, float)):
@@ -421,6 +652,8 @@ def summarize_run(host_out_dir: Path, container: str, repo: Path) -> dict[str, A
         if schedules:
             summary["max_schedule_step_sec"] = max(schedules)
             summary["min_schedule_step_sec"] = min(schedules)
+            if min(schedules) > 0.0:
+                summary["schedule_step_skew_ratio"] = max(schedules) / min(schedules)
     block_files = sorted(diag_dir.glob("*_block_timing.rank*.jsonl"))
     summary["block_timing_files"] = [str(path) for path in block_files]
     if block_files:
@@ -516,6 +749,14 @@ def launch_variant(repo: Path, matrix_root: Path, matrix_tag: str, variant: dict
     return result
 
 
+def select_variants(wanted: set[str]) -> tuple[list[dict[str, Any]], list[str]]:
+    if wanted:
+        variants = [variant for variant in DEFAULT_VARIANTS if str(variant["name"]) in wanted]
+        names = {str(variant["name"]) for variant in variants}
+        return variants, sorted(wanted - names)
+    return [variant for variant in DEFAULT_VARIANTS if bool(variant.get("default", True))], []
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=os.getenv("OMNICODER_REPO", "/home/cereal/omnicoder_2026_work"))
@@ -540,13 +781,10 @@ def main(argv: list[str] | None = None) -> int:
     matrix_root = Path(os.getenv("OMNICODER_WEIGHTS_ROOT", "/home/cereal/omnicoder_2026_work/weights")) / "training_runs" / f"profile_matrix_{tag}"
     matrix_root.mkdir(parents=True, exist_ok=True)
     wanted = {item.strip() for item in args.variants.split(",") if item.strip()}
-    variants = [variant for variant in DEFAULT_VARIANTS if not wanted or str(variant["name"]) in wanted]
-    if wanted:
-        names = {str(variant["name"]) for variant in variants}
-        missing = sorted(wanted - names)
-        if missing:
-            print(f"unknown variants: {', '.join(missing)}", file=sys.stderr)
-            return 2
+    variants, missing = select_variants(wanted)
+    if missing:
+        print(f"unknown variants: {', '.join(missing)}", file=sys.stderr)
+        return 2
     summary: dict[str, Any] = {
         "schema": "omnicoder.profile_matrix_20b_2026.v1",
         "matrix_tag": tag,

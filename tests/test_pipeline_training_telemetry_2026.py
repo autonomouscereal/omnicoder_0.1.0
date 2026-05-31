@@ -235,6 +235,77 @@ def test_train_diagnostics_record_has_required_schema_counts_and_runtime(tmp_pat
     assert record["runtime"]["rank_memory"]["device"] == "cpu"
     assert record["data"]["sample_weights"]["mean"] == 1.25
     assert record["data"]["source_summary"]["records"] == 7
+    assert record["data"]["source_summary_ref"] == "dataset_index_done"
+
+
+def test_train_diagnostics_reuses_loss_target_counts_without_label_cpu_pull(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(pipeline.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        pipeline,
+        "_token_family_counts",
+        lambda _labels: (_ for _ in ()).throw(AssertionError("should reuse loss diagnostics counts")),
+    )
+    args = _args(tmp_path)
+    ranges = [(0, 1), (1, 3)]
+    spec = pipeline.shard_spec(1, ranges)
+    memory = pipeline._pipeline_telemetry_record(
+        args=args,
+        rank=1,
+        world_size=2,
+        device=torch.device("cpu"),
+        ranges=ranges,
+        spec=spec,
+        seq_len=6,
+        step=12,
+        local_step=5,
+    )
+    loss_diagnostics = {
+        "valid_target_tokens": 3,
+        "optimized_target_tokens": 2,
+        "target_counts_by_token_family": {"text": 1, "vision_semantic": 1, "tool_agent": 1},
+        "optimized_target_counts_by_token_family": {"text": 1, "vision_semantic": 1, "tool_agent": 0},
+    }
+
+    record = pipeline._train_diagnostics_record(
+        args=args,
+        rank=1,
+        world_size=2,
+        spec=spec,
+        global_step=12,
+        local_step=5,
+        seq_len=6,
+        batch_size=2,
+        microbatch_size=1,
+        loss=4.0,
+        labels=torch.tensor([[17, 132_096, 312_320]], dtype=torch.long),
+        sample_weights=None,
+        optimizer=SimpleNamespace(param_groups=[{"lr": 2.0e-5}]),
+        optimizer_update=True,
+        grad_norm_pre_clip=None,
+        grad_norm_post_clip=None,
+        step_elapsed_sec=1.0,
+        memory_record=memory,
+        loss_diagnostics=loss_diagnostics,
+        source_summary={
+            "available": True,
+            "records": 99,
+            "source_count": 2,
+            "sources": {"large.jsonl": 99},
+            "row_sources": {"large.jsonl": 99},
+            "origin_groups": {"huge": 99},
+            "modalities": {"text": 99},
+            "record_cache": {"entries": 2, "hits": 5, "misses": 2, "bytes": 512, "max_bytes": 1024},
+        },
+    )
+
+    assert record["targets"]["by_token_family"]["text"] == 1
+    assert record["targets"]["optimized_by_token_family"]["tool_agent"] == 0
+    assert record["loss"]["valid_target_tokens"] == 3
+    assert record["loss"]["optimized_target_tokens"] == 2
+    assert record["data"]["source_summary"]["records"] == 99
+    assert record["data"]["source_summary"]["record_cache"]["hits"] == 5
+    assert "sources" not in record["data"]["source_summary"]
+    assert "origin_groups" not in record["data"]["source_summary"]
 
 
 def test_train_diagnostics_path_and_jsonl_append(tmp_path) -> None:

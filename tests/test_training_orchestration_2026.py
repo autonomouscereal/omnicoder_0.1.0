@@ -2117,17 +2117,28 @@ def test_fast_pipeline_has_run_long_context_resume_branch_without_posttrain_args
     assert 'AI_DATA_ROOT="${OMNICODER_AI_DATA_ROOT:-/mnt/ai_data}"' in script
     assert '-v "$AI_DATA_ROOT:/mnt/ai_data"' in script
     assert 'STAGE_ORDER="${OMNICODER_STAGE_ORDER:-text,code,tool,image,video,audio,music,tts,ocr,long_context}"' in script
-    assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-16,16,32}"' in script
-    assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-256}"' in script
+    assert 'PLACEMENT_LAYER_COUNTS="${OMNICODER_PLACEMENT_LAYER_COUNTS:-21,21,22}"' in script
+    assert 'FAKE_QUANT_CHUNK_ROWS="${OMNICODER_FAKE_QUANT_CHUNK_ROWS:-2048}"' in script
     assert 'LM_LOSS_CHUNK_TOKENS="${OMNICODER_LM_LOSS_CHUNK_TOKENS:-64}"' in script
     assert 'FFN_CHUNK_TOKENS="${OMNICODER_FFN_CHUNK_TOKENS:-256}"' in script
     assert 'MAX_LOSS_TOKENS_PER_SAMPLE="${OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE:-64}"' in script
     assert 'STEP_TIMING_INTERVAL="${OMNICODER2026_STEP_TIMING_INTERVAL:-8}"' in script
     assert 'RANK_SKEW_INTERVAL="${OMNICODER2026_RANK_SKEW_INTERVAL:-32}"' in script
     assert 'DETAILED_EVENT_LOG_INTERVAL="${OMNICODER2026_DETAILED_EVENT_LOG_INTERVAL:-0}"' in script
+    assert 'GDN2_COMPILED_CHUNKS="${OMNICODER2026_GDN2_COMPILED_CHUNKS:-0}"' in script
+    assert 'GDN2_COMPILED_MODE="${OMNICODER2026_GDN2_COMPILED_MODE:-full}"' in script
+    assert 'DATALOADER_NUM_WORKERS="${OMNICODER2026_DATALOADER_NUM_WORKERS:-0}"' in script
+    assert 'DATALOADER_PERSISTENT_WORKERS="${OMNICODER2026_DATALOADER_PERSISTENT_WORKERS:-0}"' in script
+    assert 'DATASET_RECORD_CACHE_MAX_BYTES="${OMNICODER2026_DATASET_RECORD_CACHE_MAX_BYTES:-536870912}"' in script
+    assert 'GDN2_JIT_SCAN="${OMNICODER2026_GDN2_JIT_SCAN:-0}"' in script
     assert '-e PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"' in script
     assert '-e OMNICODER2026_LM_LOSS_CHUNK_TOKENS="$LM_LOSS_CHUNK_TOKENS"' in script
     assert '-e OMNICODER2026_FFN_CHUNK_TOKENS="$FFN_CHUNK_TOKENS"' in script
+    assert '-e OMNICODER2026_DATALOADER_NUM_WORKERS="$DATALOADER_NUM_WORKERS"' in script
+    assert '-e OMNICODER2026_DATASET_RECORD_CACHE_MAX_BYTES="$DATASET_RECORD_CACHE_MAX_BYTES"' in script
+    assert '-e OMNICODER2026_GDN2_JIT_SCAN="$GDN2_JIT_SCAN"' in script
+    assert '-e OMNICODER2026_GDN2_COMPILED_CHUNKS="$GDN2_COMPILED_CHUNKS"' in script
+    assert '-e OMNICODER2026_GDN2_COMPILED_MODE="$GDN2_COMPILED_MODE"' in script
     assert 'OMNICODER_CHECKPOINT_TOPK_PROBE' in script
     assert 'OMNICODER_CHECKPOINT_SAMPLE_LOSS' in script
     assert 'OMNICODER_CHECKPOINT_MEDIA_ROUTE_PROBE' in script
@@ -2156,9 +2167,40 @@ def test_profile_matrix_has_loss64_and_block_timing_variants():
     assert loss64["OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE"] == "64"
     assert loss64["OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL"] == "0"
 
+    compiled = variants["gdn2_compiled_fakequant_chunk256_loss64"]["env"]
+    assert variants["gdn2_compiled_fakequant_chunk256_loss64"]["default"] is False
+    assert compiled["OMNICODER_FAKE_QUANT"] == "1"
+    assert compiled["OMNICODER2026_GDN2_COMPILED_CHUNKS"] == "1"
+    assert compiled["OMNICODER2026_GDN2_COMPILED_MODE"] == "full"
+    assert variants["gdn2_compiled_fakequant_chunk256_loss64"]["steps"] == 4
+
+    assert variants["gdn2_jit_q4_loss64"]["default"] is False
+    assert variants["gdn2_jit_q4_loss64"]["env"]["OMNICODER2026_GDN2_JIT_SCAN"] == "1"
+    assert variants["fakequant_chunk1024_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "1024"
+    assert variants["fakequant_chunk2048_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "2048"
+    assert variants["fakequant_chunk2048_loss64_diagnostics"]["default"] is False
+    assert variants["fakequant_chunk2048_loss64_diagnostics"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "2048"
+    assert variants["fakequant_chunk2048_loss64_diagnostics"]["env"]["OMNICODER2026_LOSS_DIAGNOSTICS_INTERVAL"] == "1"
+    assert variants["actckpt_off_q4_loss64"]["default"] is False
+    assert variants["actckpt_off_q4_loss64"]["env"]["OMNICODER_ACTIVATION_CHECKPOINTING"] == "0"
+
     chunk512 = variants["fakequant_chunk512_loss64"]["env"]
     assert chunk512["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "512"
     assert chunk512["OMNICODER_MAX_LOSS_TOKENS_PER_SAMPLE"] == "64"
+
+    assert variants["placement_18_18_28_q4_loss64"]["env"]["OMNICODER_PLACEMENT_LAYER_COUNTS"] == "18,18,28"
+    assert variants["placement_20_20_24_q4_loss64"]["env"]["OMNICODER_PLACEMENT_LAYER_COUNTS"] == "20,20,24"
+    assert variants["placement_21_21_22_q4_loss64"]["env"]["OMNICODER_PLACEMENT_LAYER_COUNTS"] == "21,21,22"
+    assert variants["placement_18_18_28_q4_chunk2048_loss64"]["default"] is False
+    assert variants["placement_18_18_28_q4_chunk2048_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "2048"
+    assert variants["placement_20_20_24_q4_chunk2048_loss64"]["default"] is False
+    assert variants["placement_20_20_24_q4_chunk2048_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "2048"
+    assert variants["placement_21_21_22_q4_chunk2048_loss64"]["default"] is False
+    assert variants["placement_21_21_22_q4_chunk2048_loss64"]["env"]["OMNICODER_FAKE_QUANT_CHUNK_ROWS"] == "2048"
+    assert variants["onef1b_batch2_q4_loss64"]["env"]["OMNICODER_PIPELINE_STAGE_SCHEDULE"] == "1f1b"
+    assert variants["onef1b_batch2_q4_loss64"]["env"]["OMNICODER_BATCH_SIZE"] == "2"
+    assert variants["dataloader_workers2_q4_loss64"]["env"]["OMNICODER2026_DATALOADER_NUM_WORKERS"] == "2"
+    assert variants["dataloader_workers2_q4_loss64"]["env"]["OMNICODER2026_DATALOADER_PERSISTENT_WORKERS"] == "1"
 
     sync_blocks = variants["block_timing_sync_fakequant_off"]["env"]
     assert sync_blocks["OMNICODER_PROFILE_ALLOW_FAKE_QUANT_OFF"] == "1"
